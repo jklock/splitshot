@@ -604,7 +604,7 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert 'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left"' in review_js
     assert 'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";' in review_js
     assert 'imported_overlay_text' in review_js
-    assert 'if (box.quadrant === aboveFinalTextBoxValue)' in review_js
+    assert 'const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;' in review_js
     assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in review_js
     assert 'function resolvedOverlayTextBoxSize(box) {' in review_js
     assert 'function overlayStackAnchorRect(overlay) {' in app_js

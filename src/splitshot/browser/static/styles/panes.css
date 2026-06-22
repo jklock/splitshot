@@ -8,8 +8,8 @@
 .settings-section {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.48rem;
-  padding-top: 0.5rem;
+  gap: 0.62rem;
+  padding-top: 0.72rem;
 }
 
 .settings-section.collapsed {
@@ -21,8 +21,8 @@
 }
 
 .settings-section .section-header button {
-  min-height: 26px;
-  padding: 0.2rem 0.55rem;
+  min-height: 30px;
+  padding: 0.22rem 0.65rem;
 }
 
 .pane-summary-list {
@@ -120,6 +120,42 @@
   width: 100%;
 }
 
+.pane-title-row {
+  align-items: center;
+  margin-bottom: 0.52rem;
+}
+
+.section-header-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.pane-title-row h3 {
+  font-size: 0.84rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.pane-summary-token,
+.queue-status-pill {
+  align-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 800;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  min-height: 1.78rem;
+  padding: 0.14rem 0.62rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .project-delete-button {
   background: var(--red);
   border-color: var(--red);
@@ -178,14 +214,366 @@
 .merge-media-card-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  justify-content: flex-start;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.merge-media-card-copy {
+  display: grid;
+  gap: 0.18rem;
   min-width: 0;
 }
 
 .merge-media-card-body {
   display: grid;
   gap: 0.5rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .pip-defaults-section {
+  gap: 0.95rem;
+  padding-top: 0.9rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-list {
+  gap: 0.95rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card {
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-source-controls {
+  gap: 0.92rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .section-header.pane-title-row {
+  margin-bottom: 0.42rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .sub-section-header {
+  align-items: start;
+}
+
+.tool-pane[data-tool-pane="merge"] .sub-section-header h3 {
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-pane-shell {
+  gap: 1.05rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .pip-defaults-section {
+  gap: 1rem;
+  padding-top: 0.98rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .pip-defaults-section > label,
+.tool-pane[data-tool-pane="merge"] .merge-source-field,
+.tool-pane[data-tool-pane="trim-sync"] .merge-source-field {
+  gap: 0.34rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .pip-defaults-section > label,
+.tool-pane[data-tool-pane="merge"] .merge-source-field > span,
+.tool-pane[data-tool-pane="trim-sync"] .merge-source-field > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card-copy {
+  gap: 0.24rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card-meta {
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-source-controls label,
+.tool-pane[data-tool-pane="merge"] .pip-defaults-section label,
+.tool-pane[data-tool-pane="trim-sync"] .trim-bulk-grid label,
+.tool-pane[data-tool-pane="trim-sync"] .trim-card-row label {
+  min-width: 0;
+}
+
+.tool-pane[data-tool-pane="merge"] :is(input:not([type="checkbox"]):not([type="range"]), select),
+.tool-pane[data-tool-pane="trim-sync"] :is(input:not([type="checkbox"]):not([type="range"]), select),
+.tool-pane[data-tool-pane="media"] :is(input:not([type="checkbox"]):not([type="range"]), select),
+.tool-pane[data-tool-pane="queue"] :is(input:not([type="checkbox"]):not([type="range"]), select) {
+  font-size: 0.88rem;
+  min-height: 34px;
+}
+
+.tool-pane[data-tool-pane="merge"] .check-row,
+.tool-pane[data-tool-pane="trim-sync"] .check-row {
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card-header {
+  gap: 0.55rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card-actions .scoring-shot-toggle {
+  order: 2;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card strong {
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.tool-pane[data-tool-pane="merge"] .merge-media-card small,
+.tool-pane[data-tool-pane="merge"] .merge-media-card-meta {
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.media-pane-shell,
+.queue-pane-shell,
+.trim-pane-shell {
+  gap: 1.06rem;
+}
+
+.media-pane-active-stage,
+.media-stage-nav-list,
+.queue-stage-list,
+.trim-source-list {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.media-active-stage-header,
+.media-stage-nav-copy,
+.queue-stage-copy,
+.trim-source-card-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.media-active-stage-header strong,
+.media-stage-nav-copy strong,
+.queue-stage-copy strong,
+.trim-source-card-copy strong {
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.media-active-stage-header small,
+.media-stage-nav-copy small,
+.queue-stage-copy small,
+.trim-source-card-copy small {
+  color: var(--muted);
+  font-size: 0.77rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.media-pane-section,
+.trim-pane-section {
+  gap: 0.98rem;
+  padding-top: 0.98rem;
+}
+
+.media-asset-stack,
+.queue-stage-actions,
+.trim-card-actions,
+.trim-bulk-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.media-asset-row,
+.media-stage-nav-card,
+.queue-stage-card,
+.trim-source-card {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.98rem;
+  padding: 1rem;
+}
+
+.media-stage-nav-card.selected,
+.queue-stage-card.selected,
+.trim-source-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 123, 34, 0.24);
+}
+
+.media-stage-nav-header,
+.trim-source-card-header {
+  align-items: center;
+  display: grid;
+  gap: 0.68rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.queue-stage-header {
+  align-items: center;
+  display: grid;
+  gap: 0.68rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.media-stage-nav-body,
+.queue-stage-body,
+.trim-source-card-body {
+  display: grid;
+  gap: 0.98rem;
+}
+
+.media-asset-row {
+  align-items: center;
+  gap: 0.78rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.media-asset-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.media-asset-copy strong,
+.media-asset-copy span,
+.media-asset-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-asset-copy span {
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.media-asset-copy small {
+  color: var(--muted);
+}
+
+.media-asset-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-start;
+}
+
+.media-pane-shell .section-header-actions .btn-sm,
+.media-asset-actions .btn-sm,
+.media-stage-nav-actions .btn-sm,
+.queue-stage-actions .btn-sm,
+.trim-card-actions .btn-sm,
+.trim-sync-nudge-buttons .btn-sm,
+.tool-pane[data-tool-pane="merge"] .btn-sm {
+  min-height: 34px;
+  padding: 0.32rem 0.76rem;
+}
+
+.media-stage-nav-actions,
+.queue-stage-actions {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.queue-status-pill {
+  justify-self: end;
+}
+
+.media-section-header .section-header-actions,
+.trim-section-header .section-header-actions,
+.queue-stage-header-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.queue-stage-header-actions {
+  min-width: 0;
+}
+
+.queue-status-not_queued,
+.queue-status-stale {
+  color: var(--muted);
+}
+
+.queue-status-queued,
+.queue-status-complete {
+  color: #8ee3a6;
+}
+
+.queue-status-processing {
+  color: #f6c760;
+}
+
+.queue-status-failed {
+  color: #ff8e8e;
+}
+
+.queue-pane-actions {
+  display: grid;
+  gap: 0.62rem;
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: 0.28rem;
+}
+
+.trim-bulk-grid,
+.trim-card-row {
+  display: grid;
+  gap: 0.86rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trim-card-row-sync {
+  align-items: stretch;
+}
+
+.trim-sync-offset-field {
+  min-width: 0;
+}
+
+.trim-sync-nudge-buttons {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.trim-sync-nudge-buttons .btn-sm {
+  min-width: 0;
+}
+
+@container (max-width: 560px) {
+  .media-asset-row,
+  .trim-bulk-grid,
+  .trim-card-row,
+  .media-stage-nav-header,
+  .queue-stage-header,
+  .trim-source-card-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media-asset-actions,
+  .media-stage-nav-actions,
+  .queue-stage-actions {
+    justify-content: flex-start;
+  }
+
+  .queue-pane-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .merge-media-card-body[hidden] {
@@ -207,8 +595,8 @@
 .merge-source-controls {
   align-items: stretch;
   display: grid;
-  gap: 0.5rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.88rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .merge-source-field {
@@ -255,21 +643,21 @@
 
 .merge-source-sync-label {
   color: var(--text);
-  font-size: 0.76rem;
+  font-size: 0.79rem;
   font-weight: 900;
 }
 
 .button-grid.compact.merge-source-sync-buttons {
-  gap: 0.18rem;
+  gap: 0.36rem;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .merge-source-sync-buttons button {
-  font-size: 0.62rem;
-  min-height: 18px;
+  font-size: 0.76rem;
+  min-height: 30px;
   min-width: 0;
-  padding-left: 0.12rem;
-  padding-right: 0.12rem;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
   white-space: nowrap;
 }
 

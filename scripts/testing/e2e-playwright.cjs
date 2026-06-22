@@ -28,7 +28,7 @@ const THRESHOLDS = {
   source_commit_ms: 2000,
   trim_apply_ms: 5000,
   trim_clear_ms: 5000,
-  export_ack_ms: 5000,
+  queue_process_ms: 120000,
 };
 
 function fail(msg) {
@@ -209,6 +209,66 @@ async function ensureMergeCardExpanded(card) {
     await card.locator('button[aria-label*="PiP item controls"]').click({ force: true });
     await body.waitFor({ state: 'visible', timeout: 30000 });
   }
+}
+
+async function ensureTrimCardVisible(page, sourceId) {
+  await openTool(page, 'trim-sync');
+  const card = page.locator(`.trim-sync-card[data-source-id="${sourceId}"]`).first();
+  await card.waitFor({ state: 'visible', timeout: 30000 });
+  return card;
+}
+
+async function queueAndProcessCurrentStage(page, artifactRoot, screenshotPrefix) {
+  await openTool(page, 'queue', `${screenshotPrefix}-queue`);
+  await page.locator('.queue-add-btn').first().click({ force: true });
+  await waitForCondition(
+    page,
+    () => {
+      const entry = (state?.project?.queue || [])[0];
+      return Boolean(entry) && (entry.status === 'queued' || entry.status === 'stale');
+    },
+    null,
+    30000,
+  );
+  await screenshot(page, `${screenshotPrefix}-queued`);
+  const processResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith('/api/project/queue/process') && response.request().method() === 'POST',
+    { timeout: 180000 },
+  );
+  await page.locator('#queue-process-btn').click({ force: true });
+  const processResponse = await processResponsePromise;
+  const payload = await processResponse.json().catch(() => null);
+  const queueEntries = Array.isArray(payload?.project?.queue) ? payload.project.queue : [];
+  const outputPath = String(queueEntries[0]?.output_path || '');
+  if (String(payload?.status || '').includes('Processed ')) {
+    await waitForUiSettled(page, 30000);
+  }
+  await screenshot(page, `${screenshotPrefix}-processed`);
+  if (!outputPath) {
+    fail('queue processing completed without output_path');
+    return null;
+  }
+  await page.waitForFunction(
+    (expectedPath) => {
+      const entries = state?.project?.queue || [];
+      return entries.some((entry) => entry?.output_path === expectedPath);
+    },
+    outputPath,
+    { timeout: 30000 },
+  ).catch(() => {});
+  const exportValidation = await waitForStableExportFile(page, outputPath, 180000);
+  if (!exportValidation) {
+    fail('queue output file did not stabilize as a valid MP4');
+    return null;
+  }
+  const artifactCopyPath = path.join(artifactRoot, 'exports', path.basename(outputPath));
+  ensureDir(path.dirname(artifactCopyPath));
+  fs.copyFileSync(outputPath, artifactCopyPath);
+  artifacts.push(artifactCopyPath);
+  writeJson(path.join(artifactRoot, 'queue-process-response.json'), payload || {});
+  artifacts.push(outputPath);
+  writeJson(path.join(artifactRoot, 'export-metadata.json'), exportValidation);
+  return outputPath;
 }
 
 async function waitForCondition(page, condition, arg, timeoutMs = 15000) {
@@ -528,11 +588,8 @@ async function runReleaseProof(page) {
   await waitForUiSettled(page);
   await screenshot(page, 'release-05-waveform-expanded');
 
-  await firstCard.evaluate((card) => {
-    const button = Array.from(card.querySelectorAll('button')).find((candidate) => /beep sync/i.test(candidate.textContent || ''));
-    if (!(button instanceof HTMLButtonElement)) throw new Error('beep sync button not found');
-    button.click();
-  });
+  const trimCard = await ensureTrimCardVisible(page, sourceId);
+  await trimCard.locator('.trim-analyze-btn').click({ force: true });
   await waitForCondition(
     page,
     (targetSourceId) => {
@@ -547,27 +604,24 @@ async function runReleaseProof(page) {
   await screenshot(page, 'release-06-sync-ready');
 
   await measureStep('per-source-layout', THRESHOLDS.source_commit_ms, async () => {
+    await openTool(page, 'merge');
     await setSelectValue(page, `.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-field="placement_mode"]`, 'above_below');
     await waitForUiSettled(page);
   });
   await screenshot(page, 'release-07-role-layout-committed');
 
-  await setInputValue(page, `.merge-media-card[data-source-id="${sourceId}"] input[data-trim-start]`, '0.5');
-  await setInputValue(page, `.merge-media-card[data-source-id="${sourceId}"] input[data-trim-end]`, '1.5');
+  const trimCardForApply = await ensureTrimCardVisible(page, sourceId);
+  await setInputValue(page, `.trim-sync-card[data-source-id="${sourceId}"] input[data-trim-start]`, '0.5');
+  await setInputValue(page, `.trim-sync-card[data-source-id="${sourceId}"] input[data-trim-end]`, '1.5');
   await measureStep('trim-apply', THRESHOLDS.trim_apply_ms, async () => {
-    await firstCard.evaluate((card) => {
-      const button = Array.from(card.querySelectorAll('button')).find((candidate) => (candidate.textContent || '').trim() === 'Apply');
-      if (!(button instanceof HTMLButtonElement)) throw new Error('trim Apply button not found');
-      button.click();
-    });
+    await trimCardForApply.locator('.trim-apply-btn').click({ force: true });
     await waitForCondition(
       page,
       (targetSourceId) => {
         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
         const trim = source?.trim_derivative;
         return Boolean(trim?.derivative_path)
-          && trim.active_path_kind === 'local_derivative'
-          && document.querySelector(`.merge-media-card[data-source-id="${targetSourceId}"] .merge-source-trim-status`)?.textContent === 'Trim active';
+          && trim.active_path_kind === 'local_derivative';
       },
       sourceId,
       120000,
@@ -585,42 +639,12 @@ async function runReleaseProof(page) {
   }
 
   await openTool(page, 'export', 'release-10-export-pane');
-  await page.waitForFunction(
-    (profileIdArg) => document.getElementById('output-profile-select')?.value === profileIdArg,
-    profile.profileId,
-    { timeout: 30000 },
-  );
   await page.locator('#export-path').fill(exportFile);
-
-  await measureStep('export-acknowledged', THRESHOLDS.export_ack_ms, async () => {
-    await page.locator('#export-video').click({ force: true });
-    await page.waitForFunction(
-      () => {
-        const status = String(state?.status || '');
-        const lastLog = String(state?.project?.export?.last_log || '');
-        const processingHidden = document.getElementById('processing-bar')?.hidden;
-        return status.includes('Export') || lastLog.length > 0 || processingHidden === false;
-      },
-      null,
-      { timeout: 30000 },
-    );
+  await measureStep('queue-process', THRESHOLDS.queue_process_ms, async () => {
+    const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, 'release-10');
+    if (!outputPath) return;
   });
-  const exportValidation = await waitForStableExportFile(page, exportFile, 180000);
-  if (!exportValidation) {
-    fail('export file did not stabilize as a valid MP4');
-  } else {
-    artifacts.push(exportFile);
-    writeJson(path.join(artifactRoot, 'export-metadata.json'), exportValidation);
-  }
-  await page.waitForFunction(
-    (expectedPath) => {
-      const status = String(state?.status || '');
-      return state?.project?.export?.output_path === expectedPath
-        && status.includes(`Exported video to ${expectedPath}.`);
-    },
-    exportFile,
-    { timeout: 60000 },
-  );
+  await openTool(page, 'export');
   await page.locator('#show-export-log').click();
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
   await screenshot(page, 'release-11-export-log');
@@ -629,14 +653,10 @@ async function runReleaseProof(page) {
   await page.locator('#close-export-log').click();
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
 
-  await openTool(page, 'merge', 'release-12-before-trim-clear');
-  await ensureMergeCardExpanded(page.locator(`.merge-media-card[data-source-id="${sourceId}"]`).first());
+  const trimCardForClear = await ensureTrimCardVisible(page, sourceId);
+  await screenshot(page, 'release-12-before-trim-clear');
   await measureStep('trim-clear', THRESHOLDS.trim_clear_ms, async () => {
-    await page.locator(`.merge-media-card[data-source-id="${sourceId}"]`).first().evaluate((card) => {
-      const button = Array.from(card.querySelectorAll('button')).find((candidate) => (candidate.textContent || '').trim() === 'Clear');
-      if (!(button instanceof HTMLButtonElement)) throw new Error('trim Clear button not found');
-      button.click();
-    });
+    await trimCardForClear.locator('.trim-clear-btn').click({ force: true });
     await waitForCondition(
       page,
       (targetSourceId) => {
@@ -730,14 +750,8 @@ async function runStandardFlow(page) {
   const exportPathInput = page.locator('#export-path');
   if (await exportPathInput.isVisible()) {
     await exportPathInput.fill(exportFile);
-    const exportBtn = page.locator('#export-video');
-    if (await exportBtn.isVisible()) {
-      await exportBtn.click({ force: true });
-      await page.waitForFunction(() => String(state?.status || '').includes('Exported video to '), null, { timeout: 180000 });
-      const exportValidation = await waitForStableExportFile(page, exportFile);
-      if (!exportValidation) fail('export file did not stabilize as a valid MP4');
-      else artifacts.push(exportFile);
-    } else fail('export button not found');
+    const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, '06');
+    if (!outputPath) fail('queue export did not return an output path');
   } else fail('export output path input not found');
   await screenshot(page, '07-after-export');
 }

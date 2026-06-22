@@ -581,6 +581,17 @@ class TimingChangeProposal:
 
 
 @dataclass(slots=True)
+class SecondarySourceAnalysis:
+    source_id: str = ""
+    beep_time_ms: int | None = None
+    sync_offset_ms: int = 0
+    analysis_status: str = "idle"
+    analysis_message: str = ""
+    sync_source: str = "manual"
+    waveform: list[float] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class AnalysisState:
     beep_time_ms_primary: int | None = None
     beep_time_ms_secondary: int | None = None
@@ -595,6 +606,7 @@ class AnalysisState:
     last_shotml_run_summary: dict[str, Any] = field(default_factory=dict)
     waveform_primary: list[float] = field(default_factory=list)
     waveform_secondary: list[float] = field(default_factory=list)
+    secondary_sources: list[SecondarySourceAnalysis] = field(default_factory=list)
     shots: list[ShotEvent] = field(default_factory=list)
     events: list[TimingEvent] = field(default_factory=list)
     detection_review_suggestions: list[dict[str, Any]] = field(default_factory=list)
@@ -1038,6 +1050,7 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
     primary_media = _video_from_dict(primary_media_data) if isinstance(primary_media_data, dict) else VideoAsset()
     added_media_data = data.get("added_media", [])
     added_media = [_merge_source_from_dict(item) for item in added_media_data] if isinstance(added_media_data, list) else []
+    analysis_data = data.get("analysis")
     return ProjectStage(
         id=str(data.get("id", uuid4().hex)),
         label=str(data.get("label", "")),
@@ -1046,10 +1059,7 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
         imported_stage_name=str(data.get("imported_stage_name", "")),
         primary_media=primary_media,
         added_media=added_media,
-        analysis=AnalysisState(
-            beep_time_ms_primary=data.get("analysis", {}).get("beep_time_ms_primary") if isinstance(data.get("analysis"), dict) else None,
-            sync_offset_ms=int((data.get("analysis") or {}).get("sync_offset_ms", 0)) if isinstance(data.get("analysis"), dict) else 0,
-        ),
+        analysis=_analysis_state_from_dict(analysis_data),
         scoring=_scoring_from_dict(data.get("scoring")) if isinstance(data.get("scoring"), dict) else ScoringState(),
         overlay=_overlay_from_dict(data.get("overlay")) if isinstance(data.get("overlay"), dict) else OverlaySettings(),
         popups=[],
@@ -2051,6 +2061,69 @@ def _timing_change_proposal_from_dict(data: dict[str, Any]) -> TimingChangePropo
     )
 
 
+def _secondary_source_analysis_from_dict(data: dict[str, Any]) -> SecondarySourceAnalysis:
+    payload = data if isinstance(data, dict) else {}
+    return SecondarySourceAnalysis(
+        source_id=str(payload.get("source_id", "") or ""),
+        beep_time_ms=(
+            None
+            if payload.get("beep_time_ms") in {None, ""}
+            else int(payload.get("beep_time_ms"))
+        ),
+        sync_offset_ms=int(payload.get("sync_offset_ms", 0)),
+        analysis_status=str(payload.get("analysis_status", "idle") or "idle"),
+        analysis_message=str(payload.get("analysis_message", "") or ""),
+        sync_source=str(payload.get("sync_source", "manual") or "manual"),
+        waveform=[float(item) for item in payload.get("waveform", [])],
+    )
+
+
+def _analysis_state_from_dict(data: dict[str, Any] | None) -> AnalysisState:
+    analysis_data = data if isinstance(data, dict) else {}
+    return AnalysisState(
+        beep_time_ms_primary=analysis_data.get("beep_time_ms_primary"),
+        beep_time_ms_secondary=analysis_data.get("beep_time_ms_secondary"),
+        analyzed_secondary_source_id=(
+            None
+            if analysis_data.get("analyzed_secondary_source_id") in {None, ""}
+            else str(analysis_data.get("analyzed_secondary_source_id"))
+        ),
+        secondary_analysis_status=str(analysis_data.get("secondary_analysis_status", "idle") or "idle"),
+        secondary_analysis_message=str(analysis_data.get("secondary_analysis_message", "") or ""),
+        secondary_sync_source=str(analysis_data.get("secondary_sync_source", "manual") or "manual"),
+        sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
+        detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
+        shotml_settings=_shotml_settings_from_dict(
+            analysis_data.get("shotml_settings"),
+            detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
+        ),
+        timing_change_proposals=[
+            _timing_change_proposal_from_dict(item)
+            for item in analysis_data.get("timing_change_proposals", [])
+            if isinstance(item, dict)
+        ],
+        last_shotml_run_summary=(
+            analysis_data.get("last_shotml_run_summary", {})
+            if isinstance(analysis_data.get("last_shotml_run_summary", {}), dict)
+            else {}
+        ),
+        waveform_primary=[float(item) for item in analysis_data.get("waveform_primary", [])],
+        waveform_secondary=[float(item) for item in analysis_data.get("waveform_secondary", [])],
+        secondary_sources=[
+            _secondary_source_analysis_from_dict(item)
+            for item in analysis_data.get("secondary_sources", [])
+            if isinstance(item, dict)
+        ],
+        shots=[_shot_from_dict(item) for item in analysis_data.get("shots", [])],
+        events=[_timing_event_from_dict(item) for item in analysis_data.get("events", [])],
+        detection_review_suggestions=[
+            item
+            for item in analysis_data.get("detection_review_suggestions", [])
+            if isinstance(item, dict)
+        ],
+    )
+
+
 def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
     shotml_time_ms = data.get("shotml_time_ms")
     shotml_confidence = data.get("shotml_confidence")
@@ -2153,47 +2226,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         primary_video=_video_from_dict(data.get("primary_video")),
         secondary_video=secondary_video,
         merge_sources=merge_sources,
-        analysis=AnalysisState(
-            beep_time_ms_primary=analysis_data.get("beep_time_ms_primary"),
-            beep_time_ms_secondary=analysis_data.get("beep_time_ms_secondary"),
-            analyzed_secondary_source_id=(
-                None
-                if analysis_data.get("analyzed_secondary_source_id") in {None, ""}
-                else str(analysis_data.get("analyzed_secondary_source_id"))
-            ),
-            secondary_analysis_status=str(analysis_data.get("secondary_analysis_status", "idle") or "idle"),
-            secondary_analysis_message=str(analysis_data.get("secondary_analysis_message", "") or ""),
-            secondary_sync_source=str(analysis_data.get("secondary_sync_source", "manual") or "manual"),
-            sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
-            detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
-            shotml_settings=_shotml_settings_from_dict(
-                analysis_data.get("shotml_settings"),
-                detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
-            ),
-            timing_change_proposals=[
-                _timing_change_proposal_from_dict(item)
-                for item in analysis_data.get("timing_change_proposals", [])
-                if isinstance(item, dict)
-            ],
-            last_shotml_run_summary=(
-                analysis_data.get("last_shotml_run_summary", {})
-                if isinstance(analysis_data.get("last_shotml_run_summary", {}), dict)
-                else {}
-            ),
-            waveform_primary=[
-                float(item) for item in analysis_data.get("waveform_primary", [])
-            ],
-            waveform_secondary=[
-                float(item) for item in analysis_data.get("waveform_secondary", [])
-            ],
-            shots=[_shot_from_dict(item) for item in analysis_data.get("shots", [])],
-            events=[_timing_event_from_dict(item) for item in analysis_data.get("events", [])],
-            detection_review_suggestions=[
-                item
-                for item in analysis_data.get("detection_review_suggestions", [])
-                if isinstance(item, dict)
-            ],
-        ),
+        analysis=_analysis_state_from_dict(analysis_data),
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", True)),
             ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),

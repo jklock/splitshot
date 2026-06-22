@@ -408,7 +408,9 @@ export function createMergePane({
   function renderMergeMediaList() {
     const list = $("merge-media-list");
     if (!list) return;
+    const syncLabel = $("sync-offset");
     const mergeSources = currentState()?.project?.merge_sources || [];
+    if (syncLabel) syncLabel.textContent = `${mergeSources.length} source${mergeSources.length === 1 ? "" : "s"}`;
     const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
     [...currentMergeSourceExpansion().keys()].forEach((sourceId) => {
       if (sourceId !== pipDefaultsSectionId && !validSourceIds.has(sourceId)) currentMergeSourceExpansion().delete(sourceId);
@@ -431,6 +433,8 @@ export function createMergePane({
         const header = documentObject.createElement("div");
         header.className = "merge-media-card-header";
         header.classList.add("section-header-with-toggle");
+        const copy = documentObject.createElement("div");
+        copy.className = "merge-media-card-copy";
         const title = documentObject.createElement("strong");
         title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
 
@@ -438,8 +442,8 @@ export function createMergePane({
         toggle.type = "button";
         toggle.className = "scoring-shot-toggle";
         toggle.textContent = expanded ? "v" : ">";
-        toggle.title = expanded ? "Hide added media controls" : "Show added media controls";
-        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} added media controls`);
+        toggle.title = expanded ? "Hide stage media controls" : "Show stage media controls";
+        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} stage media controls`);
         toggle.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -454,6 +458,7 @@ export function createMergePane({
 
         const remove = documentObject.createElement("button");
         remove.type = "button";
+        remove.className = "btn-sm btn-danger";
         remove.textContent = "Remove";
         remove.dataset.mergeSourceRemove = sourceId;
         remove.addEventListener("click", (event) => {
@@ -465,14 +470,14 @@ export function createMergePane({
 
         const headerActions = documentObject.createElement("div");
         headerActions.className = "merge-media-card-actions";
-        headerActions.append(remove);
-        header.append(toggle, title, headerActions);
-
+        headerActions.append(remove, toggle);
         const meta = documentObject.createElement("small");
         meta.className = "merge-media-card-meta";
         const mediaType = asset.is_still_image ? "Image" : "Video";
         const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
         meta.textContent = `${mediaType}${dimensions}`;
+        copy.append(title, meta);
+        header.append(copy, headerActions);
 
         const controls = documentObject.createElement("div");
         controls.className = "merge-source-controls";
@@ -626,7 +631,7 @@ export function createMergePane({
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
         body.hidden = !expanded;
-        body.append(meta, controls, syncLabel);
+        body.append(controls, syncLabel);
         card.append(header, body);
         syncMergeSourceControls(
           sourceId,

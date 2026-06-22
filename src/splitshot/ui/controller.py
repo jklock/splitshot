@@ -41,6 +41,7 @@ from splitshot.domain.models import (
     ProjectStage,
     QueueEntry,
     QueueStatus,
+    SecondarySourceAnalysis,
     _deserialize_output_profiles,
     _merge_source_from_dict,
     _normalize_frame_profile,
@@ -476,8 +477,84 @@ def _first_analyzable_merge_source(project: Project) -> MergeSource | None:
 
 
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
-    source = _first_analyzable_merge_source(project)
-    project.secondary_video = None if source is None else source.asset
+    _refresh_secondary_analysis_projection(project)
+
+
+def _secondary_analysis_entry_for_source(
+    project: Project,
+    source_id: str,
+    *,
+    create: bool = False,
+) -> SecondarySourceAnalysis | None:
+    for entry in project.analysis.secondary_sources:
+        if entry.source_id == source_id:
+            return entry
+    if not create:
+        return None
+    entry = SecondarySourceAnalysis(source_id=source_id)
+    project.analysis.secondary_sources.append(entry)
+    return entry
+
+
+def _prune_secondary_analysis_entries(project: Project) -> None:
+    valid_source_ids = {
+        source.id
+        for source in project.merge_sources
+        if _source_supports_secondary_analysis(source)
+    }
+    project.analysis.secondary_sources = [
+        entry
+        for entry in project.analysis.secondary_sources
+        if entry.source_id in valid_source_ids
+    ]
+
+
+def _refresh_secondary_analysis_projection(
+    project: Project,
+    *,
+    preferred_source_id: str | None = None,
+) -> None:
+    _prune_secondary_analysis_entries(project)
+    analyzable_sources = [
+        source for source in project.merge_sources
+        if _source_supports_secondary_analysis(source)
+    ]
+    if not analyzable_sources:
+        project.secondary_video = None
+        project.analysis.beep_time_ms_secondary = None
+        project.analysis.analyzed_secondary_source_id = None
+        project.analysis.secondary_analysis_status = "idle"
+        project.analysis.secondary_analysis_message = ""
+        project.analysis.waveform_secondary = []
+        return
+
+    selected_source = None
+    if preferred_source_id:
+        selected_source = next((source for source in analyzable_sources if source.id == preferred_source_id), None)
+    if selected_source is None and project.analysis.analyzed_secondary_source_id:
+        selected_source = next(
+            (source for source in analyzable_sources if source.id == project.analysis.analyzed_secondary_source_id),
+            None,
+        )
+    if selected_source is None:
+        selected_source = analyzable_sources[0]
+    entry = _secondary_analysis_entry_for_source(project, selected_source.id, create=False)
+    project.secondary_video = selected_source.asset
+    project.analysis.analyzed_secondary_source_id = selected_source.id
+    if entry is None:
+        project.analysis.beep_time_ms_secondary = None
+        project.analysis.secondary_analysis_status = "idle"
+        project.analysis.secondary_analysis_message = ""
+        project.analysis.secondary_sync_source = "manual"
+        project.analysis.waveform_secondary = []
+        project.analysis.sync_offset_ms = int(selected_source.sync_offset_ms)
+        return
+    project.analysis.beep_time_ms_secondary = entry.beep_time_ms
+    project.analysis.secondary_analysis_status = entry.analysis_status
+    project.analysis.secondary_analysis_message = entry.analysis_message
+    project.analysis.secondary_sync_source = entry.sync_source
+    project.analysis.waveform_secondary = list(entry.waveform)
+    project.analysis.sync_offset_ms = int(entry.sync_offset_ms)
 
 
 def _clear_secondary_analysis_state(project: Project, *, preserve_sync_offset: bool = False) -> None:
@@ -486,6 +563,7 @@ def _clear_secondary_analysis_state(project: Project, *, preserve_sync_offset: b
     project.analysis.secondary_analysis_status = "idle"
     project.analysis.secondary_analysis_message = ""
     project.analysis.waveform_secondary = []
+    project.analysis.secondary_sources = []
     if not preserve_sync_offset:
         project.analysis.sync_offset_ms = 0
         project.analysis.secondary_sync_source = "manual"
@@ -836,8 +914,18 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def analyze_secondary(self) -> None:
-        source = _first_analyzable_merge_source(self.project)
+    def analyze_secondary(self, source_id: str | None = None) -> None:
+        source = (
+            next(
+                (
+                    item for item in self.project.merge_sources
+                    if item.id == source_id and _source_supports_secondary_analysis(item)
+                ),
+                None,
+            )
+            if source_id
+            else _first_analyzable_merge_source(self.project)
+        )
         if source is None or not source.asset.path:
             _clear_secondary_analysis_state(self.project, preserve_sync_offset=True)
             self.project.secondary_video = None
@@ -846,18 +934,35 @@ class ProjectController(QObject):
         self.project.analysis.analyzed_secondary_source_id = source.id
         self.project.analysis.secondary_analysis_status = "running"
         self.project.analysis.secondary_analysis_message = "Analyzing PiP sync source."
+        running_entry = _secondary_analysis_entry_for_source(self.project, source.id, create=True)
+        if running_entry is not None:
+            running_entry.analysis_status = "running"
+            running_entry.analysis_message = "Analyzing PiP sync source."
         self._set_status("Analyzing secondary video and computing sync offset...")
         result = _run_analyze_video_audio(
             source.asset.path,
             self.project.analysis.shotml_settings.detection_threshold,
             self.project.analysis.shotml_settings,
         )
-        self.project.analysis.beep_time_ms_secondary = result.beep_time_ms
-        self.project.analysis.waveform_secondary = result.waveform
-        self.project.analysis.sync_offset_ms = compute_sync_offset(
+        sync_offset_ms = compute_sync_offset(
             self.project.analysis.beep_time_ms_primary,
-            self.project.analysis.beep_time_ms_secondary,
+            result.beep_time_ms,
         )
+        entry = _secondary_analysis_entry_for_source(self.project, source.id, create=True)
+        if entry is not None:
+            entry.beep_time_ms = result.beep_time_ms
+            entry.waveform = list(result.waveform)
+            entry.sync_offset_ms = int(sync_offset_ms)
+            entry.sync_source = "auto"
+            entry.analysis_status = "ready" if result.beep_time_ms is not None else "no_beep"
+            entry.analysis_message = (
+                "Secondary beep detected."
+                if result.beep_time_ms is not None
+                else "No secondary beep detected. Manual sync is still available."
+            )
+        self.project.analysis.beep_time_ms_secondary = result.beep_time_ms
+        self.project.analysis.waveform_secondary = list(result.waveform)
+        self.project.analysis.sync_offset_ms = int(sync_offset_ms)
         self.project.analysis.secondary_sync_source = "auto"
         self.project.analysis.secondary_analysis_status = "ready" if result.beep_time_ms is not None else "no_beep"
         self.project.analysis.secondary_analysis_message = (
@@ -866,6 +971,7 @@ class ProjectController(QObject):
             else "No secondary beep detected. Manual sync is still available."
         )
         source.sync_offset_ms = self.project.analysis.sync_offset_ms
+        _refresh_secondary_analysis_projection(self.project, preferred_source_id=source.id)
         self._set_status(
             "Secondary analysis complete."
             + ("" if result.beep_time_ms is None else f" Sync offset: {self.project.analysis.sync_offset_ms} ms.")
@@ -1743,6 +1849,47 @@ class ProjectController(QObject):
     def _can_reimport_practiscore_source(self) -> bool:
         return self._practiscore_source_path is not None and self._current_practiscore_selection_matches_source()
 
+    def _active_stage_practiscore_overrides(self) -> dict[str, object]:
+        stage = self.project.active_stage
+        scoring = self.project.scoring
+        imported = scoring.imported_stage
+        overrides: dict[str, object] = {}
+        if stage is None or imported is None:
+            return overrides
+        if scoring.match_type and scoring.match_type != imported.match_type:
+            overrides["match_type"] = scoring.match_type
+        if scoring.stage_number is not None and scoring.stage_number != imported.stage_number:
+            overrides["stage_number"] = scoring.stage_number
+        if scoring.competitor_name.strip() and scoring.competitor_name != imported.competitor_name:
+            overrides["competitor_name"] = scoring.competitor_name
+        if scoring.competitor_place is not None and scoring.competitor_place != imported.competitor_place:
+            overrides["competitor_place"] = scoring.competitor_place
+        if stage.label and stage.label not in {
+            imported.stage_name or "",
+            f"Stage {imported.stage_number}" if imported.stage_number is not None else "",
+        } and not re.fullmatch(r"Stage\s+\d+", stage.label):
+            overrides["label"] = stage.label
+        return overrides
+
+    def _restore_active_stage_practiscore_overrides(self, overrides: dict[str, object]) -> None:
+        if not overrides:
+            return
+        stage = self.project.active_stage
+        if stage is None:
+            return
+        if "label" in overrides:
+            stage.label = str(overrides["label"] or "").strip() or stage.label
+        scoring = self.project.scoring
+        if "match_type" in overrides:
+            scoring.match_type = str(overrides["match_type"] or "").strip()
+        if "stage_number" in overrides:
+            scoring.stage_number = max(1, int(overrides["stage_number"]))
+        if "competitor_name" in overrides:
+            scoring.competitor_name = str(overrides["competitor_name"] or "").strip()
+        if "competitor_place" in overrides:
+            scoring.competitor_place = int(overrides["competitor_place"])
+        self._sync_project_to_active_stage()
+
     def _import_practiscore_source(
         self,
         path: str,
@@ -1750,6 +1897,7 @@ class ProjectController(QObject):
         *,
         emit_change: bool = True,
     ) -> None:
+        active_stage_overrides = self._active_stage_practiscore_overrides()
         normalized = normalize_downloaded_practiscore_artifact(
             path,
             source_name=source_name,
@@ -1819,6 +1967,7 @@ class ProjectController(QObject):
         else:
             imported_box.enabled = True
         sync_overlay_legacy_custom_box_fields(self.project.overlay)
+        self._restore_active_stage_practiscore_overrides(active_stage_overrides)
         self.update_hit_factor()
         stage_label = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
         self._set_status(f"Imported PractiScore results for {stage_label}.")
@@ -1837,12 +1986,12 @@ class ProjectController(QObject):
                 sync_offset_ms=0,
             )
         )
-        self.project.merge.enabled = True
+        new_source = self.project.merge_sources[-1]
         _sync_secondary_video_from_merge_sources(self.project)
         active_stage_id = self.project.active_stage_id
-        if _first_analyzable_merge_source(self.project) is not None:
+        if _source_supports_secondary_analysis(new_source):
             self._set_status("Imported merge media.")
-            self.analyze_secondary()
+            self.analyze_secondary(new_source.id)
             self._sync_project_to_active_stage()
             self._mark_stage_queue_stale(active_stage_id)
             self.project.touch()
@@ -1865,16 +2014,13 @@ class ProjectController(QObject):
         removed_analyzed = self.project.analysis.analyzed_secondary_source_id == source_id
         _sync_secondary_video_from_merge_sources(self.project)
         active_stage_id = self.project.active_stage_id
+        _prune_secondary_analysis_entries(self.project)
         if removed_analyzed:
-            _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
             if _first_analyzable_merge_source(self.project) is not None:
-                self.analyze_secondary()
-                self._sync_project_to_active_stage()
-                self._mark_stage_queue_stale(active_stage_id)
-                self.project.touch()
-                self.project_changed.emit()
-                return
-            self.project.analysis.sync_offset_ms = 0
+                _refresh_secondary_analysis_projection(self.project)
+            else:
+                _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
+                self.project.analysis.sync_offset_ms = 0
         self._set_status("Removed merge media.")
         self._sync_project_to_active_stage()
         self._mark_stage_queue_stale(active_stage_id)
@@ -1947,6 +2093,49 @@ class ProjectController(QObject):
         entry.status = QueueStatus.STALE
         stage.queue_status = QueueStatus.STALE
 
+    def update_stage_metadata(
+        self,
+        stage_id: str,
+        *,
+        label: str | None = None,
+        stage_number: int | None | object = None,
+        competitor_name: str | None = None,
+        competitor_place: int | None | object = None,
+    ) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        changed = False
+        if label is not None:
+            next_label = str(label).strip()
+            if next_label and stage.label != next_label:
+                stage.label = next_label
+                changed = True
+        if stage_number is not None:
+            next_stage_number = None if stage_number == "" else max(1, int(stage_number))
+            if stage.scoring.stage_number != next_stage_number:
+                stage.scoring.stage_number = next_stage_number
+                changed = True
+        if competitor_name is not None:
+            next_competitor_name = str(competitor_name).strip()
+            if stage.scoring.competitor_name != next_competitor_name:
+                stage.scoring.competitor_name = next_competitor_name
+                changed = True
+        if competitor_place is not None:
+            next_competitor_place = None if competitor_place == "" else int(competitor_place)
+            if stage.scoring.competitor_place != next_competitor_place:
+                stage.scoring.competitor_place = next_competitor_place
+                changed = True
+        if not changed:
+            self._set_status(f"Stage {stage.label} details unchanged.")
+            return
+        if stage_id == self.project.active_stage_id:
+            self._sync_active_stage_to_project()
+        self._mark_stage_queue_stale(stage_id)
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Updated stage details for {stage.label}.")
+
     def import_stage_primary(self, stage_id: str, path: str) -> None:
         stage = self._stage_by_id(stage_id)
         if stage is None:
@@ -1981,11 +2170,79 @@ class ProjectController(QObject):
                     sync_offset_ms=0,
                 )
             )
-            stage.merge.enabled = True
         self._mark_stage_queue_stale(stage_id)
         self.project.touch()
         self.project_changed.emit()
         self._set_status(f"Imported added media for stage {stage.label}.")
+
+    def set_stage_primary_from_existing(self, stage_id: str, source_id: str) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+
+        def promote(primary_asset: VideoAsset, sources: list[MergeSource]) -> tuple[VideoAsset, list[MergeSource]]:
+            match = next((source for source in sources if source.id == source_id), None)
+            if match is None:
+                raise ValueError(f"Merge source {source_id} not found")
+            remaining = [source for source in sources if source.id != source_id]
+            next_primary = match.asset
+            if primary_asset.path:
+                remaining.append(
+                    MergeSource(
+                        asset=primary_asset,
+                        pip_size_percent=stage.merge.pip_size_percent,
+                        pip_x=stage.merge.pip_x,
+                        pip_y=stage.merge.pip_y,
+                        sync_offset_ms=0,
+                    )
+                )
+            return next_primary, remaining
+
+        if stage_id == self.project.active_stage_id:
+            next_primary, next_sources = promote(self.project.primary_video, list(self.project.merge_sources))
+            self.project.primary_video = next_primary
+            self.project.merge_sources = next_sources
+            self._remember_original_shots()
+            _refresh_secondary_analysis_projection(self.project)
+            self._sync_project_to_active_stage()
+        else:
+            next_primary, next_sources = promote(stage.primary_media, list(stage.added_media))
+            stage.primary_media = next_primary
+            stage.added_media = next_sources
+            valid_source_ids = {
+                source.id for source in stage.added_media if _source_supports_secondary_analysis(source)
+            }
+            stage.analysis.secondary_sources = [
+                entry for entry in stage.analysis.secondary_sources if entry.source_id in valid_source_ids
+            ]
+            if stage.analysis.analyzed_secondary_source_id not in valid_source_ids:
+                stage.analysis.analyzed_secondary_source_id = next(iter(valid_source_ids), None)
+                selected_entry = next(
+                    (
+                        entry
+                        for entry in stage.analysis.secondary_sources
+                        if entry.source_id == stage.analysis.analyzed_secondary_source_id
+                    ),
+                    None,
+                )
+                if selected_entry is None:
+                    stage.analysis.beep_time_ms_secondary = None
+                    stage.analysis.secondary_analysis_status = "idle"
+                    stage.analysis.secondary_analysis_message = ""
+                    stage.analysis.secondary_sync_source = "manual"
+                    stage.analysis.waveform_secondary = []
+                    stage.analysis.sync_offset_ms = 0
+                else:
+                    stage.analysis.beep_time_ms_secondary = selected_entry.beep_time_ms
+                    stage.analysis.secondary_analysis_status = selected_entry.analysis_status
+                    stage.analysis.secondary_analysis_message = selected_entry.analysis_message
+                    stage.analysis.secondary_sync_source = selected_entry.sync_source
+                    stage.analysis.waveform_secondary = list(selected_entry.waveform)
+                    stage.analysis.sync_offset_ms = int(selected_entry.sync_offset_ms)
+        self._mark_stage_queue_stale(stage_id)
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Set primary media for stage {stage.label}.")
 
     def clear_stage_primary(self, stage_id: str) -> None:
         stage = self._stage_by_id(stage_id)
@@ -2301,10 +2558,9 @@ class ProjectController(QObject):
         source = next((item for item in self.project.merge_sources if item.id == source_id), None)
         if source is None:
             raise ValueError("Merge source not found")
-        analyzed_source = _first_analyzable_merge_source(self.project)
-        if analyzed_source is None or analyzed_source.id != source_id:
-            raise ValueError("Only the first analyzable PiP video can be reanalyzed")
-        self.analyze_secondary()
+        if not _source_supports_secondary_analysis(source):
+            raise ValueError("Selected merge source does not support sync analysis")
+        self.analyze_secondary(source_id)
 
     def _apply_merge_source_trim(
         self,
@@ -2349,9 +2605,8 @@ class ProjectController(QObject):
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
         self._set_status("Cleared trim." if clear else f"Trimmed {source.asset.path} (start={start_s}, end={end_s}).")
-        analyzed_source = _first_analyzable_merge_source(self.project)
-        if analyzed_source is not None and analyzed_source.id == source_id:
-            self.analyze_secondary()
+        if _source_supports_secondary_analysis(source):
+            self.analyze_secondary(source_id)
             self._sync_project_to_active_stage()
             self.project.touch()
             self.project_changed.emit()
@@ -2373,9 +2628,9 @@ class ProjectController(QObject):
             self._apply_merge_source_trim(source, start_s=start_s, end_s=end_s, clear=clear)
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
-        analyzed_source = _first_analyzable_merge_source(self.project)
-        if analyzed_source is not None:
-            self.analyze_secondary()
+        for source in self.project.merge_sources:
+            if _source_supports_secondary_analysis(source):
+                self.analyze_secondary(source.id)
         self._sync_project_to_active_stage()
         self._set_status("Cleared trim for all added media." if clear else "Applied trim to all added media.")
         self.project.touch()
@@ -2426,8 +2681,9 @@ class ProjectController(QObject):
             if changed:
                 self.project.analysis.timing_change_proposals = []
             self.analyze_primary()
-            if _first_analyzable_merge_source(self.project) is not None:
-                self.analyze_secondary()
+            for source in self.project.merge_sources:
+                if _source_supports_secondary_analysis(source):
+                    self.analyze_secondary(source.id)
             return
         if changed:
             self.project.analysis.timing_change_proposals = []
@@ -2452,8 +2708,12 @@ class ProjectController(QObject):
     def rerun_shotml(self) -> None:
         if self.project.primary_video.path:
             self.analyze_primary()
-        if _first_analyzable_merge_source(self.project) is not None:
-            self.analyze_secondary()
+        analyzed_any = False
+        for source in self.project.merge_sources:
+            if _source_supports_secondary_analysis(source):
+                self.analyze_secondary(source.id)
+                analyzed_any = True
+        if analyzed_any:
             return
         self.project.touch()
         self._set_status("ShotML settings saved.")
@@ -3359,9 +3619,17 @@ class ProjectController(QObject):
             if source.id != source_id:
                 continue
             source.sync_offset_ms = int(offset_ms)
+            if _source_supports_secondary_analysis(source):
+                entry = _secondary_analysis_entry_for_source(self.project, source_id, create=True)
+                if entry is not None:
+                    entry.sync_offset_ms = source.sync_offset_ms
+                    entry.sync_source = "manual"
+                    if entry.analysis_status == "idle":
+                        entry.analysis_message = ""
             if self.project.analysis.analyzed_secondary_source_id == source_id or index == 0:
                 self.project.analysis.sync_offset_ms = source.sync_offset_ms
                 self.project.analysis.secondary_sync_source = "manual"
+                _refresh_secondary_analysis_projection(self.project, preferred_source_id=source_id)
             self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
             self.project.touch()
             self.project_changed.emit()
@@ -3507,10 +3775,15 @@ class ProjectController(QObject):
             for source in self.project.merge_sources:
                 if source.id == source_id:
                     source.sync_offset_ms = self.project.analysis.sync_offset_ms
+                    entry = _secondary_analysis_entry_for_source(self.project, source_id, create=True)
+                    if entry is not None:
+                        entry.sync_offset_ms = source.sync_offset_ms
+                        entry.sync_source = "manual"
                     break
         elif self.project.merge_sources:
             self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self.project.analysis.secondary_sync_source = "manual"
+        _refresh_secondary_analysis_projection(self.project, preferred_source_id=source_id)
         self._set_status(f"Adjusted sync offset to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
@@ -3522,10 +3795,15 @@ class ProjectController(QObject):
             for source in self.project.merge_sources:
                 if source.id == source_id:
                     source.sync_offset_ms = self.project.analysis.sync_offset_ms
+                    entry = _secondary_analysis_entry_for_source(self.project, source_id, create=True)
+                    if entry is not None:
+                        entry.sync_offset_ms = source.sync_offset_ms
+                        entry.sync_source = "manual"
                     break
         elif self.project.merge_sources:
             self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self.project.analysis.secondary_sync_source = "manual"
+        _refresh_secondary_analysis_projection(self.project, preferred_source_id=source_id)
         self._set_status(f"Sync offset set to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()

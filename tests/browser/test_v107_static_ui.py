@@ -30,8 +30,10 @@ def test_media_pane_js_exists():
     assert "createMediaPane" in source
     assert "selectStage" in source
     assert "openPrimaryFileInput" in source
-    assert "openMergeMediaInput" in source
-    assert "renderStageRows" in source
+    assert "openMediaAddMoreInput" in source
+    assert "renderPrimarySection" in source
+    assert "renderAddedSection" in source
+    assert "renderStageNavigatorRow" in source
 
 
 def test_queue_pane_js_exists():
@@ -43,7 +45,18 @@ def test_queue_pane_js_exists():
     assert "applySettingsToAll" in source
     assert "processAll" in source
     assert "processIntoOneFile" in source
-    assert "queueStatusBadge" in source
+    assert "queueStatusLabel" in source
+    assert "Process Many" in source
+    assert "queue-stage-card" in source
+
+
+def test_trim_sync_pane_js_exists():
+    trim_js = STATIC_ROOT / "panes" / "trim-sync-pane.js"
+    assert trim_js.exists()
+    source = trim_js.read_text()
+    assert "createTrimSyncPane" in source
+    assert "trim-source-card" in source
+    assert "trim-bulk-grid" in source
 
 
 def test_app_js_imports_media_and_queue():

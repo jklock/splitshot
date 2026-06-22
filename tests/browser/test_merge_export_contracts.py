@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import re
 import urllib.request
+from types import SimpleNamespace
 from pathlib import Path
 
+from splitshot.browser.state import browser_state
 from splitshot.browser.server import BrowserControlServer
-from splitshot.domain.models import MergeLayout, MergeSource
+from splitshot.domain.models import MergeLayout, MergeSource, ProjectStage, SecondarySourceAnalysis, VideoAsset
 from splitshot.media.probe import probe_video
 from splitshot.ui.controller import ProjectController
 
@@ -52,8 +54,6 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
-    export_click = shell_runtime_source[shell_runtime_source.index('$("export-video").addEventListener("click"') :]
-    export_click = export_click[: export_click.index('$("show-export-log")')]
 
     assert 'import { createMergePane } from "./panes/merge-pane.js";' in source
     assert 'import { createExportPane } from "./panes/export-pane.js";' in source
@@ -66,13 +66,8 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in move_drag_body
     assert "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
     assert 'callApi("/api/merge/source"' not in drag_body
-    assert 'const path = requireValue("export-path", "Output video path");' in export_click
-    assert 'setExportPathDraft(path);' in export_click
-    assert 'const payload = buildExportPayload(path);' in export_click
-    assert 'applyExportDraft(payload);' in export_click
-    assert 'cancelPendingExportDrafts();' in export_click
-    assert "await flushPendingMergeSourceCommits();" in export_click
-    assert 'await callApi("/api/export", payload);' in export_click
+    assert '$("export-video").addEventListener("click"' not in shell_runtime_source
+    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in shell_runtime_source
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
     assert 'state.project.export.last_error = null;' in _function_body(source, "clearCurrentExportLogState")
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
@@ -224,6 +219,119 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         assert captured == [[(first_id, 46, 0.3, 0.7, 0.4, 140), (second_id, 58, 0.12, 0.22, 0.85, -90)]]
     finally:
         server.shutdown()
+
+
+def test_added_media_import_does_not_enable_merge_and_tracks_each_secondary_waveform(
+    synthetic_video_factory,
+    monkeypatch,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="merge-audit-primary", resolution=(320, 180)))
+    second_path = Path(synthetic_video_factory(name="merge-audit-second", resolution=(320, 180)))
+    third_path = Path(synthetic_video_factory(name="merge-audit-third", resolution=(320, 180)))
+    controller = ProjectController()
+    controller.project.primary_video = probe_video(primary_path)
+    controller.project.merge.enabled = False
+
+    analysis_runs: list[str] = []
+
+    def fake_analyze(path: str, threshold: float, settings) -> SimpleNamespace:
+        analysis_runs.append(path)
+        index = len(analysis_runs)
+        return SimpleNamespace(
+            beep_time_ms=1000 + (index * 25),
+            waveform=[0.1 * index, 0.2 * index, 0.3 * index],
+            shots=[],
+            review_suggestions=[],
+            sample_rate=22050,
+        )
+
+    monkeypatch.setattr("splitshot.ui.controller._run_analyze_video_audio", fake_analyze)
+    monkeypatch.setattr("splitshot.ui.controller.compute_sync_offset", lambda primary, secondary: int((secondary or 0) - (primary or 0)))
+
+    controller.add_merge_source(str(second_path))
+    controller.add_merge_source(str(third_path))
+
+    assert controller.project.merge.enabled is False
+    assert [entry.source_id for entry in controller.project.analysis.secondary_sources] == [
+        source.id for source in controller.project.merge_sources
+    ]
+    assert controller.project.analysis.analyzed_secondary_source_id == controller.project.merge_sources[-1].id
+    assert controller.project.analysis.waveform_secondary == [0.2, 0.4, 0.6]
+    assert [entry.sync_offset_ms for entry in controller.project.analysis.secondary_sources] == [1025, 1050]
+
+
+def test_stage_set_primary_promotes_existing_added_media(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="stage-primary-base", resolution=(320, 180)))
+    second_path = Path(synthetic_video_factory(name="stage-primary-second", resolution=(320, 180)))
+    third_path = Path(synthetic_video_factory(name="stage-primary-third", resolution=(320, 180)))
+    controller = ProjectController()
+    stage = ProjectStage(label="Stage 1", order_index=1)
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller.project.primary_video = probe_video(primary_path)
+    controller.project.merge_sources = [
+        MergeSource(asset=probe_video(second_path), sync_offset_ms=25),
+        MergeSource(asset=probe_video(third_path), sync_offset_ms=50),
+    ]
+    controller._sync_project_to_active_stage()
+    promote_id = controller.project.merge_sources[1].id
+
+    controller.set_stage_primary_from_existing(stage.id, promote_id)
+
+    assert controller.project.primary_video.path == str(third_path)
+    assert controller.project.active_stage.primary_media.path == str(third_path)
+    added_paths = [source.asset.path for source in controller.project.merge_sources]
+    assert str(third_path) not in added_paths
+    assert str(primary_path) in added_paths
+    assert len(controller.project.merge_sources) == 2
+
+
+def test_browser_state_exposes_all_secondary_waveforms() -> None:
+    controller = ProjectController()
+    controller.project.analysis.beep_time_ms_primary = 1000
+    controller.project.primary_video.path = "/tmp/primary.mp4"
+    controller.project.merge.enabled = False
+    controller.project.merge_sources = [
+        MergeSource(asset=VideoAsset(path="/tmp/added-one.mp4", duration_ms=1000, width=320, height=180, media_kind="video")),
+        MergeSource(asset=VideoAsset(path="/tmp/added-two.mp4", duration_ms=1000, width=320, height=180, media_kind="video")),
+    ]
+    controller.project.merge_sources[0].asset.media_kind = "video"
+    controller.project.merge_sources[0].asset.is_still_image = False
+    controller.project.merge_sources[1].asset.media_kind = "video"
+    controller.project.merge_sources[1].asset.is_still_image = False
+    controller.project.analysis.secondary_sources = [
+        SecondarySourceAnalysis(
+            source_id=controller.project.merge_sources[0].id,
+            beep_time_ms=1020,
+            sync_offset_ms=20,
+            analysis_status="ready",
+            analysis_message="Secondary beep detected.",
+            sync_source="auto",
+            waveform=[0.1, 0.2],
+        ),
+        SecondarySourceAnalysis(
+            source_id=controller.project.merge_sources[1].id,
+            beep_time_ms=980,
+            sync_offset_ms=-20,
+            analysis_status="ready",
+            analysis_message="Secondary beep detected.",
+            sync_source="auto",
+            waveform=[0.3, 0.4, 0.5],
+        ),
+    ]
+    controller.project.analysis.analyzed_secondary_source_id = controller.project.merge_sources[1].id
+    controller.project.analysis.waveform_secondary = [0.3, 0.4, 0.5]
+    controller.project.analysis.sync_offset_ms = -20
+
+    payload = browser_state(controller.project, "Ready.")
+    merge_sources = payload["project"]["merge_sources"]
+
+    assert [item["waveform_sample_count"] for item in merge_sources] == [2, 3]
+    assert all(item["supports_sync_analysis"] is True for item in merge_sources)
+    assert payload["project"]["analysis"]["secondary_sources"][0]["source_id"] == controller.project.merge_sources[0].id
+    assert payload["project"]["analysis"]["secondary_sources"][1]["source_id"] == controller.project.merge_sources[1].id
 
 
 def test_export_path_preset_and_custom_mode_contract_persists(tmp_path: Path) -> None:

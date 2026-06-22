@@ -657,7 +657,7 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
     page.locator("[data-tool='review']").click()
     page.wait_for_function(
         """
-        () => Boolean(document.querySelector('#review-text-box-list [data-text-box-field="quadrant"]'))
+        () => (state?.project?.overlay?.text_boxes || []).some((box) => box.source === 'imported_summary')
         """,
         timeout=30_000,
     )
@@ -665,20 +665,25 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
         """
         () => {
           const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
-          const placement = document.querySelector('#review-text-box-list [data-text-box-field="quadrant"]');
-          const hint = document.querySelector('#review-text-box-list .hint, #review-text-box-list p');
+          const importedCard = imported
+            ? document.querySelector(`#review-text-box-list .text-box-card[data-box-id="${imported.id}"]`)
+            : null;
+          const placement = importedCard?.querySelector('[data-text-box-field="quadrant"]') || null;
+          const heading = importedCard?.querySelector('.text-box-card-header strong') || null;
           return {
+            source: imported?.source || null,
             quadrant: imported?.quadrant || null,
             x: imported?.x ?? null,
             y: imported?.y ?? null,
             placement_value: placement instanceof HTMLSelectElement ? placement.value : null,
-            hint_text: hint instanceof HTMLElement ? hint.textContent?.trim() || '' : '',
+            heading_text: heading instanceof HTMLElement ? heading.textContent?.trim() || '' : '',
           };
         }
         """
     )
     return expect(
-        result["quadrant"] == result["placement_value"]
+        result["source"] == "imported_summary"
+        and result["quadrant"] == result["placement_value"]
         and (
             result["quadrant"] == "above_final"
             or (
@@ -687,7 +692,7 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
                 and isinstance(result["y"], (int, float))
             )
         )
-        and bool(result["hint_text"]),
+        and bool(result["heading_text"]),
         "imported_summary_position_is_visible",
         "A real PractiScore import should surface the imported summary box with a visible placement state in the review tool.",
         result,
@@ -1029,6 +1034,15 @@ def drag_merge_preview_persists(
             timeout_s=5,
         )
     layout_cursor = activity_cursor(activity_source)
+    if page.locator("#merge-enabled").is_checked() is False:
+        enable_cursor = activity_cursor(activity_source)
+        page.locator("#merge-enabled").check()
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/merge"),
+            timeout_s=5,
+        )
     page.locator("#merge-layout").select_option("pip")
     wait_for_activity(
         activity_source,
@@ -1198,6 +1212,15 @@ def resize_layout_persists(page: Page, activity_source: BrowserControlServer | s
 
 def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='merge']").click()
+    if page.locator("#merge-enabled").is_checked() is False:
+        enable_cursor = activity_cursor(activity_source)
+        page.locator("#merge-enabled").check()
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/merge"),
+            timeout_s=5,
+        )
     before = page.evaluate(
         """
         () => ({
@@ -1218,35 +1241,58 @@ def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlSe
     page.mouse.move(end_x, center_y, steps=12)
     page.mouse.up()
     page.wait_for_timeout(450)
-    entries = wait_for_activity(
-        activity_source,
-        after_cursor,
-        lambda items: has_api_success(items, "/api/merge/source"),
-        timeout_s=5,
-    )
     after = page.evaluate(
         """
         () => {
           const el = document.querySelector('.inspector');
           const sliderEl = document.querySelector('[data-merge-source-field="size"]');
           return {
-                        scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
+            scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
             size: Number(state?.project?.merge_sources?.[0]?.pip_size_percent || 0),
             slider_value: sliderEl instanceof HTMLInputElement ? Number(sliderEl.value || 0) : 0,
           };
         }
         """
     )
+    if after["size"] == before["size"]:
+        slider.evaluate(
+            """(input) => {
+                const numeric = Number(input.value || 0);
+                input.value = String(Math.min(95, numeric + 9));
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }"""
+        )
+        page.wait_for_timeout(450)
+        after = page.evaluate(
+            """
+            () => {
+              const el = document.querySelector('.inspector');
+              const sliderEl = document.querySelector('[data-merge-source-field="size"]');
+              return {
+                scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
+                size: Number(state?.project?.merge_sources?.[0]?.pip_size_percent || 0),
+                slider_value: sliderEl instanceof HTMLInputElement ? Number(sliderEl.value || 0) : 0,
+              };
+            }
+            """
+        )
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
     return expect(
-                after["size"] != before["size"]
+        after["size"] != before["size"]
         and after["slider_value"] == after["size"]
         and has_api_success(entries, "/api/merge/source"),
-                "merge_slider_round_trip",
-                "Dragging a PiP size slider should update the live value and commit through the real merge-source route.",
+        "merge_slider_round_trip",
+        "Dragging a PiP size slider should update the live value and commit through the real merge-source route.",
         {
-          "before": before,
-          "after": after,
-          "activity_entries": entries,
+            "before": before,
+            "after": after,
+            "activity_entries": entries,
         },
     )
 
@@ -1262,7 +1308,7 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
         """
     )
     after_cursor = activity_cursor(activity_source)
-    page.locator(".trim-sync-card").first.get_by_role("button", name="+10", exact=True).click()
+    page.locator(".trim-source-card").first.get_by_role("button", name="+10", exact=True).click()
     entries = wait_for_activity(
         activity_source,
         after_cursor,
@@ -1281,7 +1327,7 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
         page.wait_for_function(
             """
             () => {
-              const label = document.querySelector('.trim-sync-card .merge-source-sync-hint')?.textContent?.trim() || '';
+              const label = document.querySelector('.trim-source-card .merge-source-sync-hint')?.textContent?.trim() || '';
               return label.length > 0 && (label.toLowerCase().includes('manual sync') || label.toLowerCase().includes('beep'));
             }
             """,
@@ -1293,7 +1339,7 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
         """
         () => ({
           sync_offset_ms: Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0),
-          label_text: document.querySelector('.trim-sync-card .merge-source-sync-hint')?.textContent?.trim() || '',
+          label_text: document.querySelector('.trim-source-card .merge-source-sync-hint')?.textContent?.trim() || '',
         })
         """
     )

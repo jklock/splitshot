@@ -836,8 +836,10 @@ class BrowserControlServer:
                     "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
                     "/api/project/select-stage": self._select_stage,
+                    "/api/project/stage/update": self._update_stage_metadata,
                     "/api/project/stage/import-primary": self._import_stage_primary,
                     "/api/project/stage/import-added": self._import_stage_added,
+                    "/api/project/stage/set-primary": self._set_stage_primary,
                     "/api/project/stage/clear-primary": self._clear_stage_primary,
                     "/api/project/stage/remove-added": self._remove_stage_added,
                     "/api/project/queue/add": self._add_to_queue,
@@ -1132,6 +1134,26 @@ class BrowserControlServer:
                         None
                         if payload.get("competitor_place") in {None, ""}
                         else int(payload["competitor_place"])
+                    ),
+                )
+
+            def _update_stage_metadata(self, payload: dict[str, Any]) -> None:
+                raw_competitor_place = payload.get("competitor_place")
+                controller.update_stage_metadata(
+                    str(payload.get("stage_id", "")),
+                    label=None if payload.get("label") is None else str(payload.get("label", "")),
+                    stage_number=(
+                        ""
+                        if payload.get("stage_number") == ""
+                        else None if payload.get("stage_number") is None else int(payload["stage_number"])
+                    ),
+                    competitor_name=(
+                        None if payload.get("competitor_name") is None else str(payload.get("competitor_name", ""))
+                    ),
+                    competitor_place=(
+                        ""
+                        if raw_competitor_place == ""
+                        else None if raw_competitor_place is None else int(raw_competitor_place)
                     ),
                 )
 
@@ -1530,10 +1552,12 @@ class BrowserControlServer:
             def _import_secondary(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()
                 controller.add_merge_source(str(payload["path"]))
+                controller.set_merge_enabled(True)
 
             def _import_merge(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()
                 controller.add_merge_source(str(payload["path"]))
+                controller.set_merge_enabled(True)
 
             def _remove_merge_source(self, payload: dict[str, Any]) -> None:
                 source_id = payload.get("source_id") or payload.get("id")
@@ -1905,6 +1929,14 @@ class BrowserControlServer:
                     raise ValueError("stage_id is required")
                 server._bump_media_url_token()
                 controller.clear_stage_primary(stage_id)
+
+            def _set_stage_primary(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                source_id = str(payload.get("source_id") or payload.get("id") or "")
+                if not stage_id or not source_id:
+                    raise ValueError("stage_id and source_id are required")
+                server._bump_media_url_token()
+                controller.set_stage_primary_from_existing(stage_id, source_id)
 
             def _remove_stage_added(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")

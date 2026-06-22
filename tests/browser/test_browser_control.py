@@ -94,9 +94,11 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/output-profiles/render",
     "/api/project/probe",
     "/api/project/select-stage",
+    "/api/project/stage/update",
     "/api/project/stage/import-primary",
     "/api/project/stage/import-added",
     "/api/project/stage/clear-primary",
+    "/api/project/stage/set-primary",
     "/api/project/stage/remove-added",
     "/api/project/queue/add",
     "/api/project/queue/remove",
@@ -270,8 +272,38 @@ def test_active_stage_media_edits_mark_queued_stage_stale(synthetic_video_factor
     assert controller.project.queue[0].status == QueueStatus.STALE
     assert controller.project.active_stage is not None
     assert controller.project.active_stage.queue_status == QueueStatus.STALE
-    assert len(controller.project.merge_sources) == 1
-    assert len(controller.project.active_stage.added_media) == 1
+
+
+def test_stage_metadata_update_route_updates_active_stage_context() -> None:
+    controller = ProjectController()
+    stage = ProjectStage(label="Stage 1", order_index=1)
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(
+            f"{server.url}api/project/stage/update",
+            {
+                "stage_id": stage.id,
+                "label": "Bay 1",
+                "stage_number": 2,
+                "competitor_name": "Test Shooter",
+                "competitor_place": 4,
+            },
+        )
+    finally:
+        server.shutdown()
+
+    stage_payload = state["project"]["stages"][0]
+    assert stage_payload["label"] == "Bay 1"
+    assert stage_payload["scoring"]["stage_number"] == 2
+    assert stage_payload["scoring"]["competitor_name"] == "Test Shooter"
+    assert stage_payload["scoring"]["competitor_place"] == 4
+    assert state["project"]["scoring"]["stage_number"] == 2
+    assert state["project"]["scoring"]["competitor_name"] == "Test Shooter"
 
 
 def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:

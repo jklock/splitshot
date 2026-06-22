@@ -33,7 +33,8 @@ npm start
 | `npm run dev` | Launch Electron without rebuilding the Python bundle first |
 | `npm start` | Rebuild the bundle, then launch Electron |
 | `npm run check` | Validate the Python bundle without launching Electron |
-| `npm run build:mac` | Production signed DMG (macOS) |
+| `npm run build:mac` | Production DMG using explicit signing/notarization env (macOS) |
+| `npm run build:mac:local` | Export the local login-keychain identity, build a local signed DMG, and install `/Applications/SplitShot.app` |
 | `npm run build:win` | Production NSIS installer (Windows) |
 | `npm run build:linux` | Production AppImage (Linux) |
 | `npm test` | Run the Electron smoke test entrypoints when invoked directly in the package environment |
@@ -91,3 +92,5 @@ The Electron packaging and test workflows are split by platform:
 - platform smoke and test coverage in `.github/workflows/test-*.yml`
 
 macOS is the signed/notarized release path. Windows and Linux have configured packaging and smoke coverage, but their release flow does not use the macOS signing/notarization stack.
+
+For local macOS parity, prefer `npm run build:mac:local` from the repository root. It mirrors the CI certificate import path by exporting the current login-keychain signing identity to a temporary `.p12`, feeding that through `CSC_LINK`, disabling notarization only when Apple notarization credentials are absent, and installing the generated DMG app into `/Applications`.

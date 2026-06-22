@@ -87,6 +87,20 @@ export function createApiRuntime({
     return true;
   }
 
+  async function parseJsonResponse(response, path) {
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const bodyText = await response.text();
+    if (!contentType.includes("application/json")) {
+      const preview = bodyText.trim().slice(0, 120) || "<empty>";
+      throw new Error(`Expected JSON from ${path}, got ${contentType || "unknown"}: ${preview}`);
+    }
+    try {
+      return JSON.parse(bodyText);
+    } catch (error) {
+      throw new Error(`Invalid JSON from ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   let apiRequestSequence = 0;
   const latestApiRequestSequenceByDomain = new Map();
 
@@ -121,7 +135,7 @@ export function createApiRuntime({
         };
     try {
       const response = await fetch(path, options);
-      const data = await response.json();
+      const data = await parseJsonResponse(response, path);
       if (isTrackedApiRequestStale(request)) {
         const responseDetail = {
           path,
@@ -193,7 +207,7 @@ export function createApiRuntime({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const result = await response.json();
+      const result = await parseJsonResponse(response, "/api/practiscore/dashboard/open");
       if (!response.ok || result.error) throw new Error(result.error || response.statusText);
       if (finishProcessing) finishProcessing(result.status || "Ready.");
       setStatus(result.status || "Opened PractiScore dashboard in your browser.");
@@ -216,7 +230,7 @@ export function createApiRuntime({
     const refreshRequestSequence = apiRequestSequence;
     try {
       const response = await fetch("/api/state");
-      const data = await response.json();
+      const data = await parseJsonResponse(response, "/api/state");
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
       if (refreshRequestSequence !== apiRequestSequence) return;
       applyRemoteState(data);

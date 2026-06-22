@@ -1,5 +1,7 @@
 export function createQueuePane({
   $ = (id) => document.getElementById(id),
+  documentObject = document,
+  windowObject = window,
   getState = () => null,
   setActiveTool = () => {},
   setActiveStageId = () => {},
@@ -9,6 +11,8 @@ export function createQueuePane({
   setStatus = () => {},
   sendKeepaliveJson = () => false,
 } = {}) {
+  const expansionKey = "splitshot.queue.stageExpanded";
+
   function currentState() {
     return getState() || {};
   }
@@ -29,85 +33,85 @@ export function createQueuePane({
     return project().active_stage_id || "";
   }
 
-  function stageAddedCount(stage) {
-    return Array.isArray(stage?.added_media) ? stage.added_media.length : 0;
+  function queuedCount() {
+    return queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
   }
 
   function findQueueEntry(stageId) {
-    return queueEntries().find((e) => e.stage_id === stageId) || null;
+    return queueEntries().find((entry) => entry.stage_id === stageId) || null;
   }
 
-  function queueStatusBadge(status) {
-    const colors = {
-      not_queued: "badge-neutral",
-      queued: "badge-info",
-      processing: "badge-warning",
-      complete: "badge-success",
-      failed: "badge-error",
-      stale: "badge-stale",
-    };
-    const labels = {
-      not_queued: "Not Queued",
+  function stageLabel(stage) {
+    return stage?.label || `Stage ${stage?.order_index || 1}`;
+  }
+
+  function stageAssetSummary(stage) {
+    const primaryName = stage?.primary_media?.path ? fileName(stage.primary_media.path) : "No primary";
+    const assetCount = (stage?.primary_media?.path ? 1 : 0) + (Array.isArray(stage?.added_media) ? stage.added_media.length : 0);
+    return `${primaryName} • ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
+  }
+
+  function queueStatusLabel(status) {
+    return {
+      not_queued: "Not queued",
       queued: "Queued",
       processing: "Processing",
       complete: "Complete",
       failed: "Failed",
-      stale: "Stale",
-    };
-    return `<span class="badge ${colors[status] || "badge-neutral"}">${labels[status] || status}</span>`;
+      stale: "Needs requeue",
+    }[status] || String(status || "Not queued");
   }
 
-  async function addToQueue() {
-    const stageId = activeStageId();
+  function isStageExpanded(stageId) {
+    try {
+      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
+      if (stored && typeof stored === "object" && stored[stageId] !== undefined) return Boolean(stored[stageId]);
+    } catch (_) {}
+    return false;
+  }
+
+  function setStageExpanded(stageId, expanded) {
+    try {
+      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
+      const next = { ...(stored && typeof stored === "object" ? stored : {}), [stageId]: expanded };
+      windowObject?.localStorage?.setItem(expansionKey, JSON.stringify(next));
+    } catch (_) {}
+  }
+
+  function toggleStage(stageId) {
+    setStageExpanded(stageId, !isStageExpanded(stageId));
+    render();
+  }
+
+  async function addToQueue(stageId = activeStageId()) {
     if (!stageId) return;
     activity("queue.add", { stageId });
-    const result = await callApi("/api/project/queue/add", {
-      method: "POST",
-      body: JSON.stringify({ stage_id: stageId }),
-    });
-    if (result) setStatus("Stage added to queue.");
+    const result = await callApi("/api/project/queue/add", { stage_id: stageId });
+    if (result) setStatus(`Queued ${stageLabel(stages().find((stage) => stage.id === stageId))}.`);
   }
 
   async function removeFromQueue(stageId) {
     if (!stageId) return;
     activity("queue.remove", { stageId });
-    await callApi("/api/project/queue/remove", {
-      method: "POST",
-      body: JSON.stringify({ stage_id: stageId }),
-    });
+    await callApi("/api/project/queue/remove", { stage_id: stageId });
   }
 
   async function applySettingsToAll() {
     activity("queue.apply-all");
-    await callApi("/api/project/queue/apply-all", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    setStatus("Settings applied to all stages.");
+    await callApi("/api/project/queue/apply-all", {});
+    setStatus("Applied the current stage template across the queue.");
   }
 
   async function processAll() {
     activity("queue.process");
     setStatus("Processing queued stages...");
-    await callApi("/api/project/queue/process", {
-      method: "POST",
-      body: JSON.stringify({ mode: "individual" }),
-    });
+    await callApi("/api/project/queue/process", { mode: "individual" });
   }
 
   async function processIntoOneFile() {
     activity("queue.process-combined");
-    setStatus("Processing combined export...");
-    await callApi("/api/project/queue/process", {
-      method: "POST",
-      body: JSON.stringify({ mode: "combined" }),
-    });
-  }
-
-  function editStage(stageId) {
-    if (!stageId) return;
-    selectStageFromQueue(stageId);
-    setActiveTool("media");
+    setStatus("Processing combined queue export...");
+    await callApi("/api/project/queue/process", { mode: "combined" });
   }
 
   function selectStageFromQueue(stageId) {
@@ -117,119 +121,113 @@ export function createQueuePane({
     setActiveStageId(stageId);
     sendKeepaliveJson("/api/project/select-stage", { active_stage_id: stageId });
     activity("queue.select-stage", { stageId });
+    render();
   }
 
-  function renderQueueRow(stage) {
-    const entry = findQueueEntry(stage.id);
-    const status = entry?.status || "not_queued";
-    const isActive = stage.id === activeStageId();
-    const primaryName = stage.primary_media?.path
-      ? fileName(stage.primary_media.path)
-      : "No primary media";
+  function editStage(stageId) {
+    if (!stageId) return;
+    activity("queue.edit-stage", { stageId, tool: "media" });
+    selectStageFromQueue(stageId);
+    setActiveTool("media");
+  }
 
+  function renderQueueStage(stage) {
+    const queueEntry = findQueueEntry(stage.id);
+    const status = queueEntry?.status || stage.queue_status || "not_queued";
+    const selected = stage.id === activeStageId();
+    const expanded = isStageExpanded(stage.id);
+    const canQueue = Boolean(stage?.primary_media?.path);
     return `
-      <tr class="queue-row ${isActive ? "queue-row-active" : ""}" data-stage-id="${stage.id}">
-        <td class="queue-stage">
-          <span class="stage-order">${stage.order_index}.</span>
-          <span>${stage.label || `Stage ${stage.order_index}`}</span>
-        </td>
-        <td class="queue-media">${primaryName}</td>
-        <td class="queue-media">${stageAddedCount(stage)}</td>
-        <td class="queue-status">${queueStatusBadge(status)}</td>
-        <td class="queue-actions">
-          <button class="btn-sm btn-ghost queue-edit-btn" type="button">Edit Stage</button>
-          ${status === "queued"
-            ? '<button class="btn-sm btn-danger queue-remove-btn" type="button">Remove</button>'
-            : ""}
-          ${status === "stale"
-            ? '<button class="btn-sm btn-warning queue-requeue-btn" type="button">Requeue</button>'
-            : ""}
-        </td>
-      </tr>`;
+      <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stage.id}">
+        <div class="queue-stage-header section-header-with-toggle">
+          <div class="queue-stage-copy">
+            <strong>${stageLabel(stage)}</strong>
+            <small>${stageAssetSummary(stage)}</small>
+          </div>
+          <div class="queue-stage-header-actions">
+            <span class="queue-status-pill queue-status-${status}">${queueStatusLabel(status)}</span>
+            <button class="scoring-shot-toggle queue-stage-toggle" type="button" data-stage-id="${stage.id}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "\u25BC" : "\u25B6"}</button>
+          </div>
+        </div>
+        <div class="queue-stage-body"${expanded ? "" : " hidden"}>
+          <div class="queue-stage-actions">
+            <button class="btn-sm btn-ghost queue-edit-btn" type="button" data-stage-id="${stage.id}">Edit Stage</button>
+            ${status === "queued" || status === "stale"
+              ? `<button class="btn-sm btn-danger queue-remove-btn" type="button" data-stage-id="${stage.id}">Remove</button>`
+              : `<button class="btn-sm btn-secondary queue-add-btn" type="button" data-stage-id="${stage.id}" ${canQueue ? "" : "disabled"}>${status === "stale" ? "Requeue" : "Queue"}</button>`}
+          </div>
+        </div>
+      </article>
+    `;
   }
 
-  function bindEvents() {
-    const table = $("queue-stage-table");
-    if (!table) return;
-
-    table.querySelectorAll(".queue-row").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("button")) return;
-        const stageId = row.dataset.stageId;
-        if (stageId) selectStageFromQueue(stageId);
-      });
-    });
-
-    table.querySelectorAll(".queue-edit-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const row = btn.closest(".queue-row");
-        const stageId = row?.dataset.stageId;
-        if (stageId) editStage(stageId);
-      });
-    });
-
-    table.querySelectorAll(".queue-remove-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const row = btn.closest(".queue-row");
-        const stageId = row?.dataset.stageId;
-        if (stageId) removeFromQueue(stageId);
-      });
-    });
-
-    const addBtn = $("queue-add-btn");
-    if (addBtn) addBtn.addEventListener("click", addToQueue);
-
-    const applyAllBtn = $("queue-apply-all-btn");
-    if (applyAllBtn) applyAllBtn.addEventListener("click", applySettingsToAll);
-
-    const processBtn = $("queue-process-btn");
-    if (processBtn) processBtn.addEventListener("click", processAll);
-
-    const combinedBtn = $("queue-combined-btn");
-    if (combinedBtn) combinedBtn.addEventListener("click", processIntoOneFile);
+  function bindEvents(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    pane.onclick = (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target) return;
+      const toggle = target.closest(".queue-stage-toggle");
+      if (toggle instanceof HTMLElement) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleStage(toggle.dataset.stageId || "");
+        return;
+      }
+      const editButton = target.closest(".queue-edit-btn");
+      if (editButton instanceof HTMLElement) {
+        editStage(editButton.dataset.stageId || "");
+        return;
+      }
+      const removeButton = target.closest(".queue-remove-btn");
+      if (removeButton instanceof HTMLElement) {
+        removeFromQueue(removeButton.dataset.stageId || "");
+        return;
+      }
+      const addButton = target.closest(".queue-add-btn");
+      if (addButton instanceof HTMLElement) {
+        addToQueue(addButton.dataset.stageId || "");
+        return;
+      }
+      if (target.closest(".queue-apply-all-btn")) {
+        applySettingsToAll();
+        return;
+      }
+      if (target.closest(".queue-process-btn")) {
+        processAll();
+        return;
+      }
+      if (target.closest(".queue-combined-btn")) {
+        processIntoOneFile();
+        return;
+      }
+      const card = target.closest("[data-queue-stage-id]");
+      if (card instanceof HTMLElement) {
+        selectStageFromQueue(card.dataset.queueStageId || "");
+      }
+    };
   }
 
   function render() {
     const pane = $("queue-pane");
     if (!pane) return;
-
-    const stageList = stages();
-    const stageRows = stageList.length
-      ? stageList.map((s) => renderQueueRow(s)).join("")
-      : '<tr><td colspan="5" class="empty-state">No stages.</td></tr>';
-
-    const queuedCount = queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
-
+    const count = queuedCount();
     pane.innerHTML = `
-      <div class="pane-section">
-        <div class="section-header">
+      <div class="pane-section queue-pane-shell">
+        <div class="section-header pane-title-row">
           <h3>Queue</h3>
-          <strong>${queuedCount} queued</strong>
+          <span class="pane-summary-token">${count} ready</span>
         </div>
-        <div class="queue-toolbar">
-          <button id="queue-add-btn" class="btn btn-primary" type="button">Add To Queue</button>
-          <button id="queue-apply-all-btn" class="btn btn-secondary" type="button">Apply Settings To All</button>
+        <div class="queue-stage-list">
+          ${stages().length ? stages().map((stage) => renderQueueStage(stage)).join("") : '<div class="empty-state">No stages.</div>'}
         </div>
-        <table id="queue-stage-table" class="stage-table">
-          <thead>
-            <tr>
-              <th>Stage</th>
-              <th>Primary Media</th>
-              <th>Added</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>${stageRows}</tbody>
-        </table>
-        <div class="queue-process-actions">
-          <button id="queue-process-btn" class="btn btn-primary" type="button">Process</button>
-          <button id="queue-combined-btn" class="btn btn-primary" type="button">Process Into 1 File</button>
+        <div class="queue-pane-actions">
+          <button id="queue-apply-all-btn" class="btn btn-secondary queue-apply-all-btn" type="button">Apply To All</button>
+          <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Many</button>
+          <button id="queue-combined-btn" class="btn btn-primary queue-combined-btn" type="button">Process Into 1 File</button>
         </div>
-      </div>`;
-    bindEvents();
+      </div>
+    `;
+    bindEvents(pane);
   }
 
   function mount() {
@@ -240,5 +238,6 @@ export function createQueuePane({
     render,
     mount,
     addToQueue,
+    toggleStage,
   });
 }

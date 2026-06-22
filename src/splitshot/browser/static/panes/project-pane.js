@@ -164,7 +164,55 @@ export function createProjectPane({
     return practiScoreSelectionValue(fallbackValue);
   }
 
+  function ensurePractiScoreSelectionControls() {
+    const summary = $("practiscore-import-summary");
+    if (!(summary instanceof HTMLElement)) return;
+    let grid = $("practiscore-selection-grid");
+    if (!(grid instanceof HTMLElement)) {
+      grid = documentObject.createElement("div");
+      grid.id = "practiscore-selection-grid";
+      grid.className = "control-grid project-practiscore-selection-grid";
+      [
+        ["match-stage-number", "Stage"],
+        ["match-competitor-name", "Competitor Name"],
+        ["match-competitor-place", "Competitor Place"],
+      ].forEach(([id, labelText]) => {
+        const label = documentObject.createElement("label");
+        label.textContent = labelText;
+        const select = documentObject.createElement("select");
+        select.id = id;
+        label.appendChild(select);
+        grid.appendChild(label);
+      });
+      summary.parentNode?.insertBefore(grid, summary);
+    }
+    const stageSelect = $("match-stage-number");
+    if (stageSelect instanceof HTMLSelectElement && !stageSelect.dataset.practiScoreBound) {
+      stageSelect.dataset.practiScoreBound = "true";
+      stageSelect.addEventListener("change", () => {
+        schedulePractiScoreContextApply();
+      });
+    }
+    const nameSelect = $("match-competitor-name");
+    if (nameSelect instanceof HTMLSelectElement && !nameSelect.dataset.practiScoreBound) {
+      nameSelect.dataset.practiScoreBound = "true";
+      nameSelect.addEventListener("change", () => {
+        syncPractiScoreSelectionFields("name");
+        schedulePractiScoreContextApply();
+      });
+    }
+    const placeSelect = $("match-competitor-place");
+    if (placeSelect instanceof HTMLSelectElement && !placeSelect.dataset.practiScoreBound) {
+      placeSelect.dataset.practiScoreBound = "true";
+      placeSelect.addEventListener("change", () => {
+        syncPractiScoreSelectionFields("place");
+        schedulePractiScoreContextApply();
+      });
+    }
+  }
+
   function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = "") {
+    ensurePractiScoreSelectionControls();
     const select = $(selectId);
     if (!(select instanceof HTMLSelectElement)) return;
     const optionValues = [...new Set((values || []).map((value) => practiScoreSelectionValue(value)).filter(Boolean))];
@@ -268,11 +316,15 @@ export function createProjectPane({
   }
 
   function readPractiScoreContextPayload() {
+    const scoring = currentState()?.project?.scoring || {};
+    const stageNumber = practiScoreSelectionValue($("match-stage-number")?.value);
+    const competitorName = practiScoreSelectionValue($("match-competitor-name")?.value);
+    const competitorPlace = practiScoreSelectionValue($("match-competitor-place")?.value);
     return {
-      match_type: $("match-type")?.value || "",
-      stage_number: $("match-stage-number")?.value ? Number($("match-stage-number").value) : "",
-      competitor_name: $("match-competitor-name")?.value.trim() || "",
-      competitor_place: normalizedPractiScorePlaceValue($("match-competitor-place")?.value) ?? "",
+      match_type: $("match-type")?.value || String(scoring.match_type || ""),
+      stage_number: stageNumber || (scoring.stage_number ?? ""),
+      competitor_name: competitorName || String(scoring.competitor_name || ""),
+      competitor_place: competitorPlace || (scoring.competitor_place ?? ""),
     };
   }
 
@@ -380,40 +432,28 @@ export function createProjectPane({
   }
 
   function renderPractiScoreImportSummary() {
+    ensurePractiScoreSelectionControls();
     const state = currentState();
     const imported = state.scoring_summary?.imported_stage;
     const stagedSource = state.practiscore_options?.source_name || "";
     const stagedMatchType = state.practiscore_options?.detected_match_type || "";
-    const stagedStages = Array.isArray(state.practiscore_options?.stage_numbers)
-      ? state.practiscore_options.stage_numbers
-      : [];
-    const stagedCompetitorCount = practiScoreCompetitors().length;
     const status = $("practiscore-status");
     if (!imported) {
       if (status) status.textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
       renderOwnedSummaryList("practiscore-import-summary", stagedSource ? [
-        ["Stage Start (Beep)", "--"],
-        ["Shots in Stage", stagedCompetitorCount > 0 ? "0" : "0"],
-        ["SS Stage Time", "--"],
-        ["PS Stage Time", "--"],
-        ["Video Length", "--"],
-        ["ShotML Confidence", "--"],
+        ["Name", "--"],
+        ["Place", "--"],
+        ["Match Time", "--"],
+        ["Division", "--"],
       ] : [], "project-practiscore-summary");
       return;
     }
-    const beepMs = state.project?.analysis?.beep_time_ms_primary;
-    const shots = Array.isArray(state.project?.analysis?.shots) ? state.project.analysis.shots : [];
-    const ssStageSeconds = ssStageTimeSeconds(state);
-    const psStageSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
-    const videoDurationMs = state.project?.primary_video?.duration_ms;
     if (status) status.textContent = `${formatMatchType(stagedMatchType)} Stage ${imported.stage_number} imported`;
     renderOwnedSummaryList("practiscore-import-summary", [
-      ["Stage Start (Beep)", splitSeconds(beepMs)],
-      ["Shots in Stage", shots.length > 0 ? String(shots.length) : "0"],
-      ["SS Stage Time", formatPractiScoreTime(ssStageSeconds)],
-      ["PS Stage Time", formatPractiScoreTime(psStageSeconds)],
-      ["Video Length", splitSeconds(videoDurationMs)],
-      ["ShotML Confidence", formatShotMlConfidenceSummary(shots)],
+      ["Name", imported.competitor_name || "--"],
+      ["Place", imported.competitor_place ? String(imported.competitor_place) : "--"],
+      ["Match Time", formatPractiScoreTime(imported.final_time ?? imported.raw_seconds)],
+      ["Division", imported.division || "--"],
     ], "project-practiscore-summary");
   }
 

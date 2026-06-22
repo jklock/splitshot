@@ -316,8 +316,7 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
                 _open_tool(page, "media")
-                assert page.locator("#media-import-primary-btn").is_disabled() is True
-                assert page.locator("#media-add-added-btn").is_disabled() is True
+                assert page.locator("#media-stage-list [data-stage-id]").count() == 0
 
                 page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'created-project.ssproj'))})")
                 page.wait_for_function("() => Boolean(state?.project?.path)")
@@ -326,8 +325,7 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 assert page.locator("#import-practiscore").is_disabled() is False
                 assert page.locator("#project-path").input_value() == "created-project.ssproj"
                 _open_tool(page, "media")
-                assert page.locator("#media-import-primary-btn").is_disabled() is True
-                assert page.locator("#media-add-added-btn").is_disabled() is True
+                assert page.locator("#media-stage-list [data-stage-id]").count() == 0
                 notices.extend(dialogs)
                 assert any("missing Input, CSV, Output" in message for message in notices)
             finally:
@@ -352,7 +350,45 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
 
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
+                assert page.locator("#practiscore-import-summary").text_content().strip()
+                page.locator("#import-practiscore").click()
+                page.wait_for_function("() => (state?.project?.stages || []).length > 0")
+                _open_tool(page, "media")
+                page.wait_for_function("() => document.querySelectorAll('#media-pane [data-stage-nav-id]').length > 0")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_renders_live_practiscore_context_selectors_after_import(tmp_path: Path) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'selector-proof.ssproj'))})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                page.locator("#practiscore-file-input").set_input_files(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"))
+                page.wait_for_function("() => state?.practiscore_options?.has_source === true")
+                page.wait_for_function(
+                    """
+                    () => Boolean(
+                      document.getElementById('match-stage-number')
+                      && document.getElementById('match-competitor-name')
+                      && document.getElementById('match-competitor-place')
+                    )
+                    """
+                )
+
+                assert page.locator("#match-stage-number").count() == 1
+                assert page.locator("#match-competitor-name").count() == 1
+                assert page.locator("#match-competitor-place").count() == 1
+                assert page.locator("#match-stage-number option").count() > 1
                 assert page.locator("#match-competitor-name option").count() > 1
+                assert page.locator("#match-competitor-place option").count() > 1
             finally:
                 browser.close()
     finally:
@@ -1169,7 +1205,7 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                 assert new_card.locator('input[data-text-box-field="x"]').is_disabled() is True
                 assert new_card.locator('input[data-text-box-field="y"]').is_disabled() is True
                 hint_text = (new_card.locator('[data-text-box-hint="true"]').text_content() or "").strip()
-                assert hint_text == "Locked to the shot stack. Disable this to edit placement directly."
+                assert hint_text == ""
 
                 if lock_checkbox.is_checked():
                                 lock_checkbox.evaluate(

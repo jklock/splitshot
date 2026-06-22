@@ -1283,7 +1283,7 @@ function withPreservedScrollState(elements, callback) {
 
 function scrollContainerForElement(element) {
   if (!(element instanceof HTMLElement)) return null;
-  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .inspector");
+  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .media-stage-nav-list, .queue-stage-list, .trim-source-list, .inspector");
 }
 
 function preserveElementViewportAnchor(elementOrResolver, callback) {
@@ -1313,7 +1313,7 @@ function resetInspectorHorizontalScroll() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
   inspector.scrollLeft = 0;
-  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .shotml-section, .pip-defaults-section").forEach((element) => {
+  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .media-stage-nav-list, .media-stage-nav-card, .queue-stage-list, .queue-stage-card, .trim-source-list, .trim-source-card, .shotml-section, .pip-defaults-section").forEach((element) => {
     if (element instanceof HTMLElement) element.scrollLeft = 0;
   });
 }
@@ -2355,7 +2355,7 @@ function ensureSectionToggle(section, expanded, onToggle) {
     toggle.type = "button";
     toggle.dataset.sectionToggle = "true";
     toggle.className = "scoring-shot-toggle";
-    actions.prepend(toggle);
+    actions.appendChild(toggle);
   }
   toggle.textContent = expanded ? "v" : ">";
   toggle.title = expanded ? "Hide section" : "Show section";
@@ -4916,6 +4916,8 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   if (tool === "scoring" && state?.project?.ui_state?.scoring_expanded) {
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
+  if (tool === "media" && mediaPane) mediaPane.render();
+  if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();
 }
@@ -4954,7 +4956,12 @@ async function postFile(path, file) {
   activity("file.selected", { path, name: file.name, size: file.size });
   try {
     const response = await fetch(path, { method: "POST", body: form });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from ${path}, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
     requestRender();
@@ -4978,7 +4985,12 @@ async function pickPath(kind, targetId, afterSelect = null) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, current: target.value }),
     });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/dialog/path, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     if (data.path) {
       target.value = data.path;
@@ -5007,7 +5019,12 @@ async function pickPathForElement(kind, target, targetLabel, afterSelect = null)
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, current: target.value }),
     });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/dialog/path, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     if (data.path) {
       target.value = data.path;
@@ -5031,7 +5048,12 @@ async function refresh() {
   runtimeBackbone?.bus?.emit?.("api.refresh", {});
   try {
     const response = await fetch("/api/state");
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/state, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
     requestRender();
@@ -9846,10 +9868,11 @@ mediaPane = createMediaPane({
   setActiveStageId: (stageId) => {
     if (state?.project) state.project.active_stage_id = stageId;
   },
+  setActiveTool,
   activity,
   callApi,
   openPrimaryFileInput: () => $("primary-file-input")?.click(),
-  openMergeMediaInput: () => $("merge-media-input")?.click(),
+  openMediaAddMoreInput: () => $("media-add-more-input")?.click(),
   fileName,
   splitSeconds,
   formatNumber,

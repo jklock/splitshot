@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from splitshot.domain.models import Project
+from splitshot.domain.models import Project, ProjectStage
 from splitshot.persistence.projects import save_project
 
 REPO = Path(__file__).resolve().parents[2]
@@ -34,7 +34,9 @@ def _free_port():
 
 
 def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
-    save_project(Project(name=name), project_path)
+    stage = ProjectStage(label="Stage 1", order_index=1, imported_stage_number=1)
+    project = Project(name=name, stages=[stage], active_stage_id=stage.id)
+    save_project(project, project_path)
     return project_path
 
 

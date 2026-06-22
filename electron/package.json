@@ -10,13 +10,14 @@
     "check": "node ../scripts/bundle-python.js check",
     "test:launch-intent": "node --test tests/launch-intent.test.js",
     "test:electron-smoke": "node tests/smoke.test.js",
-    "build:smoke:mac": "node ../scripts/bundle-python.js && electron-builder --mac dir --publish=never",
-    "build:smoke:win": "node ../scripts/bundle-python.js && electron-builder --win dir --publish=never",
-    "build:smoke:linux": "node ../scripts/bundle-python.js && electron-builder --linux dir --publish=never",
-    "build": "node ../scripts/bundle-python.js && electron-builder --publish=never",
-    "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac --publish=never",
-    "build:win": "node ../scripts/bundle-python.js && electron-builder --win --publish=never",
-    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux --publish=never"
+    "build:smoke:mac": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --mac dir --publish=never",
+    "build:smoke:win": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --win dir --publish=never",
+    "build:smoke:linux": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --linux dir --publish=never",
+    "build": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --publish=never",
+    "build:mac": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --mac --publish=never",
+    "build:mac:local": "uv run python ../scripts/release/build_local_macos.py",
+    "build:win": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --win --publish=never",
+    "build:linux": "node ../scripts/bundle-python.js && electron-builder --config electron-builder.config.cjs --linux --publish=never"
   },
   "repository": "github:jklock/splitshot",
   "author": "SplitShot",
@@ -25,69 +26,5 @@
     "electron": "^42.0.0",
     "electron-builder": "^26.0.0",
     "playwright": "^1.52.0"
-  },
-  "build": {
-    "appId": "studio.splitshot.app",
-    "productName": "SplitShot",
-    "directories": {
-      "output": "build"
-    },
-    "compression": "maximum",
-    "files": [
-      "main.js",
-      "preload.js",
-      "launch-intent.js"
-    ],
-    "extraResources": [
-      {
-        "from": "bundle",
-        "to": "bundle",
-        "filter": ["**/*"]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.sports",
-      "target": ["dmg"],
-      "icon": "assets/icon.icns",
-      "hardenedRuntime": true,
-      "notarize": true,
-      "gatekeeperAssess": false,
-      "forceCodeSigning": true,
-      "entitlements": "assets/entitlements.mac.plist",
-      "entitlementsInherit": "assets/entitlements.mac.plist",
-      "extendInfo": {
-        "CFBundleDocumentTypes": [
-          {
-            "CFBundleTypeName": "SplitShot Project",
-            "CFBundleTypeRole": "Editor",
-            "LSHandlerRank": "Owner",
-            "LSItemContentTypes": ["studio.splitshot.ssproj"]
-          }
-        ]
-      }
-    },
-    "win": {
-      "target": ["nsis", "dir"],
-      "icon": "assets/icon.ico"
-    },
-    "linux": {
-      "target": ["AppImage", "dir"],
-      "icon": "assets/icon.png",
-      "category": "Sports",
-      "mimeTypes": ["application/x-splitshot-project"]
-    },
-    "fileAssociations": [
-      {
-        "ext": "ssproj",
-        "name": "SplitShot Project",
-        "description": "SplitShot project bundle",
-        "mimeType": "application/x-splitshot-project",
-        "role": "Editor"
-      }
-    ],
-    "protocols": {
-      "name": "SplitShot",
-      "schemes": ["splitshot"]
-    }
   }
 }

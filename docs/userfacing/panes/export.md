@@ -1,12 +1,12 @@
 # Export Pane
 
-The Export pane configures export settings for the active stage. In the multi-stage workflow, its primary action is `Add To Queue`.
+The Export pane configures export settings for the active stage. It no longer renders a file directly.
 
 ## Use This Pane For
 
-- Setting the output path and render settings for the active stage.
+- Setting the output path template and render settings for the active stage.
 - Saving stage-local export settings before queueing.
-- Adding the active stage to the queue.
+- Checking the export log for the most recent processing run.
 
 ## Key Controls
 
@@ -20,23 +20,21 @@ The Export pane configures export settings for the active stage. In the multi-st
 | `Aspect ratio` / `Output Width` / `Output Height` | Set the output frame. |
 | `Frame rate` / `Video codec` / `Audio codec` | Set render codecs and playback rate. |
 | `Multi-Track` | Includes all loaded tracks in the rendered export when enabled. |
-| `Output path` | Sets the destination file path for the active stage output. |
+| `Output path template` | Sets the destination file path template for the active stage output. |
 | `Browse` | Opens the save dialog for the output path. |
-| `Add To Queue` | Queues the active stage instead of rendering immediately. |
-| `Export Video` | Runs an immediate single-stage export. |
+| `Show Log` | Opens the export log from the latest queue processing run. |
 
 ## Workflow
 
 1. Finish Compose, Trim, scoring, overlay, review, and metrics checks for the active stage.
-2. Set the output path and any export profile choices.
-3. Click `Add To Queue`.
-4. Move to [queue.md](queue.md) to process one or more queued stages.
+2. Set the output path template and any export profile choices.
+3. Move to [queue.md](queue.md) to queue the stage and process one or more outputs.
 
 ## Notes
 
 - Export settings are stage-local.
-- `Add To Queue` is the batch workflow entry point.
-- `Export Video` is still available when you want an immediate single-stage render.
+- Queue is the only export execution surface.
+- Review the stage here, then queue and process it downstream.
 
 ## Related Guides
 

@@ -145,15 +145,11 @@ id:export-badges
 id:export-export-log
 id:export-path
 id:export-preset
-id:export-video
 id:ffmpeg-preset
 id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
-id:match-competitor-name
-id:match-competitor-place
-id:match-stage-number
 id:match-type
 id:max-visible-shots
 id:markers-enable
@@ -161,6 +157,7 @@ id:markers-workbench-filter
 id:merge-enabled
 id:merge-layout
 id:merge-media-input
+id:media-add-more-input
 id:metrics-export-csv
 id:metrics-export-text
 id:new-project
@@ -336,6 +333,7 @@ class _InteractiveControlParser(HTMLParser):
         if tag == "input" and attr_map.get("type") == "hidden" and control_id not in {
             "primary-file-input",
             "merge-media-input",
+            "media-add-more-input",
             "practiscore-file-input",
         }:
             return

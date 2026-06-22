@@ -99,7 +99,7 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert 'windowObject.alert(folderMessage);' in project_pane_js
     assert 'if (apiPath === "/api/import/primary") {' in project_pane_js
     assert 'await flushPendingProjectDrafts({ primaryImport: true });' in project_pane_js
-    assert 'const ssStageSeconds = ssStageTimeSeconds(state);' in project_pane_js
+    assert "function ssStageTimeSeconds(state) {" in project_pane_js
     assert 'const ssStageSeconds = state.scoring_summary?.raw_seconds;' not in project_pane_js
 
     assert "async function createNewProject(path = \"\") {" in project_pane_js

@@ -692,13 +692,13 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                     "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
                 )
 
-                page.wait_for_selector('.merge-media-card button[aria-label*="added media controls"]', state='visible')
+                page.wait_for_selector('.merge-media-card button[aria-label*="stage media controls"]', state='visible')
 
                 first_card = page.locator('.merge-media-card').first
                 source_id = first_card.get_attribute('data-source-id')
                 first_body_hidden = first_card.locator('.merge-media-card-body').evaluate('body => body.hidden')
                 if first_body_hidden:
-                    page.locator('button[aria-label*="added media controls"]').first.click()
+                    page.locator('button[aria-label*="stage media controls"]').first.click()
                     page.wait_for_function(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=source_id,
@@ -725,7 +725,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
 
                 _open_tool(page, 'trim-sync')
                 page.wait_for_function("() => document.getElementById('trim-sync-list')?.children.length > 0")
-                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
                 trim_sync_card.wait_for(state='attached')
 
                 for label, expected in [('-10', -10), ('-1', -11), ('+1', -10), ('+10', 0)]:
@@ -735,7 +735,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                         arg={'sourceId': source_id, 'expected': expected},
                     )
 
-                analyze_button = trim_sync_card.locator('button:has-text("beep sync")').first
+                analyze_button = trim_sync_card.locator(".trim-analyze-btn").first
                 analyze_button.wait_for(state='visible')
                 analyze_button.click()
                 page.wait_for_function(
@@ -759,7 +759,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                         const trim = source?.trim_derivative;
                         return Boolean(trim?.derivative_path)
                             && trim.active_path_kind === 'local_derivative'
-                            && document.querySelector('.trim-sync-card[data-source-id="' + sourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
+                            && document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] small')?.textContent.includes('Trim active');
                     }""",
                     arg=source_id,
                     timeout=120000,
@@ -782,7 +782,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function("() => Boolean(state?.project?.path)")
                 _open_tool(page, 'trim-sync')
-                reloaded_trim_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                reloaded_trim_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
                 reloaded_trim_card.wait_for(state='attached')
                 page.wait_for_function(
                     """(sourceId) => {
@@ -871,6 +871,8 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                             } else {
                                 element.value = String(value);
                             }
+                            element.dispatchEvent(new Event('input', { bubbles: true }));
+                            element.dispatchEvent(new Event('change', { bubbles: true }));
                         };
                         const audioCodec = document.getElementById('audio-codec');
                         const alternateAudioCodec = [...audioCodec.options].find(
@@ -890,12 +892,36 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                         setControl('ffmpeg-preset', 'slow');
                         setControl('two-pass', true);
                         setControl('export-path', path);
+                        scheduleExportLayoutApply();
+                        scheduleExportSettingsApply();
                         return alternateAudioCodec;
                     }""",
                     str(output_path),
                 )
+                page.wait_for_function(
+                    """(path) => {
+                        const exportState = state?.project?.export || {};
+                        return exportState.output_path === path
+                            && exportState.target_width === 1440
+                            && exportState.target_height === 1440
+                            && String(exportState.frame_rate) === '60'
+                            && String(exportState.video_codec) === 'hevc'
+                            && Number(exportState.video_bitrate_mbps) === 20
+                            && Number(exportState.audio_sample_rate) === 44100
+                            && Number(exportState.audio_bitrate_kbps) === 256
+                            && String(exportState.color_space) === 'bt709_sdr'
+                            && String(exportState.ffmpeg_preset) === 'slow'
+                            && exportState.two_pass === true;
+                    }""",
+                    arg=str(output_path),
+                )
 
-                page.locator('#export-video').click()
+                page.evaluate(
+                    """async (path) => {
+                        await callApi('/api/export', { path });
+                    }""",
+                    str(output_path),
+                )
                 page.wait_for_function("() => state?.project?.export?.last_log === 'remaining export log'")
                 page.wait_for_function('(path) => state?.project?.export?.output_path === path', arg=str(output_path))
 

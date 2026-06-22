@@ -55,12 +55,11 @@ export function createStatusBarComponent({
     if ($("current-file")) $("current-file").textContent = primaryName;
     const statusCopy = $("status-copy");
     if (statusCopy) statusCopy.textContent = state.status;
-    const mergeCount = (state?.project?.merge_sources || []).length;
     if ($("project-path")) $("project-path").placeholder = "Please create / select project";
     syncControlValue($("project-path"), projectFolderLabel);
     if ($("media-badge")) {
       $("media-badge").textContent = state?.media?.primary_available
-        ? `Primary: ${primaryName}${mergeCount > 0 ? ` \u2022 ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
+        ? `Primary: ${primaryName}`
         : "No Video Selected";
     }
   }

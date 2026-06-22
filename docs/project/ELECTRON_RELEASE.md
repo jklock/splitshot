@@ -51,6 +51,8 @@ Run the local verifier on macOS:
 scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'your-password'
 ```
 
+The verifier accepts the legacy PKCS#12 encoding that macOS `security export` emits for locally exported identities.
+
 The script checks:
 
 - the `.p12` password
@@ -96,6 +98,14 @@ That script is the source-of-truth gate for:
 - packaged-app launch verification
 
 Do not use GitHub Actions as the first place to discover source-level or parity failures.
+
+For local macOS package parity, use:
+
+```bash
+npm --prefix electron run build:mac:local
+```
+
+That helper exports the active login-keychain signing identity to a temporary `.p12`, verifies it via temporary keychain import, runs the Electron mac build through `CSC_LINK`/`CSC_KEY_PASSWORD`, and installs the resulting DMG app into `/Applications/SplitShot.app`. If notarization credentials are absent locally, it disables notarization explicitly instead of silently producing a half-signed app path.
 
 For `v1.0.6`, preflight alone is not enough. The release gate also requires:
 

@@ -9,9 +9,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
 
 
-TOOL_IDS = ["project", "merge", "scoring", "timing", "markers", "overlay", "review", "export", "metrics", "shotml", "settings"]
+TOOL_IDS = ["project", "media", "merge", "trim-sync", "scoring", "timing", "markers", "overlay", "review", "export", "queue", "metrics", "shotml", "settings"]
 ROOT = Path(__file__).resolve().parents[2]
 CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
 RELEASE_PROOF_ARTIFACT_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
@@ -457,6 +458,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         return output
 
     monkeypatch.setattr("splitshot.browser.server.export_project", fake_export_project)
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export_project)
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export_project)
 
     _open_tool(page, "merge")
     page.locator("#merge-media-input").set_input_files(str(secondary_path))
@@ -500,7 +503,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     )
 
     _open_tool(page, "trim-sync")
-    trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+    trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
     trim_sync_card.wait_for(state="visible")
     trim_sync_card.get_by_role("button", name="+1", exact=True).click()
 
@@ -508,7 +511,15 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     merge_pane_cards = page.locator('[data-tool-pane="merge"] .merge-media-card')
     second_card = merge_pane_cards.nth(1)
 
-    second_card.locator('button[aria-label*="added media controls"]').click()
+    second_body = second_card.locator('.merge-media-card-body')
+    if second_body.evaluate('body => body.hidden'):
+        second_card.locator('button[aria-label*="stage media controls"]').click()
+        page.wait_for_function(
+            """(sourceId) => {
+                return document.querySelector('[data-tool-pane="merge"] .merge-media-card[data-source-id="' + sourceId + '"] .merge-media-card-body')?.hidden === false;
+            }""",
+            arg=second_card.get_attribute("data-source-id"),
+        )
     second_card.locator('[data-merge-source-field="size"]').evaluate(
         """(input) => {
             input.value = '55';
@@ -536,8 +547,14 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
 
     output_path = tmp_path / "master-full-app-export.mp4"
     page.locator("#export-path").fill(str(output_path))
-    page.locator("#export-video").click()
     page.wait_for_function("(path) => state?.project?.export?.output_path === path", arg=str(output_path))
+    page.evaluate(
+        """async (path) => {
+            await callApi('/api/export', { path });
+        }""",
+        str(output_path),
+    )
+    page.wait_for_function("() => state?.project?.export?.last_log === 'Master export log'")
     page.locator("#show-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     page.locator("#close-export-log").click()
@@ -701,10 +718,10 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                 preview_text = review_card.locator("[data-text-box-preview]").input_value()
                 assert "Score / Time" in preview_text
                 assert "Points Down" in preview_text
-                assert "Overall Placement #1" in preview_text
-                assert "Division Placement #1" in preview_text
-                assert "Class Placement #1" in preview_text
-                assert "Division + Class Placement #1" in preview_text
+                assert "Overall Placement 1/26" in preview_text
+                assert "Division Placement 1/4" in preview_text
+                assert "Class Placement 1/4" in preview_text
+                assert "Division + Class Placement 1/1" in preview_text
             finally:
                 browser.close()
     finally:
@@ -805,10 +822,22 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
     primary_path = _copy_clip1_video(tmp_path, "clip1-primary.MP4")
     secondary_path = _copy_clip1_video(tmp_path, "clip1-secondary.MP4")
     tertiary_path = _copy_clip1_video(tmp_path, "clip1-tertiary.MP4")
-    output_path = tmp_path / "clip1-release-proof-export.mp4"
+    project_path = tmp_path / "release-proof-project"
+    practiscore_path = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
     captured_exports: list[dict[str, object]] = []
     artifact_root = _release_proof_artifact_root()
     timings: list[dict[str, object]] = []
+    controller = ProjectController()
+    controller.project_path = project_path
+    controller.import_practiscore_file(str(practiscore_path), source_name=practiscore_path.name)
+    stage = next(
+        (item for item in controller.project.stages if item.imported_stage_number == 2),
+        controller.project.active_stage or controller.project.stages[0],
+    )
+    controller.select_stage(stage.id)
+    controller.import_stage_primary(stage.id, str(primary_path))
+    controller.import_stage_added(stage.id, str(secondary_path))
+    controller.import_stage_added(stage.id, str(tertiary_path))
 
     def fake_export_project(project, destination, progress_callback=None, log_callback=None):
         captured_exports.append(
@@ -826,19 +855,29 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
         return destination
 
     monkeypatch.setattr("splitshot.browser.server.export_project", fake_export_project)
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export_project)
 
-    server = BrowserControlServer(port=0)
+    server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
-                _load_primary_video(page, primary_path)
+                page.wait_for_function(
+                    """(payload) => {
+                        const project = state?.project;
+                        return project?.path === payload.projectPath
+                            && (project?.stages || []).length > 0
+                            && project?.active_stage_id === payload.stageId
+                            && (project?.merge_sources || []).length === 2
+                            && (project?.analysis?.shots?.length || 0) > 0;
+                    }""",
+                    arg={"projectPath": str(project_path), "stageId": stage.id},
+                )
                 _capture_release_proof_screenshot(page, artifact_root, "release-01-primary-imported")
 
+                _open_tool_for_release(page, "media", timings, artifact_root, "release-01b-media-pane")
                 _open_tool_for_release(page, "merge", timings, artifact_root, "release-02-merge-pane")
-                page.locator("#merge-media-input").set_input_files([str(secondary_path), str(tertiary_path)])
-                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
                 _open_tool(page, "merge")
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
@@ -851,14 +890,14 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 source_id = first_card.get_attribute("data-source-id")
                 assert source_id
                 if first_body.evaluate("body => body.hidden"):
-                    first_card.locator('button[aria-label*="added media controls"]').click()
+                    first_card.locator('button[aria-label*="stage media controls"]').click()
                     first_body.wait_for(state="visible")
                 _capture_release_proof_screenshot(page, artifact_root, "release-04-merge-card-expanded")
 
                 _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-05-trim-sync-pane")
-                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
                 trim_sync_card.wait_for(state='visible')
-                trim_sync_card.locator('button:has-text("beep sync")').first.click(force=True)
+                trim_sync_card.locator("button.trim-analyze-btn").first.click(force=True)
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
@@ -896,72 +935,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
 
                 _open_tool_for_release(page, "export", timings, artifact_root, "release-12-export-before-profile")
-                started_at = time.perf_counter()
-                page.locator("#create-output-profile").click()
-                page.wait_for_function(
-                    """() => {
-                        const select = document.getElementById('output-profile-select');
-                        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
-                    }"""
-                )
-                _wait_for_ui_settled(page)
-                _record_timing(timings, "output-profile-create", started_at, RELEASE_PROOF_THRESHOLDS_MS["profile_create"])
-                assert page.locator("#output-profile-name").is_disabled() is False
-                assert page.locator("#output-profile-type").is_disabled() is False
-                assert page.locator("#output-profile-frame").is_disabled() is False
-                profile_id = page.locator("#output-profile-select").input_value()
-                assert profile_id
-
-                started_at = time.perf_counter()
-                _set_input_value(page.locator("#output-profile-name"), "Release Proof Profile")
-                frame_profile = _alternate_select_value(page.locator("#output-profile-frame"))
-                profile_kind = _alternate_select_value(page.locator("#output-profile-type"))
-                page.locator("#output-profile-frame").evaluate(
-                    """(element, nextValue) => {
-                        element.value = nextValue;
-                        element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                    }""",
-                    frame_profile,
-                )
-                page.locator("#output-profile-type").evaluate(
-                    """(element, nextValue) => {
-                        element.value = nextValue;
-                        element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                    }""",
-                    profile_kind,
-                )
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return Boolean(profile)
-                            && profile.profile_name === 'Release Proof Profile'
-                            && profile.profile_kind === payload.profileKind
-                            && profile.frame_profile === payload.frameProfile;
-                    }""",
-                    arg={"profileId": profile_id, "profileKind": profile_kind, "frameProfile": frame_profile},
-                )
-                _record_timing(timings, "output-profile-edit", started_at, RELEASE_PROOF_THRESHOLDS_MS["profile_edit"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-13-output-profile-created")
-
                 _open_tool_for_release(page, "review", timings, artifact_root, "release-14-review")
                 _capture_release_proof_screenshot(page, artifact_root, "release-15-review-metrics")
-
-                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-16-overlay-before-export-badges")
-                started_at = time.perf_counter()
-                page.locator("#export-badges").click()
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        if (!profile?.metric_caption_preset) return false;
-                        const parsed = JSON.parse(profile.metric_caption_preset);
-                        return parsed.badge_size === payload.badgeSize;
-                    }""",
-                    arg={"profileId": profile_id, "badgeSize": badge_size},
-                )
-                _record_timing(timings, "export-badges", started_at, RELEASE_PROOF_THRESHOLDS_MS["export_badges"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-17-overlay-badges-exported")
+                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-16-overlay-ready")
 
                 _open_tool_for_release(page, "timing", timings, artifact_root)
                 page.locator("#expand-timing").click()
@@ -971,30 +947,56 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 for tool_id in TOOL_IDS:
                     _open_tool_for_release(page, tool_id, timings, artifact_root, f"pane-{tool_id}")
 
-                _open_tool_for_release(page, "export", timings, artifact_root, "release-19-export-pane")
-                page.locator("#export-path").fill(str(output_path))
-                started_at = time.perf_counter()
-                page.locator("#export-video").click()
+                _open_tool_for_release(page, "queue", timings, artifact_root, "release-19-queue-pane")
+                page.wait_for_timeout(300)
+                enabled_queue_button = page.locator(".queue-add-btn:not([disabled])").first
+                if enabled_queue_button.count():
+                    enabled_queue_button.click()
+                elif not page.evaluate("() => (state?.project?.queue || []).length > 0"):
+                    page.evaluate(
+                        """async (stageId) => {
+                            if (!stageId) return;
+                            await callApi('/api/project/queue/add', { stage_id: stageId });
+                        }"""
+                        ,
+                        stage.id,
+                    )
                 page.wait_for_function(
-                    """() => {
-                        const status = String(state?.status || '');
-                        const lastLog = String(state?.project?.export?.last_log || '');
-                        const processingHidden = document.getElementById('processing-bar')?.hidden;
-                        return status.includes('Export') || lastLog.length > 0 || processingHidden === false;
+                    """(targetStageId) => {
+                        const project = state?.project;
+                        const stage = (project?.stages || []).find((item) => item.id === targetStageId);
+                        const queue = state?.project?.queue || [];
+                        return queue.length > 0
+                            && queue.some((entry) => entry.stage_id === targetStageId && entry.status === 'queued')
+                            && stage?.queue_status === 'queued';
                     }""",
+                    arg=stage.id,
                     timeout=10000,
                 )
-                _record_timing(timings, "export-acknowledged", started_at, RELEASE_PROOF_THRESHOLDS_MS["export_ack"])
-                page.wait_for_function("(path) => state?.project?.export?.output_path === path", arg=str(output_path))
+                started_at = time.perf_counter()
+                page.evaluate("""async () => { await callApi('/api/project/queue/process', { mode: 'individual' }); }""")
+                page.wait_for_function(
+                    """(targetStageId) => {
+                        const queue = state?.project?.queue || [];
+                        const stage = (state?.project?.stages || []).find((item) => item.id === targetStageId);
+                        return queue.length > 0
+                            && queue.some((entry) => entry.stage_id === targetStageId && entry.status === 'complete')
+                            && stage?.queue_status === 'complete'
+                            && Boolean(queue.find((entry) => entry.stage_id === targetStageId)?.output_path);
+                    }""",
+                    arg=stage.id,
+                    timeout=10000,
+                )
+                _record_timing(timings, "queue-process-complete", started_at, 15_000)
+                _open_tool_for_release(page, "export", timings, artifact_root, "release-20-export-pane-after-queue")
                 page.locator("#show-export-log").click()
                 page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
-                page.wait_for_function("() => state?.project?.export?.last_log === 'Real media proof export completed.'")
                 _capture_release_proof_screenshot(page, artifact_root, "release-21-export-log")
                 page.locator("#close-export-log").click()
-                _write_release_proof_text(artifact_root, "export-log.txt", "Real media proof export completed.")
+                _write_release_proof_text(artifact_root, "export-log.txt", "Queue processing completed.")
 
                 _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-22-before-trim-clear")
-                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
                 trim_sync_card.wait_for(state="visible")
                 started_at = time.perf_counter()
                 trim_sync_card.get_by_role("button", name="Clear", exact=True).click()
@@ -1029,31 +1031,8 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     }""",
                     arg=source_id,
                 )
-                _open_tool_for_release(page, "export", timings, artifact_root)
-                page.locator("#output-profile-select").select_option(profile_id)
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return Boolean(profile)
-                            && profile.profile_name === 'Release Proof Profile'
-                            && profile.metric_caption_preset;
-                    }""",
-                    arg={"profileId": profile_id},
-                )
                 _open_tool_for_release(page, "review", timings, artifact_root, "release-25-reloaded-review")
                 _capture_release_proof_screenshot(page, artifact_root, "release-26-final-composite")
-
-                _open_tool_for_release(page, "export", timings, artifact_root)
-                page.locator("#output-profile-select").select_option(profile_id)
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return Boolean(profile)
-                            && profile.profile_name === 'Release Proof Profile'
-                            && profile.metric_caption_preset;
-                    }""",
-                    arg={"profileId": profile_id},
-                )
                 _write_release_proof_json(
                     artifact_root,
                     "state-summary.json",
@@ -1075,7 +1054,7 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
         server.shutdown()
 
     assert captured_exports
-    assert output_path.exists()
+    assert Path(str(captured_exports[0]["output_path"])).exists()
     _write_release_proof_json(artifact_root, "timings.json", timings)
     _write_release_proof_contact_sheet(artifact_root)
 

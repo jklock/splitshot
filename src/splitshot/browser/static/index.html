@@ -38,6 +38,7 @@
       <main id="cockpit-root" class="cockpit">
         <input id="primary-file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts" hidden />
         <input id="merge-media-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+        <input id="media-add-more-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
         <input id="practiscore-file-input" type="file" accept=".csv,.txt,text/csv,text/plain" hidden />
         <span id="project-title" hidden>Untitled Project</span>
         <span id="status" hidden>Ready.</span>
@@ -239,7 +240,7 @@
             <section class="tool-pane" data-tool-pane="trim-sync">
               <div class="section-header">
                 <h3>Trim</h3>
-                <strong id="trim-sync-stage-label">Trim</strong>
+                <strong id="trim-sync-stage-label">No stage</strong>
               </div>
               <div class="control-grid">
                 <label>Start (s)
@@ -625,48 +626,50 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="merge">
-              <div class="section-header">
-                <h3>Compose</h3>
-                <strong id="sync-offset">Defaults only</strong>
-              </div>
-              <section class="pip-defaults-section" data-inspector-section="pip-defaults">
-                <div class="section-header sub-section-header">
-                  <h3>Compose Defaults</h3>
-                  <button id="restore-merge-defaults" type="button">Restore</button>
+              <div class="pane-section merge-pane-shell">
+                <div class="section-header pane-title-row">
+                  <h3>Compose</h3>
+                  <span id="sync-offset" class="pane-summary-token">0 sources</span>
                 </div>
-                <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-                <label>New item layout
-                  <select id="merge-layout">
-                    <option value="side_by_side">Side by side</option>
-                    <option value="above_below">Above / below</option>
-                    <option value="pip">Picture in picture</option>
-                    <option value="full_screen_portrait">Full-screen portrait</option>
-                    <option value="dual_center_hud">Dual center HUD</option>
-                    <option value="dual_top_hud">Dual top HUD</option>
-                  </select>
-                </label>
-                <label>New item layer size
-                  <div class="pip-size-control">
-                    <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
-                    <output id="pip-size-label">35%</output>
+                <section class="pip-defaults-section" data-inspector-section="pip-defaults">
+                  <div class="section-header sub-section-header">
+                    <h3>Stage Defaults</h3>
+                    <button id="restore-merge-defaults" type="button">Restore</button>
                   </div>
-                </label>
-                <div class="control-grid pip-position-grid">
-                  <label>Default Position X (0 left, 1 right)
-                    <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media in this stage export</label>
+                  <label>New added media layout
+                    <select id="merge-layout">
+                      <option value="side_by_side">Side by side</option>
+                      <option value="above_below">Above / below</option>
+                      <option value="pip">Picture in picture</option>
+                      <option value="full_screen_portrait">Full-screen portrait</option>
+                      <option value="dual_center_hud">Dual center HUD</option>
+                      <option value="dual_top_hud">Dual top HUD</option>
+                    </select>
                   </label>
-                  <label>Default Position Y (0 top, 1 bottom)
-                    <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                  <label>New added media size
+                    <div class="pip-size-control">
+                      <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
+                      <output id="pip-size-label">35%</output>
+                    </div>
                   </label>
-                </div>
-              </section>
-              <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+                  <div class="control-grid pip-position-grid">
+                    <label>Default Position X (0 left, 1 right)
+                      <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                    </label>
+                    <label>Default Position Y (0 top, 1 bottom)
+                      <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                    </label>
+                  </div>
+                </section>
+                <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+              </div>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
               <div class="section-header">
                 <h3>Export</h3>
-                <small>Local video</small>
+                <small>Active stage settings</small>
               </div>
               <div class="section-header sub-section-header">
                 <h3>Output Profiles</h3>
@@ -779,19 +782,16 @@
                 <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
                 <label class="check-row"><input id="multi-track" type="checkbox" /> Multi-Track</label>
               </div>
-              <label>Output path
+              <label>Output path template
                 <div class="path-row">
                   <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
                   <button id="browse-export-path" type="button">Browse</button>
                 </div>
               </label>
               <div class="button-grid two-up">
-                <button id="export-video" class="primary-button" type="button">Export Video</button>
-              </div>
-              <div class="button-grid two-up">
                 <button id="show-export-log" type="button">Show Export Log</button>
               </div>
-              <p id="export-log-status" class="hint"></p>
+              <p id="export-log-status" class="hint">Queue stages after review, then process one or many from Queue.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="settings">
@@ -1173,7 +1173,7 @@
             <section class="tool-pane" data-tool-pane="project">
               <div class="section-header">
                 <h3>Project</h3>
-                <span id="media-badge">No Video Selected</span>
+                <span id="media-badge">No project open</span>
               </div>
               <label>Project folder
                 <div class="path-row">
@@ -1189,7 +1189,7 @@
                 <input id="project-name" placeholder="Untitled Project" />
               </label>
               <label>Project description
-                <textarea id="project-description" rows="5" placeholder="Summarize the stage, what the run is for, and any notes to save with the project."></textarea>
+                <textarea id="project-description" rows="5" placeholder="Save match-level notes and context for this project."></textarea>
               </label>
               <div class="section-header">
                 <h3>PractiScore Import</h3>
@@ -1208,23 +1208,6 @@
                     <option value="uspsa">USPSA</option>
                     <option value="ipsc">IPSC</option>
                     <option value="idpa">IDPA</option>
-                  </select>
-                </label>
-                <label>Stage #
-                  <select id="match-stage-number">
-                    <option value="">Select stage</option>
-                  </select>
-                </label>
-              </div>
-              <div class="control-grid">
-                <label>Competitor name
-                  <select id="match-competitor-name">
-                    <option value="">Select competitor</option>
-                  </select>
-                </label>
-                <label>Place
-                  <select id="match-competitor-place">
-                    <option value="">Select place</option>
                   </select>
                 </label>
               </div>

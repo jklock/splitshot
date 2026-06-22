@@ -126,9 +126,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
     assert 'id="match-type"' in html
-    assert '<select id="match-stage-number">' in html
-    assert '<select id="match-competitor-name">' in html
-    assert '<select id="match-competitor-place">' in html
+    assert 'id="match-stage-number"' not in html
+    assert 'id="match-competitor-name"' not in html
+    assert 'id="match-competitor-place"' not in html
     assert '<button id="browse-project-path" type="button">Select Project</button>' in html
     assert 'id="project-path" placeholder="Please create / select project" readonly' in html
     assert 'id="primary-file-path"' not in html
@@ -153,7 +153,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="inspector-file"' not in html
     assert 'id="inspector-status-copy"' not in html
     assert 'id="processing-bar"' in html
-    assert '<span id="media-badge">No Video Selected</span>' in html
+    assert '<span id="media-badge">No project open</span>' in html
     assert 'id="selected-shot-panel"' not in html
     assert 'id="split-card-grid"' not in html
     assert 'class="video-status"' not in html
@@ -198,7 +198,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '#toggle-rail {' in rail_footer_css
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
-    assert 'New item layer size' in html
+    assert 'New added media size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
     assert "Open PractiScore Dashboard" in html
@@ -467,11 +467,11 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="swap-videos"' not in html
     assert export_start < html.index('id="export-preset"') < project_start
     assert export_start < html.index('id="quality"') < project_start
-    assert export_start < html.index('id="export-video"') < project_start
+    assert 'id="export-video"' not in html
     assert project_start < html.index('id="match-type"')
-    assert project_start < html.index('id="match-stage-number"')
-    assert project_start < html.index('id="match-competitor-name"')
-    assert project_start < html.index('id="match-competitor-place"')
+    assert 'id="match-stage-number"' not in html
+    assert 'id="match-competitor-name"' not in html
+    assert 'id="match-competitor-place"' not in html
     assert 'id="layout-threshold"' not in html
     assert 'id="layout-scoring-enabled"' not in html
     assert 'id="layout-overlay-position"' not in html
@@ -611,7 +611,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="media-pane"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
-    assert 'Compose Defaults' in html
+    assert 'Stage Defaults' in html
     assert 'id="restore-merge-defaults"' in html
     assert 'Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.' not in html
     assert 'PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.' not in html
@@ -680,7 +680,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="show-export-log"' in html
     assert 'id="export-log-output"' in html
     assert 'id="export-log-modal"' in html
-    assert 'Local video' in html
+    assert 'Active stage settings' in html
     assert "/api/files/primary" in js
     assert "/api/files/merge" in js
     assert "/api/files/practiscore" in js
@@ -719,7 +719,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const INSPECTOR_COMPACT_WIDTH = 700;' in js
     assert 'shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in layout_js
     assert 'buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in merge_pane
-    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in trim_sync_pane
+    assert 'data-sync-delta="10"' in trim_sync_pane
     assert 'text.textContent = "Opacity";' in merge_pane
     assert 'pip_size_percent: nextSize,' in merge_pane
     assert 'let exportPathDraft = "";' in js
@@ -782,8 +782,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const position = showOverlay ? (getOverlayVisibilityPosition() || currentState()?.settings?.overlay_position || "bottom") : "none";' in overlay_pane
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
-    assert 'const payload = buildExportPayload(path);' in js
-    assert 'await callApi("/api/export", payload);' in js
+    assert 'function buildExportPayload(path) {' in js
+    assert 'await callApi("/api/export", payload);' not in js
     assert "saveProjectFlow" not in js
     assert "useProjectFolder" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
@@ -793,8 +793,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (targetId === "export-path") exportPathDraft = data.path;' in js
     assert '$("export-path").addEventListener("input", () => {' in js
     assert 'setExportPathDraft($("export-path").value);' in js
-    assert 'const path = requireValue("export-path", "Output video path");' in js
-    assert 'setExportPathDraft(path);' in js
+    assert 'const path = requireValue("export-path", "Output video path");' not in js
+    assert 'setExportPathDraft(path);' not in js
     assert 'input.step = "0.01";' in js
     assert 'Math.round((Number(value) || 0) * 1000)' in timing_pane
     assert 'const TIMING_COLUMN_DEFAULTS = Object.freeze({' in js
@@ -875,7 +875,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function mediaCacheToken() {" in js
     assert "function buildMediaUrl(basePath, sourcePath = \"\") {" in js
     assert 'function practiScoreSelectionValue(value) {' in js
-    assert 'preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", currentState()?.project?.scoring?.competitor_name)' in project_pane
+    assert 'function readPractiScoreContextPayload() {' in project_pane
     assert 'function ensureWaveformTimeVisible(timeMs, { center = false, paddingRatio = 0.12, persist = true } = {}) {' in js
     assert 'function renderWaveformNavigator() {' in js
     assert 'function handleWaveformNavigatorPointerDown(event) {' in js
@@ -967,8 +967,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (customX === null || customY === null) return false;' in js
     assert 'group.style.left = "0px";' in js
     assert 'group.style.top = "0px";' in js
-    assert 'Switch to Custom placement to edit X and Y directly.' in js
-    assert 'Keeps this box centered above the final score badge once it appears.' in js
+    assert 'Switch to Custom placement to edit X and Y directly.' not in js
+    assert 'Keeps this box centered above the final score badge once it appears.' not in js
     assert 'syncOverlayFontSizePreset();' in js
     assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
     assert 'if (!$("overlay-custom-y").value) syncControlValue($("overlay-custom-y"), seededCoordinates.y);' in js
@@ -1610,7 +1610,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "add-timing-event",
         "timing-enabled",
         "expand-timing",
-        "export-video",
         "browse-export-path",
         "new-project",
         "browse-project-path",

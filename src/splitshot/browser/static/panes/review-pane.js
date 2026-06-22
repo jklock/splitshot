@@ -137,6 +137,17 @@ export function createReviewPane({
     };
   }
 
+  function formatPlacement(place, totalCount) {
+    if (place === null || place === undefined) return "";
+    const numericPlace = Number(place);
+    if (!Number.isFinite(numericPlace) || numericPlace < 1) return "";
+    const numericTotal = Number(totalCount);
+    if (Number.isFinite(numericTotal) && numericTotal >= numericPlace && numericTotal > 0) {
+      return `${numericPlace}/${numericTotal}`;
+    }
+    return String(numericPlace);
+  }
+
   function summaryMetricIdsForBox(box, summary, imported) {
     const availableIds = reviewMetricDefinitions()
       .filter((def) => reviewMetricAvailable(def.id, summary, imported))
@@ -491,13 +502,7 @@ export function createReviewPane({
   }
 
   function overlayTextBoxHint(box) {
-    if (box.quadrant === aboveFinalTextBoxValue) {
-      return "Keeps this box centered above the final score badge once it appears.";
-    }
-    if (box.lock_to_stack) {
-      return "Locked to the shot stack. Disable this to edit placement directly.";
-    }
-    return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
+    return "";
   }
 
   function isReviewTextBoxExpanded(boxId) {
@@ -768,13 +773,13 @@ export function createReviewPane({
           ? String(summary.total_penalties) : "";
       case "overall_placement":
         return imported.competitor_place !== null && imported.competitor_place !== undefined
-          ? `#${imported.competitor_place}` : "";
+          ? formatPlacement(imported.competitor_place, groups.overall.items.length) : "";
       case "division_placement":
-        return groups.division.place ? `#${groups.division.place}` : "";
+        return formatPlacement(groups.division.place, groups.division.items.length);
       case "class_placement":
-        return groups.class.place ? `#${groups.class.place}` : "";
+        return formatPlacement(groups.class.place, groups.class.items.length);
       case "division_class_placement":
-        return groups.divisionClass.place ? `#${groups.divisionClass.place}` : "";
+        return formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length);
       case "overall_percent": return "";
       case "division_percent": return "";
       case "class_percent": return "";

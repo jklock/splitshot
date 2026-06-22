@@ -473,6 +473,12 @@ export function createShellRuntime({
       if (result) setActiveTool("media");
       event.target.value = "";
     });
+    $("media-add-more-input").addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      const result = await postFiles("/api/files/merge", files);
+      if (result) setActiveTool("media");
+      event.target.value = "";
+    });
     $("import-practiscore").addEventListener("click", () => {
       if (!hasActiveProject()) {
         setStatus(gatedProjectActionMessage());
@@ -523,17 +529,7 @@ export function createShellRuntime({
     ["project-name", "project-description"].forEach((id) => {
       $(id).addEventListener("input", scheduleProjectDetailsApply);
     });
-    ["match-type", "match-stage-number"].forEach((id) => {
-      $(id).addEventListener("change", schedulePractiScoreContextApply);
-    });
-    $("match-competitor-name").addEventListener("change", () => {
-      syncPractiScoreSelectionFields("name");
-      schedulePractiScoreContextApply();
-    });
-    $("match-competitor-place").addEventListener("change", () => {
-      syncPractiScoreSelectionFields("place");
-      schedulePractiScoreContextApply();
-    });
+    $("match-type")?.addEventListener("change", schedulePractiScoreContextApply);
     documentObject.addEventListener("fullscreenchange", handleStageFullscreenChange);
     documentObject.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {
@@ -1014,15 +1010,6 @@ export function createShellRuntime({
       "two-pass",
     ].forEach((id) => {
       $(id).addEventListener("change", scheduleExportSettingsApply);
-    });
-    $("export-video").addEventListener("click", async () => {
-      const path = requireValue("export-path", "Output video path");
-      setExportPathDraft(path);
-      const payload = buildExportPayload(path);
-      applyExportDraft(payload);
-      cancelPendingExportDrafts();
-      await flushPendingMergeSourceCommits();
-      await callApi("/api/export", payload);
     });
     $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);
