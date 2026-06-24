@@ -558,10 +558,7 @@
 @container (max-width: 560px) {
   .media-asset-row,
   .trim-bulk-grid,
-  .trim-card-row,
-  .media-stage-nav-header,
-  .queue-stage-header,
-  .trim-source-card-header {
+  .trim-card-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
