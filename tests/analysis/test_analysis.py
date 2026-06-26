@@ -31,7 +31,12 @@ from splitshot.domain.models import (
 )
 from splitshot.media.ffmpeg import run_ffprobe_json
 from splitshot.media.probe import probe_video
-from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, stage_time_ms
+from splitshot.timeline.model import (
+    average_split_ms,
+    compute_split_rows,
+    draw_time_ms,
+    stage_time_ms,
+)
 from splitshot.ui.controller import ProjectController
 from splitshot.utils.time import seconds_to_ms
 
@@ -64,7 +69,9 @@ def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
     assert len(result.waveform) == 4096
 
 
-def test_analysis_aligns_detections_to_media_timeline_when_audio_starts_late(synthetic_video_factory) -> None:
+def test_analysis_aligns_detections_to_media_timeline_when_audio_starts_late(
+    synthetic_video_factory,
+) -> None:
     video_path = synthetic_video_factory(
         name="audio-offset",
         duration_ms=2600,
@@ -100,8 +107,7 @@ def test_default_shotml_settings_match_legacy_threshold_call(synthetic_video_fac
 
     assert legacy.beep_time_ms == configured.beep_time_ms
     assert [(shot.time_ms, shot.source, shot.confidence) for shot in legacy.shots] == [
-        (shot.time_ms, shot.source, shot.confidence)
-        for shot in configured.shots
+        (shot.time_ms, shot.source, shot.confidence) for shot in configured.shots
     ]
     assert legacy.waveform == configured.waveform
 
@@ -145,7 +151,9 @@ def test_false_positive_filter_rejects_sub_tenth_second_shots() -> None:
 
 def test_false_positive_filter_prefers_stronger_onset_support_over_louder_echo() -> None:
     samples = np.zeros(900, dtype=np.float32)
-    samples[495:505] = np.asarray([0.05, 0.1, 0.3, 0.8, 1.0, 0.7, 0.4, 0.2, 0.1, 0.05], dtype=np.float32)
+    samples[495:505] = np.asarray(
+        [0.05, 0.1, 0.3, 0.8, 1.0, 0.7, 0.4, 0.2, 0.1, 0.05], dtype=np.float32
+    )
     samples[560:700] = 0.65
     shots = [
         ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.72),
@@ -195,7 +203,9 @@ def test_model_backed_detection_emits_probability_confidence(synthetic_video_fac
 
 def test_refinement_confidence_scores_existing_shots_without_moving_timestamps() -> None:
     samples = np.zeros(2000, dtype=np.float32)
-    samples[795:805] = np.asarray([0.1, 0.3, 0.6, 1.0, 0.9, 0.6, 0.4, 0.2, 0.1, 0.05], dtype=np.float32)
+    samples[795:805] = np.asarray(
+        [0.1, 0.3, 0.6, 1.0, 0.9, 0.6, 0.4, 0.2, 0.1, 0.05], dtype=np.float32
+    )
     shots = [ShotEvent(time_ms=800, source=ShotSource.AUTO, confidence=0.50)]
 
     refined = _apply_refinement_confidence(samples, sample_rate=1000, shots=shots)
@@ -228,7 +238,10 @@ def test_refinement_suggests_review_without_changing_timeline() -> None:
     suggestions = _suggest_timing_review_actions(samples, sample_rate=1000, shots=shots)
 
     assert [shot.time_ms for shot in shots] == [500, 640]
-    assert {suggestion.kind for suggestion in suggestions} >= {"weak_onset_support", "near_cutoff_spacing"}
+    assert {suggestion.kind for suggestion in suggestions} >= {
+        "weak_onset_support",
+        "near_cutoff_spacing",
+    }
     assert all(suggestion.suggested_action.startswith("review") for suggestion in suggestions)
 
 
@@ -370,7 +383,7 @@ def test_secondary_ingest_runs_sync_automatically(synthetic_video_factory) -> No
     controller.ingest_secondary_video(str(secondary))
 
     assert controller.project.secondary_video is not None
-    assert controller.project.merge.enabled is True
+    assert len(controller.project.merge_sources) >= 1
     assert controller.project.analysis.beep_time_ms_secondary is not None
     assert abs(controller.project.analysis.sync_offset_ms - 250) <= 40
 
@@ -386,7 +399,9 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     controller.ingest_primary_video(str(first_primary))
     first_shot_id = controller.project.analysis.shots[0].id
 
-    controller.set_project_details(name="Classifier Template", description="Carry these settings forward")
+    controller.set_project_details(
+        name="Classifier Template", description="Carry these settings forward"
+    )
     controller.set_detection_threshold(0.35)
     first_shot_id = controller.project.analysis.shots[0].id
     controller.set_overlay_position(OverlayPosition.TOP)
@@ -497,10 +512,14 @@ def test_primary_analysis_uses_active_sport_default_score_letter(synthetic_video
     assert controller.project.scoring.ruleset == "idpa_time_plus"
     assert controller.project.analysis.shots
     assert all(shot.score is not None for shot in controller.project.analysis.shots)
-    assert all(shot.score.letter == ScoreLetter.DOWN_0 for shot in controller.project.analysis.shots)
+    assert all(
+        shot.score.letter == ScoreLetter.DOWN_0 for shot in controller.project.analysis.shots
+    )
 
 
-def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthetic_video_factory) -> None:
+def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -508,7 +527,9 @@ def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthet
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
 
     first_primary = synthetic_video_factory(name="stage-two-first", beep_ms=400)
     second_primary = synthetic_video_factory(name="stage-two-second", beep_ms=500)
@@ -524,7 +545,9 @@ def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthet
     assert controller.project.scoring.ruleset == "idpa_time_plus"
 
 
-def test_primary_replacement_keeps_staged_practiscore_source_for_stage_switch(synthetic_video_factory) -> None:
+def test_primary_replacement_keeps_staged_practiscore_source_for_stage_switch(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -532,7 +555,9 @@ def test_primary_replacement_keeps_staged_practiscore_source_for_stage_switch(sy
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
 
     first_primary = synthetic_video_factory(name="stage-two-first", beep_ms=400)
     second_primary = synthetic_video_factory(name="stage-three-second", beep_ms=500)
@@ -554,7 +579,9 @@ def test_open_project_restores_practiscore_source_for_stage_switch(tmp_path: Pat
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
 
     project_path = tmp_path / "stage-browser.ssproj"
     controller.save_project(str(project_path))
@@ -571,7 +598,9 @@ def test_open_project_restores_practiscore_source_for_stage_switch(tmp_path: Pat
     assert reopened.project.scoring.imported_stage.stage_number == 3
 
 
-def test_open_project_recovers_practiscore_from_project_csv_folder_when_metadata_missing(tmp_path: Path) -> None:
+def test_open_project_recovers_practiscore_from_project_csv_folder_when_metadata_missing(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     project_path = tmp_path / "recovered-practiscore.ssproj"
     controller.save_project(str(project_path))
@@ -601,7 +630,9 @@ def test_open_project_recovers_practiscore_from_project_csv_folder_when_metadata
     assert reopened.project.scoring.imported_stage.competitor_place == 1
 
 
-def test_open_project_reimports_practiscore_when_saved_context_exists_but_imported_stage_is_missing(tmp_path: Path) -> None:
+def test_open_project_reimports_practiscore_when_saved_context_exists_but_imported_stage_is_missing(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     project_path = tmp_path / "recovered-practiscore-selection.ssproj"
     controller.save_project(str(project_path))
@@ -627,7 +658,9 @@ def test_open_project_reimports_practiscore_when_saved_context_exists_but_import
     assert reopened.project.scoring.imported_stage.final_time == 10.15
 
 
-def test_open_project_recovers_renamed_media_from_project_input_folder(synthetic_video_factory, tmp_path: Path) -> None:
+def test_open_project_recovers_renamed_media_from_project_input_folder(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     primary_path = synthetic_video_factory(name="Stage1")
     secondary_path = synthetic_video_factory(name="Stage2")
@@ -657,7 +690,9 @@ def test_open_project_recovers_renamed_media_from_project_input_folder(synthetic
     assert "restored renamed project media" in reopened.status_message.lower()
 
 
-def test_open_project_recovers_renamed_media_from_project_root_folder(synthetic_video_factory, tmp_path: Path) -> None:
+def test_open_project_recovers_renamed_media_from_project_root_folder(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     primary_path = synthetic_video_factory(name="Stage2")
 
@@ -725,11 +760,15 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
     assert controller.project.overlay.custom_box_enabled is False
     assert controller.project.overlay.custom_box_mode == "manual"
 
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
 
     assert controller.project.overlay.custom_box_enabled is True
     assert controller.project.overlay.custom_box_mode == "imported_summary"
-    imported_box = next(box for box in controller.project.overlay.text_boxes if box.source == "imported_summary")
+    imported_box = next(
+        box for box in controller.project.overlay.text_boxes if box.source == "imported_summary"
+    )
     assert imported_box.quadrant == "above_final"
     assert imported_box.x is None
     assert imported_box.y is None
@@ -737,7 +776,9 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
     assert imported_box.height == 0
 
 
-def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes(tmp_path: Path) -> None:
+def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -745,9 +786,13 @@ def test_importing_new_practiscore_csv_preserves_current_selection_when_place_ch
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv"
+    )
 
-    controller.import_practiscore_file(str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv")
+    controller.import_practiscore_file(
+        str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv"
+    )
 
     assert controller.project.scoring.match_type == "idpa"
     assert controller.project.scoring.stage_number == 2
@@ -759,7 +804,9 @@ def test_importing_new_practiscore_csv_preserves_current_selection_when_place_ch
     assert controller.project.scoring.imported_stage.final_time == 30.57
 
 
-def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing(tmp_path: Path) -> None:
+def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -767,19 +814,25 @@ def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missin
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv")
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv"
+    )
 
     controller.project.overlay.text_boxes = []
     controller.project.overlay.custom_box_enabled = False
     controller.project.overlay.custom_box_mode = "manual"
 
-    controller.import_practiscore_file(str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv")
+    controller.import_practiscore_file(
+        str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv"
+    )
 
     assert any(
         box.source == "imported_summary" and box.enabled
         for box in controller.project.overlay.text_boxes
     )
-    imported_box = next(box for box in controller.project.overlay.text_boxes if box.source == "imported_summary")
+    imported_box = next(
+        box for box in controller.project.overlay.text_boxes if box.source == "imported_summary"
+    )
     assert imported_box.quadrant == "above_final"
     assert imported_box.width == 0
     assert imported_box.height == 0
@@ -836,7 +889,9 @@ def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:
 def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch) -> None:
     controller = ProjectController()
     primary = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
-    secondary = VideoAsset(path="/tmp/secondary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    secondary = VideoAsset(
+        path="/tmp/secondary.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
     controller.project.primary_video = primary
     controller.project.secondary_video = secondary
     controller.project.merge_sources = [MergeSource(asset=secondary)]
@@ -860,7 +915,10 @@ def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch
         )
 
     monkeypatch.setattr("splitshot.ui.controller.analyze_video_audio", fake_analyze)
-    monkeypatch.setattr("splitshot.ui.controller.compute_sync_offset", lambda primary_ms, secondary_ms: secondary_ms - primary_ms)
+    monkeypatch.setattr(
+        "splitshot.ui.controller.compute_sync_offset",
+        lambda primary_ms, secondary_ms: secondary_ms - primary_ms,
+    )
 
     controller.set_detection_threshold(0.35)
 
@@ -875,9 +933,13 @@ def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch
     assert controller.project.analysis.waveform_secondary == [0.3, 0.4]
 
 
-def test_detection_threshold_reanalysis_preserves_manual_shots_and_timing_events(monkeypatch) -> None:
+def test_detection_threshold_reanalysis_preserves_manual_shots_and_timing_events(
+    monkeypatch,
+) -> None:
     controller = ProjectController()
-    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    controller.project.primary_video = VideoAsset(
+        path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
 
     detections = [
         DetectionResult(
@@ -910,9 +972,13 @@ def test_detection_threshold_reanalysis_preserves_manual_shots_and_timing_events
     controller.analyze_primary()
     first_shot_id = controller.project.analysis.shots[0].id
     second_shot_id = controller.project.analysis.shots[1].id
-    controller.add_timing_event("reload", after_shot_id=first_shot_id, before_shot_id=second_shot_id, note="Keep me")
+    controller.add_timing_event(
+        "reload", after_shot_id=first_shot_id, before_shot_id=second_shot_id, note="Keep me"
+    )
     controller.add_shot(1200)
-    manual_shot_id = next(shot.id for shot in controller.project.analysis.shots if shot.source == ShotSource.MANUAL)
+    manual_shot_id = next(
+        shot.id for shot in controller.project.analysis.shots if shot.source == ShotSource.MANUAL
+    )
 
     controller.set_detection_threshold(0.55)
 
@@ -954,7 +1020,9 @@ def test_detection_threshold_rerun_does_not_change_future_app_defaults(monkeypat
 
 def test_shotml_settings_update_reanalyzes_with_full_settings_object(monkeypatch) -> None:
     controller = ProjectController()
-    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    controller.project.primary_video = VideoAsset(
+        path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
     calls: list[tuple[str, float, int]] = []
 
     def fake_analyze(path: str, threshold: float, settings) -> DetectionResult:
@@ -1015,7 +1083,9 @@ def test_timing_change_proposals_can_be_generated_applied_and_discarded() -> Non
 
     controller.generate_timing_change_proposals()
 
-    proposal_types = {proposal.proposal_type for proposal in controller.project.analysis.timing_change_proposals}
+    proposal_types = {
+        proposal.proposal_type for proposal in controller.project.analysis.timing_change_proposals
+    }
     assert proposal_types == {"choose_close_pair_survivor", "suppress_shot"}
 
     suppress = next(

@@ -376,6 +376,9 @@ export function createWaveformComponent({
     const { width, height } = resizeCanvasToDisplay(canvas);
     const ctx = canvas.getContext("2d");
     const waveform = currentState()?.project?.analysis?.waveform_primary || [];
+    const totalMs = durationMs();
+    const totalLabel = $("waveform-total-time");
+    if (totalLabel) totalLabel.textContent = `${(totalMs / 1000).toFixed(2)}s`;
     const mergeSources = currentState()?.project?.merge_sources || [];
     const secondaryLanePayloads = (currentState()?.project?.analysis?.secondary_sources || [])
       .filter((entry) => entry && Array.isArray(entry.waveform) && entry.waveform.length > 0)

@@ -138,6 +138,7 @@ function startPythonBackend(initialProjectPath = null) {
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
     env.PYTHONNOUSERSITE = '1';
+    env.PYTHONDONTWRITEBYTECODE = '1';
     prependPathEntries(env, [getBundledFfmpegDir(bundlePath)]);
     if (process.platform === 'win32') {
       const pythonHome = path.join(bundlePath, 'python');

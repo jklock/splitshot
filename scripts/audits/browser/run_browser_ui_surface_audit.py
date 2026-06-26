@@ -14,17 +14,23 @@ from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 
 
-def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name: str = "file") -> dict[str, Any]:
+def _multipart_upload(
+    base_url: str, endpoint: str, file_path: Path, field_name: str = "file"
+) -> dict[str, Any]:
     import uuid
-    from urllib.parse import urlencode
     from urllib.request import Request, urlopen
+
     boundary = uuid.uuid4().hex
     data = file_path.read_bytes()
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
-        f"Content-Type: application/octet-stream\r\n\r\n"
-    ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("latin-1")
+        + data
+        + f"\r\n--{boundary}--\r\n".encode("latin-1")
+    )
     req = Request(
         f"{base_url}{endpoint}",
         data=body,
@@ -32,6 +38,8 @@ def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name:
     )
     with urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
 from splitshot.ui.controller import ProjectController
 
 
@@ -108,7 +116,7 @@ class BrowserAudit:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-    description="Audit SplitShot rendered UI surfaces with DOM-level smoke checks across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
+        description="Audit SplitShot rendered UI surfaces with DOM-level smoke checks across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
     )
     parser.add_argument(
         "--browser",
@@ -160,7 +168,9 @@ def default_browser_names() -> list[str]:
     return names
 
 
-def expect(condition: bool, name: str, detail: str, data: dict[str, Any] | None = None) -> CheckResult:
+def expect(
+    condition: bool, name: str, detail: str, data: dict[str, Any] | None = None
+) -> CheckResult:
     return CheckResult(name=name, passed=condition, detail=detail, data=data)
 
 
@@ -174,7 +184,9 @@ def launch_browser(playwright: Playwright, target: BrowserTarget, headed: bool) 
     return browser_type.launch(**launch_kwargs)
 
 
-def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool) -> tuple[Browser, Page]:
+def open_page(
+    playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
+) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1440, "height": 1024})
     page.goto(base_url, wait_until="domcontentloaded")
@@ -252,14 +264,30 @@ def _set_active_tool(page: Page, tool: str) -> None:
     wait_for_processing_bar_to_settle(page)
 
 
-def capture_release_surface_screenshots(page: Page, artifact_root: Path | None, primary_video: Path) -> None:
+def capture_release_surface_screenshots(
+    page: Page, artifact_root: Path | None, primary_video: Path
+) -> None:
     if artifact_root is None:
         return
-    tools = ["project", "merge", "scoring", "timing", "markers", "overlay", "review", "export", "metrics", "shotml", "settings"]
+    tools = [
+        "project",
+        "merge",
+        "scoring",
+        "timing",
+        "markers",
+        "overlay",
+        "review",
+        "export",
+        "metrics",
+        "shotml",
+        "settings",
+    ]
     if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
         _set_active_tool(page, "merge")
         page.locator("#merge-media-input").set_input_files(str(primary_video))
-        page.wait_for_function("() => (state?.project?.merge_sources || []).length > 0", timeout=30000)
+        page.wait_for_function(
+            "() => (state?.project?.merge_sources || []).length > 0", timeout=30000
+        )
         wait_for_processing_bar_to_settle(page)
 
     for tool in tools:
@@ -335,16 +363,24 @@ def capture_release_surface_screenshots(page: Page, artifact_root: Path | None, 
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
 
 
-def audit_release_output_profile_review_truth(page: Page, primary_video: Path, artifact_root: Path | None) -> CheckResult:
+def audit_release_output_profile_review_truth(
+    page: Page, primary_video: Path, artifact_root: Path | None
+) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     _set_active_tool(page, "merge")
     if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
         page.locator("#merge-media-input").set_input_files(str(primary_video))
-        page.wait_for_function("() => (state?.project?.merge_sources || []).length > 0", timeout=30000)
+        page.wait_for_function(
+            "() => (state?.project?.merge_sources || []).length > 0", timeout=30000
+        )
         wait_for_processing_bar_to_settle(page)
     source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
     if not source_id:
-        return expect(False, "release_output_profile_review_truth", "Merge source was not available for release-proof review-source checks.")
+        return expect(
+            False,
+            "release_output_profile_review_truth",
+            "Merge source was not available for release-proof review-source checks.",
+        )
 
     _set_active_tool(page, "export")
     page.evaluate(
@@ -405,7 +441,9 @@ def audit_release_output_profile_review_truth(page: Page, primary_video: Path, a
     _set_active_tool(page, "overlay")
     _set_active_tool(page, "export")
     _set_active_tool(page, "review")
-    result["retained_status_after_rerender"] = page.locator("#review-source-status").text_content() or ""
+    result["retained_status_after_rerender"] = (
+        page.locator("#review-source-status").text_content() or ""
+    )
 
     page.locator("#review-source-select").evaluate(
         """(element, nextValue) => {
@@ -423,7 +461,9 @@ def audit_release_output_profile_review_truth(page: Page, primary_video: Path, a
         }
         """
     )
-    page.wait_for_function("() => document.getElementById('review-source-status')?.textContent === 'Live'")
+    page.wait_for_function(
+        "() => document.getElementById('review-source-status')?.textContent === 'Live'"
+    )
     result["live_status_after_clear"] = page.locator("#review-source-status").text_content() or ""
     _capture_surface_screenshot(page, artifact_root, "review-live-audit")
 
@@ -571,7 +611,7 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
         and result["before"]["all_inside"]
         and result["after"]["all_inside"],
         "overlay_elements_stay_inside_video",
-      "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
+        "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
         result,
     )
 
@@ -632,7 +672,9 @@ def audit_layout_resize_persists(page: Page) -> CheckResult:
         lock_btn.click()
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
-        return expect(False, "layout_resize_persists", "The inspector resize handle was not visible.")
+        return expect(
+            False, "layout_resize_persists", "The inspector resize handle was not visible."
+        )
     before = page.evaluate(
         """
         () => ({
@@ -682,7 +724,9 @@ def audit_layout_resize_persists(page: Page) -> CheckResult:
     )
 
 
-def audit_merge_file_input_change(page: Page, primary_video: Path, base_url: str = "") -> CheckResult:
+def audit_merge_file_input_change(
+    page: Page, primary_video: Path, base_url: str = ""
+) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='merge']").click()
     if base_url:
@@ -796,7 +840,15 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
     )
     return expect(
         result["status"] == "IDPA Stage 4 imported"
-        and result["summary_terms"] == ["Stage Start (Beep)", "Shots in Stage", "SS Stage Time", "PS Stage Time", "Video Length", "ShotML Confidence"]
+        and result["summary_terms"]
+        == [
+            "Stage Start (Beep)",
+            "Shots in Stage",
+            "SS Stage Time",
+            "PS Stage Time",
+            "Video Length",
+            "ShotML Confidence",
+        ]
         and len(result["summary_values"]) == 6
         and result["summary_values"][3] == "17.87s"
         and result["match_type"] == "idpa"
@@ -937,7 +989,9 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         """
     )
     page.wait_for_timeout(150)
-    page.locator("#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']").check()
+    page.locator(
+        "#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']"
+    ).check()
     page.wait_for_timeout(150)
     page.evaluate(
         """
@@ -984,23 +1038,23 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         card_click["selected"]
         and card_click["overlay_visible"]
         and seek_delta_ms < 300
-      and marker_shell["row_count"] > 0
-      and marker_shell["selected_id"] == card_click["id"]
-      and "enabled" in marker_shell["pane_status"]
-      and "shown" in marker_shell["list_status"]
-      and expanded_layout["workbench_visible"]
-      and expanded_layout["right_editor_visible"]
-      and expanded_layout["bottom_list_visible"]
-      and next_control["selected_id"] == next_control["selected_card_id"]
+        and marker_shell["row_count"] > 0
+        and marker_shell["selected_id"] == card_click["id"]
+        and "enabled" in marker_shell["pane_status"]
+        and "shown" in marker_shell["list_status"]
+        and expanded_layout["workbench_visible"]
+        and expanded_layout["right_editor_visible"]
+        and expanded_layout["bottom_list_visible"]
+        and next_control["selected_id"] == next_control["selected_card_id"]
         and next_seek_delta_ms < 300
         and (
             not next_control["list_scrollable"]
-        or (
-          next_control["selected_card_top"] is not None
-          and next_control["selected_card_bottom"] is not None
-          and 0 <= next_control["selected_card_top"]
-          and next_control["selected_card_bottom"] <= next_control["list_client_height"] + 2
-        )
+            or (
+                next_control["selected_card_top"] is not None
+                and next_control["selected_card_bottom"] is not None
+                and 0 <= next_control["selected_card_top"]
+                and next_control["selected_card_bottom"] <= next_control["list_client_height"] + 2
+            )
         )
         and opened["selected"]
         and opened["workbench_visible"]
@@ -1019,11 +1073,11 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
     return expect(
         passed,
         "popup_card_interactions_are_stable",
-      "Markers list, selected-marker editor, and motion-path controls should keep stable behavior.",
+        "Markers list, selected-marker editor, and motion-path controls should keep stable behavior.",
         {
             "card_click": card_click,
-          "marker_shell": marker_shell,
-          "expanded_layout": expanded_layout,
+            "marker_shell": marker_shell,
+            "expanded_layout": expanded_layout,
             "next_control": next_control,
             "opened": opened,
             "keyframes": keyframes,
@@ -1232,8 +1286,15 @@ def audit_review_locked_text_box_drag_moves_stack(page: Page) -> CheckResult:
         """
     )
     if not setup["found"]:
-        return expect(False, "review_locked_text_box_drag_moves_stack", "The locked Review text box did not render.", setup)
-    page.locator('.text-box-card[data-box-id="audit-review-lock"] .text-box-card-header').dispatch_event("click")
+        return expect(
+            False,
+            "review_locked_text_box_drag_moves_stack",
+            "The locked Review text box did not render.",
+            setup,
+        )
+    page.locator(
+        '.text-box-card[data-box-id="audit-review-lock"] .text-box-card-header'
+    ).dispatch_event("click")
     page.wait_for_timeout(100)
     header_click = page.evaluate(
         """
@@ -1390,7 +1451,11 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
             False,
             "overlay_and_pip_preview_interactions_are_stable",
             "PiP preview item did not render for preview drag testing.",
-            {"overlay_setup": overlay_setup, "overlay_after": overlay_after, "pip_setup": pip_setup},
+            {
+                "overlay_setup": overlay_setup,
+                "overlay_after": overlay_after,
+                "pip_setup": pip_setup,
+            },
         )
     page.mouse.move(pip_setup["x"], pip_setup["y"])
     page.mouse.down()
@@ -1436,7 +1501,10 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         and pip_after["inside_frame"]
         and pip_after["pip_x"] is not None
         and pip_after["pip_y"] is not None
-        and (pip_after["pip_x"] != pip_setup["before_pip_x"] or pip_after["pip_y"] != pip_setup["before_pip_y"])
+        and (
+            pip_after["pip_x"] != pip_setup["before_pip_x"]
+            or pip_after["pip_y"] != pip_setup["before_pip_y"]
+        )
         and bool(pip_after["x_control"])
         and bool(pip_after["y_control"]),
         "overlay_and_pip_preview_interactions_are_stable",
@@ -1576,7 +1644,8 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
         and "Imported" not in result["details"]["terms"]
         and "Imported Stage" not in result["details"]["terms"]
         and not result["details"]["overflow"]
-        and result["imported"]["terms"] == ["Source", "Stage", "Competitor", "PS - Score", "PS - Penalties"]
+        and result["imported"]["terms"]
+        == ["Source", "Stage", "Competitor", "PS - Score", "PS - Penalties"]
         and result["score"]["collapsedBefore"]["button_text"] == "Unlock"
         and result["score"]["collapsedBefore"]["has_select"] is False
         and result["score"]["opened"]["button_text"] == "Lock"
@@ -1672,7 +1741,8 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
         and result["pip"]["opened_after"]["collapsed"] is False
         and result["export_log"]["opened"]["hidden"] is False
         and result["export_log"]["closed"]["hidden"] is True
-        and result["layout"]["inspector_scroll_width"] <= result["layout"]["inspector_client_width"] + 2
+        and result["layout"]["inspector_scroll_width"]
+        <= result["layout"]["inspector_client_width"] + 2
         and result["layout"]["pane_scroll_width"] <= result["layout"]["pane_client_width"] + 2,
         "remaining_pane_controls_are_stable",
         "ShotML, PiP, and Export controls should use stable chevrons/modals without resized-pane overflow.",
@@ -1682,7 +1752,18 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
 
 def audit_all_panes_avoid_horizontal_overflow(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
-    tools = ["project", "scoring", "timing", "shotml", "merge", "overlay", "markers", "review", "export", "metrics"]
+    tools = [
+        "project",
+        "scoring",
+        "timing",
+        "shotml",
+        "merge",
+        "overlay",
+        "markers",
+        "review",
+        "export",
+        "metrics",
+    ]
     result = page.evaluate(
         """
         async (tools) => {
@@ -1803,7 +1884,14 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         results = [
-            run_browser_audit(playwright, browser_name, primary_video, args.headed, args.artifact_root, args.base_url)
+            run_browser_audit(
+                playwright,
+                browser_name,
+                primary_video,
+                args.headed,
+                args.artifact_root,
+                args.base_url,
+            )
             for browser_name in browsers
         ]
 

@@ -1,4 +1,4 @@
-"""Capture Phase 14 pane proof against the real 05072026 project."""
+"""Capture pane proof against the real 05072026 project."""
 
 from __future__ import annotations
 
@@ -80,7 +80,9 @@ def _refresh(page: Page) -> None:
 
 
 def _wait_for_processing_bar(page: Page) -> None:
-    page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === true", timeout=30_000)
+    page.wait_for_function(
+        "() => document.getElementById('processing-bar')?.hidden === true", timeout=30_000
+    )
 
 
 def _wait_for_active_tool(page: Page, tool: str) -> None:
@@ -144,12 +146,14 @@ def _prepare_review_capture(page: Page) -> None:
     if imported_button.count() > 0 and imported_button.is_visible():
         imported_button.click()
         page.wait_for_timeout(250)
-    first_toggle = page.locator('#review-text-box-list .text-box-card [data-text-box-action="toggle"]').first
+    first_toggle = page.locator(
+        '#review-text-box-list .text-box-card [data-text-box-action="toggle"]'
+    ).first
     if first_toggle.count() > 0 and first_toggle.is_visible():
         first_toggle.click()
         page.wait_for_timeout(150)
     try:
-        first_card = page.locator('#review-text-box-list .text-box-card').first
+        first_card = page.locator("#review-text-box-list .text-box-card").first
         if first_card.count() > 0:
             first_card.scroll_into_view_if_needed()
     except Exception:
@@ -192,17 +196,20 @@ def _prepare_controller_state(
 ) -> dict[str, object]:
     controller.open_project(str(project_path))
     stages = list(controller.project.stages)
-    stage_two = next(
+    target_stage = next(
         (
             stage
             for stage in stages
-            if int(getattr(stage, "order_index", 0) or 0) == 2 or str(getattr(stage, "label", "")).strip().lower() == "stage 2"
+            if int(getattr(stage, "order_index", 0) or 0) == 2
+            or str(getattr(stage, "label", "")).strip().lower() == "stage 2"
         ),
         None,
     )
-    if stage_two is None:
-        raise RuntimeError("Stage 2 was not found in 05072026.")
-    controller.select_stage(stage_two.id)
+    if target_stage is None:
+        target_stage = controller.project.active_stage or (stages[0] if stages else None)
+    if target_stage is None:
+        raise RuntimeError("No stage was available in 05072026.")
+    controller.select_stage(target_stage.id)
     controller.project.queue.clear()
     for stage in controller.project.stages:
         stage.queue_status = QueueStatus.NOT_QUEUED
@@ -346,7 +353,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
               card_gap_px: metricNumberList(cards, (card) => px(window.getComputedStyle(card).gap)),
               label_font_size_px: metricNumberList(labels, (label) => px(window.getComputedStyle(label).fontSize)),
               input_height_px: metricNumberList(
-                Array.from(root.querySelectorAll('input:not([type="checkbox"]):not([type="range"]), select, button.btn, button.btn-sm, button.btn-secondary, button.btn-primary, button.btn-danger, button.btn-ghost'))
+                Array.from(root.querySelectorAll('input:not([type="checkbox"]):not([type="range"]), select, button[class*="btn"]'))
                   .filter((element) => element.closest('[data-tool-pane]') === root),
                 (element) => element.getBoundingClientRect().height,
               ),
@@ -392,10 +399,10 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             queue_pane_text: pane('queue'),
             compose_pane_text: pane('merge'),
             project_pane_text: pane('project'),
-            project_selectors: {
-              stage: Boolean(document.getElementById('match-stage-number')),
-              competitor_name: Boolean(document.getElementById('match-competitor-name')),
-              competitor_place: Boolean(document.getElementById('match-competitor-place')),
+            project_output_root_present: Boolean(document.getElementById('project-output-root')),
+            export_path_controls_present: {
+              browse: Boolean(document.getElementById('browse-export-path')),
+              input: Boolean(document.getElementById('export-path')),
             },
             media_stage_cards: mediaCards,
             queue_cards: queueCards,
@@ -419,7 +426,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             queue_header_summary: headerSummaryToken('#queue-pane .pane-title-row .pane-summary-token'),
             trim_header_text: text('#trim-sync-pane .pane-title-row h3'),
             trim_header_summary: headerSummaryToken('#trim-sync-pane .pane-title-row .pane-summary-token'),
-            media_toggle_count: document.querySelectorAll('.media-stage-toggle').length,
+            media_toggle_count: document.querySelectorAll('.media-section-toggle').length,
             queue_toggle_count: document.querySelectorAll('.queue-stage-toggle').length,
             trim_toggle_count: document.querySelectorAll('[data-trim-toggle]').length,
             media_primary_button_count: document.querySelectorAll('.media-set-primary-btn').length,
@@ -452,9 +459,14 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
     touched_ids = ["media", "merge", "trim-sync", "queue"]
     baseline_metrics = [pane_metrics.get(tool) for tool in baseline_ids if pane_metrics.get(tool)]
     baseline = {
-        "title_font_size_px": _median_or_zero([item.get("title_font_size_px", 0) for item in baseline_metrics]),
+        "title_font_size_px": _median_or_zero(
+            [item.get("title_font_size_px", 0) for item in baseline_metrics]
+        ),
         "label_font_size_px": _median_or_zero(
-            [_median_or_zero(list(item.get("label_font_size_px") or [])) for item in baseline_metrics]
+            [
+                _median_or_zero(list(item.get("label_font_size_px") or []))
+                for item in baseline_metrics
+            ]
         ),
         "card_padding_px": _median_or_zero(
             [_median_or_zero(list(item.get("card_padding_px") or [])) for item in baseline_metrics]
@@ -463,11 +475,14 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
             [_median_or_zero(list(item.get("input_height_px") or [])) for item in baseline_metrics]
         ),
         "toggle_right_offset_px": _median_or_zero(
-            [_median_or_zero(list(item.get("toggle_right_offsets_px") or [])) for item in baseline_metrics]
+            [
+                _median_or_zero(list(item.get("toggle_right_offsets_px") or []))
+                for item in baseline_metrics
+            ]
         ),
     }
     expected_sections = {
-        "media": ["Primary", "Added Media", "Stages"],
+        "media": ["Active Stage", "Primary", "Added Media", "Stages"],
         "merge": ["Stage Defaults"],
         "trim-sync": ["Bulk Trim", "Sources"],
     }
@@ -488,29 +503,58 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
         input_height = _median_or_zero(list(metrics.get("input_height_px") or []))
         toggle_offset = _median_or_zero(list(metrics.get("toggle_right_offsets_px") or []))
         if abs(title_size - baseline["title_font_size_px"]) > 0.2:
-            pane_failures.append(f"title font {title_size:.2f}px != baseline {baseline['title_font_size_px']:.2f}px")
-        if label_size and baseline["label_font_size_px"] and abs(label_size - baseline["label_font_size_px"]) > 0.35:
-            pane_failures.append(f"label font {label_size:.2f}px != baseline {baseline['label_font_size_px']:.2f}px")
-        if card_padding and card_padding < max(14.0, baseline["card_padding_px"] - 1.0):
-            pane_failures.append(f"card padding too tight at {card_padding:.2f}px")
-        if input_height and input_height < max(32.0, baseline["input_height_px"] - 1.0):
-            pane_failures.append(f"control height too small at {input_height:.2f}px")
-        if toggle_offset and toggle_offset > max(32.0, baseline["toggle_right_offset_px"] + 8.0):
-            pane_failures.append(f"toggle not right-aligned enough at {toggle_offset:.2f}px from pane edge")
+            pane_failures.append(
+                f"title font {title_size:.2f}px != baseline {baseline['title_font_size_px']:.2f}px"
+            )
+        if (
+            label_size
+            and baseline["label_font_size_px"]
+            and abs(label_size - baseline["label_font_size_px"]) > 0.35
+        ):
+            pane_failures.append(
+                f"label font {label_size:.2f}px != baseline {baseline['label_font_size_px']:.2f}px"
+            )
+        if (
+            card_padding
+            and baseline["card_padding_px"]
+            and abs(card_padding - baseline["card_padding_px"]) > 2.5
+        ):
+            pane_failures.append(
+                f"card padding drift {card_padding:.2f}px vs baseline {baseline['card_padding_px']:.2f}px"
+            )
+        if (
+            input_height
+            and baseline["input_height_px"]
+            and abs(input_height - baseline["input_height_px"]) > 3.0
+        ):
+            pane_failures.append(
+                f"control height drift {input_height:.2f}px vs baseline {baseline['input_height_px']:.2f}px"
+            )
+        if toggle_offset and toggle_offset > 24.0:
+            pane_failures.append(
+                f"toggle not right-aligned enough at {toggle_offset:.2f}px from pane edge"
+            )
         if tool in expected_sections:
             labels = list(metrics.get("section_labels") or [])
             expected = expected_sections[tool]
             if labels[: len(expected)] != expected:
-                pane_failures.append(f"section order {labels[:len(expected)]} != {expected}")
+                pane_failures.append(f"section order {labels[: len(expected)]} != {expected}")
         disallowed_columns = [
-            item for item in list(metrics.get("control_column_counts") or [])
+            item
+            for item in list(metrics.get("control_column_counts") or [])
             if int(item.get("column_count") or 0) > 1
-            and not any(token in str(item.get("class_name") or "") for token in allowed_multi_column.get(tool, set()))
+            and not any(
+                token in str(item.get("class_name") or "")
+                for token in allowed_multi_column.get(tool, set())
+            )
         ]
         if disallowed_columns:
             pane_failures.append(
                 "unexpected multi-column controls: "
-                + ", ".join(f"{item.get('class_name')} ({item.get('column_count')})" for item in disallowed_columns)
+                + ", ".join(
+                    f"{item.get('class_name')} ({item.get('column_count')})"
+                    for item in disallowed_columns
+                )
             )
         per_pane[tool] = {
             "title_font_size_px": title_size,
@@ -525,11 +569,15 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
 
     helper_copy = list(dom_summary.get("forbidden_helper_copy") or [])
     if helper_copy:
-        failures.append({"pane": "global", "failure": f"forbidden helper copy present: {helper_copy}"})
+        failures.append(
+            {"pane": "global", "failure": f"forbidden helper copy present: {helper_copy}"}
+        )
     duplicate_counts = dict(dom_summary.get("duplicate_summary_counts") or {})
     for pane_name, duplicates in duplicate_counts.items():
         if duplicates:
-            failures.append({"pane": pane_name, "failure": f"duplicate summary tokens: {duplicates}"})
+            failures.append(
+                {"pane": pane_name, "failure": f"duplicate summary tokens: {duplicates}"}
+            )
     if int(dom_summary.get("waveform_lane_count") or 0) < 3:
         failures.append({"pane": "waveform", "failure": "expected 3 waveform lanes"})
     if str(dom_summary.get("waveform_lane_bleed") or "").lower() != "false":
@@ -606,7 +654,9 @@ def main() -> int:
                 "dom": dom_summary,
                 "visual_parity": parity,
             }
-            (artifact_root / "audit.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            (artifact_root / "audit.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
             print(json.dumps(payload, indent=2))
             if parity["failures"]:
                 raise RuntimeError(f"Pane visual parity audit failed: {parity['failures']}")

@@ -18,12 +18,10 @@ Verifies:
 from __future__ import annotations
 
 import csv
-import json
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import pytest
 
 from splitshot.domain.models import (
     Project,
@@ -117,7 +115,12 @@ class TestV107MultiStageWorkflow:
         assert controller.project.active_stage_id == controller.project.stages[0].id
         assert controller.project.practiscore_source_file.endswith("IDPA.csv")
         assert [stage.imported_stage_number for stage in controller.project.stages] == [1, 2, 3, 4]
-        assert [stage.label for stage in controller.project.stages] == ["Stage 1", "Stage 2", "Stage 3", "Stage 4"]
+        assert [stage.label for stage in controller.project.stages] == [
+            "Stage 1",
+            "Stage 2",
+            "Stage 3",
+            "Stage 4",
+        ]
 
     def test_import_primary_media_per_stage(self):
         """Phase 02: Import primary media for stages 2-4. Stage 1 has no media."""
@@ -148,8 +151,10 @@ class TestV107MultiStageWorkflow:
                 imported_count += 1
                 primary_path = stage.primary_media.path
                 assert primary_path, f"Stage {stage_num} should have primary media"
-                print(f"  Stage {stage_num} '{stage.label}': primary={Path(primary_path).name} "
-                      f"({stage.primary_media.duration_ms}ms, {stage.primary_media.width}x{stage.primary_media.height})")
+                print(
+                    f"  Stage {stage_num} '{stage.label}': primary={Path(primary_path).name} "
+                    f"({stage.primary_media.duration_ms}ms, {stage.primary_media.width}x{stage.primary_media.height})"
+                )
 
         assert imported_count == 3
         print(f"  Imported primary media for {imported_count}/4 stages (Stage 1 has no media)")
@@ -201,8 +206,10 @@ class TestV107MultiStageWorkflow:
                     stage.added_media.append(
                         MergeSource(asset=VideoAsset(path=str(added_path.resolve())))
                     )
-            print(f"  Stage {stage_num} '{stage.label}': layout={layout.value}, "
-                  f"added_media={len(stage.added_media)}")
+            print(
+                f"  Stage {stage_num} '{stage.label}': layout={layout.value}, "
+                f"added_media={len(stage.added_media)}"
+            )
 
         assert project.stages[1].merge.layout == MergeLayout.PIP
         assert project.stages[2].merge.layout == MergeLayout.SIDE_BY_SIDE
@@ -261,6 +268,7 @@ class TestV107MultiStageWorkflow:
 
         # Set stage 2 to PIP, stage 3 to SBS
         from splitshot.domain.models import MergeLayout
+
         project.stages[1].merge.layout = MergeLayout.PIP
         project.stages[2].merge.layout = MergeLayout.SIDE_BY_SIDE
 
@@ -296,6 +304,7 @@ class TestV107MultiStageWorkflow:
 
         # Import primary media for stages 2-4 so they can be queued
         from splitshot.domain.models import VideoAsset
+
         for stage_num, video_path in STAGE_VIDEOS.items():
             if video_path.exists():
                 project.stages[stage_num - 1].primary_media = VideoAsset(
@@ -334,13 +343,14 @@ class TestV107MultiStageWorkflow:
         # Queued stages should be marked stale after apply-all (except stage 2 which is the source)
         for stage_num in [3, 4]:
             stage = project.stages[stage_num - 1]
-            assert stage.queue_status == QueueStatus.STALE, \
+            assert stage.queue_status == QueueStatus.STALE, (
                 f"Stage {stage_num} should be STALE after apply-all"
+            )
 
         # Stage 2 should still be queued (it's the template source)
         assert project.stages[1].queue_status == QueueStatus.QUEUED
 
-        print(f"  Apply-all verified: 3 queued, template applied, markers excluded")
+        print("  Apply-all verified: 3 queued, template applied, markers excluded")
 
     def test_full_workflow_save_and_load(self):
         """Phase 07: Full workflow — create, configure, save, reload, verify."""
@@ -372,11 +382,16 @@ class TestV107MultiStageWorkflow:
 
             # Import media into Input/
             from splitshot.domain.models import VideoAsset
+
             project_input = project_dir / "Input"
             for stage_num, video_path in STAGE_VIDEOS.items():
                 if video_path.exists():
                     stage = project.stages[stage_num - 1]
-                    stage_dir = project_input / f"{stage_num}-{stage.label.lower().replace(' ', '-')}" / "primary"
+                    stage_dir = (
+                        project_input
+                        / f"{stage_num}-{stage.label.lower().replace(' ', '-')}"
+                        / "primary"
+                    )
                     stage_dir.mkdir(parents=True, exist_ok=True)
                     dest = stage_dir / video_path.name
                     if not dest.exists():
@@ -390,9 +405,13 @@ class TestV107MultiStageWorkflow:
                     )
 
             # Configure per-stage settings
-            from splitshot.domain.models import MergeLayout, MergeSource, QueueEntry
+            from splitshot.domain.models import MergeLayout, QueueEntry
 
-            layout_map = {2: MergeLayout.PIP, 3: MergeLayout.SIDE_BY_SIDE, 4: MergeLayout.ABOVE_BELOW}
+            layout_map = {
+                2: MergeLayout.PIP,
+                3: MergeLayout.SIDE_BY_SIDE,
+                4: MergeLayout.ABOVE_BELOW,
+            }
             for stage_num, layout in layout_map.items():
                 stage = project.stages[stage_num - 1]
                 stage.merge.layout = layout
@@ -407,10 +426,12 @@ class TestV107MultiStageWorkflow:
             # Add stages 2-4 to queue
             for stage_num in [2, 3, 4]:
                 stage = project.stages[stage_num - 1]
-                project.queue.append(QueueEntry(
-                    stage_id=stage.id,
-                    status=QueueStatus.QUEUED,
-                ))
+                project.queue.append(
+                    QueueEntry(
+                        stage_id=stage.id,
+                        status=QueueStatus.QUEUED,
+                    )
+                )
                 stage.queue_status = QueueStatus.QUEUED
 
             # Save project
@@ -424,7 +445,7 @@ class TestV107MultiStageWorkflow:
             assert (project_dir / "Input").exists()
             for stage_num in [2, 3, 4]:
                 assert any((project_dir / "Input").rglob(f"Stage{stage_num}*"))
-            print(f"  Project directory structure verified")
+            print("  Project directory structure verified")
 
             # Reload and verify
             loaded = load_project(str(project_dir))
@@ -442,7 +463,9 @@ class TestV107MultiStageWorkflow:
                 assert stage.overlay.show_score
                 assert stage.primary_media.path, f"Stage {stage_num} missing primary media"
 
-            print(f"  Reloaded: {len(loaded.stages)} stages, {len(loaded.queue)} queued, all settings preserved")
+            print(
+                f"  Reloaded: {len(loaded.stages)} stages, {len(loaded.queue)} queued, all settings preserved"
+            )
             print(f"  Stage labels: {[s.label for s in loaded.stages]}")
             print(f"  Layouts: {[s.merge.layout.value for s in loaded.stages]}")
             print(f"  Queue statuses: {[e.status.value for e in loaded.queue]}")

@@ -308,12 +308,8 @@ export function createShellRuntime({
         : "Per-source sync";
     syncControlValue($("project-name"), projectDetailValue("name"));
     syncControlValue($("project-description"), projectDetailValue("description"));
+    syncControlValue($("project-output-root"), project.output_root || "");
     syncControlValue($("match-type"), project.scoring.match_type || "");
-    renderPractiScoreOptionLists({
-      stage_number: project.scoring.stage_number ?? "",
-      competitor_name: project.scoring.competitor_name || "",
-      competitor_place: project.scoring.competitor_place ?? "",
-    });
     syncControlChecked($("merge-enabled"), project.merge.enabled);
     syncControlValue($("merge-layout"), project.merge.layout);
     const pipValue = Number(
@@ -438,13 +434,12 @@ export function createShellRuntime({
       await createNewProject();
     });
     $("browse-project-path").addEventListener("click", browseProjectPath);
-    $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
-      scheduleExportSettingsApply();
-    }));
-    $("export-path").addEventListener("input", () => {
-      setExportPathDraft($("export-path").value);
-      scheduleExportSettingsApply();
-    });
+    $("browse-project-output-root").addEventListener("click", () => pickPath(
+      "project_folder",
+      "project-output-root",
+      async () => scheduleProjectDetailsApply(),
+      currentState()?.project?.path || "",
+    ));
     $("toggle-rail")?.addEventListener("click", () => {
       const nextRailCollapsed = !getRailCollapsed();
       setRailCollapsed(nextRailCollapsed);
@@ -526,10 +521,20 @@ export function createShellRuntime({
       await flushPendingProjectDrafts();
       await callApi("/api/project/delete", {});
     });
-    ["project-name", "project-description"].forEach((id) => {
+    ["project-name", "project-description", "project-output-root"].forEach((id) => {
       $(id).addEventListener("input", scheduleProjectDetailsApply);
     });
     $("match-type")?.addEventListener("change", schedulePractiScoreContextApply);
+    $("match-competitor-name")?.addEventListener("change", (event) => {
+      syncPractiScoreSelectionFields("match-competitor-name");
+      schedulePractiScoreContextApply();
+    });
+    $("match-competitor-place")?.addEventListener("change", (event) => {
+      syncPractiScoreSelectionFields("match-competitor-place");
+      schedulePractiScoreContextApply();
+    });
+    $("match-class")?.addEventListener("change", schedulePractiScoreContextApply);
+    $("match-division")?.addEventListener("change", schedulePractiScoreContextApply);
     documentObject.addEventListener("fullscreenchange", handleStageFullscreenChange);
     documentObject.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {

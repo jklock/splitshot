@@ -126,7 +126,7 @@ let exportDraft = {};
 let mergeDraft = {};
 let overlayPositionDraft = {};
 let overlayStyleDraft = null;
-let projectDetailsDraft = { name: null, description: null };
+let projectDetailsDraft = { name: null, description: null, output_root: null };
 let overlayTextBoxesDraft = null;
 let popupBubblesDraft = null;
 let popupTemplateDraft = null;
@@ -4976,14 +4976,15 @@ async function postFile(path, file) {
   }
 }
 
-async function pickPath(kind, targetId, afterSelect = null) {
-  const target = $(targetId);
-  activity("dialog.path.request", { kind, target: targetId, current: target.value });
+async function pickPath(kind, targetId, afterSelect = null, defaultRoot = "") {
+  const target = targetId ? $(targetId) : null;
+  const currentValue = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ? target.value : "";
+  activity("dialog.path.request", { kind, target: targetId, current: currentValue });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify({ kind, current: currentValue, default_root: defaultRoot || "" }),
     });
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
     const responseText = await response.text();
@@ -4993,8 +4994,9 @@ async function pickPath(kind, targetId, afterSelect = null) {
     const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     if (data.path) {
-      target.value = data.path;
-      if (targetId === "export-path") exportPathDraft = data.path;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        target.value = data.path;
+      }
       activity("dialog.path.selected", { kind, target: targetId, path: data.path });
       if (afterSelect) {
         await afterSelect(data.path);
@@ -5010,14 +5012,14 @@ async function pickPath(kind, targetId, afterSelect = null) {
   }
 }
 
-async function pickPathForElement(kind, target, targetLabel, afterSelect = null) {
+async function pickPathForElement(kind, target, targetLabel, afterSelect = null, defaultRoot = "") {
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return "";
   activity("dialog.path.request", { kind, target: targetLabel, current: target.value });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify({ kind, current: target.value, default_root: defaultRoot || "" }),
     });
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
     const responseText = await response.text();
@@ -5104,12 +5106,11 @@ function resetLocalProjectView() {
   draggingShotId = null;
   draggingShotPointerId = null;
   pendingDragTimeMs = null;
-  exportPathDraft = "";
   exportDraft = {};
   mergeDraft = {};
   overlayPositionDraft = {};
   overlayStyleDraft = null;
-  projectDetailsDraft = { name: null, description: null };
+  projectDetailsDraft = { name: null, description: null, output_root: null };
   overlayTextBoxesDraft = null;
   popupBubblesDraft = null;
   popupTemplateDraft = null;
@@ -5181,11 +5182,8 @@ function resetLocalProjectView() {
   });
   [
     "project-path",
-    "export-path",
+    "project-output-root",
     "match-type",
-    "match-stage-number",
-    "match-competitor-name",
-    "match-competitor-place",
   ].forEach((id) => {
     const element = $(id);
     if (element) element.value = "";
@@ -6376,6 +6374,8 @@ function renderScoringPresetDescription() {
 }
 
 function renderPractiScoreSummaries() {
+  projectPane?.renderPractiScoreOptionLists?.();
+  projectPane?.ensurePractiScoreSelectionControls?.();
   projectPane?.renderPractiScoreImportSummary?.();
   return scoringPane?.renderPractiScoreSummaries();
 }
@@ -9871,8 +9871,7 @@ mediaPane = createMediaPane({
   setActiveTool,
   activity,
   callApi,
-  openPrimaryFileInput: () => $("primary-file-input")?.click(),
-  openMediaAddMoreInput: () => $("media-add-more-input")?.click(),
+  pickPath,
   fileName,
   splitSeconds,
   formatNumber,

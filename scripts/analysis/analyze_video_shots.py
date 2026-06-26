@@ -85,7 +85,9 @@ def detection_project(result: ThresholdDetectionResult) -> Project:
 def summarize_detection(result: ThresholdDetectionResult) -> ThresholdSummary:
     project = detection_project(result)
     presentation = build_stage_presentation(project)
-    confidences = [float(shot.confidence) for shot in result.detection.shots if shot.confidence is not None]
+    confidences = [
+        float(shot.confidence) for shot in result.detection.shots if shot.confidence is not None
+    ]
     sorted_confidences = sorted(confidences)
     median_confidence = None
     if sorted_confidences:
@@ -93,7 +95,9 @@ def summarize_detection(result: ThresholdDetectionResult) -> ThresholdSummary:
         if len(sorted_confidences) % 2 == 1:
             median_confidence = sorted_confidences[midpoint]
         else:
-            median_confidence = (sorted_confidences[midpoint - 1] + sorted_confidences[midpoint]) / 2.0
+            median_confidence = (
+                sorted_confidences[midpoint - 1] + sorted_confidences[midpoint]
+            ) / 2.0
     mean_confidence = None if not confidences else (sum(confidences) / len(confidences))
     return ThresholdSummary(
         threshold=result.threshold,
@@ -141,7 +145,9 @@ def recommend_threshold(summaries: list[ThresholdSummary]) -> tuple[float, str]:
     return recommended.threshold, reason
 
 
-def selected_detection(results: list[ThresholdDetectionResult], threshold: float) -> ThresholdDetectionResult:
+def selected_detection(
+    results: list[ThresholdDetectionResult], threshold: float
+) -> ThresholdDetectionResult:
     by_threshold = {round(result.threshold, 4): result for result in results}
     key = round(threshold, 4)
     if key not in by_threshold:
@@ -163,14 +169,21 @@ def detailed_shot_rows(result: ThresholdDetectionResult) -> list[dict[str, objec
                 "sequence_total_ms": segment.sequence_total_ms,
                 "sequence_total_time": format_time_ms(segment.sequence_total_ms),
                 "confidence": segment.confidence,
-                "confidence_percent": None if segment.confidence is None else round(segment.confidence * 100.0, 1),
+                "confidence_percent": None
+                if segment.confidence is None
+                else round(segment.confidence * 100.0, 1),
                 "source": segment.source,
             }
         )
     return rows
 
 
-def render_table(summaries: list[ThresholdSummary], recommendation: float, reason: str, rows: list[dict[str, object]]) -> str:
+def render_table(
+    summaries: list[ThresholdSummary],
+    recommendation: float,
+    reason: str,
+    rows: list[dict[str, object]],
+) -> str:
     lines = [
         f"Recommended threshold: {recommendation:.2f}",
         f"Reason: {reason}",
@@ -189,8 +202,16 @@ def render_table(summaries: list[ThresholdSummary], recommendation: float, reaso
                     format_time_ms(summary.draw_ms).rjust(8),
                     format_time_ms(summary.final_shot_ms).rjust(8),
                     format_time_ms(summary.average_split_ms).rjust(9),
-                    ("--" if summary.median_confidence is None else f"{summary.median_confidence * 100.0:5.1f}%").rjust(11),
-                    ("--" if summary.mean_confidence is None else f"{summary.mean_confidence * 100.0:5.1f}%").rjust(8),
+                    (
+                        "--"
+                        if summary.median_confidence is None
+                        else f"{summary.median_confidence * 100.0:5.1f}%"
+                    ).rjust(11),
+                    (
+                        "--"
+                        if summary.mean_confidence is None
+                        else f"{summary.mean_confidence * 100.0:5.1f}%"
+                    ).rjust(8),
                 ]
             )
         )
@@ -238,7 +259,9 @@ def render_review_suggestions(suggestions: list[dict[str, object]]) -> list[str]
                     str(suggestion.get("shot_number") or "--").rjust(4),
                     format_time_ms(suggestion.get("shot_time_ms")).rjust(9),
                     str(suggestion.get("kind") or "").ljust(19),
-                    ("--" if confidence is None else f"{float(confidence) * 100.0:5.1f}%").rjust(10),
+                    ("--" if confidence is None else f"{float(confidence) * 100.0:5.1f}%").rjust(
+                        10
+                    ),
                     ("--" if support is None else f"{float(support) * 100.0:5.1f}%").rjust(7),
                     str(suggestion.get("suggested_action") or ""),
                 ]
@@ -262,7 +285,9 @@ def main() -> int:
     selected_threshold = recommended_threshold if args.threshold is None else args.threshold
     detail_result = selected_detection(results, selected_threshold)
     detail_rows = detailed_shot_rows(detail_result)
-    review_suggestions = [asdict(suggestion) for suggestion in detail_result.detection.review_suggestions]
+    review_suggestions = [
+        asdict(suggestion) for suggestion in detail_result.detection.review_suggestions
+    ]
 
     payload = {
         "video": str(video_path),

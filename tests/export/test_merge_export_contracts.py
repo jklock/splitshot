@@ -22,7 +22,9 @@ def test_non_pip_merge_layout_math_remains_explicit_and_stable() -> None:
     primary = _asset("/tmp/primary.mp4", width=640, height=360)
     secondary = _asset("/tmp/secondary.mp4", width=320, height=240)
 
-    side_by_side = calculate_merge_canvas(primary, secondary, MergeLayout.SIDE_BY_SIDE, 35, 0.2, 0.8)
+    side_by_side = calculate_merge_canvas(
+        primary, secondary, MergeLayout.SIDE_BY_SIDE, 35, 0.2, 0.8
+    )
     assert side_by_side.width == 1120
     assert side_by_side.height == 360
     assert side_by_side.primary_rect.x == 0
@@ -62,7 +64,11 @@ def test_grid_merge_plan_uses_source_order_and_per_source_offsets() -> None:
     plan = _build_merge_plan(project)
     command = _command_text(plan.command)
 
-    assert command.index("/tmp/primary.mp4") < command.index("/tmp/first.mp4") < command.index("/tmp/second.mp4")
+    assert (
+        command.index("/tmp/primary.mp4")
+        < command.index("/tmp/first.mp4")
+        < command.index("/tmp/second.mp4")
+    )
     assert "-ss 0.250 -i /tmp/first.mp4" in command
     assert "[2:v]setpts=PTS-STARTPTS,tpad=start_duration=0.125:color=black" in command
     assert "xstack=inputs=3" in command

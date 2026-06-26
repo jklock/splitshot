@@ -71,7 +71,9 @@ def _popup_template_from_dict(data: object) -> PopupTemplate:
         quadrant=str(payload.get("quadrant", "middle_middle") or "middle_middle"),
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),
-        motion_mode=_normalize_popup_motion_mode(payload.get("motion_mode"), follow_motion=follow_motion),
+        motion_mode=_normalize_popup_motion_mode(
+            payload.get("motion_mode"), follow_motion=follow_motion
+        ),
         follow_motion=follow_motion,
         background_color=str(payload.get("background_color", "#000000") or "#000000"),
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
@@ -91,7 +93,9 @@ def _badge_style_from_dict(data: object, fallback: BadgeStyle | None = None) -> 
     default = fallback or BadgeStyle()
     payload = data if isinstance(data, dict) else {}
     return BadgeStyle(
-        background_color=str(payload.get("background_color", default.background_color) or default.background_color),
+        background_color=str(
+            payload.get("background_color", default.background_color) or default.background_color
+        ),
         text_color=str(payload.get("text_color", default.text_color) or default.text_color),
         opacity=max(0.0, min(1.0, _float_or_default(payload.get("opacity"), default.opacity))),
     )
@@ -132,8 +136,12 @@ class AppSettings:
     overlay_position: OverlayPosition = OverlayPosition.BOTTOM
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
     shot_badge: BadgeStyle = field(default_factory=lambda: BadgeStyle(background_color="#1D4ED8"))
-    current_shot_badge: BadgeStyle = field(default_factory=lambda: BadgeStyle(background_color="#DC2626"))
-    hit_factor_badge: BadgeStyle = field(default_factory=lambda: BadgeStyle(background_color="#047857"))
+    current_shot_badge: BadgeStyle = field(
+        default_factory=lambda: BadgeStyle(background_color="#DC2626")
+    )
+    hit_factor_badge: BadgeStyle = field(
+        default_factory=lambda: BadgeStyle(background_color="#047857")
+    )
     overlay_custom_box_background_color: str = "#000000"
     overlay_custom_box_text_color: str = "#ffffff"
     overlay_custom_box_opacity: float = 0.9
@@ -249,7 +257,9 @@ class AppSettings:
         merge_source_defaults = _review_text_boxes_from_dict(data.get("merge_source_defaults"))
         if not merge_source_defaults and isinstance(data.get("merge_source_defaults_json"), str):
             try:
-                merge_source_defaults = _review_text_boxes_from_dict(json.loads(str(data["merge_source_defaults_json"])))
+                merge_source_defaults = _review_text_boxes_from_dict(
+                    json.loads(str(data["merge_source_defaults_json"]))
+                )
             except json.JSONDecodeError:
                 merge_source_defaults = []
         settings_templates = _settings_templates_from_dict(data.get("settings_templates"))
@@ -261,7 +271,9 @@ class AppSettings:
         layout_inspector_width = data.get("layout_inspector_width")
         layout_waveform_height = data.get("layout_waveform_height")
         try:
-            parsed_default_stage_number = None if default_stage_number in {None, ""} else int(default_stage_number)
+            parsed_default_stage_number = (
+                None if default_stage_number in {None, ""} else int(default_stage_number)
+            )
         except (TypeError, ValueError):
             parsed_default_stage_number = None
         try:
@@ -288,18 +300,34 @@ class AppSettings:
         settings = cls(
             detection_threshold=factory_threshold,
             shotml_defaults=shotml_defaults,
-            default_match_type=str(data.get("default_match_type", "uspsa") or "uspsa").strip().lower(),
+            default_match_type=str(data.get("default_match_type", "uspsa") or "uspsa")
+            .strip()
+            .lower(),
             default_stage_number=parsed_default_stage_number,
             default_competitor_name=str(data.get("default_competitor_name", "") or ""),
             default_competitor_place=parsed_default_competitor_place,
-            overlay_position=OverlayPosition(str(data.get("overlay_position", OverlayPosition.BOTTOM.value))),
+            overlay_position=OverlayPosition(
+                str(data.get("overlay_position", OverlayPosition.BOTTOM.value))
+            ),
             timer_badge=_badge_style_from_dict(data.get("timer_badge"), BadgeStyle()),
-            shot_badge=_badge_style_from_dict(data.get("shot_badge"), BadgeStyle(background_color="#1D4ED8")),
-            current_shot_badge=_badge_style_from_dict(data.get("current_shot_badge"), BadgeStyle(background_color="#DC2626")),
-            hit_factor_badge=_badge_style_from_dict(data.get("hit_factor_badge"), BadgeStyle(background_color="#047857")),
-            overlay_custom_box_background_color=str(data.get("overlay_custom_box_background_color", "#000000") or "#000000"),
-            overlay_custom_box_text_color=str(data.get("overlay_custom_box_text_color", "#ffffff") or "#ffffff"),
-            overlay_custom_box_opacity=max(0.0, min(1.0, _float_or_default(data.get("overlay_custom_box_opacity"), 0.9))),
+            shot_badge=_badge_style_from_dict(
+                data.get("shot_badge"), BadgeStyle(background_color="#1D4ED8")
+            ),
+            current_shot_badge=_badge_style_from_dict(
+                data.get("current_shot_badge"), BadgeStyle(background_color="#DC2626")
+            ),
+            hit_factor_badge=_badge_style_from_dict(
+                data.get("hit_factor_badge"), BadgeStyle(background_color="#047857")
+            ),
+            overlay_custom_box_background_color=str(
+                data.get("overlay_custom_box_background_color", "#000000") or "#000000"
+            ),
+            overlay_custom_box_text_color=str(
+                data.get("overlay_custom_box_text_color", "#ffffff") or "#ffffff"
+            ),
+            overlay_custom_box_opacity=max(
+                0.0, min(1.0, _float_or_default(data.get("overlay_custom_box_opacity"), 0.9))
+            ),
             merge_layout=MergeLayout(str(data.get("merge_layout", MergeLayout.SIDE_BY_SIDE.value))),
             merge_pip_x=_float_or_default(data.get("merge_pip_x"), 1.0),
             merge_pip_y=_float_or_default(data.get("merge_pip_y"), 1.0),
@@ -307,10 +335,18 @@ class AppSettings:
             merge_source_defaults=merge_source_defaults,
             export_quality=ExportQuality(str(data.get("export_quality", ExportQuality.HIGH.value))),
             export_preset=ExportPreset(str(data.get("export_preset", ExportPreset.SOURCE.value))),
-            export_frame_rate=ExportFrameRate(str(data.get("export_frame_rate", ExportFrameRate.SOURCE.value))),
-            export_video_codec=ExportVideoCodec(str(data.get("export_video_codec", ExportVideoCodec.H264.value))),
-            export_audio_codec=ExportAudioCodec(str(data.get("export_audio_codec", ExportAudioCodec.AAC.value))),
-            export_color_space=ExportColorSpace(str(data.get("export_color_space", ExportColorSpace.BT709_SDR.value))),
+            export_frame_rate=ExportFrameRate(
+                str(data.get("export_frame_rate", ExportFrameRate.SOURCE.value))
+            ),
+            export_video_codec=ExportVideoCodec(
+                str(data.get("export_video_codec", ExportVideoCodec.H264.value))
+            ),
+            export_audio_codec=ExportAudioCodec(
+                str(data.get("export_audio_codec", ExportAudioCodec.AAC.value))
+            ),
+            export_color_space=ExportColorSpace(
+                str(data.get("export_color_space", ExportColorSpace.BT709_SDR.value))
+            ),
             export_two_pass=bool(data.get("export_two_pass", False)),
             export_ffmpeg_preset=str(data.get("export_ffmpeg_preset", "medium") or "medium"),
             badge_size=BadgeSize(str(data.get("badge_size", BadgeSize.M.value))),
@@ -329,9 +365,13 @@ class AppSettings:
         if not settings.active_template_name:
             settings.active_template_name = "Default"
         if not settings.settings_templates:
-            settings.settings_templates = {settings.active_template_name: settings.template_snapshot()}
+            settings.settings_templates = {
+                settings.active_template_name: settings.template_snapshot()
+            }
         elif settings.active_template_name not in settings.settings_templates:
-            settings.settings_templates[settings.active_template_name] = settings.template_snapshot()
+            settings.settings_templates[settings.active_template_name] = (
+                settings.template_snapshot()
+            )
         return settings
 
 
@@ -374,6 +414,7 @@ def save_folder_settings(project_path: str | Path, settings: AppSettings) -> Non
         raise ValueError("Project path is required for folder settings.")
     path.parent.mkdir(parents=True, exist_ok=True)
     data = settings.config_dict()
+
     def _toml_value(value: object) -> str:
         if isinstance(value, bool):
             return "true" if value else "false"
@@ -381,41 +422,45 @@ def save_folder_settings(project_path: str | Path, settings: AppSettings) -> Non
             return str(value)
         return json.dumps(str(value))
 
-    lines = [f'detection_threshold = {data["detection_threshold"]}']
-    lines.append(f'default_match_type = {json.dumps(str(data["default_match_type"]))}')
+    lines = [f"detection_threshold = {data['detection_threshold']}"]
+    lines.append(f"default_match_type = {json.dumps(str(data['default_match_type']))}")
     if data["default_stage_number"] is not None:
-        lines.append(f'default_stage_number = {int(data["default_stage_number"])}')
+        lines.append(f"default_stage_number = {int(data['default_stage_number'])}")
     if data["default_competitor_name"]:
-        lines.append(f'default_competitor_name = {json.dumps(str(data["default_competitor_name"]))}')
+        lines.append(
+            f"default_competitor_name = {json.dumps(str(data['default_competitor_name']))}"
+        )
     if data["default_competitor_place"] is not None:
-        lines.append(f'default_competitor_place = {int(data["default_competitor_place"])}')
-    lines.extend([
-        f'overlay_position = "{data["overlay_position"]}"',
-        f'merge_pip_x = {data["merge_pip_x"]}',
-        f'merge_pip_y = {data["merge_pip_y"]}',
-        f'merge_layout = "{data["merge_layout"]}"',
-        f'pip_size = "{data["pip_size"]}"',
-        f'merge_source_defaults_json = {json.dumps(json.dumps(data["merge_source_defaults"]))}',
-        f'export_quality = "{data["export_quality"]}"',
-        f'export_preset = "{data["export_preset"]}"',
-        f'export_frame_rate = "{data["export_frame_rate"]}"',
-        f'export_video_codec = "{data["export_video_codec"]}"',
-        f'export_audio_codec = "{data["export_audio_codec"]}"',
-        f'export_color_space = "{data["export_color_space"]}"',
-        f'export_two_pass = {"true" if data["export_two_pass"] else "false"}',
-        f'export_ffmpeg_preset = {json.dumps(str(data["export_ffmpeg_preset"]))}',
-        f'badge_size = "{data["badge_size"]}"',
-        f'default_tool = "{data["default_tool"]}"',
-        f'reopen_last_tool = {"true" if data["reopen_last_tool"] else "false"}',
-    ])
+        lines.append(f"default_competitor_place = {int(data['default_competitor_place'])}")
+    lines.extend(
+        [
+            f'overlay_position = "{data["overlay_position"]}"',
+            f"merge_pip_x = {data['merge_pip_x']}",
+            f"merge_pip_y = {data['merge_pip_y']}",
+            f'merge_layout = "{data["merge_layout"]}"',
+            f'pip_size = "{data["pip_size"]}"',
+            f"merge_source_defaults_json = {json.dumps(json.dumps(data['merge_source_defaults']))}",
+            f'export_quality = "{data["export_quality"]}"',
+            f'export_preset = "{data["export_preset"]}"',
+            f'export_frame_rate = "{data["export_frame_rate"]}"',
+            f'export_video_codec = "{data["export_video_codec"]}"',
+            f'export_audio_codec = "{data["export_audio_codec"]}"',
+            f'export_color_space = "{data["export_color_space"]}"',
+            f"export_two_pass = {'true' if data['export_two_pass'] else 'false'}",
+            f"export_ffmpeg_preset = {json.dumps(str(data['export_ffmpeg_preset']))}",
+            f'badge_size = "{data["badge_size"]}"',
+            f'default_tool = "{data["default_tool"]}"',
+            f"reopen_last_tool = {'true' if data['reopen_last_tool'] else 'false'}",
+        ]
+    )
     if data["layout_locked"] is not None:
-        lines.append(f'layout_locked = {"true" if data["layout_locked"] else "false"}')
+        lines.append(f"layout_locked = {'true' if data['layout_locked'] else 'false'}")
     if data["layout_rail_width"] is not None:
-        lines.append(f'layout_rail_width = {int(data["layout_rail_width"])}')
+        lines.append(f"layout_rail_width = {int(data['layout_rail_width'])}")
     if data["layout_inspector_width"] is not None:
-        lines.append(f'layout_inspector_width = {int(data["layout_inspector_width"])}')
+        lines.append(f"layout_inspector_width = {int(data['layout_inspector_width'])}")
     if data["layout_waveform_height"] is not None:
-        lines.append(f'layout_waveform_height = {int(data["layout_waveform_height"])}')
+        lines.append(f"layout_waveform_height = {int(data['layout_waveform_height'])}")
     for section_name in ("timer_badge", "shot_badge", "current_shot_badge", "hit_factor_badge"):
         style = data[section_name]
         if isinstance(style, dict):

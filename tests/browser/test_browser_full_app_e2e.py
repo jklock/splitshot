@@ -12,7 +12,22 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
 
-TOOL_IDS = ["project", "media", "merge", "trim-sync", "scoring", "timing", "markers", "overlay", "review", "export", "queue", "metrics", "shotml", "settings"]
+TOOL_IDS = [
+    "project",
+    "media",
+    "merge",
+    "trim-sync",
+    "scoring",
+    "timing",
+    "markers",
+    "overlay",
+    "review",
+    "export",
+    "queue",
+    "metrics",
+    "shotml",
+    "settings",
+]
 ROOT = Path(__file__).resolve().parents[2]
 CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
 RELEASE_PROOF_ARTIFACT_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
@@ -90,7 +105,9 @@ def _write_release_proof_contact_sheet(root: Path | None) -> None:
     (root / "contact-sheet.html").write_text(html, encoding="utf-8")
 
 
-def _record_timing(timings: list[dict[str, object]], name: str, started_at: float, threshold_ms: int) -> None:
+def _record_timing(
+    timings: list[dict[str, object]], name: str, started_at: float, threshold_ms: int
+) -> None:
     elapsed_ms = round((time.perf_counter() - started_at) * 1000)
     entry = {
         "name": name,
@@ -99,7 +116,9 @@ def _record_timing(timings: list[dict[str, object]], name: str, started_at: floa
         "passed": elapsed_ms <= threshold_ms,
     }
     timings.append(entry)
-    assert elapsed_ms <= threshold_ms, f"{name} exceeded threshold: {elapsed_ms}ms > {threshold_ms}ms"
+    assert elapsed_ms <= threshold_ms, (
+        f"{name} exceeded threshold: {elapsed_ms}ms > {threshold_ms}ms"
+    )
 
 
 def _wait_for_ui_settled(page) -> None:
@@ -156,17 +175,31 @@ def _assert_no_horizontal_overflow(page, label: str, root: Path | None = None) -
         or snapshot["offenders"]
     ):
         _write_release_proof_json(root, f"overflow-{label}.json", snapshot)
-    assert snapshot["inspector_scroll_width"] <= snapshot["inspector_client_width"] + 2, f"{label}: inspector overflow"
-    assert snapshot["pane_scroll_width"] <= snapshot["pane_client_width"] + 2, f"{label}: pane overflow"
-    assert snapshot["body_scroll_width"] <= snapshot["body_client_width"] + 2, f"{label}: body overflow"
+    assert snapshot["inspector_scroll_width"] <= snapshot["inspector_client_width"] + 2, (
+        f"{label}: inspector overflow"
+    )
+    assert snapshot["pane_scroll_width"] <= snapshot["pane_client_width"] + 2, (
+        f"{label}: pane overflow"
+    )
+    assert snapshot["body_scroll_width"] <= snapshot["body_client_width"] + 2, (
+        f"{label}: body overflow"
+    )
     assert not snapshot["offenders"], f"{label}: clipped controls detected"
 
 
-def _open_tool_for_release(page, tool_id: str, timings: list[dict[str, object]], root: Path | None, screenshot_name: str | None = None) -> None:
+def _open_tool_for_release(
+    page,
+    tool_id: str,
+    timings: list[dict[str, object]],
+    root: Path | None,
+    screenshot_name: str | None = None,
+) -> None:
     started_at = time.perf_counter()
     _open_tool(page, tool_id)
     _wait_for_ui_settled(page)
-    _record_timing(timings, f"tool-switch:{tool_id}", started_at, RELEASE_PROOF_THRESHOLDS_MS["tool_switch"])
+    _record_timing(
+        timings, f"tool-switch:{tool_id}", started_at, RELEASE_PROOF_THRESHOLDS_MS["tool_switch"]
+    )
     _assert_no_horizontal_overflow(page, tool_id, root)
     if screenshot_name:
         _capture_release_proof_screenshot(page, root, screenshot_name)
@@ -240,7 +273,9 @@ def _configure_output_profile_badges(page) -> tuple[str, str]:
     page.locator("#show-overlay").check()
     badge_size = _alternate_select_value(page.locator("#badge-size"))
     page.locator("#badge-size").select_option(badge_size)
-    page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
+    page.wait_for_function(
+        "(value) => state?.project?.overlay?.badge_size === value", arg=badge_size
+    )
 
     _open_tool(page, "export")
     page.locator("#create-output-profile").click()
@@ -374,13 +409,18 @@ def _exercise_waveform_and_timing(page) -> None:
     )
     assert timing_positions
     page.locator("#timing-event-position").select_option(timing_positions[0])
-    baseline_event_count = int(page.evaluate("() => (state?.project?.analysis?.events || []).length"))
+    baseline_event_count = int(
+        page.evaluate("() => (state?.project?.analysis?.events || []).length")
+    )
     page.locator("#add-timing-event").click()
     page.wait_for_function(
         "(expectedCount) => (state?.project?.analysis?.events || []).length === expectedCount",
         arg=baseline_event_count + 1,
     )
-    page.locator("#timing-workbench-table").get_by_text("Master timing note").first.wait_for(state="visible")
+    page.locator("#timing-workbench-table").get_by_text("Master timing note").first.wait_for(
+        state="visible"
+    )
+
 
 def _exercise_markers_review_overlay(page) -> None:
     _open_tool(page, "timing")
@@ -396,7 +436,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
     page.wait_for_function("() => (state?.project?.popups || []).length > 1")
     page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
-    page.wait_for_function("() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null"
+    )
 
     page.locator("#popup-edit-selected").click()
     page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
@@ -414,7 +456,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.wait_for_function(
         "() => (state?.project?.overlay?.text_boxes || []).some((box) => box.text === 'Master review note')"
     )
-    _set_color_picker_value(page, review_card.locator('button[data-text-box-field="background_color"]'), "#ff0000")
+    _set_color_picker_value(
+        page, review_card.locator('button[data-text-box-field="background_color"]'), "#ff0000"
+    )
     review_box_id = page.evaluate(
         """() => {
           const boxes = state?.project?.overlay?.text_boxes || [];
@@ -427,7 +471,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.locator("#show-overlay").check()
     page.locator("#badge-size").select_option(_alternate_select_value(page.locator("#badge-size")))
     page.locator("#overlay-style").select_option("bubble")
-    page.locator("#overlay-font-family").select_option(_alternate_select_value(page.locator("#overlay-font-family")))
+    page.locator("#overlay-font-family").select_option(
+        _alternate_select_value(page.locator("#overlay-font-family"))
+    )
     _set_input_value(page.locator("#overlay-font-size"), "16")
     page.locator("#overlay-font-bold").check()
     page.locator("#overlay-font-italic").check()
@@ -498,9 +544,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         }""",
         arg=source_id,
     )
-    first_card.locator('.pip-size-control input').first.evaluate(
-        "input => Number(input.value)"
-    )
+    first_card.locator(".pip-size-control input").first.evaluate("input => Number(input.value)")
 
     _open_tool(page, "trim-sync")
     trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
@@ -511,8 +555,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     merge_pane_cards = page.locator('[data-tool-pane="merge"] .merge-media-card')
     second_card = merge_pane_cards.nth(1)
 
-    second_body = second_card.locator('.merge-media-card-body')
-    if second_body.evaluate('body => body.hidden'):
+    second_body = second_card.locator(".merge-media-card-body")
+    if second_body.evaluate("body => body.hidden"):
         second_card.locator('button[aria-label*="stage media controls"]').click()
         page.wait_for_function(
             """(sourceId) => {
@@ -527,41 +571,90 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }"""
     )
-    second_card.locator('[data-merge-source-remove]').click()
+    second_source_id = second_card.get_attribute("data-source-id")
+    page.evaluate(
+        """(sourceId) => { callApi('/api/merge/remove', { source_id: sourceId }); }""",
+        second_source_id,
+    )
     page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+    page.evaluate(
+        """async () => { await callApi('/api/project/stage/create', { label: 'Stage 1' }); }"""
+    )
+    page.wait_for_function(
+        """() => {
+            const project = state?.project;
+            return (project?.stages || []).length === 1
+                && Boolean(project?.active_stage_id)
+                && Boolean(project?.primary_video?.path)
+                && (project?.merge_sources || []).length === 1;
+        }"""
+    )
 
     _open_tool(page, "export")
     page.locator("#quality").select_option(_alternate_select_value(page.locator("#quality")))
-    page.locator("#aspect-ratio").select_option(_alternate_select_value(page.locator("#aspect-ratio")))
+    page.locator("#aspect-ratio").select_option(
+        _alternate_select_value(page.locator("#aspect-ratio"))
+    )
     _set_input_value(page.locator("#target-width"), "1280")
     _set_input_value(page.locator("#target-height"), "720")
     page.locator("#frame-rate").select_option(_alternate_select_value(page.locator("#frame-rate")))
-    page.locator("#video-codec").select_option(_alternate_select_value(page.locator("#video-codec")))
+    page.locator("#video-codec").select_option(
+        _alternate_select_value(page.locator("#video-codec"))
+    )
     _set_input_value(page.locator("#video-bitrate"), "12")
-    page.locator("#audio-codec").select_option(_alternate_select_value(page.locator("#audio-codec")))
+    page.locator("#audio-codec").select_option(
+        _alternate_select_value(page.locator("#audio-codec"))
+    )
     _set_input_value(page.locator("#audio-sample-rate"), "48000")
     _set_input_value(page.locator("#audio-bitrate"), "256")
-    page.locator("#color-space").select_option(_alternate_select_value(page.locator("#color-space")))
-    page.locator("#ffmpeg-preset").select_option(_alternate_select_value(page.locator("#ffmpeg-preset")))
+    page.locator("#color-space").select_option(
+        _alternate_select_value(page.locator("#color-space"))
+    )
+    page.locator("#ffmpeg-preset").select_option(
+        _alternate_select_value(page.locator("#ffmpeg-preset"))
+    )
     page.locator("#two-pass").check()
 
-    output_path = tmp_path / "master-full-app-export.mp4"
-    page.locator("#export-path").fill(str(output_path))
-    page.wait_for_function("(path) => state?.project?.export?.output_path === path", arg=str(output_path))
+    output_root = tmp_path / "master-full-app-export"
+    project_path = tmp_path / "master-full-app-project"
+    output_root.mkdir(parents=True, exist_ok=True)
+    page.locator('[data-tool="project"]').click()
+    page.evaluate(
+        """async (path) => { await callApi('/api/project/save', { path }); }""", str(project_path)
+    )
+    page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
     page.evaluate(
         """async (path) => {
-            await callApi('/api/export', { path });
+            const input = document.getElementById('project-output-root');
+            if (input) {
+                input.value = path;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            await callApi('/api/project/details', { output_root: path });
         }""",
-        str(output_path),
+        str(output_root),
     )
-    page.wait_for_function("() => state?.project?.export?.last_log === 'Master export log'")
+    page.wait_for_function("(path) => state?.project?.output_root === path", arg=str(output_root))
+    page.locator('[data-tool="export"]').click()
+    export_state = page.evaluate(
+        """async () => {
+            const response = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            return await response.json();
+        }"""
+    )
+    assert "error" not in export_state
+    assert export_state["project"]["export"]["last_log"] == "Master export log"
     page.locator("#show-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     page.locator("#close-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
 
     assert captured_exports
-    assert captured_exports[0]["output_path"] == str(output_path)
+    assert str(captured_exports[0]["output_path"]).startswith(str(output_root))
 
 
 def _exercise_settings_and_shotml(page) -> None:
@@ -569,13 +662,15 @@ def _exercise_settings_and_shotml(page) -> None:
     for section_id in ["global-template", "pip", "overlay", "export"]:
         section = page.locator(f'[data-settings-section="{section_id}"]')
         if section.evaluate("element => element.classList.contains('collapsed')"):
-            section.locator('button[data-section-toggle]').click()
+            section.locator("button[data-section-toggle]").click()
             page.wait_for_function(
                 "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                 arg=f'[data-settings-section="{section_id}"]',
             )
 
-    _set_select = lambda selector: page.locator(selector).select_option(_alternate_select_value(page.locator(selector)))
+    _set_select = lambda selector: page.locator(selector).select_option(
+        _alternate_select_value(page.locator(selector))
+    )
     _set_select("#settings-scope")
     _set_select("#settings-default-tool")
     page.locator("#settings-reopen-last-tool").uncheck()
@@ -599,7 +694,7 @@ def _exercise_settings_and_shotml(page) -> None:
     _open_tool(page, "shotml")
     threshold_section = page.locator('[data-shotml-section="threshold"]')
     if threshold_section.evaluate("element => element.classList.contains('collapsed')"):
-        threshold_section.locator('button[data-section-toggle]').click()
+        threshold_section.locator("button[data-section-toggle]").click()
         page.wait_for_function(
             "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
             arg='[data-shotml-section="threshold"]',
@@ -616,7 +711,9 @@ def _exercise_settings_and_shotml(page) -> None:
     )
 
 
-def test_browser_full_app_e2e_calls_surface_workflows(synthetic_video_factory, tmp_path: Path, monkeypatch) -> None:
+def test_browser_full_app_e2e_calls_surface_workflows(
+    synthetic_video_factory, tmp_path: Path, monkeypatch
+) -> None:
     primary_path = Path(synthetic_video_factory(name="full-app-primary"))
     secondary_path = Path(synthetic_video_factory(name="full-app-secondary"))
     secondary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -657,7 +754,9 @@ def test_browser_full_app_practiscore_timing_scoring_save_reload_persistence_tru
             try:
                 _set_project_path(page, project_path)
                 page.evaluate("(path) => createNewProject(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 _load_primary_video(page, primary_path)
 
                 page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
@@ -669,7 +768,9 @@ def test_browser_full_app_practiscore_timing_scoring_save_reload_persistence_tru
                 page.wait_for_function("() => scoringWorkbenchExpanded === true")
 
                 page.evaluate("(path) => useProjectFolder(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
             finally:
@@ -694,7 +795,9 @@ def test_browser_review_summary_imported_metrics_truth_gate(
             try:
                 _set_project_path(page, project_path)
                 page.evaluate("(path) => createNewProject(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 _load_primary_video(page, primary_path)
 
                 page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
@@ -745,7 +848,9 @@ def test_browser_full_app_markers_review_overlay_export_preview_parity_truth_gat
                 _load_primary_video(page, primary_path)
                 _exercise_markers_review_overlay(page)
                 _exercise_merge_and_export(page, secondary_path, tmp_path, monkeypatch)
-                page.wait_for_function("() => (state?.project?.overlay?.text_boxes || []).length > 0")
+                page.wait_for_function(
+                    "() => (state?.project?.overlay?.text_boxes || []).length > 0"
+                )
                 page.wait_for_function("() => (state?.project?.popups || []).length > 0")
             finally:
                 browser.close()
@@ -753,7 +858,9 @@ def test_browser_full_app_markers_review_overlay_export_preview_parity_truth_gat
         server.shutdown()
 
 
-def test_browser_full_app_merge_export_sync_truth_gate(synthetic_video_factory, tmp_path: Path, monkeypatch) -> None:
+def test_browser_full_app_merge_export_sync_truth_gate(
+    synthetic_video_factory, tmp_path: Path, monkeypatch
+) -> None:
     primary_path = Path(synthetic_video_factory(name="truth-gate-merge-primary"))
     secondary_path = Path(synthetic_video_factory(name="truth-gate-merge-secondary"))
 
@@ -818,7 +925,9 @@ def test_browser_full_app_output_profile_review_source_and_badges_truth_gate(
         server.shutdown()
 
 
-def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path: Path, monkeypatch) -> None:
+def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
+    tmp_path: Path, monkeypatch
+) -> None:
     primary_path = _copy_clip1_video(tmp_path, "clip1-primary.MP4")
     secondary_path = _copy_clip1_video(tmp_path, "clip1-secondary.MP4")
     tertiary_path = _copy_clip1_video(tmp_path, "clip1-tertiary.MP4")
@@ -874,10 +983,16 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     }""",
                     arg={"projectPath": str(project_path), "stageId": stage.id},
                 )
-                _capture_release_proof_screenshot(page, artifact_root, "release-01-primary-imported")
+                _capture_release_proof_screenshot(
+                    page, artifact_root, "release-01-primary-imported"
+                )
 
-                _open_tool_for_release(page, "media", timings, artifact_root, "release-01b-media-pane")
-                _open_tool_for_release(page, "merge", timings, artifact_root, "release-02-merge-pane")
+                _open_tool_for_release(
+                    page, "media", timings, artifact_root, "release-01b-media-pane"
+                )
+                _open_tool_for_release(
+                    page, "merge", timings, artifact_root, "release-02-merge-pane"
+                )
                 _open_tool(page, "merge")
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
@@ -892,11 +1007,15 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 if first_body.evaluate("body => body.hidden"):
                     first_card.locator('button[aria-label*="stage media controls"]').click()
                     first_body.wait_for(state="visible")
-                _capture_release_proof_screenshot(page, artifact_root, "release-04-merge-card-expanded")
+                _capture_release_proof_screenshot(
+                    page, artifact_root, "release-04-merge-card-expanded"
+                )
 
-                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-05-trim-sync-pane")
+                _open_tool_for_release(
+                    page, "trim-sync", timings, artifact_root, "release-05-trim-sync-pane"
+                )
                 trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
-                trim_sync_card.wait_for(state='visible')
+                trim_sync_card.wait_for(state="visible")
                 trim_sync_card.locator("button.trim-analyze-btn").first.click(force=True)
                 page.wait_for_function(
                     """(targetSourceId) => {
@@ -911,9 +1030,13 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 _capture_release_proof_screenshot(page, artifact_root, "release-06-sync-ready")
 
                 started_at = time.perf_counter()
-                _open_tool_for_release(page, "merge", timings, artifact_root, "release-07-merge-returned")
+                _open_tool_for_release(
+                    page, "merge", timings, artifact_root, "release-07-merge-returned"
+                )
                 first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
-                first_card.locator('[data-merge-source-field="placement_mode"]').select_option("above_below")
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option(
+                    "above_below"
+                )
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
@@ -921,33 +1044,54 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     }""",
                     arg=source_id,
                 )
-                _record_timing(timings, "per-source-layout", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-08-layout-committed")
+                _record_timing(
+                    timings,
+                    "per-source-layout",
+                    started_at,
+                    RELEASE_PROOF_THRESHOLDS_MS["source_commit"],
+                )
+                _capture_release_proof_screenshot(
+                    page, artifact_root, "release-08-layout-committed"
+                )
 
                 page.locator("#expand-waveform").click()
                 _wait_for_ui_settled(page)
-                _capture_release_proof_screenshot(page, artifact_root, "release-10-waveform-expanded")
+                _capture_release_proof_screenshot(
+                    page, artifact_root, "release-10-waveform-expanded"
+                )
 
-                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-11-overlay-before-profile")
+                _open_tool_for_release(
+                    page, "overlay", timings, artifact_root, "release-11-overlay-before-profile"
+                )
                 page.locator("#show-overlay").check()
                 badge_size = _alternate_select_value(page.locator("#badge-size"))
                 page.locator("#badge-size").select_option(badge_size)
-                page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
+                page.wait_for_function(
+                    "(value) => state?.project?.overlay?.badge_size === value", arg=badge_size
+                )
 
-                _open_tool_for_release(page, "export", timings, artifact_root, "release-12-export-before-profile")
+                _open_tool_for_release(
+                    page, "export", timings, artifact_root, "release-12-export-before-profile"
+                )
                 _open_tool_for_release(page, "review", timings, artifact_root, "release-14-review")
                 _capture_release_proof_screenshot(page, artifact_root, "release-15-review-metrics")
-                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-16-overlay-ready")
+                _open_tool_for_release(
+                    page, "overlay", timings, artifact_root, "release-16-overlay-ready"
+                )
 
                 _open_tool_for_release(page, "timing", timings, artifact_root)
                 page.locator("#expand-timing").click()
                 _wait_for_ui_settled(page)
-                _capture_release_proof_screenshot(page, artifact_root, "release-18-timing-workbench-expanded")
+                _capture_release_proof_screenshot(
+                    page, artifact_root, "release-18-timing-workbench-expanded"
+                )
 
                 for tool_id in TOOL_IDS:
                     _open_tool_for_release(page, tool_id, timings, artifact_root, f"pane-{tool_id}")
 
-                _open_tool_for_release(page, "queue", timings, artifact_root, "release-19-queue-pane")
+                _open_tool_for_release(
+                    page, "queue", timings, artifact_root, "release-19-queue-pane"
+                )
                 page.wait_for_timeout(300)
                 enabled_queue_button = page.locator(".queue-add-btn:not([disabled])").first
                 if enabled_queue_button.count():
@@ -957,8 +1101,7 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                         """async (stageId) => {
                             if (!stageId) return;
                             await callApi('/api/project/queue/add', { stage_id: stageId });
-                        }"""
-                        ,
+                        }""",
                         stage.id,
                     )
                 page.wait_for_function(
@@ -974,7 +1117,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     timeout=10000,
                 )
                 started_at = time.perf_counter()
-                page.evaluate("""async () => { await callApi('/api/project/queue/process', { mode: 'individual' }); }""")
+                page.evaluate(
+                    """async () => { await callApi('/api/project/queue/process', { mode: 'individual' }); }"""
+                )
                 page.wait_for_function(
                     """(targetStageId) => {
                         const queue = state?.project?.queue || [];
@@ -988,14 +1133,22 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     timeout=10000,
                 )
                 _record_timing(timings, "queue-process-complete", started_at, 15_000)
-                _open_tool_for_release(page, "export", timings, artifact_root, "release-20-export-pane-after-queue")
+                _open_tool_for_release(
+                    page, "export", timings, artifact_root, "release-20-export-pane-after-queue"
+                )
                 page.locator("#show-export-log").click()
-                page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-modal')?.hidden === false"
+                )
                 _capture_release_proof_screenshot(page, artifact_root, "release-21-export-log")
                 page.locator("#close-export-log").click()
-                _write_release_proof_text(artifact_root, "export-log.txt", "Queue processing completed.")
+                _write_release_proof_text(
+                    artifact_root, "export-log.txt", "Queue processing completed."
+                )
 
-                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-22-before-trim-clear")
+                _open_tool_for_release(
+                    page, "trim-sync", timings, artifact_root, "release-22-before-trim-clear"
+                )
                 trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
                 trim_sync_card.wait_for(state="visible")
                 started_at = time.perf_counter()
@@ -1011,12 +1164,16 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     }""",
                     arg=source_id,
                 )
-                _record_timing(timings, "trim-clear", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_clear"])
+                _record_timing(
+                    timings, "trim-clear", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_clear"]
+                )
                 _capture_release_proof_screenshot(page, artifact_root, "release-23-trim-cleared")
 
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("() => Boolean(state?.project?.path)")
-                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-24-reloaded-trim-sync")
+                _open_tool_for_release(
+                    page, "trim-sync", timings, artifact_root, "release-24-reloaded-trim-sync"
+                )
                 # Reload persistence should assert saved merge-source truth only.
                 # The sync analysis status is exercised earlier in this flow and is
                 # synthesized from runtime analysis state rather than owned by the
@@ -1031,7 +1188,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     }""",
                     arg=source_id,
                 )
-                _open_tool_for_release(page, "review", timings, artifact_root, "release-25-reloaded-review")
+                _open_tool_for_release(
+                    page, "review", timings, artifact_root, "release-25-reloaded-review"
+                )
                 _capture_release_proof_screenshot(page, artifact_root, "release-26-final-composite")
                 _write_release_proof_json(
                     artifact_root,
@@ -1076,9 +1235,13 @@ def test_browser_full_app_settings_defaults_seed_fresh_project_truth_gate(
                 _exercise_settings_and_shotml(page)
                 _set_project_path(page, project_path)
                 page.evaluate("(path) => createNewProject(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 page.reload(wait_until="domcontentloaded")
-                page.wait_for_function("() => state?.project?.analysis?.shotml_settings?.detection_threshold !== undefined")
+                page.wait_for_function(
+                    "() => state?.project?.analysis?.shotml_settings?.detection_threshold !== undefined"
+                )
             finally:
                 browser.close()
     finally:
@@ -1099,14 +1262,16 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                 _open_tool(page, "shotml")
                 threshold_section = page.locator('[data-shotml-section="threshold"]')
                 if threshold_section.evaluate("element => element.classList.contains('collapsed')"):
-                    threshold_section.locator('button[data-section-toggle]').click()
+                    threshold_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="threshold"]',
                     )
                 page.locator("#threshold").fill("0.5")
                 page.locator("#apply-threshold").click()
-                page.wait_for_function("() => state?.project?.analysis?.shotml_settings?.detection_threshold === 0.5")
+                page.wait_for_function(
+                    "() => state?.project?.analysis?.shotml_settings?.detection_threshold === 0.5"
+                )
 
                 _open_tool(page, "timing")
                 target_shot_id = _select_first_waveform_shot(page)
@@ -1130,8 +1295,10 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
 
                 timing_changer_section = page.locator('[data-shotml-section="timing_changer"]')
                 _open_tool(page, "shotml")
-                if timing_changer_section.evaluate("element => element.classList.contains('collapsed')"):
-                    timing_changer_section.locator('button[data-section-toggle]').click()
+                if timing_changer_section.evaluate(
+                    "element => element.classList.contains('collapsed')"
+                ):
+                    timing_changer_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="timing_changer"]',
@@ -1147,8 +1314,8 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     target_shot_id,
                 )
                 assert restore_index >= 0
-                proposal_rows = page.locator('.shotml-proposal-row')
-                proposal_rows.nth(restore_index).get_by_role('button', name='Apply').click()
+                proposal_rows = page.locator(".shotml-proposal-row")
+                proposal_rows.nth(restore_index).get_by_role("button", name="Apply").click()
                 page.wait_for_function(
                     """(payload) => (state?.project?.analysis?.shots || []).find((item) => item.id === payload.shotId)?.time_ms === payload.timeMs""",
                     arg={"shotId": target_shot_id, "timeMs": original_time_ms},
@@ -1169,8 +1336,10 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                 )
 
                 _open_tool(page, "shotml")
-                if timing_changer_section.evaluate("element => element.classList.contains('collapsed')"):
-                    timing_changer_section.locator('button[data-section-toggle]').click()
+                if timing_changer_section.evaluate(
+                    "element => element.classList.contains('collapsed')"
+                ):
+                    timing_changer_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="timing_changer"]',
@@ -1185,8 +1354,8 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     target_shot_id,
                 )
                 assert restore_index >= 0
-                proposal_rows = page.locator('.shotml-proposal-row')
-                proposal_rows.nth(restore_index).get_by_role('button', name='Discard').click()
+                proposal_rows = page.locator(".shotml-proposal-row")
+                proposal_rows.nth(restore_index).get_by_role("button", name="Discard").click()
                 page.wait_for_function(
                     """(payload) => {
                         const proposal = (state?.project?.analysis?.timing_change_proposals || []).find((item) => item.shot_id === payload.shotId && item.proposal_type === 'restore_shot' && item.status === 'discarded');

@@ -65,7 +65,13 @@ def test_v1_migration_creates_single_stage():
         "id": "test123",
         "name": "Test Match",
         "schema_version": 1,
-        "primary_video": {"path": "media/run1.mp4", "duration_ms": 10000, "width": 1920, "height": 1080, "fps": 30.0},
+        "primary_video": {
+            "path": "media/run1.mp4",
+            "duration_ms": 10000,
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+        },
         "scoring": {"enabled": True, "stage_number": 3, "ruleset": "uspsa_minor"},
         "analysis": {"shots": []},
         "overlay": {},
@@ -85,8 +91,14 @@ def test_v1_migration_creates_single_stage():
 def test_v2_roundtrip_preserves_stages_and_queue():
     # Create a v2 project with stages and a queue entry
     p = Project()
-    s1 = ProjectStage(id="s1", label="Bay 1", order_index=1,
-                      primary_media=VideoAsset(path="media/s1.mp4", duration_ms=5000, width=1920, height=1080, fps=30.0))
+    s1 = ProjectStage(
+        id="s1",
+        label="Bay 1",
+        order_index=1,
+        primary_media=VideoAsset(
+            path="media/s1.mp4", duration_ms=5000, width=1920, height=1080, fps=30.0
+        ),
+    )
     s2 = ProjectStage(id="s2", label="Bay 2", order_index=2)
     p.stages = [s1, s2]
     p.active_stage_id = "s1"
@@ -147,7 +159,9 @@ def test_stage_to_dict_and_back():
         order_index=3,
         imported_stage_number=3,
         imported_stage_name="Standards",
-        primary_media=VideoAsset(path="/tmp/test.mp4", duration_ms=8000, width=1920, height=1080, fps=29.97),
+        primary_media=VideoAsset(
+            path="/tmp/test.mp4", duration_ms=8000, width=1920, height=1080, fps=29.97
+        ),
         queue_status=QueueStatus.QUEUED,
     )
     d = stage_to_dict(s)
@@ -170,11 +184,23 @@ def test_legacy_with_merge_sources_migrates_correctly():
         "id": "test123",
         "name": "Test Match",
         "schema_version": 1,
-        "primary_video": {"path": "media/primary.mp4", "duration_ms": 10000, "width": 1920, "height": 1080, "fps": 30.0},
+        "primary_video": {
+            "path": "media/primary.mp4",
+            "duration_ms": 10000,
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+        },
         "merge_sources": [
             {
                 "id": "ms1",
-                "asset": {"path": "media/added1.mp4", "duration_ms": 8000, "width": 1920, "height": 1080, "fps": 30.0},
+                "asset": {
+                    "path": "media/added1.mp4",
+                    "duration_ms": 8000,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30.0,
+                },
                 "angle_role": "follow",
             }
         ],

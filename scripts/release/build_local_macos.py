@@ -15,7 +15,7 @@ from platform import machine
 
 REPO = Path(__file__).resolve().parents[2]
 LOGIN_KEYCHAIN = Path.home() / "Library" / "Keychains" / "login.keychain-db"
-DEFAULT_IDENTITY = 'Apple Development: jklockenkemper@icloud.com (34WPHG75HQ)'
+DEFAULT_IDENTITY = "Apple Development: jklockenkemper@icloud.com (34WPHG75HQ)"
 
 
 def run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path = REPO) -> None:
@@ -25,13 +25,21 @@ def run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path = RE
 
 def has_complete_notary_env(env: dict[str, str]) -> bool:
     api = [env.get("APPLE_API_KEY"), env.get("APPLE_API_KEY_ID"), env.get("APPLE_API_ISSUER")]
-    fallback = [env.get("APPLE_ID"), env.get("APPLE_APP_SPECIFIC_PASSWORD"), env.get("APPLE_TEAM_ID")]
+    fallback = [
+        env.get("APPLE_ID"),
+        env.get("APPLE_APP_SPECIFIC_PASSWORD"),
+        env.get("APPLE_TEAM_ID"),
+    ]
     api_any = any(api)
     fallback_any = any(fallback)
     if api_any and not all(api):
-        raise SystemExit("Incomplete Apple API key notarization env; set all of APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER.")
+        raise SystemExit(
+            "Incomplete Apple API key notarization env; set all of APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER."
+        )
     if fallback_any and not all(fallback):
-        raise SystemExit("Incomplete Apple ID notarization env; set all of APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID.")
+        raise SystemExit(
+            "Incomplete Apple ID notarization env; set all of APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID."
+        )
     return all(api) or all(fallback)
 
 
@@ -61,7 +69,9 @@ def export_identity(temp_dir: Path, identity: str) -> tuple[Path, str]:
 
 def existing_ffmpeg_override() -> str | None:
     candidates = [
-        Path("/Applications/SplitShot.app/Contents/Resources/bundle/src/splitshot/resources/ffmpeg/macos"),
+        Path(
+            "/Applications/SplitShot.app/Contents/Resources/bundle/src/splitshot/resources/ffmpeg/macos"
+        ),
     ]
     for candidate in candidates:
         if (candidate / "ffmpeg").exists() and (candidate / "ffprobe").exists():
@@ -151,7 +161,11 @@ def verify_import(temp_dir: Path, p12_path: Path, p12_password: str, identity: s
 
 
 def install_latest_dmg() -> None:
-    artifacts = sorted((REPO / "electron" / "build").glob("*.dmg"), key=lambda path: path.stat().st_mtime, reverse=True)
+    artifacts = sorted(
+        (REPO / "electron" / "build").glob("*.dmg"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
     if not artifacts:
         raise SystemExit("No DMG found under electron/build after local macOS build.")
     dmg = artifacts[0]

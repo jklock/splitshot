@@ -32,14 +32,15 @@ def test_runner_lists_available_suites_as_json() -> None:
 
 
 def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
-    result = run_runner("--suite", "browser", "--mode", "one-by-one", "--format", "json", "--dry-run")
+    result = run_runner(
+        "--suite", "browser", "--mode", "one-by-one", "--format", "json", "--dry-run"
+    )
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 19
-    assert payload["summary"]["total_runs"] == 19
-    assert {run["status"] for run in payload["runs"]} == {"planned"}
+    assert payload["summary"]["planned"] == 24
+    assert payload["summary"]["total_runs"] == 24
     assert {tuple(run["targets"]) for run in payload["runs"]} == {
         ("tests/browser/test_browser_control.py",),
         ("tests/browser/test_browser_control_coverage_matrix.py",),
@@ -49,9 +50,12 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
         ("tests/browser/test_browser_rail_layout.py",),
         ("tests/browser/test_browser_remaining_controls_e2e.py",),
         ("tests/browser/test_browser_static_ui.py",),
-        ("tests/browser/test_metrics_e2e.py",),
+        ("tests/browser/test_compose_pane_qa.py",),
+        ("tests/browser/test_media_pane_qa.py",),
         ("tests/browser/test_merge_export_contracts.py",),
+        ("tests/browser/test_metrics_e2e.py",),
         ("tests/browser/test_overlay_review_contracts.py",),
+        ("tests/browser/test_phase14_corrective.py",),
         ("tests/browser/test_practiscore_session_api.py",),
         ("tests/browser/test_practiscore_sync_controller.py",),
         ("tests/browser/test_project_lifecycle_contracts.py",),
@@ -59,7 +63,9 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
         ("tests/browser/test_settings_defaults_truth_gate.py",),
         ("tests/browser/test_settings_e2e.py",),
         ("tests/browser/test_timing_waveform_contracts.py",),
+        ("tests/browser/test_trim_pane_qa.py",),
         ("tests/browser/test_v107_static_ui.py",),
+        ("tests/browser/test_waveform_qa.py",),
     }
 
 

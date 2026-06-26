@@ -11,7 +11,11 @@ import sys
 import numpy as np
 
 from splitshot.analysis.auto_labeling import apply_auto_labels
-from splitshot.analysis.corpus import DEFAULT_THRESHOLD_GRID, build_label_manifest, list_corpus_videos
+from splitshot.analysis.corpus import (
+    DEFAULT_THRESHOLD_GRID,
+    build_label_manifest,
+    list_corpus_videos,
+)
 from splitshot.analysis.training_dataset import (
     DatasetExtractionConfig,
     LABEL_STATUS_AUTO_LABELED,
@@ -247,7 +251,9 @@ def main() -> int:
 
     autolabel_summary_path = args.autolabel_summary_output.expanduser().resolve()
     autolabel_summary_path.parent.mkdir(parents=True, exist_ok=True)
-    autolabel_summary_path.write_text(json.dumps(autolabel_summary.to_dict(), indent=2), encoding="utf-8")
+    autolabel_summary_path.write_text(
+        json.dumps(autolabel_summary.to_dict(), indent=2), encoding="utf-8"
+    )
 
     dataset_output = args.dataset_output.expanduser().resolve()
     dataset_summary_output = args.dataset_summary_output.expanduser().resolve()
@@ -260,9 +266,11 @@ def main() -> int:
         seed=args.seed,
         detector_draft_policy="review-clean",
     )
-    features, labels, source_paths, label_sources, is_augmented, dataset_summary = extract_training_dataset(
-        manifest_path,
-        dataset_config,
+    features, labels, source_paths, label_sources, is_augmented, dataset_summary = (
+        extract_training_dataset(
+            manifest_path,
+            dataset_config,
+        )
     )
     dataset_output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -275,7 +283,9 @@ def main() -> int:
         class_names=np.asarray(["background", "beep", "shot"]),
     )
     dataset_summary_output.parent.mkdir(parents=True, exist_ok=True)
-    dataset_summary_output.write_text(json.dumps(dataset_summary.to_dict(), indent=2), encoding="utf-8")
+    dataset_summary_output.write_text(
+        json.dumps(dataset_summary.to_dict(), indent=2), encoding="utf-8"
+    )
 
     if features.size == 0 or labels.size == 0:
         raise SystemExit(

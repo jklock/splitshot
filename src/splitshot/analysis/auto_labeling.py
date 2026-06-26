@@ -12,6 +12,8 @@ AUTO_LABEL_STATUS = "auto_labeled"
 MANUAL_VERIFIED_STATUS = "verified"
 AUTO_LABEL_MIN_SCORE = 0.65
 DEFAULT_BEEP_CONSENSUS_TOLERANCE_MS = 180
+
+
 @dataclass(frozen=True, slots=True)
 class AutoLabelDecision:
     relative_path: str
@@ -82,13 +84,16 @@ def _select_consensus_beep(
     if not candidates:
         return None, 0.0, "missing_beep_candidates", ["missing_beep_candidates"]
 
-    primary_candidate = next((candidate for candidate in candidates if candidate[0] == "primary_detector"), None)
+    primary_candidate = next(
+        (candidate for candidate in candidates if candidate[0] == "primary_detector"), None
+    )
     if primary_candidate is not None:
         primary_label, primary_beep_time_ms = primary_candidate
         agreeing_candidates = [
             candidate
             for candidate in candidates
-            if candidate[0] != primary_label and abs(candidate[1] - primary_beep_time_ms) <= tolerance_ms
+            if candidate[0] != primary_label
+            and abs(candidate[1] - primary_beep_time_ms) <= tolerance_ms
         ]
         if agreeing_candidates:
             closest = min(agreeing_candidates, key=lambda item: abs(item[1] - primary_beep_time_ms))
@@ -128,12 +133,24 @@ def _select_consensus_beep(
         label_names = "+".join([best_pair[0][0], best_pair[1][0]])
         score = 0.92 if "final" in {best_pair[0][0], best_pair[1][0]} else 0.88
         score -= min(best_gap_ms / 1200.0, 0.04)
-        return selected_beep_time_ms, max(0.0, score), "pair_consensus", [f"beep_pair_agreement:{label_names}"]
+        return (
+            selected_beep_time_ms,
+            max(0.0, score),
+            "pair_consensus",
+            [f"beep_pair_agreement:{label_names}"],
+        )
 
-    spread_ms = max(candidate[1] for candidate in candidates) - min(candidate[1] for candidate in candidates)
+    spread_ms = max(candidate[1] for candidate in candidates) - min(
+        candidate[1] for candidate in candidates
+    )
     selected_beep_time_ms = int(round(float(np.median([candidate[1] for candidate in candidates]))))
     score = 0.70 - min(spread_ms / 10000.0, 0.12)
-    return selected_beep_time_ms, max(0.0, score), "median_fallback", [f"beep_median_fallback:spread_ms={spread_ms}"]
+    return (
+        selected_beep_time_ms,
+        max(0.0, score),
+        "median_fallback",
+        [f"beep_median_fallback:spread_ms={spread_ms}"],
+    )
 
 
 def _blocking_reason(video: dict[str, object]) -> str | None:
@@ -218,7 +235,9 @@ def apply_auto_labels(
             video["labels"] = labels
 
         previous_status = str(labels.get("status", "needs_review"))
-        relative_path = str(video.get("relative_path") or Path(str(video.get("path", "unknown"))).name)
+        relative_path = str(
+            video.get("relative_path") or Path(str(video.get("path", "unknown"))).name
+        )
 
         if previous_status == MANUAL_VERIFIED_STATUS:
             preserved_verified_count += 1
@@ -255,9 +274,11 @@ def apply_auto_labels(
             )
             continue
 
-        auto_beep_time_ms, beep_score, auto_label_method, auto_label_reasons = _select_consensus_beep(
-            video,
-            beep_consensus_tolerance_ms,
+        auto_beep_time_ms, beep_score, auto_label_method, auto_label_reasons = (
+            _select_consensus_beep(
+                video,
+                beep_consensus_tolerance_ms,
+            )
         )
         auto_shot_times_ms = [int(value) for value in video.get("detector_shot_times_ms", [])]
         overall_score = _auto_label_score(video, beep_score)

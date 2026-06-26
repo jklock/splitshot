@@ -4,7 +4,13 @@ from dataclasses import dataclass
 
 from splitshot.domain.models import Project
 from splitshot.scoring.logic import calculate_scoring_summary
-from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
+from splitshot.timeline.model import (
+    average_split_ms,
+    compute_split_rows,
+    draw_time_ms,
+    raw_time_ms,
+    sort_shots,
+)
 
 
 def format_seconds_short(time_ms: int | None) -> str:
@@ -102,7 +108,9 @@ def build_stage_presentation(project: Project) -> StagePresentation:
 
         meta_parts = []
         if segment_ms is not None:
-            meta_parts.append(f"{row.interval_label or 'Split'} {format_seconds_short(segment_ms)}s")
+            meta_parts.append(
+                f"{row.interval_label or 'Split'} {format_seconds_short(segment_ms)}s"
+            )
         if sequence_total_ms is not None:
             meta_parts.append(f"Run {format_seconds_short(sequence_total_ms)}s")
         if cumulative_ms is not None:

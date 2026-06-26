@@ -497,6 +497,17 @@ button:disabled {
   white-space: nowrap;
 }
 
+.waveform-total-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  min-width: 78px;
+  padding: 0.22rem 0.45rem;
+  white-space: nowrap;
+}
+
 .waveform-panel canvas {
   background: #102033;
   border: 0;

@@ -27,15 +27,23 @@ def test_ocr_text_is_readable_rejects_tofu_like_output() -> None:
 
 def test_playwright_export_file_matches_browser_proof_location() -> None:
     artifacts_dir = ROOT / "artifacts"
-    assert MODULE._playwright_export_file(artifacts_dir) == artifacts_dir / "exports" / "e2e-export-test.mp4"
+    assert (
+        MODULE._playwright_export_file(artifacts_dir)
+        == artifacts_dir / "exports" / "e2e-export-test.mp4"
+    )
 
 
 def test_default_packaged_artifact_root_uses_phase_12_tree(monkeypatch) -> None:
     monkeypatch.setattr(MODULE.sys, "platform", "darwin")
-    assert MODULE._default_packaged_artifact_root() == ROOT / "artifacts" / "v106-phase-12-proof" / "packaged-local-mac"
+    assert (
+        MODULE._default_packaged_artifact_root()
+        == ROOT / "artifacts" / "v106-phase-12-proof" / "packaged-local-mac"
+    )
 
 
-def test_resolve_tool_uses_windows_fallback_when_path_lookup_misses(monkeypatch, tmp_path: Path) -> None:
+def test_resolve_tool_uses_windows_fallback_when_path_lookup_misses(
+    monkeypatch, tmp_path: Path
+) -> None:
     fallback_dir = tmp_path / "Program Files" / "Tesseract-OCR"
     fallback_dir.mkdir(parents=True)
     executable = fallback_dir / "tesseract.exe"

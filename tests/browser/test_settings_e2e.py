@@ -24,7 +24,7 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _open_settings(page) -> None:
-    page.locator('#settings-rail-button').click(force=True)
+    page.locator("#settings-rail-button").click(force=True)
     page.wait_for_timeout(100)
     assert page.evaluate("activeTool") == "settings"
     page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
@@ -39,7 +39,7 @@ def _expand_settings_section(page, section_id: str) -> None:
     section = page.locator(selector)
     if section.evaluate("element => element.classList.contains('collapsed')") is False:
         return
-    section.locator('button[data-section-toggle]').click()
+    section.locator("button[data-section-toggle]").click()
     page.wait_for_function(
         "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
         arg=selector,
@@ -83,13 +83,16 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 for section_id in SETTINGS_SECTION_IDS:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    toggle = section.locator('button[data-section-toggle]')
+                    toggle = section.locator("button[data-section-toggle]")
                     toggle.wait_for(state="visible")
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is True
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is True
+                    )
                     toggle.click()
                 page.wait_for_function(
-                        "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
-                        arg=selector,
+                    "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
+                    arg=selector,
                 )
 
                 page.locator('button[data-tool="project"]').click(force=True)
@@ -99,11 +102,14 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 for section_id in SETTINGS_SECTION_IDS:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is False
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is False
+                    )
 
                 overlay_selector = _settings_section_selector("overlay")
                 overlay_section = page.locator(overlay_selector)
-                overlay_section.locator('button[data-section-toggle]').click()
+                overlay_section.locator("button[data-section-toggle]").click()
                 page.wait_for_function(
                     "(sectionSelector) => document.querySelector(sectionSelector)?.classList.contains('collapsed') === true",
                     arg=overlay_selector,
@@ -113,11 +119,19 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 page.wait_for_function("() => activeTool === 'timing'")
 
                 _open_settings(page)
-                assert overlay_section.evaluate("element => element.classList.contains('collapsed')") is True
-                for section_id in [section for section in SETTINGS_SECTION_IDS if section != "overlay"]:
+                assert (
+                    overlay_section.evaluate("element => element.classList.contains('collapsed')")
+                    is True
+                )
+                for section_id in [
+                    section for section in SETTINGS_SECTION_IDS if section != "overlay"
+                ]:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is False
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is False
+                    )
             finally:
                 browser.close()
     finally:
@@ -218,13 +232,19 @@ def test_settings_default_controls_commit_to_settings_state_and_reset() -> None:
                 _expand_settings_section(page, "export")
 
                 page.locator("#settings-default-match-type").select_option("idpa")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.default_match_type === 'idpa'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.default_match_type === 'idpa'"
+                )
                 page.locator("#settings-pip-size").select_option("50%")
                 _apply_settings_defaults_and_wait(page, "() => state?.settings?.pip_size === '50%'")
                 page.locator("#settings-export-quality").select_option("low")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_quality === 'low'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_quality === 'low'"
+                )
                 page.locator("#settings-export-two-pass").check()
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_two_pass === true")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_two_pass === true"
+                )
 
                 assert page.locator("#settings-default-match-type").input_value() == "idpa"
                 assert page.locator("#settings-pip-size").input_value() == "50%"
@@ -233,7 +253,7 @@ def test_settings_default_controls_commit_to_settings_state_and_reset() -> None:
 
                 page.locator("#settings-reset-defaults").click()
                 page.wait_for_function(
-                                        """() => document.querySelector('#settings-default-match-type')?.value === 'uspsa'
+                    """() => document.querySelector('#settings-default-match-type')?.value === 'uspsa'
                                             && document.querySelector('#settings-pip-size')?.value === '35%'
                                             && document.querySelector('#settings-export-quality')?.value === 'high'
                                             && document.querySelector('#settings-export-two-pass')?.checked === false"""
@@ -265,7 +285,10 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                     "select => [...select.options].map((option) => option.value).filter(Boolean)"
                 )
                 assert export_preset_values
-                next_export_preset = next((value for value in export_preset_values if value != "source"), export_preset_values[0])
+                next_export_preset = next(
+                    (value for value in export_preset_values if value != "source"),
+                    export_preset_values[0],
+                )
 
                 page.locator("#settings-merge-layout").select_option("pip")
                 page.locator("#settings-pip-size").select_option("50%")
@@ -286,7 +309,9 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                 _set_settings_control(page, "settings-shot-badge-background-color", "#1d4ed8")
                 _set_settings_control(page, "settings-shot-badge-text-color", "#eef2ff")
                 _set_settings_control(page, "settings-shot-badge-opacity", "0.8")
-                _set_settings_control(page, "settings-current-shot-badge-background-color", "#dc2626")
+                _set_settings_control(
+                    page, "settings-current-shot-badge-background-color", "#dc2626"
+                )
                 _set_settings_control(page, "settings-current-shot-badge-text-color", "#ffffff")
                 _set_settings_control(page, "settings-current-shot-badge-opacity", "0.75")
                 _set_settings_control(page, "settings-hit-factor-badge-background-color", "#047857")
@@ -374,7 +399,9 @@ def test_settings_section_reset_preserves_other_sections() -> None:
                 page.locator("#settings-pip-size").select_option("50%")
                 _apply_settings_defaults_and_wait(page, "() => state?.settings?.pip_size === '50%'")
                 page.locator("#settings-export-quality").select_option("low")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_quality === 'low'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_quality === 'low'"
+                )
 
                 page.locator("#settings-reset-section-export").click()
                 page.wait_for_function(

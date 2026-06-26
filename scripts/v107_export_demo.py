@@ -39,12 +39,24 @@ TRIM_SECONDS = 5.0
 
 
 def probe(path: Path) -> VideoAsset:
-    import subprocess, json
+    import subprocess
+    import json
+
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         data = json.loads(result.stdout)
         fmt = data.get("format", {})
@@ -67,14 +79,25 @@ def probe(path: Path) -> VideoAsset:
 
 def trim_start(path: Path, out: Path, cut_s: float) -> Path:
     import subprocess
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([
-        "ffmpeg", "-y", "-v", "error",
-        "-ss", str(cut_s),
-        "-i", str(path),
-        "-c", "copy",
-        str(out),
-    ], check=True, timeout=120)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            str(cut_s),
+            "-i",
+            str(path),
+            "-c",
+            "copy",
+            str(out),
+        ],
+        check=True,
+        timeout=120,
+    )
     return out
 
 
@@ -106,7 +129,9 @@ def main():
         # Primary: trim first 5s
         primary_path = trim_dir / f"stage{stage_num}-primary-trim{int(TRIM_SECONDS)}s.MP4"
         if not primary_path.exists():
-            print(f"Trim primary {src.name}: first {int(TRIM_SECONDS)}s removed ({dur_s:.0f}s → {dur_s - TRIM_SECONDS:.0f}s)")
+            print(
+                f"Trim primary {src.name}: first {int(TRIM_SECONDS)}s removed ({dur_s:.0f}s → {dur_s - TRIM_SECONDS:.0f}s)"
+            )
             trim_start(src, primary_path, TRIM_SECONDS)
         primary_asset = probe(primary_path)
 
@@ -129,8 +154,7 @@ def main():
         if layout == MergeLayout.PIP:
             merge.pip_size_percent = 25
 
-        stage = ProjectStage(label=label, order_index=stage_num,
-                             primary_media=primary_asset)
+        stage = ProjectStage(label=label, order_index=stage_num, primary_media=primary_asset)
         stage.merge.layout = layout
         stage.merge.enabled = True
         stage.added_media = [merge]
@@ -164,7 +188,9 @@ def main():
         mname = Path(stage.added_media[0].asset.path).name
         trimmed = "yes" if stage.added_media[0].trim_derivative.derivative_path else "no"
         dur = stage.primary_media.duration_ms / 1000
-        print(f"\nExporting {stage.label}: primary={pname} ({dur:.0f}s trimmed) + merge={mname} ({trimmed} trimmed) | {stage.merge.layout.value}")
+        print(
+            f"\nExporting {stage.label}: primary={pname} ({dur:.0f}s trimmed) + merge={mname} ({trimmed} trimmed) | {stage.merge.layout.value}"
+        )
         print(f"  → {output_path}")
 
         try:
@@ -183,18 +209,32 @@ def main():
             for r in results:
                 f.write(f"file '{r.resolve()}'\n")
         import subprocess
+
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-             "-c", "copy", str(combined)],
-            capture_output=True, text=True, check=True,
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(list_path),
+                "-c",
+                "copy",
+                str(combined),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         list_path.unlink()
-        print(f"  Combined: {combined.name} ({combined.stat().st_size / (1024*1024):.0f} MB)")
+        print(f"  Combined: {combined.name} ({combined.stat().st_size / (1024 * 1024):.0f} MB)")
 
     print(f"\n  Files in {OUTPUT_DIR}:")
     for f in sorted(OUTPUT_DIR.glob("*.mp4")):
         d = probe(f).duration_ms / 1000
-        print(f"    {f.name}: {f.stat().st_size / (1024*1024):.0f} MB, {d:.1f}s")
+        print(f"    {f.name}: {f.stat().st_size / (1024 * 1024):.0f} MB, {d:.1f}s")
 
 
 if __name__ == "__main__":

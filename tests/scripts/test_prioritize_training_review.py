@@ -80,7 +80,9 @@ def _video_entry(
     }
 
 
-def test_prioritize_training_review_ranks_clean_clips_before_duplicates_and_blocked(tmp_path: Path) -> None:
+def test_prioritize_training_review_ranks_clean_clips_before_duplicates_and_blocked(
+    tmp_path: Path,
+) -> None:
     manifest_path = tmp_path / "shotml-label-manifest.json"
     json_output = tmp_path / "training-review-queue.json"
     payload = {
@@ -190,7 +192,10 @@ def test_prioritize_training_review_treats_echo_like_onsets_as_nonblocking(tmp_p
 
     assert result.returncode == 0
     queue = json.loads(result.stdout)
-    assert [entry["relative_path"] for entry in queue["entries"]] == ["echo-clean.MP4", "raw-extra.MP4"]
+    assert [entry["relative_path"] for entry in queue["entries"]] == [
+        "echo-clean.MP4",
+        "raw-extra.MP4",
+    ]
     assert queue["entries"][0]["shot_echo_like_count"] == 2
     assert queue["entries"][0]["shot_effective_unmatched_count"] == 0
     assert queue["entries"][1]["shot_echo_like_count"] == 0
@@ -219,11 +224,16 @@ def test_prioritize_training_review_table_output_respects_limit(tmp_path: Path) 
 
     assert result.returncode == 0
     assert "Training Review Queue:" in result.stdout
-    assert "rank | video | score | action | family | shots | beep gap | duplicate | flags" in result.stdout
+    assert (
+        "rank | video | score | action | family | shots | beep gap | duplicate | flags"
+        in result.stdout
+    )
     assert "Showing 2 of 3 queued videos." in result.stdout
 
 
-def test_prioritize_training_review_does_not_mark_consistent_duplicates_as_representatives(tmp_path: Path) -> None:
+def test_prioritize_training_review_does_not_mark_consistent_duplicates_as_representatives(
+    tmp_path: Path,
+) -> None:
     manifest_path = tmp_path / "shotml-label-manifest.json"
     payload = {
         "input": str(tmp_path),

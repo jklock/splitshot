@@ -37,6 +37,18 @@ export function createQueuePane({
     return queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
   }
 
+  function visibleQueueEntries() {
+    return queueEntries()
+      .filter((entry) => entry.stage_id && entry.status !== "not_queued")
+      .sort((left, right) => {
+        const leftStage = stages().find((stage) => stage.id === left.stage_id) || null;
+        const rightStage = stages().find((stage) => stage.id === right.stage_id) || null;
+        const leftOrder = leftStage?.order_index ?? 999;
+        const rightOrder = rightStage?.order_index ?? 999;
+        return leftOrder - rightOrder;
+      });
+  }
+
   function findQueueEntry(stageId) {
     return queueEntries().find((entry) => entry.stage_id === stageId) || null;
   }
@@ -48,6 +60,15 @@ export function createQueuePane({
   function stageAssetSummary(stage) {
     const primaryName = stage?.primary_media?.path ? fileName(stage.primary_media.path) : "No primary";
     const assetCount = (stage?.primary_media?.path ? 1 : 0) + (Array.isArray(stage?.added_media) ? stage.added_media.length : 0);
+    return `${primaryName} • ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
+  }
+
+  function queueEntryAssetSummary(entry, stage) {
+    const snapshot = entry?.snapshot || {};
+    const primary = snapshot.primary_media || stage?.primary_media || {};
+    const added = Array.isArray(snapshot.added_media) ? snapshot.added_media : (Array.isArray(stage?.added_media) ? stage.added_media : []);
+    const primaryName = primary?.path ? fileName(primary.path) : "No primary";
+    const assetCount = (primary?.path ? 1 : 0) + added.length;
     return `${primaryName} • ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
   }
 
@@ -131,30 +152,28 @@ export function createQueuePane({
     setActiveTool("media");
   }
 
-  function renderQueueStage(stage) {
-    const queueEntry = findQueueEntry(stage.id);
-    const status = queueEntry?.status || stage.queue_status || "not_queued";
-    const selected = stage.id === activeStageId();
-    const expanded = isStageExpanded(stage.id);
-    const canQueue = Boolean(stage?.primary_media?.path);
+  function renderQueueStage(queueEntry) {
+    const stage = stages().find((item) => item.id === queueEntry.stage_id) || null;
+    const stageId = queueEntry.stage_id;
+    const status = queueEntry?.status || stage?.queue_status || "not_queued";
+    const selected = stageId === activeStageId();
+    const expanded = isStageExpanded(stageId);
     return `
-      <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stage.id}">
+      <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stageId}">
         <div class="queue-stage-header section-header-with-toggle">
           <div class="queue-stage-copy">
-            <strong>${stageLabel(stage)}</strong>
-            <small>${stageAssetSummary(stage)}</small>
+            <strong>${stageLabel(stage || queueEntry?.snapshot || {})}</strong>
+            <small>${queueEntryAssetSummary(queueEntry, stage)}</small>
           </div>
           <div class="queue-stage-header-actions">
             <span class="queue-status-pill queue-status-${status}">${queueStatusLabel(status)}</span>
-            <button class="scoring-shot-toggle queue-stage-toggle" type="button" data-stage-id="${stage.id}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "\u25BC" : "\u25B6"}</button>
+            <button class="pane-toggle queue-stage-toggle" type="button" data-stage-id="${stageId}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "\u25BC" : "\u25B6"}</button>
           </div>
         </div>
         <div class="queue-stage-body"${expanded ? "" : " hidden"}>
           <div class="queue-stage-actions">
-            <button class="btn-sm btn-ghost queue-edit-btn" type="button" data-stage-id="${stage.id}">Edit Stage</button>
-            ${status === "queued" || status === "stale"
-              ? `<button class="btn-sm btn-danger queue-remove-btn" type="button" data-stage-id="${stage.id}">Remove</button>`
-              : `<button class="btn-sm btn-secondary queue-add-btn" type="button" data-stage-id="${stage.id}" ${canQueue ? "" : "disabled"}>${status === "stale" ? "Requeue" : "Queue"}</button>`}
+            <button class="btn-sm btn-ghost queue-edit-btn" type="button" data-stage-id="${stageId}">Edit Stage</button>
+            <button class="btn-sm btn-danger queue-remove-btn" type="button" data-stage-id="${stageId}">Remove</button>
           </div>
         </div>
       </article>
@@ -215,10 +234,10 @@ export function createQueuePane({
       <div class="pane-section queue-pane-shell">
         <div class="section-header pane-title-row">
           <h3>Queue</h3>
-          <span class="pane-summary-token">${count} ready</span>
+          <span class="pane-summary-token">${count} queued</span>
         </div>
         <div class="queue-stage-list">
-          ${stages().length ? stages().map((stage) => renderQueueStage(stage)).join("") : '<div class="empty-state">No stages.</div>'}
+          ${visibleQueueEntries().length ? visibleQueueEntries().map((entry) => renderQueueStage(entry)).join("") : '<div class="empty-state">No queued stages.</div>'}
         </div>
         <div class="queue-pane-actions">
           <button id="queue-apply-all-btn" class="btn btn-secondary queue-apply-all-btn" type="button">Apply To All</button>

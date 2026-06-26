@@ -120,9 +120,13 @@ def _train_mlp(
 ) -> tuple[dict[str, np.ndarray], int]:
     feature_count = x_train.shape[1]
     class_count = len(CLASS_NAMES)
-    w1 = (rng.normal(0.0, math.sqrt(2.0 / feature_count), (feature_count, hidden_units))).astype(np.float32)
+    w1 = (rng.normal(0.0, math.sqrt(2.0 / feature_count), (feature_count, hidden_units))).astype(
+        np.float32
+    )
     b1 = np.zeros(hidden_units, dtype=np.float32)
-    w2 = (rng.normal(0.0, math.sqrt(2.0 / hidden_units), (hidden_units, class_count))).astype(np.float32)
+    w2 = (rng.normal(0.0, math.sqrt(2.0 / hidden_units), (hidden_units, class_count))).astype(
+        np.float32
+    )
     b2 = np.zeros(class_count, dtype=np.float32)
 
     one_hot = np.eye(class_count, dtype=np.float32)[y_train]
@@ -131,8 +135,18 @@ def _train_mlp(
     beta1 = 0.9
     beta2 = 0.999
     epsilon = 1e-8
-    moments = {"w1": np.zeros_like(w1), "b1": np.zeros_like(b1), "w2": np.zeros_like(w2), "b2": np.zeros_like(b2)}
-    velocities = {"w1": np.zeros_like(w1), "b1": np.zeros_like(b1), "w2": np.zeros_like(w2), "b2": np.zeros_like(b2)}
+    moments = {
+        "w1": np.zeros_like(w1),
+        "b1": np.zeros_like(b1),
+        "w2": np.zeros_like(w2),
+        "b2": np.zeros_like(b2),
+    }
+    velocities = {
+        "w1": np.zeros_like(w1),
+        "b1": np.zeros_like(b1),
+        "w2": np.zeros_like(w2),
+        "b2": np.zeros_like(b2),
+    }
 
     best_model = {"w1": w1.copy(), "b1": b1.copy(), "w2": w2.copy(), "b2": b2.copy()}
     best_validation_loss = float("inf")
@@ -179,7 +193,9 @@ def _train_mlp(
                     b2 -= update
 
         validation_model = {"w1": w1, "b1": b1, "w2": w2, "b2": b2}
-        validation_loss = _cross_entropy_loss(x_validation, y_validation, validation_model, class_weights)
+        validation_loss = _cross_entropy_loss(
+            x_validation, y_validation, validation_model, class_weights
+        )
         if validation_loss < best_validation_loss - 1e-6:
             best_validation_loss = validation_loss
             best_epoch = epoch + 1
@@ -192,7 +208,10 @@ def _train_mlp(
             }
         else:
             epochs_without_improvement += 1
-            if early_stopping_patience > 0 and epochs_without_improvement >= early_stopping_patience:
+            if (
+                early_stopping_patience > 0
+                and epochs_without_improvement >= early_stopping_patience
+            ):
                 break
 
     return best_model, best_epoch
@@ -241,10 +260,10 @@ def _write_bundle(
         "HOP_SIZE = 128",
         f"STANDARDIZATION_MEAN = {mean.tolist()!r}",
         f"STANDARDIZATION_STD = {std.tolist()!r}",
-        f'W1 = {model["w1"].tolist()!r}',
-        f'B1 = {model["b1"].tolist()!r}',
-        f'W2 = {model["w2"].tolist()!r}',
-        f'B2 = {model["b2"].tolist()!r}',
+        f"W1 = {model['w1'].tolist()!r}",
+        f"B1 = {model['b1'].tolist()!r}",
+        f"W2 = {model['w2'].tolist()!r}",
+        f"B2 = {model['b2'].tolist()!r}",
         "",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +301,9 @@ def render_table(summary: dict[str, object], output_bundle: Path) -> str:
     if summary["verified_validation_accuracy"] is not None:
         lines.append(f"Verified validation accuracy: {summary['verified_validation_accuracy']:.4f}")
     if summary["verified_validation_macro_recall"] is not None:
-        lines.append(f"Verified validation macro recall: {summary['verified_validation_macro_recall']:.4f}")
+        lines.append(
+            f"Verified validation macro recall: {summary['verified_validation_macro_recall']:.4f}"
+        )
     lines.extend(
         [
             "",
@@ -307,16 +328,22 @@ def compute_class_weights(labels: np.ndarray, mode: str, alpha: float = 1.0) -> 
         weights[nonzero] = float(labels.size) / (float(len(CLASS_NAMES)) * counts[nonzero])
         weights = weights / float(np.mean(weights[nonzero]))
     alpha = min(1.0, max(0.0, float(alpha)))
-    interpolated = np.ones(len(CLASS_NAMES), dtype=np.float32) + (alpha * (weights.astype(np.float32) - 1.0))
+    interpolated = np.ones(len(CLASS_NAMES), dtype=np.float32) + (
+        alpha * (weights.astype(np.float32) - 1.0)
+    )
     return interpolated.astype(np.float32)
 
 
-def per_class_recall(x_values: np.ndarray, y_values: np.ndarray, model: dict[str, np.ndarray]) -> dict[str, float]:
+def per_class_recall(
+    x_values: np.ndarray, y_values: np.ndarray, model: dict[str, np.ndarray]
+) -> dict[str, float]:
     predictions = _predict(x_values, model)
     return per_class_recall_from_predictions(y_values, predictions)
 
 
-def per_class_recall_from_predictions(y_values: np.ndarray, predictions: np.ndarray) -> dict[str, float]:
+def per_class_recall_from_predictions(
+    y_values: np.ndarray, predictions: np.ndarray
+) -> dict[str, float]:
     recalls: dict[str, float] = {}
     for index, name in enumerate(CLASS_NAMES):
         mask = y_values == index
@@ -366,7 +393,9 @@ def split_indices(
             shuffled_sources = unique_sources[rng.permutation(unique_sources.size)]
             target_validation_count = max(1, int(round(unique_sources.size * validation_ratio)))
             validation_sources = set(shuffled_sources[:target_validation_count].tolist())
-            source_validation_mask = np.asarray([path in validation_sources for path in source_paths], dtype=bool)
+            source_validation_mask = np.asarray(
+                [path in validation_sources for path in source_paths], dtype=bool
+            )
             validation_mask = source_validation_mask & eligible_validation_mask
             train_mask = ~source_validation_mask
             if np.any(validation_mask) and np.any(train_mask):
@@ -381,7 +410,9 @@ def split_indices(
     if eligible_indices.size < 2:
         eligible_indices = np.arange(features.shape[0])
     permutation = eligible_indices[rng.permutation(eligible_indices.size)]
-    split_index = max(1, min(permutation.size - 1, int(permutation.size * (1.0 - validation_ratio))))
+    split_index = max(
+        1, min(permutation.size - 1, int(permutation.size * (1.0 - validation_ratio)))
+    )
     validation_indices = permutation[split_index:]
     validation_index_set = set(int(index) for index in validation_indices.tolist())
     train_indices = np.asarray(
@@ -448,7 +479,9 @@ def evaluate_leave_one_source_out(
         validation_features = features[validation_mask]
         train_labels = labels[train_mask]
         validation_labels = labels[validation_mask]
-        normalized_train, normalized_validation, _, _ = _normalize_from_train(train_features, validation_features)
+        normalized_train, normalized_validation, _, _ = _normalize_from_train(
+            train_features, validation_features
+        )
         class_weights = compute_class_weights(train_labels, class_weighting, class_weight_alpha)
         model, best_epoch = _train_mlp(
             normalized_train,
@@ -476,7 +509,9 @@ def evaluate_leave_one_source_out(
                 "macro_recall": macro_recall(recalls, validation_labels),
                 "class_recall": recalls,
                 "confusion_counts": confusion_counts(validation_labels, predictions),
-                "label_source_counts": count_label_sources(None if label_sources is None else label_sources[validation_mask]),
+                "label_source_counts": count_label_sources(
+                    None if label_sources is None else label_sources[validation_mask]
+                ),
             }
         )
         aggregate_labels.append(validation_labels)
@@ -497,9 +532,7 @@ def evaluate_leave_one_source_out(
     aggregate_recalls = per_class_recall_from_predictions(all_labels, all_predictions)
     source_accuracies = [float(fold["accuracy"]) for fold in folds]
     source_macro_recalls = [
-        float(fold["macro_recall"])
-        for fold in folds
-        if fold.get("macro_recall") is not None
+        float(fold["macro_recall"]) for fold in folds if fold.get("macro_recall") is not None
     ]
     return {
         "available": True,
@@ -510,7 +543,9 @@ def evaluate_leave_one_source_out(
         "macro_recall": macro_recall(aggregate_recalls, all_labels),
         "class_recall": aggregate_recalls,
         "mean_source_accuracy": float(np.mean(source_accuracies)) if source_accuracies else None,
-        "mean_source_macro_recall": float(np.mean(source_macro_recalls)) if source_macro_recalls else None,
+        "mean_source_macro_recall": float(np.mean(source_macro_recalls))
+        if source_macro_recalls
+        else None,
         "confusion_counts": confusion_counts(all_labels, all_predictions),
         "folds": folds,
     }
@@ -525,8 +560,14 @@ def main() -> int:
     features = archive["features"].astype(np.float32)
     labels = archive["labels"].astype(np.int64)
     source_paths = archive["source_paths"] if "source_paths" in archive else None
-    label_sources = np.asarray(archive["label_sources"], dtype=str) if "label_sources" in archive else None
-    is_augmented = archive["is_augmented"].astype(bool) if "is_augmented" in archive else np.zeros(labels.size, dtype=bool)
+    label_sources = (
+        np.asarray(archive["label_sources"], dtype=str) if "label_sources" in archive else None
+    )
+    is_augmented = (
+        archive["is_augmented"].astype(bool)
+        if "is_augmented" in archive
+        else np.zeros(labels.size, dtype=bool)
+    )
     if features.size == 0 or labels.size == 0:
         raise SystemExit(f"Dataset is empty: {dataset_path}")
     if is_augmented.size != labels.size:
@@ -553,8 +594,12 @@ def main() -> int:
     train_label_sources = None if label_sources is None else label_sources[train_indices]
     validation_label_sources = None if label_sources is None else label_sources[validation_indices]
 
-    normalized_train, normalized_validation, mean, std = _normalize_from_train(train_features, validation_features)
-    class_weights = compute_class_weights(train_labels, args.class_weighting, args.class_weight_alpha)
+    normalized_train, normalized_validation, mean, std = _normalize_from_train(
+        train_features, validation_features
+    )
+    class_weights = compute_class_weights(
+        train_labels, args.class_weighting, args.class_weight_alpha
+    )
     model, best_epoch = _train_mlp(
         normalized_train,
         train_labels,
@@ -597,8 +642,12 @@ def main() -> int:
             verified_features = normalized_validation[verified_validation_mask]
             verified_labels = validation_labels[verified_validation_mask]
             verified_validation_accuracy = _accuracy(verified_features, verified_labels, model)
-            verified_validation_class_recall = per_class_recall(verified_features, verified_labels, model)
-            verified_validation_macro_recall = macro_recall(verified_validation_class_recall, verified_labels)
+            verified_validation_class_recall = per_class_recall(
+                verified_features, verified_labels, model
+            )
+            verified_validation_macro_recall = macro_recall(
+                verified_validation_class_recall, verified_labels
+            )
 
     if args.require_verified_validation and verified_validation_sample_count == 0:
         raise SystemExit(
@@ -642,10 +691,14 @@ def main() -> int:
         "train_sample_count": int(train_labels.size),
         "validation_sample_count": int(validation_labels.size),
         "validation_sources": [str(source) for source in validation_sources],
-        "validation_source_names": [_source_display_name(str(source)) for source in validation_sources],
+        "validation_source_names": [
+            _source_display_name(str(source)) for source in validation_sources
+        ],
         "class_weighting": args.class_weighting,
         "class_weight_alpha": float(args.class_weight_alpha),
-        "class_weights": {name: float(class_weights[index]) for index, name in enumerate(CLASS_NAMES)},
+        "class_weights": {
+            name: float(class_weights[index]) for index, name in enumerate(CLASS_NAMES)
+        },
         "label_source_counts": overall_label_source_counts,
         "train_label_source_counts": train_label_source_counts,
         "validation_label_source_counts": validation_label_source_counts,

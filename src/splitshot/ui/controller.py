@@ -11,7 +11,11 @@ import re
 
 from PySide6.QtCore import QObject, Signal
 
-from splitshot.analysis.detection import analyze_video_audio, timing_change_proposals_from_review_suggestions, TimingReviewSuggestion
+from splitshot.analysis.detection import (
+    analyze_video_audio,
+    timing_change_proposals_from_review_suggestions,
+    TimingReviewSuggestion,
+)
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import (
     AppSettings,
@@ -32,7 +36,6 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     ExportVideoCodec,
-    FrameProfile,
     MergeLayout,
     MergeSourceAssetPathKind,
     MergeSourceTrimDerivative,
@@ -209,7 +212,11 @@ def _serialize_practiscore_remote_matches(matches: object) -> list[dict[str, obj
         return []
     payloads: list[dict[str, object]] = []
     for item in matches:
-        match = item if isinstance(item, RemotePractiScoreMatch) else RemotePractiScoreMatch.from_dict(item)
+        match = (
+            item
+            if isinstance(item, RemotePractiScoreMatch)
+            else RemotePractiScoreMatch.from_dict(item)
+        )
         if match is None:
             continue
         payloads.append(match.to_dict())
@@ -221,7 +228,11 @@ def _practiscore_remote_match_objects(matches: object) -> list[RemotePractiScore
         return []
     resolved: list[RemotePractiScoreMatch] = []
     for item in matches:
-        match = item if isinstance(item, RemotePractiScoreMatch) else RemotePractiScoreMatch.from_dict(item)
+        match = (
+            item
+            if isinstance(item, RemotePractiScoreMatch)
+            else RemotePractiScoreMatch.from_dict(item)
+        )
         if match is not None:
             resolved.append(match)
     return resolved
@@ -229,7 +240,10 @@ def _practiscore_remote_match_objects(matches: object) -> list[RemotePractiScore
 
 def _practiscore_error_category_from_exception(exc: BaseException) -> str:
     message = str(exc).lower()
-    if any(token in message for token in ("timeout", "timed out", "network", "fetch", "net::", "connection")):
+    if any(
+        token in message
+        for token in ("timeout", "timed out", "network", "fetch", "net::", "connection")
+    ):
         return TRANSIENT_NETWORK_FAILURE_ERROR
     return MALFORMED_REMOTE_RESPONSE_ERROR
 
@@ -285,7 +299,9 @@ def _optional_payload_bool(value: object) -> bool | None:
 
 def _normalize_popup_motion_mode(value: object, *, follow_motion: bool = False) -> str:
     normalized = str(value or "").strip().lower()
-    if normalized in {"fixed", "guided", "manual", "auto"} and not (normalized == "fixed" and follow_motion):
+    if normalized in {"fixed", "guided", "manual", "auto"} and not (
+        normalized == "fixed" and follow_motion
+    ):
         return normalized
     return "manual" if follow_motion else "fixed"
 
@@ -294,7 +310,9 @@ def _badge_style_from_payload(style: BadgeStyle, payload: object) -> None:
     if not isinstance(payload, dict):
         return
     if "background_color" in payload:
-        style.background_color = str(payload.get("background_color", style.background_color) or style.background_color)
+        style.background_color = str(
+            payload.get("background_color", style.background_color) or style.background_color
+        )
     if "text_color" in payload:
         style.text_color = str(payload.get("text_color", style.text_color) or style.text_color)
     if "opacity" in payload:
@@ -309,15 +327,21 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
     if "enabled" in payload:
         template.enabled = bool(payload.get("enabled", template.enabled))
     if "content_type" in payload:
-        template.content_type = str(payload.get("content_type", template.content_type) or template.content_type)
+        template.content_type = str(
+            payload.get("content_type", template.content_type) or template.content_type
+        )
     if "text_source" in payload:
-        template.text_source = str(payload.get("text_source", template.text_source) or template.text_source)
+        template.text_source = str(
+            payload.get("text_source", template.text_source) or template.text_source
+        )
     if "duration_ms" in payload:
         raw_duration = payload.get("duration_ms")
         if raw_duration not in {None, ""}:
             template.duration_ms = max(1, int(raw_duration))
     if "use_shot_split_duration" in payload:
-        template.use_shot_split_duration = bool(payload.get("use_shot_split_duration", template.use_shot_split_duration))
+        template.use_shot_split_duration = bool(
+            payload.get("use_shot_split_duration", template.use_shot_split_duration)
+        )
     if "quadrant" in payload:
         template.quadrant = str(payload.get("quadrant", template.quadrant) or template.quadrant)
     if "width" in payload:
@@ -336,17 +360,25 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
             follow_motion=template.follow_motion,
         )
     if "background_color" in payload:
-        template.background_color = str(payload.get("background_color", template.background_color) or template.background_color)
+        template.background_color = str(
+            payload.get("background_color", template.background_color) or template.background_color
+        )
     if "text_color" in payload:
-        template.text_color = str(payload.get("text_color", template.text_color) or template.text_color)
+        template.text_color = str(
+            payload.get("text_color", template.text_color) or template.text_color
+        )
     if "opacity" in payload:
         raw_opacity = payload.get("opacity")
         if raw_opacity not in {None, ""}:
             template.opacity = max(0.0, min(1.0, float(raw_opacity)))
     if "style_type" in payload:
-        template.style_type = str(payload.get("style_type", template.style_type) or template.style_type)
+        template.style_type = str(
+            payload.get("style_type", template.style_type) or template.style_type
+        )
     if "font_family" in payload:
-        template.font_family = str(payload.get("font_family", template.font_family) or template.font_family)[:80]
+        template.font_family = str(
+            payload.get("font_family", template.font_family) or template.font_family
+        )[:80]
     if "font_size" in payload:
         raw_font_size = payload.get("font_size")
         if raw_font_size not in {None, ""}:
@@ -369,7 +401,9 @@ def _practiscore_name_matches(input_name: str, candidate_name: str) -> bool:
     if _normalize_name(input_name) == _normalize_name(candidate_name):
         return True
     input_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", input_name.lower()) if part)
-    candidate_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part)
+    candidate_parts = sorted(
+        part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part
+    )
     return bool(input_parts) and input_parts == candidate_parts
 
 
@@ -390,9 +424,17 @@ def _project_media_recovery_score(
 ) -> int:
     if expected_asset.is_still_image != candidate_asset.is_still_image:
         return -1
-    if expected_asset.width and candidate_asset.width and expected_asset.width != candidate_asset.width:
+    if (
+        expected_asset.width
+        and candidate_asset.width
+        and expected_asset.width != candidate_asset.width
+    ):
         return -1
-    if expected_asset.height and candidate_asset.height and expected_asset.height != candidate_asset.height:
+    if (
+        expected_asset.height
+        and candidate_asset.height
+        and expected_asset.height != candidate_asset.height
+    ):
         return -1
     if expected_asset.rotation != candidate_asset.rotation:
         return -1
@@ -432,7 +474,9 @@ def _project_media_recovery_score(
     ):
         score += 650
     else:
-        score += 120 * len(_media_name_tokens(expected_path).intersection(_media_name_tokens(candidate_path)))
+        score += 120 * len(
+            _media_name_tokens(expected_path).intersection(_media_name_tokens(candidate_path))
+        )
 
     if Path(expected_path).suffix.lower() == candidate_path.suffix.lower():
         score += 20
@@ -456,7 +500,10 @@ def _project_media_recovery_score(
             score += 40
         else:
             score += 10
-    if expected_asset.audio_sample_rate and candidate_asset.audio_sample_rate == expected_asset.audio_sample_rate:
+    if (
+        expected_asset.audio_sample_rate
+        and candidate_asset.audio_sample_rate == expected_asset.audio_sample_rate
+    ):
         score += 25
     score += 10
     return score
@@ -498,14 +545,10 @@ def _secondary_analysis_entry_for_source(
 
 def _prune_secondary_analysis_entries(project: Project) -> None:
     valid_source_ids = {
-        source.id
-        for source in project.merge_sources
-        if _source_supports_secondary_analysis(source)
+        source.id for source in project.merge_sources if _source_supports_secondary_analysis(source)
     }
     project.analysis.secondary_sources = [
-        entry
-        for entry in project.analysis.secondary_sources
-        if entry.source_id in valid_source_ids
+        entry for entry in project.analysis.secondary_sources if entry.source_id in valid_source_ids
     ]
 
 
@@ -516,8 +559,7 @@ def _refresh_secondary_analysis_projection(
 ) -> None:
     _prune_secondary_analysis_entries(project)
     analyzable_sources = [
-        source for source in project.merge_sources
-        if _source_supports_secondary_analysis(source)
+        source for source in project.merge_sources if _source_supports_secondary_analysis(source)
     ]
     if not analyzable_sources:
         project.secondary_video = None
@@ -530,10 +572,16 @@ def _refresh_secondary_analysis_projection(
 
     selected_source = None
     if preferred_source_id:
-        selected_source = next((source for source in analyzable_sources if source.id == preferred_source_id), None)
+        selected_source = next(
+            (source for source in analyzable_sources if source.id == preferred_source_id), None
+        )
     if selected_source is None and project.analysis.analyzed_secondary_source_id:
         selected_source = next(
-            (source for source in analyzable_sources if source.id == project.analysis.analyzed_secondary_source_id),
+            (
+                source
+                for source in analyzable_sources
+                if source.id == project.analysis.analyzed_secondary_source_id
+            ),
             None,
         )
     if selected_source is None:
@@ -557,7 +605,9 @@ def _refresh_secondary_analysis_projection(
     project.analysis.sync_offset_ms = int(entry.sync_offset_ms)
 
 
-def _clear_secondary_analysis_state(project: Project, *, preserve_sync_offset: bool = False) -> None:
+def _clear_secondary_analysis_state(
+    project: Project, *, preserve_sync_offset: bool = False
+) -> None:
     project.analysis.beep_time_ms_secondary = None
     project.analysis.analyzed_secondary_source_id = None
     project.analysis.secondary_analysis_status = "idle"
@@ -615,7 +665,10 @@ def _reset_project_merge_defaults(project: Project) -> None:
 
 def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
     parameters = list(signature(analyze_video_audio).parameters.values())
-    if any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters) or len(parameters) >= 3:
+    if (
+        any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters)
+        or len(parameters) >= 3
+    ):
         return analyze_video_audio(path, threshold, settings)
     return analyze_video_audio(path, threshold)
 
@@ -785,16 +838,26 @@ def _reanchor_timing_events_for_shots(
         rebased_event = deepcopy(event)
 
         if previous_after is not None and previous_before is not None:
-            boundary_time_ms = previous_after.time_ms + max(1, (previous_before.time_ms - previous_after.time_ms) // 2)
+            boundary_time_ms = previous_after.time_ms + max(
+                1, (previous_before.time_ms - previous_after.time_ms) // 2
+            )
             boundary_index = _event_boundary_index(next_shots, boundary_time_ms)
-            rebased_event.after_shot_id = next_shots[boundary_index - 1].id if boundary_index > 0 else None
-            rebased_event.before_shot_id = next_shots[boundary_index].id if boundary_index < len(next_shots) else None
+            rebased_event.after_shot_id = (
+                next_shots[boundary_index - 1].id if boundary_index > 0 else None
+            )
+            rebased_event.before_shot_id = (
+                next_shots[boundary_index].id if boundary_index < len(next_shots) else None
+            )
         elif previous_after is not None:
-            rebased_event.after_shot_id = _nearest_shot_id_by_time(next_shots, previous_after.time_ms)
+            rebased_event.after_shot_id = _nearest_shot_id_by_time(
+                next_shots, previous_after.time_ms
+            )
             rebased_event.before_shot_id = None
         elif previous_before is not None:
             rebased_event.after_shot_id = None
-            rebased_event.before_shot_id = _nearest_shot_id_by_time(next_shots, previous_before.time_ms)
+            rebased_event.before_shot_id = _nearest_shot_id_by_time(
+                next_shots, previous_before.time_ms
+            )
         else:
             rebased_event.after_shot_id = None
             rebased_event.before_shot_id = None
@@ -891,7 +954,9 @@ class ProjectController(QObject):
         self.project.analysis.detection_review_suggestions = [
             asdict(suggestion) for suggestion in result.review_suggestions
         ]
-        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.project.analysis.timing_change_proposals = []
         self.project.analysis.last_shotml_run_summary = {
             "video_path": self.project.primary_video.path,
@@ -918,7 +983,8 @@ class ProjectController(QObject):
         source = (
             next(
                 (
-                    item for item in self.project.merge_sources
+                    item
+                    for item in self.project.merge_sources
                     if item.id == source_id and _source_supports_secondary_analysis(item)
                 ),
                 None,
@@ -964,7 +1030,9 @@ class ProjectController(QObject):
         self.project.analysis.waveform_secondary = list(result.waveform)
         self.project.analysis.sync_offset_ms = int(sync_offset_ms)
         self.project.analysis.secondary_sync_source = "auto"
-        self.project.analysis.secondary_analysis_status = "ready" if result.beep_time_ms is not None else "no_beep"
+        self.project.analysis.secondary_analysis_status = (
+            "ready" if result.beep_time_ms is not None else "no_beep"
+        )
         self.project.analysis.secondary_analysis_message = (
             "Secondary beep detected."
             if result.beep_time_ms is not None
@@ -974,7 +1042,11 @@ class ProjectController(QObject):
         _refresh_secondary_analysis_projection(self.project, preferred_source_id=source.id)
         self._set_status(
             "Secondary analysis complete."
-            + ("" if result.beep_time_ms is None else f" Sync offset: {self.project.analysis.sync_offset_ms} ms.")
+            + (
+                ""
+                if result.beep_time_ms is None
+                else f" Sync offset: {self.project.analysis.sync_offset_ms} ms."
+            )
         )
         self.project.touch()
         self.project_changed.emit()
@@ -988,7 +1060,12 @@ class ProjectController(QObject):
         self._set_status("Importing secondary video...")
         self.load_secondary_video(path)
 
-    def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
+    def set_project_details(
+        self,
+        name: str | None = None,
+        description: str | None = None,
+        output_root: str | None = None,
+    ) -> None:
         changed = False
         if name is not None:
             next_name = name.strip() or "Untitled Project"
@@ -999,6 +1076,11 @@ class ProjectController(QObject):
             next_description = str(description)
             if self.project.description != next_description:
                 self.project.description = next_description
+                changed = True
+        if output_root is not None:
+            next_output_root = str(output_root).strip()
+            if self.project.output_root != next_output_root:
+                self.project.output_root = next_output_root
                 changed = True
         if changed:
             self.project.touch()
@@ -1013,11 +1095,15 @@ class ProjectController(QObject):
         stage_number: int | None = None,
         competitor_name: str | None = None,
         competitor_place: int | None = None,
+        classification: str | None = None,
+        division: str | None = None,
     ) -> None:
         scoring = self.project.scoring
         changed = False
         if match_type is not None:
-            clean_match_type = "" if not str(match_type).strip() else normalize_match_type(str(match_type))
+            clean_match_type = (
+                "" if not str(match_type).strip() else normalize_match_type(str(match_type))
+            )
             if scoring.match_type != clean_match_type:
                 scoring.match_type = clean_match_type
                 changed = True
@@ -1036,9 +1122,21 @@ class ProjectController(QObject):
             if scoring.competitor_name != next_competitor_name:
                 scoring.competitor_name = next_competitor_name
                 changed = True
-        if competitor_place is not None or (competitor_place is None and scoring.competitor_place is not None):
+        if competitor_place is not None or (
+            competitor_place is None and scoring.competitor_place is not None
+        ):
             if scoring.competitor_place != competitor_place:
                 scoring.competitor_place = competitor_place
+                changed = True
+        if classification is not None:
+            next_classification = str(classification).strip()
+            if scoring.classification != next_classification:
+                scoring.classification = next_classification
+                changed = True
+        if division is not None:
+            next_division = str(division).strip()
+            if scoring.division != next_division:
+                scoring.division = next_division
                 changed = True
         if changed:
             if self._can_reimport_practiscore_source():
@@ -1064,7 +1162,9 @@ class ProjectController(QObject):
         self._import_practiscore_source(path, source_name)
         self._sync_project_to_active_stage()
 
-    def _rebuild_stages_from_practiscore_source(self, path: str, source_name: str | None = None) -> None:
+    def _rebuild_stages_from_practiscore_source(
+        self, path: str, source_name: str | None = None
+    ) -> None:
         options = describe_practiscore_file(path, source_name=source_name)
         stage_numbers = list(options.stage_numbers or [])
         if not stage_numbers:
@@ -1074,6 +1174,8 @@ class ProjectController(QObject):
         current_stage_number = self.project.scoring.stage_number
         current_competitor_name = self.project.scoring.competitor_name
         current_competitor_place = self.project.scoring.competitor_place
+        current_classification = self.project.scoring.classification
+        current_division = self.project.scoring.division
         current_source_path = self.project.scoring.practiscore_source_path
         current_source_name = self.project.scoring.practiscore_source_name
         seed_project_state = not bool(self.project.stages)
@@ -1121,7 +1223,8 @@ class ProjectController(QObject):
         target_stage_number = self.project.scoring.stage_number
         active_stage = next(
             (
-                stage for stage in self.project.stages
+                stage
+                for stage in self.project.stages
                 if stage.imported_stage_number == target_stage_number
             ),
             None,
@@ -1148,6 +1251,10 @@ class ProjectController(QObject):
             self.project.scoring.competitor_name = current_competitor_name
         if current_competitor_place is not None:
             self.project.scoring.competitor_place = current_competitor_place
+        if current_classification:
+            self.project.scoring.classification = current_classification
+        if current_division:
+            self.project.scoring.division = current_division
         if current_source_path:
             self.project.scoring.practiscore_source_path = current_source_path
         if current_source_name:
@@ -1155,16 +1262,20 @@ class ProjectController(QObject):
 
     def _practiscore_options_browser_payload(self) -> dict[str, object]:
         options = self._practiscore_options
-        competitors = [] if options is None else [
-            {
-                "name": option.name,
-                "place": option.place,
-                "division": option.division,
-                "classification": option.classification,
-                "power_factor": option.power_factor,
-            }
-            for option in options.competitors
-        ]
+        competitors = (
+            []
+            if options is None
+            else [
+                {
+                    "name": option.name,
+                    "place": option.place,
+                    "division": option.division,
+                    "classification": option.classification,
+                    "power_factor": option.power_factor,
+                }
+                for option in options.competitors
+            ]
+        )
         return {
             "has_source": self._practiscore_source_path is not None,
             "source_name": self._practiscore_source_name,
@@ -1196,7 +1307,9 @@ class ProjectController(QObject):
         next_matches = (
             _serialize_practiscore_remote_matches(matches)
             if matches is not None
-            else _serialize_practiscore_remote_matches(self._practiscore_sync_payload.get("matches"))
+            else _serialize_practiscore_remote_matches(
+                self._practiscore_sync_payload.get("matches")
+            )
         )
         next_selected_remote_id = (
             self._practiscore_sync_payload.get("selected_remote_id")
@@ -1217,14 +1330,19 @@ class ProjectController(QObject):
             "practiscore_session": deepcopy(self._practiscore_session_payload),
             "practiscore_sync": deepcopy(self._practiscore_sync_payload),
             "practiscore_options": self._practiscore_options_browser_payload(),
-            "matches": _serialize_practiscore_remote_matches(self._practiscore_sync_payload.get("matches")),
+            "matches": _serialize_practiscore_remote_matches(
+                self._practiscore_sync_payload.get("matches")
+            ),
         }
 
     def list_practiscore_matches(self, practiscore_session: object) -> dict[str, object]:
         session_payload = _practiscore_session_payload_from_manager(practiscore_session)
         self._set_practiscore_session_payload(session_payload)
         if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(self._practiscore_session_payload.get("message") or "PractiScore session is not ready.")
+            message = str(
+                self._practiscore_session_payload.get("message")
+                or "PractiScore session is not ready."
+            )
             self._set_status(message)
             self._set_practiscore_sync_state(
                 "error",
@@ -1253,7 +1371,9 @@ class ProjectController(QObject):
                 error_category=exc.category,
                 details=exc.details,
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except Exception as exc:  # noqa: BLE001
             session_payload = _practiscore_session_payload_from_manager(practiscore_session)
@@ -1276,9 +1396,14 @@ class ProjectController(QObject):
 
         match_payloads = _serialize_practiscore_remote_matches(matches)
         previous_selected_remote_id = self._practiscore_sync_payload.get("selected_remote_id")
-        selected_remote_id = previous_selected_remote_id if any(
-            payload.get("remote_id") == previous_selected_remote_id for payload in match_payloads
-        ) else None
+        selected_remote_id = (
+            previous_selected_remote_id
+            if any(
+                payload.get("remote_id") == previous_selected_remote_id
+                for payload in match_payloads
+            )
+            else None
+        )
         message = (
             "No remote PractiScore matches found."
             if not match_payloads
@@ -1292,10 +1417,14 @@ class ProjectController(QObject):
             selected_remote_id=selected_remote_id,
             details={"match_count": len(match_payloads)},
         )
-        self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+        self._set_practiscore_session_payload(
+            _practiscore_session_payload_from_manager(practiscore_session)
+        )
         return self._practiscore_route_payload()
 
-    def start_practiscore_sync(self, payload: dict[str, object], practiscore_session: object) -> dict[str, object]:
+    def start_practiscore_sync(
+        self, payload: dict[str, object], practiscore_session: object
+    ) -> dict[str, object]:
         remote_id = str(payload.get("remote_id") or "").strip()
         if not remote_id:
             message = "A remote PractiScore match must be selected before import."
@@ -1311,7 +1440,10 @@ class ProjectController(QObject):
         session_payload = _practiscore_session_payload_from_manager(practiscore_session)
         self._set_practiscore_session_payload(session_payload)
         if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(self._practiscore_session_payload.get("message") or "PractiScore session is not ready.")
+            message = str(
+                self._practiscore_session_payload.get("message")
+                or "PractiScore session is not ready."
+            )
             self._set_status(message)
             self._set_practiscore_sync_state(
                 "error",
@@ -1322,7 +1454,9 @@ class ProjectController(QObject):
             )
             return self._practiscore_route_payload()
 
-        existing_matches = _practiscore_remote_match_objects(self._practiscore_sync_payload.get("matches"))
+        existing_matches = _practiscore_remote_match_objects(
+            self._practiscore_sync_payload.get("matches")
+        )
         self._set_status("Importing selected remote PractiScore match...")
         self._set_practiscore_sync_state(
             "importing_selected_match",
@@ -1347,7 +1481,9 @@ class ProjectController(QObject):
                 competitor_name=self.project.scoring.competitor_name or None,
                 competitor_place=self.project.scoring.competitor_place,
             )
-            self.import_practiscore_file(str(artifacts.source_artifact_path), source_name=artifacts.source_name)
+            self.import_practiscore_file(
+                str(artifacts.source_artifact_path), source_name=artifacts.source_name
+            )
         except PractiScoreSyncError as exc:
             self._set_status(str(exc))
             self._set_practiscore_sync_state(
@@ -1358,7 +1494,9 @@ class ProjectController(QObject):
                 error_category=exc.category,
                 details={**exc.details, "remote_id": remote_id},
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except ValueError as exc:
             message = str(exc) or "Unable to normalize the downloaded PractiScore artifact."
@@ -1371,7 +1509,9 @@ class ProjectController(QObject):
                 error_category=NORMALIZATION_IMPORT_FAILURE_ERROR,
                 details={"remote_id": remote_id},
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except Exception as exc:  # noqa: BLE001
             session_payload = _practiscore_session_payload_from_manager(practiscore_session)
@@ -1410,11 +1550,17 @@ class ProjectController(QObject):
                 "source_artifact_path": str(artifacts.source_artifact_path),
                 "html_path": str(artifacts.html_path),
                 "summary_path": str(artifacts.summary_path),
-                "staged_source_path": "" if self._practiscore_source_path is None else str(self._practiscore_source_path),
-                "imported_stage_number": None if imported_stage is None else imported_stage.stage_number,
+                "staged_source_path": ""
+                if self._practiscore_source_path is None
+                else str(self._practiscore_source_path),
+                "imported_stage_number": None
+                if imported_stage is None
+                else imported_stage.stage_number,
             },
         )
-        self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+        self._set_practiscore_session_payload(
+            _practiscore_session_payload_from_manager(practiscore_session)
+        )
         return self._practiscore_route_payload()
 
     def _clear_practiscore_source(self) -> None:
@@ -1442,6 +1588,8 @@ class ProjectController(QObject):
             "stage_number": scoring.stage_number,
             "competitor_name": scoring.competitor_name or None,
             "competitor_place": scoring.competitor_place,
+            "classification": scoring.classification or None,
+            "division": scoring.division or None,
         }
 
     def _project_practiscore_candidates(self) -> list[Path]:
@@ -1473,8 +1621,12 @@ class ProjectController(QObject):
             return deepcopy(template)
         return self.settings.template_snapshot()
 
-    def _apply_settings_template_snapshot(self, template_name: str, snapshot: dict[str, object]) -> None:
-        next_settings = AppSettings.from_dict({**snapshot, "recent_projects": self.settings.recent_projects})
+    def _apply_settings_template_snapshot(
+        self, template_name: str, snapshot: dict[str, object]
+    ) -> None:
+        next_settings = AppSettings.from_dict(
+            {**snapshot, "recent_projects": self.settings.recent_projects}
+        )
         next_settings.active_template_name = template_name
         next_settings.settings_templates = deepcopy(self.settings.settings_templates)
         next_settings.settings_templates[template_name] = deepcopy(snapshot)
@@ -1491,7 +1643,9 @@ class ProjectController(QObject):
         save_settings(self.settings)
         self.settings_changed.emit()
 
-    def _template_snapshot_from_current_project(self, snapshot: dict[str, object], section: str | None = None) -> dict[str, object]:
+    def _template_snapshot_from_current_project(
+        self, snapshot: dict[str, object], section: str | None = None
+    ) -> dict[str, object]:
         project_payload = project_to_dict(self.project)
         current_settings = self.settings.config_dict()
         next_snapshot = deepcopy(snapshot)
@@ -1501,7 +1655,9 @@ class ProjectController(QObject):
             scoring = project_payload.get("scoring", {})
             if not isinstance(scoring, dict):
                 return
-            match_type = str(scoring.get("match_type") or current_settings.get("default_match_type") or "uspsa")
+            match_type = str(
+                scoring.get("match_type") or current_settings.get("default_match_type") or "uspsa"
+            )
             try:
                 default_match_type = normalize_match_type(match_type)
             except ValueError:
@@ -1509,23 +1665,43 @@ class ProjectController(QObject):
             stage_number = scoring.get("stage_number")
             competitor_name = str(scoring.get("competitor_name") or "")
             competitor_place = scoring.get("competitor_place")
-            next_snapshot.update({
-                "default_match_type": default_match_type,
-                "default_stage_number": None if stage_number in {None, ""} else int(stage_number),
-                "default_competitor_name": competitor_name,
-                "default_competitor_place": None if competitor_place in {None, ""} else int(competitor_place),
-            })
+            next_snapshot.update(
+                {
+                    "default_match_type": default_match_type,
+                    "default_stage_number": None
+                    if stage_number in {None, ""}
+                    else int(stage_number),
+                    "default_competitor_name": competitor_name,
+                    "default_competitor_place": None
+                    if competitor_place in {None, ""}
+                    else int(competitor_place),
+                }
+            )
 
         def update_pip_defaults() -> None:
             merge = project_payload.get("merge", {})
             if not isinstance(merge, dict):
                 return
-            next_snapshot.update({
-                "merge_layout": str(merge.get("layout") or current_settings.get("merge_layout") or MergeLayout.SIDE_BY_SIDE.value),
-                "pip_size": str(merge.get("pip_size") or current_settings.get("pip_size") or PipSize.MEDIUM.value),
-                "merge_pip_x": float(merge.get("pip_x", current_settings.get("merge_pip_x", 1.0))),
-                "merge_pip_y": float(merge.get("pip_y", current_settings.get("merge_pip_y", 1.0))),
-            })
+            next_snapshot.update(
+                {
+                    "merge_layout": str(
+                        merge.get("layout")
+                        or current_settings.get("merge_layout")
+                        or MergeLayout.SIDE_BY_SIDE.value
+                    ),
+                    "pip_size": str(
+                        merge.get("pip_size")
+                        or current_settings.get("pip_size")
+                        or PipSize.MEDIUM.value
+                    ),
+                    "merge_pip_x": float(
+                        merge.get("pip_x", current_settings.get("merge_pip_x", 1.0))
+                    ),
+                    "merge_pip_y": float(
+                        merge.get("pip_y", current_settings.get("merge_pip_y", 1.0))
+                    ),
+                }
+            )
 
         def update_marker_defaults() -> None:
             popup_template = project_payload.get("popup_template", {})
@@ -1597,7 +1773,9 @@ class ProjectController(QObject):
         self._set_status(f"Selected settings template {template_name}.")
 
     def save_settings_template(self, template_name: str, *, section: str | None = None) -> None:
-        template_name = str(template_name or "").strip() or self.settings.active_template_name or "Default"
+        template_name = (
+            str(template_name or "").strip() or self.settings.active_template_name or "Default"
+        )
         snapshot = self._settings_template_snapshot(template_name)
         snapshot = self._template_snapshot_from_current_project(snapshot, section=section)
         self._apply_settings_template_snapshot(template_name, snapshot)
@@ -1629,7 +1807,11 @@ class ProjectController(QObject):
             template_name = "Default"
         else:
             templates.pop(template_name, None)
-        next_template_name = self.settings.active_template_name if template_name != self.settings.active_template_name else next(iter(templates.keys()))
+        next_template_name = (
+            self.settings.active_template_name
+            if template_name != self.settings.active_template_name
+            else next(iter(templates.keys()))
+        )
         snapshot = templates.get(next_template_name) or next(iter(templates.values()))
         self._apply_settings_template_snapshot(next_template_name, snapshot)
         self.settings.settings_templates = templates
@@ -1651,10 +1833,12 @@ class ProjectController(QObject):
         ]
         imported_stage = self.project.scoring.imported_stage
         if imported_stage is not None:
-            preferred_names.extend([
-                imported_stage.source_name or "",
-                Path(imported_stage.source_path).name if imported_stage.source_path else "",
-            ])
+            preferred_names.extend(
+                [
+                    imported_stage.source_name or "",
+                    Path(imported_stage.source_path).name if imported_stage.source_path else "",
+                ]
+            )
 
         for preferred_name in preferred_names:
             clean_name = preferred_name.strip()
@@ -1675,9 +1859,11 @@ class ProjectController(QObject):
         recovered_from_folder = False
 
         if resolved_path is None or not resolved_path.exists():
-            recovered_path, recovered_name, recovered_from_folder = self._recover_practiscore_path_from_project_folder(
-                stored_path,
-                stored_name,
+            recovered_path, recovered_name, recovered_from_folder = (
+                self._recover_practiscore_path_from_project_folder(
+                    stored_path,
+                    stored_name,
+                )
             )
             if recovered_path is not None:
                 resolved_path = recovered_path
@@ -1716,7 +1902,9 @@ class ProjectController(QObject):
         self._practiscore_options = options
         if self.project.scoring.imported_stage is None:
             try:
-                self._import_practiscore_source(str(resolved_path), display_name, emit_change=emit_change)
+                self._import_practiscore_source(
+                    str(resolved_path), display_name, emit_change=emit_change
+                )
                 return True
             except ValueError:
                 return changed or recovered_from_folder
@@ -1767,7 +1955,9 @@ class ProjectController(QObject):
         for candidate_path, candidate_asset in candidates:
             if candidate_path in used_paths:
                 continue
-            score = _project_media_recovery_score(stored_path, asset, candidate_path, candidate_asset)
+            score = _project_media_recovery_score(
+                stored_path, asset, candidate_path, candidate_asset
+            )
             if score <= 0:
                 continue
             scored_candidates.append((score, candidate_path, candidate_asset))
@@ -1792,13 +1982,17 @@ class ProjectController(QObject):
         used_paths: set[Path] = set()
         changed = False
 
-        recovered_primary = self._recover_media_asset_from_project_folder(self.project.primary_video, candidates, used_paths)
+        recovered_primary = self._recover_media_asset_from_project_folder(
+            self.project.primary_video, candidates, used_paths
+        )
         if recovered_primary is not None:
             self.project.primary_video = recovered_primary
             changed = True
 
         for source in self.project.merge_sources:
-            recovered_asset = self._recover_media_asset_from_project_folder(source.asset, candidates, used_paths)
+            recovered_asset = self._recover_media_asset_from_project_folder(
+                source.asset, candidates, used_paths
+            )
             if recovered_asset is None:
                 continue
             source.asset = recovered_asset
@@ -1832,7 +2026,8 @@ class ProjectController(QObject):
             return False
         normalized_competitor_name = _normalize_name(competitor_name)
         matching_competitors = [
-            option for option in options.competitors
+            option
+            for option in options.competitors
             if _normalize_name(option.name) == normalized_competitor_name
             or _practiscore_name_matches(competitor_name, option.name)
         ]
@@ -1847,7 +2042,10 @@ class ProjectController(QObject):
         return len(matching_competitors) == 1
 
     def _can_reimport_practiscore_source(self) -> bool:
-        return self._practiscore_source_path is not None and self._current_practiscore_selection_matches_source()
+        return (
+            self._practiscore_source_path is not None
+            and self._current_practiscore_selection_matches_source()
+        )
 
     def _active_stage_practiscore_overrides(self) -> dict[str, object]:
         stage = self.project.active_stage
@@ -1862,12 +2060,20 @@ class ProjectController(QObject):
             overrides["stage_number"] = scoring.stage_number
         if scoring.competitor_name.strip() and scoring.competitor_name != imported.competitor_name:
             overrides["competitor_name"] = scoring.competitor_name
-        if scoring.competitor_place is not None and scoring.competitor_place != imported.competitor_place:
+        if (
+            scoring.competitor_place is not None
+            and scoring.competitor_place != imported.competitor_place
+        ):
             overrides["competitor_place"] = scoring.competitor_place
-        if stage.label and stage.label not in {
-            imported.stage_name or "",
-            f"Stage {imported.stage_number}" if imported.stage_number is not None else "",
-        } and not re.fullmatch(r"Stage\s+\d+", stage.label):
+        if (
+            stage.label
+            and stage.label
+            not in {
+                imported.stage_name or "",
+                f"Stage {imported.stage_number}" if imported.stage_number is not None else "",
+            }
+            and not re.fullmatch(r"Stage\s+\d+", stage.label)
+        ):
             overrides["label"] = stage.label
         return overrides
 
@@ -1931,10 +2137,15 @@ class ProjectController(QObject):
         self.project.scoring.competitor_place = imported.imported_stage.competitor_place
         self.project.scoring.match_type = imported.imported_stage.match_type
         self.project.scoring.stage_number = imported.imported_stage.stage_number
+        self.project.scoring.classification = imported.imported_stage.classification
+        self.project.scoring.division = imported.imported_stage.division
         active_stage = self.project.active_stage
         if active_stage is not None:
             active_stage.imported_stage_number = imported.imported_stage.stage_number
-            active_stage.imported_stage_name = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+            active_stage.imported_stage_name = (
+                imported.imported_stage.stage_name
+                or f"Stage {imported.imported_stage.stage_number}"
+            )
             if not active_stage.label or re.fullmatch(r"Stage\s+\d+", active_stage.label):
                 active_stage.label = active_stage.imported_stage_name
         imported_box = next(
@@ -1969,7 +2180,9 @@ class ProjectController(QObject):
         sync_overlay_legacy_custom_box_fields(self.project.overlay)
         self._restore_active_stage_practiscore_overrides(active_stage_overrides)
         self.update_hit_factor()
-        stage_label = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+        stage_label = (
+            imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+        )
         self._set_status(f"Imported PractiScore results for {stage_label}.")
         if emit_change:
             self.project.touch()
@@ -2006,7 +2219,9 @@ class ProjectController(QObject):
     def remove_merge_source(self, source_id: str) -> None:
         before_sources = list(self.project.merge_sources)
         before_count = len(before_sources)
-        self.project.merge_sources = [source for source in self.project.merge_sources if source.id != source_id]
+        self.project.merge_sources = [
+            source for source in self.project.merge_sources if source.id != source_id
+        ]
         if len(self.project.merge_sources) == before_count:
             return
         if not self.project.merge_sources:
@@ -2019,7 +2234,9 @@ class ProjectController(QObject):
             if _first_analyzable_merge_source(self.project) is not None:
                 _refresh_secondary_analysis_projection(self.project)
             else:
-                _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
+                _clear_secondary_analysis_state(
+                    self.project, preserve_sync_offset=bool(self.project.merge_sources)
+                )
                 self.project.analysis.sync_offset_ms = 0
         self._set_status("Removed merge media.")
         self._sync_project_to_active_stage()
@@ -2039,6 +2256,49 @@ class ProjectController(QObject):
         self._set_status(f"Selected stage {self._active_stage_label()}.")
         self.project.touch()
         self.project_changed.emit()
+
+    def create_stage(self, label: str | None = None) -> ProjectStage:
+        seed_from_project = not self.project.stages
+        next_order = max((stage.order_index for stage in self.project.stages), default=0) + 1
+        stage_label = str(label or "").strip() or f"Stage {next_order}"
+        stage = ProjectStage(
+            label=stage_label,
+            order_index=next_order,
+            export=deepcopy(self.project.export),
+        )
+        if seed_from_project:
+            stage.primary_media = deepcopy(self.project.primary_video)
+            stage.added_media = list(self.project.merge_sources)
+            stage.analysis = deepcopy(self.project.analysis)
+            stage.scoring = deepcopy(self.project.scoring)
+            stage.overlay = deepcopy(self.project.overlay)
+            stage.popups = list(self.project.popups)
+            stage.popup_template = deepcopy(self.project.popup_template)
+            stage.merge = deepcopy(self.project.merge)
+            stage.export = deepcopy(self.project.export)
+        self.project.stages.append(stage)
+        self.project.active_stage_id = stage.id
+        self._sync_active_stage_to_project()
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Added {stage.label}.")
+        return stage
+
+    def delete_stage(self, stage_id: str) -> None:
+        if len(self.project.stages) <= 1:
+            raise ValueError("At least one stage must remain.")
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        self.project.stages = [item for item in self.project.stages if item.id != stage_id]
+        self.project.queue = [entry for entry in self.project.queue if entry.stage_id != stage_id]
+        for index, item in enumerate(self.project.stages, start=1):
+            item.order_index = index
+        self.project.active_stage_id = self.project.stages[0].id
+        self._sync_active_stage_to_project()
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Deleted {stage.label}.")
 
     def _sync_active_stage_to_project(self) -> None:
         stage = self.project.active_stage
@@ -2180,7 +2440,9 @@ class ProjectController(QObject):
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
 
-        def promote(primary_asset: VideoAsset, sources: list[MergeSource]) -> tuple[VideoAsset, list[MergeSource]]:
+        def promote(
+            primary_asset: VideoAsset, sources: list[MergeSource]
+        ) -> tuple[VideoAsset, list[MergeSource]]:
             match = next((source for source in sources if source.id == source_id), None)
             if match is None:
                 raise ValueError(f"Merge source {source_id} not found")
@@ -2199,7 +2461,9 @@ class ProjectController(QObject):
             return next_primary, remaining
 
         if stage_id == self.project.active_stage_id:
-            next_primary, next_sources = promote(self.project.primary_video, list(self.project.merge_sources))
+            next_primary, next_sources = promote(
+                self.project.primary_video, list(self.project.merge_sources)
+            )
             self.project.primary_video = next_primary
             self.project.merge_sources = next_sources
             self._remember_original_shots()
@@ -2210,10 +2474,14 @@ class ProjectController(QObject):
             stage.primary_media = next_primary
             stage.added_media = next_sources
             valid_source_ids = {
-                source.id for source in stage.added_media if _source_supports_secondary_analysis(source)
+                source.id
+                for source in stage.added_media
+                if _source_supports_secondary_analysis(source)
             }
             stage.analysis.secondary_sources = [
-                entry for entry in stage.analysis.secondary_sources if entry.source_id in valid_source_ids
+                entry
+                for entry in stage.analysis.secondary_sources
+                if entry.source_id in valid_source_ids
             ]
             if stage.analysis.analyzed_secondary_source_id not in valid_source_ids:
                 stage.analysis.analyzed_secondary_source_id = next(iter(valid_source_ids), None)
@@ -2296,11 +2564,13 @@ class ProjectController(QObject):
             existing.snapshot = deepcopy(stage_to_dict(stage))
             existing.created_at = datetime.now(UTC)
         else:
-            self.project.queue.append(QueueEntry(
-                stage_id=stage_id,
-                status=QueueStatus.QUEUED,
-                snapshot=deepcopy(stage_to_dict(stage)),
-            ))
+            self.project.queue.append(
+                QueueEntry(
+                    stage_id=stage_id,
+                    status=QueueStatus.QUEUED,
+                    snapshot=deepcopy(stage_to_dict(stage)),
+                )
+            )
         self._set_status(f"Added stage {stage.label} to queue.")
         self.project.touch()
         self.project_changed.emit()
@@ -2343,7 +2613,9 @@ class ProjectController(QObject):
     def process_queue(self, mode: str = "individual") -> None:
         if mode not in ("individual", "combined"):
             raise ValueError("Mode must be 'individual' or 'combined'")
-        queued = [e for e in self.project.queue if e.status in (QueueStatus.QUEUED, QueueStatus.STALE)]
+        queued = [
+            e for e in self.project.queue if e.status in (QueueStatus.QUEUED, QueueStatus.STALE)
+        ]
         if not queued:
             self._set_status("No queued stages to process.")
             return
@@ -2354,7 +2626,9 @@ class ProjectController(QObject):
         results: list[Path] = []
 
         try:
-            for idx, entry in enumerate(sorted(queued, key=lambda e: self._stage_order(e.stage_id))):
+            for idx, entry in enumerate(
+                sorted(queued, key=lambda e: self._stage_order(e.stage_id))
+            ):
                 entry.status = QueueStatus.PROCESSING
                 stage = next((s for s in self.project.stages if s.id == entry.stage_id), None)
                 if stage is None:
@@ -2366,16 +2640,14 @@ class ProjectController(QObject):
                     entry.error_message = "No primary media"
                     continue
                 stage.queue_status = QueueStatus.PROCESSING
-                self._set_status(
-                    f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}..."
-                )
+                self._set_status(f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}...")
                 self.project.active_stage_id = stage.id
                 self._sync_active_stage_to_project()
                 slug = self._stage_slug(stage)
                 output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
-                self.project.export.output_path = str(output_path)
                 try:
                     from splitshot.export.pipeline import export_project
+
                     export_project(
                         self.project,
                         str(output_path),
@@ -2389,16 +2661,12 @@ class ProjectController(QObject):
                     stage.last_output_path = str(output_path)
                     stage.last_processed_at = entry.processed_at
                     results.append(output_path)
-                    self._set_status(
-                        f"Completed stage {idx + 1}/{len(queued)}: {stage.label}"
-                    )
+                    self._set_status(f"Completed stage {idx + 1}/{len(queued)}: {stage.label}")
                 except Exception as exc:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = str(exc)
                     stage.queue_status = QueueStatus.FAILED
-                    self._set_status(
-                        f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}"
-                    )
+                    self._set_status(f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}")
 
             if mode == "combined" and len(results) >= 1:
                 combined_path = self._concat_outputs(results, output_dir)
@@ -2418,16 +2686,17 @@ class ProjectController(QObject):
 
     def _stage_slug(self, stage: ProjectStage) -> str:
         import re
+
         label = stage.label or f"stage-{stage.order_index}"
         slug = re.sub(r"[^a-zA-Z0-9]+", "-", label).strip("-").lower()
         return slug or f"stage-{stage.order_index}"
 
-    def _ensure_output_dir(self) -> Path:
-        if self.project_path is None:
-            raise ValueError("Project path required for export")
-        output_dir = self.project_path / "Output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir
+    def stage_output_path(self, stage: ProjectStage | None = None) -> Path:
+        target_stage = stage or self.project.active_stage
+        if target_stage is None:
+            raise ValueError("No active stage available for export.")
+        output_dir = self._ensure_output_dir()
+        return output_dir / f"{target_stage.order_index}-{self._stage_slug(target_stage)}.mp4"
 
     def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
         combined_path = output_dir / f"{self.project.name}-combined.mp4"
@@ -2440,15 +2709,29 @@ class ProjectController(QObject):
 
     def _plain_concat(self, results: list[Path], output_dir: Path, combined_path: Path) -> Path:
         import subprocess
+
         list_path = output_dir / "concat-list.txt"
         with open(list_path, "w") as f:
             for result in results:
                 f.write(f"file '{result.resolve()}'\n")
         try:
             subprocess.run(
-                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-                 "-c", "copy", str(combined_path)],
-                capture_output=True, text=True, check=True,
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(list_path),
+                    "-c",
+                    "copy",
+                    str(combined_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Concat failed: {e.stderr}") from e
@@ -2458,7 +2741,10 @@ class ProjectController(QObject):
         return combined_path
 
     def _separator_concat(
-        self, results: list[Path], output_dir: Path, combined_path: Path,
+        self,
+        results: list[Path],
+        output_dir: Path,
+        combined_path: Path,
         ces: CombinedExportSettings,
     ) -> Path:
         import subprocess
@@ -2484,9 +2770,22 @@ class ProjectController(QObject):
                     f.write(f"file '{separator_paths[i]}'\n")
         try:
             subprocess.run(
-                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-                 "-c", "copy", str(combined_path)],
-                capture_output=True, text=True, check=True,
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(list_path),
+                    "-c",
+                    "copy",
+                    str(combined_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Separator concat failed: {e.stderr}") from e
@@ -2499,13 +2798,18 @@ class ProjectController(QObject):
         return combined_path
 
     def _render_separator(
-        self, output_path: Path, duration_s: float, ces: CombinedExportSettings,
+        self,
+        output_path: Path,
+        duration_s: float,
+        ces: CombinedExportSettings,
     ) -> None:
         import subprocess
 
         filter_parts: list[str] = []
         has_text = bool(ces.separator_text.strip())
-        has_image = bool(ces.separator_image_path.strip()) and Path(ces.separator_image_path).exists()
+        has_image = (
+            bool(ces.separator_image_path.strip()) and Path(ces.separator_image_path).exists()
+        )
 
         if has_text:
             escaped_text = ces.separator_text.replace("'", "'\\''")
@@ -2521,9 +2825,12 @@ class ProjectController(QObject):
             )
 
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", f"color=c=black:s=1920x1080:d={duration_s}:r=30",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=black:s=1920x1080:d={duration_s}:r=30",
         ]
 
         if filter_parts:
@@ -2542,13 +2849,18 @@ class ProjectController(QObject):
                 )
             cmd.extend(["-filter_complex", filter_str])
 
-        cmd.extend([
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p",
-            "-an",
-            str(output_path),
-        ])
+        cmd.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                str(output_path),
+            ]
+        )
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -2584,9 +2896,15 @@ class ProjectController(QObject):
         if self.project_path is not None:
             derivative_dir = self.project_path / INPUT_DIRNAME / "trimmed"
             derivative_dir.mkdir(parents=True, exist_ok=True)
-            derivative_path = str(derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}")
+            derivative_path = str(
+                derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}"
+            )
         else:
-            derivative_path = str(source_file.with_name(f"{source_file.stem}_{source.id}_trim{source_file.suffix or '.mp4'}"))
+            derivative_path = str(
+                source_file.with_name(
+                    f"{source_file.stem}_{source.id}_trim{source_file.suffix or '.mp4'}"
+                )
+            )
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
         except Exception as exc:
@@ -2595,16 +2913,29 @@ class ProjectController(QObject):
             original_path=source_path,
             derivative_path=derivative_path,
             active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+            start_s=start_s,
+            end_s=end_s,
         )
 
-    def trim_merge_source(self, source_id: str, *, start_s: float | None = None, end_s: float | None = None, clear: bool = False) -> None:
+    def trim_merge_source(
+        self,
+        source_id: str,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
         source = next((s for s in self.project.merge_sources if s.id == source_id), None)
         if source is None:
             raise ValueError(f"Merge source {source_id} not found")
         self._apply_merge_source_trim(source, start_s=start_s, end_s=end_s, clear=clear)
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
-        self._set_status("Cleared trim." if clear else f"Trimmed {source.asset.path} (start={start_s}, end={end_s}).")
+        self._set_status(
+            "Cleared trim."
+            if clear
+            else f"Trimmed {source.asset.path} (start={start_s}, end={end_s})."
+        )
         if _source_supports_secondary_analysis(source):
             self.analyze_secondary(source_id)
             self._sync_project_to_active_stage()
@@ -2632,7 +2963,9 @@ class ProjectController(QObject):
             if _source_supports_secondary_analysis(source):
                 self.analyze_secondary(source.id)
         self._sync_project_to_active_stage()
-        self._set_status("Cleared trim for all added media." if clear else "Applied trim to all added media.")
+        self._set_status(
+            "Cleared trim for all added media." if clear else "Applied trim to all added media."
+        )
         self.project.touch()
         self.project_changed.emit()
 
@@ -2695,9 +3028,13 @@ class ProjectController(QObject):
 
     def reset_shotml_settings(self) -> None:
         self.project.analysis.shotml_settings = ShotMLSettings()
-        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.project.analysis.timing_change_proposals = []
-        self.settings.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.settings.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.settings.shotml_defaults = ShotMLSettings()
         save_settings(self.settings)
         self.settings_changed.emit()
@@ -2730,11 +3067,21 @@ class ProjectController(QObject):
                     severity=str(item.get("severity", "review")),
                     message=str(item.get("message", "")),
                     suggested_action=str(item.get("suggested_action", "")),
-                    shot_number=None if item.get("shot_number") in {None, ""} else int(item["shot_number"]),
-                    shot_time_ms=None if item.get("shot_time_ms") in {None, ""} else int(item["shot_time_ms"]),
-                    confidence=None if item.get("confidence") in {None, ""} else float(item["confidence"]),
-                    support_confidence=None if item.get("support_confidence") in {None, ""} else float(item["support_confidence"]),
-                    interval_ms=None if item.get("interval_ms") in {None, ""} else int(item["interval_ms"]),
+                    shot_number=None
+                    if item.get("shot_number") in {None, ""}
+                    else int(item["shot_number"]),
+                    shot_time_ms=None
+                    if item.get("shot_time_ms") in {None, ""}
+                    else int(item["shot_time_ms"]),
+                    confidence=None
+                    if item.get("confidence") in {None, ""}
+                    else float(item["confidence"]),
+                    support_confidence=None
+                    if item.get("support_confidence") in {None, ""}
+                    else float(item["support_confidence"]),
+                    interval_ms=None
+                    if item.get("interval_ms") in {None, ""}
+                    else int(item["interval_ms"]),
                 )
             )
         return suggestions
@@ -2752,14 +3099,24 @@ class ProjectController(QObject):
         }
         for shot in self.project.analysis.shots:
             original = self._original_shot_state_by_id.get(shot.id)
-            if original is None or original.time_ms == shot.time_ms or shot.id in existing_restore_ids:
+            if (
+                original is None
+                or original.time_ms == shot.time_ms
+                or shot.id in existing_restore_ids
+            ):
                 continue
             proposals.append(
                 TimingChangeProposal(
                     proposal_type="restore_shot",
                     shot_id=shot.id,
                     shot_number=next(
-                        (index + 1 for index, candidate in enumerate(sort_shots(self.project.analysis.shots)) if candidate.id == shot.id),
+                        (
+                            index + 1
+                            for index, candidate in enumerate(
+                                sort_shots(self.project.analysis.shots)
+                            )
+                            if candidate.id == shot.id
+                        ),
                         None,
                     ),
                     source_time_ms=shot.time_ms,
@@ -2769,7 +3126,9 @@ class ProjectController(QObject):
                 )
             )
         self.project.analysis.timing_change_proposals = proposals
-        self._set_status(f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}.")
+        self._set_status(
+            f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}."
+        )
         self.project.touch()
         self.project_changed.emit()
 
@@ -2839,10 +3198,14 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def move_shot(self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False) -> None:
+    def move_shot(
+        self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False
+    ) -> None:
         if preserve_following_splits:
             shots = sort_shots(self.project.analysis.shots)
-            shot_index = next((index for index, shot in enumerate(shots) if shot.id == shot_id), None)
+            shot_index = next(
+                (index for index, shot in enumerate(shots) if shot.id == shot_id), None
+            )
             if shot_index is None:
                 raise ValueError("Shot not found")
             shot = shots[shot_index]
@@ -2850,7 +3213,9 @@ class ProjectController(QObject):
                 shot.shotml_time_ms = shot.time_ms
             if shot.shotml_confidence is None:
                 original = self._original_shot_state_by_id.get(shot.id)
-                shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+                shot.shotml_confidence = (
+                    original.confidence if original is not None else shot.confidence
+                )
             lower_bound_ms = (
                 self.project.analysis.beep_time_ms_primary
                 if shot_index == 0 and self.project.analysis.beep_time_ms_primary is not None
@@ -2875,7 +3240,9 @@ class ProjectController(QObject):
                         shot.shotml_time_ms = shot.time_ms
                     if shot.shotml_confidence is None:
                         original = self._original_shot_state_by_id.get(shot.id)
-                        shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+                        shot.shotml_confidence = (
+                            original.confidence if original is not None else shot.confidence
+                        )
                     shot.time_ms = max(0, time_ms)
                     if shot.source == ShotSource.AUTO:
                         shot.source = ShotSource.MANUAL
@@ -2894,7 +3261,9 @@ class ProjectController(QObject):
             if self.project.ui_state.selected_shot_id == shot_id
             else None
         )
-        self.project.analysis.shots = [shot for shot in self.project.analysis.shots if shot.id != shot_id]
+        self.project.analysis.shots = [
+            shot for shot in self.project.analysis.shots if shot.id != shot_id
+        ]
         self._forget_original_shot(shot_id)
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project, selection_context)
@@ -2909,7 +3278,9 @@ class ProjectController(QObject):
                 return
 
     def select_shot(self, shot_id: str | None) -> None:
-        if shot_id is not None and not any(shot.id == shot_id for shot in self.project.analysis.shots):
+        if shot_id is not None and not any(
+            shot.id == shot_id for shot in self.project.analysis.shots
+        ):
             shot_id = None
         self.project.ui_state.selected_shot_id = shot_id
         self.project_changed.emit()
@@ -2920,7 +3291,11 @@ class ProjectController(QObject):
         valid_shot_ids = {shot.id for shot in self.project.analysis.shots}
 
         if "selected_shot_id" in payload:
-            next_shot_id = None if payload.get("selected_shot_id") in {None, ""} else str(payload["selected_shot_id"])
+            next_shot_id = (
+                None
+                if payload.get("selected_shot_id") in {None, ""}
+                else str(payload["selected_shot_id"])
+            )
             if next_shot_id is not None and next_shot_id not in valid_shot_ids:
                 next_shot_id = None
             if ui_state.selected_shot_id != next_shot_id:
@@ -3055,7 +3430,9 @@ class ProjectController(QObject):
             if ui_state.scoring_shot_expansion != next_expansion:
                 ui_state.scoring_shot_expansion = next_expansion
                 changed = True
-            next_scoring_edit_ids = [shot_id for shot_id, expanded in next_expansion.items() if expanded]
+            next_scoring_edit_ids = [
+                shot_id for shot_id, expanded in next_expansion.items() if expanded
+            ]
             if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
                 ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
                 changed = True
@@ -3065,7 +3442,11 @@ class ProjectController(QObject):
             if isinstance(raw_scoring_edit_ids, list):
                 for value in raw_scoring_edit_ids:
                     clean_value = str(value).strip()
-                    if clean_value and clean_value in valid_shot_ids and clean_value not in next_scoring_edit_ids:
+                    if (
+                        clean_value
+                        and clean_value in valid_shot_ids
+                        and clean_value not in next_scoring_edit_ids
+                    ):
                         next_scoring_edit_ids.append(clean_value)
             if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
                 ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
@@ -3204,11 +3585,15 @@ class ProjectController(QObject):
         letter: ScoreLetter | None = None,
         penalty_counts: dict[str, float] | None = None,
     ) -> None:
-        normalized_penalty_counts = None if penalty_counts is None else {
-            str(key): max(0.0, float(value))
-            for key, value in penalty_counts.items()
-            if max(0.0, float(value)) > 0
-        }
+        normalized_penalty_counts = (
+            None
+            if penalty_counts is None
+            else {
+                str(key): max(0.0, float(value))
+                for key, value in penalty_counts.items()
+                if max(0.0, float(value)) > 0
+            }
+        )
         for shot in self.project.analysis.shots:
             if shot.id == shot_id:
                 if shot.score is None:
@@ -3222,7 +3607,9 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def restore_original_shot_timing(self, shot_id: str, *, preserve_following_splits: bool = False) -> None:
+    def restore_original_shot_timing(
+        self, shot_id: str, *, preserve_following_splits: bool = False
+    ) -> None:
         original = self._original_shot_state_by_id.get(shot_id)
         if original is None:
             raise ValueError("Original split not found")
@@ -3230,7 +3617,9 @@ class ProjectController(QObject):
         for shot_index, shot in enumerate(shots):
             if shot.id != shot_id:
                 continue
-            restored_time_ms = max(0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms)
+            restored_time_ms = max(
+                0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms
+            )
             if preserve_following_splits:
                 delta_ms = restored_time_ms - shot.time_ms
                 if delta_ms:
@@ -3240,13 +3629,19 @@ class ProjectController(QObject):
                         if shifted_shot.shotml_confidence is None:
                             original_shifted = self._original_shot_state_by_id.get(shifted_shot.id)
                             shifted_shot.shotml_confidence = (
-                                original_shifted.confidence if original_shifted is not None else shifted_shot.confidence
+                                original_shifted.confidence
+                                if original_shifted is not None
+                                else shifted_shot.confidence
                             )
                         shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
             else:
                 shot.time_ms = restored_time_ms
             shot.source = original.source
-            shot.confidence = shot.shotml_confidence if shot.shotml_confidence is not None else original.confidence
+            shot.confidence = (
+                shot.shotml_confidence
+                if shot.shotml_confidence is not None
+                else original.confidence
+            )
             self.project.sort_shots()
             self.update_hit_factor()
             self._set_status("Restored original split.")
@@ -3299,8 +3694,7 @@ class ProjectController(QObject):
 
     def set_penalty_counts(self, penalty_counts: dict[str, float]) -> None:
         self.project.scoring.penalty_counts = {
-            str(key): max(0.0, float(value))
-            for key, value in penalty_counts.items()
+            str(key): max(0.0, float(value)) for key, value in penalty_counts.items()
         }
         self.update_hit_factor()
         self.project.touch()
@@ -3331,7 +3725,9 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_overlay_badge_layout(self, style_type: str, spacing: int, margin: int) -> None:
-        self.project.overlay.style_type = style_type if style_type in {"square", "bubble", "rounded"} else "square"
+        self.project.overlay.style_type = (
+            style_type if style_type in {"square", "bubble", "rounded"} else "square"
+        )
         self.project.overlay.spacing = max(0, min(40, int(spacing)))
         self.project.overlay.margin = max(0, min(40, int(margin)))
         self.project.touch()
@@ -3410,7 +3806,9 @@ class ProjectController(QObject):
             overlay.custom_box_text = str(payload["custom_box_text"])[:500]
         if "custom_box_quadrant" in payload:
             value = str(payload["custom_box_quadrant"])
-            overlay.custom_box_quadrant = value if value in valid_custom_box_quadrants else "top_right"
+            overlay.custom_box_quadrant = (
+                value if value in valid_custom_box_quadrants else "top_right"
+            )
         if "custom_box_x" in payload:
             value = payload["custom_box_x"]
             overlay.custom_box_x = None if value in {"", None} else max(0.0, min(1.0, float(value)))
@@ -3445,9 +3843,13 @@ class ProjectController(QObject):
                     quadrant=quadrant if quadrant in valid_custom_box_quadrants else "top_right",
                     x=None if item.get("x") in {None, ""} else max(0.0, min(1.0, float(item["x"]))),
                     y=None if item.get("y") in {None, ""} else max(0.0, min(1.0, float(item["y"]))),
-                    background_color=str(item.get("background_color", overlay.custom_box_background_color)),
+                    background_color=str(
+                        item.get("background_color", overlay.custom_box_background_color)
+                    ),
                     text_color=str(item.get("text_color", overlay.custom_box_text_color)),
-                    opacity=max(0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))),
+                    opacity=max(
+                        0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))
+                    ),
                     width=max(0, int(item.get("width", 0))),
                     height=max(0, int(item.get("height", 0))),
                     summary_metric_ids=[
@@ -3455,9 +3857,16 @@ class ProjectController(QObject):
                         for value in item.get("summary_metric_ids", [])
                         if str(value).strip()
                     ],
-                    style_type=str(item.get("style_type", overlay.style_type) or overlay.style_type),
-                    font_family=str(item.get("font_family", overlay.font_family) or overlay.font_family)[:80],
-                    font_size=max(8, min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size))),
+                    style_type=str(
+                        item.get("style_type", overlay.style_type) or overlay.style_type
+                    ),
+                    font_family=str(
+                        item.get("font_family", overlay.font_family) or overlay.font_family
+                    )[:80],
+                    font_size=max(
+                        8,
+                        min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size)),
+                    ),
                     font_bold=bool(item.get("font_bold", overlay.font_bold)),
                     font_italic=bool(item.get("font_italic", overlay.font_italic)),
                 )
@@ -3592,7 +4001,10 @@ class ProjectController(QObject):
         camera_role: str | None = None,
         placement_mode: str | None = None,
     ) -> None:
-        from splitshot.domain.models import _normalize_merge_source_angle_role, _normalize_merge_source_placement_mode
+        from splitshot.domain.models import (
+            _normalize_merge_source_angle_role,
+            _normalize_merge_source_placement_mode,
+        )
 
         for source in self.project.merge_sources:
             if source.id != source_id:
@@ -3762,7 +4174,11 @@ class ProjectController(QObject):
             export.ffmpeg_preset = str(payload["ffmpeg_preset"])
         if "output_path" in payload:
             next_output_path = str(payload["output_path"]).strip()
-            export.output_path = None if not next_output_path else next_output_path
+            if next_output_path:
+                export.output_path = next_output_path
+                self.project.output_root = str(Path(next_output_path).expanduser().resolve().parent)
+            else:
+                export.output_path = None
         if manual_override_keys.intersection(payload):
             export.preset = ExportPreset.CUSTOM
         self.project.touch()
@@ -3775,7 +4191,9 @@ class ProjectController(QObject):
             for source in self.project.merge_sources:
                 if source.id == source_id:
                     source.sync_offset_ms = self.project.analysis.sync_offset_ms
-                    entry = _secondary_analysis_entry_for_source(self.project, source_id, create=True)
+                    entry = _secondary_analysis_entry_for_source(
+                        self.project, source_id, create=True
+                    )
                     if entry is not None:
                         entry.sync_offset_ms = source.sync_offset_ms
                         entry.sync_source = "manual"
@@ -3795,7 +4213,9 @@ class ProjectController(QObject):
             for source in self.project.merge_sources:
                 if source.id == source_id:
                     source.sync_offset_ms = self.project.analysis.sync_offset_ms
-                    entry = _secondary_analysis_entry_for_source(self.project, source_id, create=True)
+                    entry = _secondary_analysis_entry_for_source(
+                        self.project, source_id, create=True
+                    )
                     if entry is not None:
                         entry.sync_offset_ms = source.sync_offset_ms
                         entry.sync_source = "manual"
@@ -3826,7 +4246,9 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_primary,
         )
         analyzed_source = _first_analyzable_merge_source(self.project)
-        self.project.analysis.analyzed_secondary_source_id = None if analyzed_source is None else analyzed_source.id
+        self.project.analysis.analyzed_secondary_source_id = (
+            None if analyzed_source is None else analyzed_source.id
+        )
         self.project.analysis.sync_offset_ms *= -1
         if analyzed_source is not None:
             analyzed_source.sync_offset_ms = self.project.analysis.sync_offset_ms
@@ -3864,7 +4286,11 @@ class ProjectController(QObject):
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
         if recovered_media or recovered_practiscore:
             self.project.touch()
-        self._saved_snapshot = loaded_snapshot if (recovered_media or recovered_practiscore) else project_to_dict(self.project)
+        self._saved_snapshot = (
+            loaded_snapshot
+            if (recovered_media or recovered_practiscore)
+            else project_to_dict(self.project)
+        )
         self._remember_original_shots()
         self._remember_project(self.project_path)
         if recovered_media and recovered_practiscore and self._practiscore_source_name:
@@ -3872,7 +4298,9 @@ class ProjectController(QObject):
                 f"Opened project folder {self.project_path} and restored renamed project media and PractiScore from {self._practiscore_source_name}."
             )
         elif recovered_media:
-            self._set_status(f"Opened project folder {self.project_path} and restored renamed project media.")
+            self._set_status(
+                f"Opened project folder {self.project_path} and restored renamed project media."
+            )
         elif recovered_practiscore and self._practiscore_source_name:
             self._set_status(
                 f"Opened project folder {self.project_path} and restored PractiScore from {self._practiscore_source_name}."
@@ -3929,14 +4357,21 @@ class ProjectController(QObject):
                     "font_bold": self.project.popup_template.font_bold,
                     "font_italic": self.project.popup_template.font_italic,
                 },
-                "review_text_boxes": _overlay_text_boxes_to_payload(self.project.overlay.text_boxes),
+                "review_text_boxes": _overlay_text_boxes_to_payload(
+                    self.project.overlay.text_boxes
+                ),
             },
         }
 
     def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
         template_action = str(payload.get("template_action") or "").strip().lower()
         if template_action:
-            template_name = str(payload.get("template_name") or self.settings.active_template_name or "Default").strip() or "Default"
+            template_name = (
+                str(
+                    payload.get("template_name") or self.settings.active_template_name or "Default"
+                ).strip()
+                or "Default"
+            )
             if template_action == "select":
                 self.select_settings_template(template_name)
                 return
@@ -3958,7 +4393,11 @@ class ProjectController(QObject):
             if template_action == "delete":
                 self.delete_settings_template(template_name)
                 return
-        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        base = (
+            self.folder_settings
+            if scope == "folder" and self.folder_settings is not None
+            else self.settings
+        )
         target = AppSettings.from_dict(base.to_dict())
         if "default_match_type" in payload:
             default_match_type = str(payload["default_match_type"] or "").strip().lower()
@@ -3974,7 +4413,10 @@ class ProjectController(QObject):
             else:
                 target.default_stage_number = max(1, int(raw_stage_number))
         if "default_competitor_name" in payload:
-            target.default_competitor_name = str(payload.get("default_competitor_name", target.default_competitor_name) or target.default_competitor_name)
+            target.default_competitor_name = str(
+                payload.get("default_competitor_name", target.default_competitor_name)
+                or target.default_competitor_name
+            )
         if "default_competitor_place" in payload:
             raw_competitor_place = payload.get("default_competitor_place")
             if raw_competitor_place in {None, ""}:
@@ -3993,7 +4435,10 @@ class ProjectController(QObject):
             _badge_style_from_payload(target.hit_factor_badge, payload.get("hit_factor_badge"))
         if "overlay_custom_box_background_color" in payload:
             target.overlay_custom_box_background_color = str(
-                payload.get("overlay_custom_box_background_color", target.overlay_custom_box_background_color)
+                payload.get(
+                    "overlay_custom_box_background_color",
+                    target.overlay_custom_box_background_color,
+                )
                 or target.overlay_custom_box_background_color
             )
         if "overlay_custom_box_text_color" in payload:
@@ -4054,11 +4499,17 @@ class ProjectController(QObject):
             if "layout_locked" in payload:
                 target.layout_locked = _optional_payload_bool(payload.get("layout_locked"))
             if "layout_rail_width" in payload:
-                target.layout_rail_width = _optional_layout_dimension(payload.get("layout_rail_width"), 84, 104)
+                target.layout_rail_width = _optional_layout_dimension(
+                    payload.get("layout_rail_width"), 84, 104
+                )
             if "layout_inspector_width" in payload:
-                target.layout_inspector_width = _optional_layout_dimension(payload.get("layout_inspector_width"), 320, 4096)
+                target.layout_inspector_width = _optional_layout_dimension(
+                    payload.get("layout_inspector_width"), 320, 4096
+                )
             if "layout_waveform_height" in payload:
-                target.layout_waveform_height = _optional_layout_dimension(payload.get("layout_waveform_height"), 112, 4096)
+                target.layout_waveform_height = _optional_layout_dimension(
+                    payload.get("layout_waveform_height"), 112, 4096
+                )
         if "detection_threshold" in payload:
             threshold = float(payload["detection_threshold"])
             target.detection_threshold = threshold
@@ -4088,7 +4539,11 @@ class ProjectController(QObject):
             return
 
         section_name = str(section or "").strip().lower()
-        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        base = (
+            self.folder_settings
+            if scope == "folder" and self.folder_settings is not None
+            else self.settings
+        )
         target = AppSettings.from_dict(base.to_dict())
         fallback = self.settings if scope == "folder" else AppSettings()
 
@@ -4105,9 +4560,25 @@ class ProjectController(QObject):
         fallback_config = fallback.config_dict()
         section_keys = {
             "global-template": ("default_tool", "reopen_last_tool"),
-            "layout": ("layout_locked", "layout_rail_width", "layout_inspector_width", "layout_waveform_height"),
-            "scoring": ("default_match_type", "default_stage_number", "default_competitor_name", "default_competitor_place"),
-            "pip": ("merge_layout", "pip_size", "merge_pip_x", "merge_pip_y", "merge_source_defaults"),
+            "layout": (
+                "layout_locked",
+                "layout_rail_width",
+                "layout_inspector_width",
+                "layout_waveform_height",
+            ),
+            "scoring": (
+                "default_match_type",
+                "default_stage_number",
+                "default_competitor_name",
+                "default_competitor_place",
+            ),
+            "pip": (
+                "merge_layout",
+                "pip_size",
+                "merge_pip_x",
+                "merge_pip_y",
+                "merge_source_defaults",
+            ),
             "overlay": (
                 "overlay_position",
                 "badge_size",
@@ -4156,16 +4627,22 @@ class ProjectController(QObject):
             self._sync_active_settings_template()
             save_settings(self.settings)
         self.settings_changed.emit()
-        self._set_status(f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope.")
+        self._set_status(
+            f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope."
+        )
 
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
-        self.settings.settings_templates = {self.settings.active_template_name: self.settings.template_snapshot()}
+        self.settings.settings_templates = {
+            self.settings.active_template_name: self.settings.template_snapshot()
+        }
         save_settings(self.settings)
         delete_folder_settings(self.project_path)
         self.folder_settings = None
         self.folder_settings_error = None
-        self._apply_effective_settings_to_project(self.project, self.effective_settings(), reset_tool=False)
+        self._apply_effective_settings_to_project(
+            self.project, self.effective_settings(), reset_tool=False
+        )
         self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()
@@ -4180,7 +4657,9 @@ class ProjectController(QObject):
             shot.id: _OriginalShotState(
                 time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
                 source=shot.source,
-                confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
+                confidence=shot.shotml_confidence
+                if shot.shotml_confidence is not None
+                else shot.confidence,
                 score=None if shot.score is None else deepcopy(shot.score),
             )
             for shot in self.project.analysis.shots
@@ -4190,7 +4669,9 @@ class ProjectController(QObject):
         self._original_shot_state_by_id[shot.id] = _OriginalShotState(
             time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
             source=shot.source,
-            confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
+            confidence=shot.shotml_confidence
+            if shot.shotml_confidence is not None
+            else shot.confidence,
             score=None if shot.score is None else deepcopy(shot.score),
         )
 
@@ -4198,7 +4679,10 @@ class ProjectController(QObject):
         self._original_shot_state_by_id.pop(shot_id, None)
 
     def _remember_project(self, path: Path) -> None:
-        entries = [str(path), *[item for item in self.settings.recent_projects if item != str(path)]]
+        entries = [
+            str(path),
+            *[item for item in self.settings.recent_projects if item != str(path)],
+        ]
         next_entries = entries[:10]
         if self.settings.recent_projects == next_entries:
             return
@@ -4262,10 +4746,16 @@ class ProjectController(QObject):
 
         return [output_profile_to_dict(p) for p in self._output_profiles]
 
-    def create_output_profile(self, profile_name: str, profile_kind: str = "stage_output") -> dict[str, Any]:
+    def create_output_profile(
+        self, profile_name: str, profile_kind: str = "stage_output"
+    ) -> dict[str, Any]:
         from splitshot.domain.models import OutputProfileKind, output_profile_to_dict
 
-        kind = OutputProfileKind(profile_kind.strip().lower()) if profile_kind.strip().lower() in {"stage_output", "stage_composite"} else OutputProfileKind.STAGE_OUTPUT
+        kind = (
+            OutputProfileKind(profile_kind.strip().lower())
+            if profile_kind.strip().lower() in {"stage_output", "stage_composite"}
+            else OutputProfileKind.STAGE_OUTPUT
+        )
         profile = OutputProfile(
             scope_type="stage",
             scope_id=Path(self.project_path or "").name,
@@ -4277,7 +4767,7 @@ class ProjectController(QObject):
         return output_profile_to_dict(profile)
 
     def update_output_profile(self, output_id: str, **updates: Any) -> dict[str, Any] | None:
-        from splitshot.domain.models import FrameProfile, output_profile_to_dict
+        from splitshot.domain.models import output_profile_to_dict
 
         profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
         if profile is None:
@@ -4356,7 +4846,9 @@ class ProjectController(QObject):
         self._apply_effective_settings_to_project(project, effective, reset_tool=True)
         return project
 
-    def _apply_effective_settings_to_project(self, project: Project, effective: AppSettings, *, reset_tool: bool) -> None:
+    def _apply_effective_settings_to_project(
+        self, project: Project, effective: AppSettings, *, reset_tool: bool
+    ) -> None:
         project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
         project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
         project.scoring.match_type = ""
@@ -4406,20 +4898,24 @@ class ProjectController(QObject):
         project.export.ffmpeg_preset = effective.export_ffmpeg_preset
         project.popup_template = deepcopy(effective.marker_template)
         project.overlay.text_boxes = [
-            OverlayTextBox(**box)
-            for box in effective.review_text_boxes
-            if isinstance(box, dict)
+            OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
         ]
         if effective.layout_locked is not None:
             project.ui_state.layout_locked = bool(effective.layout_locked)
         if effective.layout_rail_width is not None:
             project.ui_state.rail_width = max(84, min(104, int(effective.layout_rail_width)))
         if effective.layout_inspector_width is not None:
-            project.ui_state.inspector_width = max(320, min(4096, int(effective.layout_inspector_width)))
+            project.ui_state.inspector_width = max(
+                320, min(4096, int(effective.layout_inspector_width))
+            )
         if effective.layout_waveform_height is not None:
-            project.ui_state.waveform_height = max(112, min(4096, int(effective.layout_waveform_height)))
+            project.ui_state.waveform_height = max(
+                112, min(4096, int(effective.layout_waveform_height))
+            )
         if reset_tool:
-            project.ui_state.active_tool = effective.default_tool if effective.reopen_last_tool else "project"
+            project.ui_state.active_tool = (
+                effective.default_tool if effective.reopen_last_tool else "project"
+            )
 
     def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
         self.folder_settings_error = None
@@ -4432,15 +4928,37 @@ class ProjectController(QObject):
     def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
         if self.project_path is None:
             return
-        current_output_path = str(self.project.export.output_path or "").strip()
-        project_output_path = str(default_project_output_path(self.project_path))
-        previous_output_path = (
-            str(default_project_output_path(previous_project_path))
+        current_output_root = str(self.project.output_root or "").strip()
+        project_output_root = str(default_project_output_path(self.project_path).parent)
+        previous_output_root = (
+            str(default_project_output_path(previous_project_path).parent)
             if previous_project_path is not None
             else ""
         )
-        if not current_output_path or (previous_output_path and current_output_path == previous_output_path):
-            self.project.export.output_path = project_output_path
+        if not current_output_root or (
+            previous_output_root and current_output_root == previous_output_root
+        ):
+            self.project.output_root = project_output_root
+        current_output_path = str(self.project.export.output_path or "").strip()
+        expected_output_path = str(Path(self.project.output_root) / "output.mp4")
+        if not current_output_path or (
+            previous_output_root
+            and current_output_path == str(Path(previous_output_root) / "output.mp4")
+        ):
+            self.project.export.output_path = expected_output_path
+
+    def _ensure_output_dir(self) -> Path:
+        if self.project_path is None:
+            raise ValueError("Project path is required before exporting.")
+        output_root = str(self.project.output_root or "").strip()
+        output_dir = (
+            Path(output_root)
+            if output_root
+            else default_project_output_path(self.project_path).parent
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self.project.output_root = str(output_dir)
+        return output_dir
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

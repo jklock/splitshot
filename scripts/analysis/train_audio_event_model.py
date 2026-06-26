@@ -38,7 +38,9 @@ def _background_window(rng: np.random.Generator) -> np.ndarray:
 
 def _beep_window(rng: np.random.Generator) -> np.ndarray:
     signal = _background_window(rng)
-    length = int(rng.integers(int(SAMPLE_RATE * 0.05), min(WINDOW_SIZE - 8, int(SAMPLE_RATE * 0.13))))
+    length = int(
+        rng.integers(int(SAMPLE_RATE * 0.05), min(WINDOW_SIZE - 8, int(SAMPLE_RATE * 0.13)))
+    )
     start = int(rng.integers(0, max(1, WINDOW_SIZE - length)))
     start_frequency = float(rng.uniform(1800.0, 3400.0))
     end_frequency = start_frequency + float(rng.uniform(-250.0, 350.0))
@@ -55,7 +57,9 @@ def _shot_window(rng: np.random.Generator) -> np.ndarray:
     signal = _background_window(rng)
     burst_length = int(rng.integers(int(SAMPLE_RATE * 0.012), int(SAMPLE_RATE * 0.035)))
     start = int(rng.integers(0, max(1, WINDOW_SIZE - burst_length - 1)))
-    decay = np.exp(-np.linspace(0.0, float(rng.uniform(5.0, 10.0)), burst_length)).astype(np.float32)
+    decay = np.exp(-np.linspace(0.0, float(rng.uniform(5.0, 10.0)), burst_length)).astype(
+        np.float32
+    )
     burst = rng.normal(0.0, 1.0, burst_length).astype(np.float32) * decay
     burst -= np.mean(burst)
     burst /= max(1e-6, float(np.max(np.abs(burst))))
@@ -78,7 +82,9 @@ def _shot_window(rng: np.random.Generator) -> np.ndarray:
     return np.clip(signal, -1.0, 1.0)
 
 
-def _build_dataset(rng: np.random.Generator, per_class: int = 2400) -> tuple[np.ndarray, np.ndarray]:
+def _build_dataset(
+    rng: np.random.Generator, per_class: int = 2400
+) -> tuple[np.ndarray, np.ndarray]:
     features: list[np.ndarray] = []
     labels: list[int] = []
 
@@ -101,12 +107,18 @@ def _softmax(values: np.ndarray) -> np.ndarray:
     return exp / np.sum(exp, axis=1, keepdims=True)
 
 
-def _train_mlp(x_train: np.ndarray, y_train: np.ndarray, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def _train_mlp(
+    x_train: np.ndarray, y_train: np.ndarray, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
     feature_count = x_train.shape[1]
     class_count = len(CLASS_LABELS)
-    w1 = (rng.normal(0.0, math.sqrt(2.0 / feature_count), (feature_count, HIDDEN_UNITS))).astype(np.float32)
+    w1 = (rng.normal(0.0, math.sqrt(2.0 / feature_count), (feature_count, HIDDEN_UNITS))).astype(
+        np.float32
+    )
     b1 = np.zeros(HIDDEN_UNITS, dtype=np.float32)
-    w2 = (rng.normal(0.0, math.sqrt(2.0 / HIDDEN_UNITS), (HIDDEN_UNITS, class_count))).astype(np.float32)
+    w2 = (rng.normal(0.0, math.sqrt(2.0 / HIDDEN_UNITS), (HIDDEN_UNITS, class_count))).astype(
+        np.float32
+    )
     b2 = np.zeros(class_count, dtype=np.float32)
 
     one_hot = np.eye(class_count, dtype=np.float32)[y_train]
@@ -203,10 +215,10 @@ def _write_bundle(
         "HOP_SIZE = 128",
         f"STANDARDIZATION_MEAN = {mean.tolist()!r}",
         f"STANDARDIZATION_STD = {std.tolist()!r}",
-        f'W1 = {model["w1"].tolist()!r}',
-        f'B1 = {model["b1"].tolist()!r}',
-        f'W2 = {model["w2"].tolist()!r}',
-        f'B2 = {model["b2"].tolist()!r}',
+        f"W1 = {model['w1'].tolist()!r}",
+        f"B1 = {model['b1'].tolist()!r}",
+        f"W2 = {model['w2'].tolist()!r}",
+        f"B2 = {model['b2'].tolist()!r}",
         "",
     ]
     OUTPUT_PATH.write_text("\n".join(lines))

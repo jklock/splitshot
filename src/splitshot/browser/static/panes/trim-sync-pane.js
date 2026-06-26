@@ -20,49 +20,75 @@ export function createTrimSyncPane({
     return getState() || {};
   }
 
-  function activeStageLabel() {
-    const activeStageId = currentState()?.project?.active_stage_id || "";
-    const stages = Array.isArray(currentState()?.project?.stages) ? currentState().project.stages : [];
-    const stage = stages.find((item) => item.id === activeStageId) || null;
-    return stage?.label || (stage ? `Stage ${stage.order_index}` : "Trim");
+  function isExpanded(sectionId) {
+    return sectionExpansion.get(sectionId) !== false;
+  }
+
+  function primaryVideo() {
+    return currentState()?.project?.primary_video || {};
+  }
+
+  function beepTimeMs() {
+    return currentState()?.project?.analysis?.beep_time_ms_primary ?? null;
+  }
+
+  function lastShotTimeMs() {
+    const shots = currentState()?.project?.analysis?.shots || [];
+    if (!shots.length) return null;
+    return Math.max(...shots.map((shot) => shot.time_ms ?? 0));
   }
 
   function mergeSources() {
     return currentState()?.project?.merge_sources || [];
   }
 
-  function isExpanded(sectionId) {
-    return sectionExpansion.get(sectionId) !== false;
+  function formatSeconds(value) {
+    if (value === null || value === undefined) return "--.--";
+    return Number(value).toFixed(2);
   }
 
-  function renderSectionHeader(title, sectionId, detail = "") {
-    const expanded = isExpanded(sectionId);
-    return `
-      <div class="section-header trim-section-header">
-        <strong>${title}</strong>
-        <div class="section-header-actions">
-          ${detail ? `<small>${detail}</small>` : ""}
-          <button type="button" class="scoring-shot-toggle" data-trim-toggle="${sectionId}" aria-label="${expanded ? "Collapse" : "Expand"} ${title}">${expanded ? "\u25BC" : "\u25B6"}</button>
-        </div>
-      </div>
-    `;
+  function sourceDurationMs(source) {
+    return source?.asset?.duration_ms ?? primaryVideo()?.duration_ms ?? 0;
   }
 
-  async function trimAll(clear = false) {
-    const startInput = $("trim-sync-bulk-start");
-    const endInput = $("trim-sync-bulk-end");
-    const startValue = parseFloat(startInput?.value || "");
-    const endValue = parseFloat(endInput?.value || "");
-    activity(clear ? "trim.clear-all" : "trim.apply-all", {
-      stageLabel: activeStageLabel(),
-      start_s: startValue,
-      end_s: endValue,
-    });
-    await callApi("/api/merge/source/trim-all", {
-      clear,
-      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
-      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
-    });
+  function sourceBeepTimeMs(source) {
+    const primaryBeep = beepTimeMs();
+    if (primaryBeep === null) return null;
+    return primaryBeep + currentSourceSyncOffsetMs(source);
+  }
+
+  function sourceLastShotTimeMs(source) {
+    const primaryLastShot = lastShotTimeMs();
+    if (primaryLastShot === null) return null;
+    return primaryLastShot + currentSourceSyncOffsetMs(source);
+  }
+
+  function sourceTrimStartS(source) {
+    const td = source?.trim_derivative;
+    if (td?.start_s !== null && td?.start_s !== undefined) return td.start_s;
+    const beep = sourceBeepTimeMs(source);
+    if (beep !== null) return (beep / 1000) - 2;
+    return 0;
+  }
+
+  function sourceTrimEndS(source) {
+    const td = source?.trim_derivative;
+    if (td?.end_s !== null && td?.end_s !== undefined) return td.end_s;
+    const lastShot = sourceLastShotTimeMs(source);
+    const durMs = sourceDurationMs(source);
+    if (lastShot !== null) return (lastShot / 1000) + 2;
+    return durMs ? (durMs / 1000) : 0;
+  }
+
+  function computedTrimLabel(source) {
+    const durMs = sourceDurationMs(source);
+    const durS = durMs / 1000;
+    const start = sourceTrimStartS(source);
+    const end = sourceTrimEndS(source);
+    const before = Math.max(0, start);
+    const after = Math.max(0, durS - end);
+    const kept = Math.max(0, end - start);
+    return `Before trim: ${formatSeconds(before)}s  |  After trim: ${formatSeconds(after)}s  |  Kept: ${formatSeconds(kept)}s  |  Total: ${formatSeconds(durS)}s`;
   }
 
   function sourceSyncStatusLabel(source = null) {
@@ -79,36 +105,103 @@ export function createTrimSyncPane({
     return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
   }
 
+  async function trimAll(clear = false) {
+    const startInput = $("trim-global-start");
+    const endInput = $("trim-global-end");
+    const startValue = parseFloat(startInput?.value || "");
+    const endValue = parseFloat(endInput?.value || "");
+    activity(clear ? "trim.clear-all" : "trim.apply-all", {
+      start_s: startValue,
+      end_s: endValue,
+    });
+    await callApi("/api/merge/source/trim-all", {
+      clear,
+      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
+      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+    });
+  }
+
+  async function trimSource(sourceId, clear = false) {
+    const startInput = documentObject.querySelector(`[data-trim-start="${sourceId}"]`);
+    const endInput = documentObject.querySelector(`[data-trim-end="${sourceId}"]`);
+    const startValue = parseFloat(startInput?.value || "");
+    const endValue = parseFloat(endInput?.value || "");
+    activity(clear ? "trim.clear" : "trim.apply", { sourceId, start_s: startValue, end_s: endValue });
+    await callApi("/api/merge/source/trim", {
+      source_id: sourceId,
+      clear,
+      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
+      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+    });
+  }
+
+  function setSourceTrimToBeep(sourceId) {
+    const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
+    const beep = source ? sourceBeepTimeMs(source) : null;
+    if (beep === null) return;
+    const input = documentObject.querySelector(`[data-trim-start="${sourceId}"]`);
+    if (input) {
+      input.value = (beep / 1000).toFixed(2);
+      activity("trim.set-beep", { sourceId, start_s: beep / 1000 });
+    }
+  }
+
+  function setSourceTrimToLastShot(sourceId) {
+    const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
+    const lastShot = source ? sourceLastShotTimeMs(source) : null;
+    if (lastShot === null) return;
+    const input = documentObject.querySelector(`[data-trim-end="${sourceId}"]`);
+    if (input) {
+      input.value = (lastShot / 1000).toFixed(2);
+      activity("trim.set-last-shot", { sourceId, end_s: lastShot / 1000 });
+    }
+  }
+
+  function applyGlobalDefaults() {
+    const primaryBeep = beepTimeMs();
+    const primaryLastShot = lastShotTimeMs();
+    const startInput = $("trim-global-start");
+    const endInput = $("trim-global-end");
+    if (primaryBeep !== null && startInput) startInput.value = Math.max(0, (primaryBeep / 1000) - 2).toFixed(2);
+    if (primaryLastShot !== null && endInput) endInput.value = (primaryLastShot / 1000) + 2;
+    activity("trim.global-defaults", { beep_ms: primaryBeep, last_shot_ms: primaryLastShot });
+  }
+
   function buildSourceCard(source, index) {
     const asset = source.asset || source;
     const sourceId = sourceIdentifier(source, String(index));
     const trimDerivative = source.trim_derivative;
-    const trimStatus = trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path
-      ? "Trim active"
-      : "No trim";
+    const trimActive = trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path;
+    const startS = sourceTrimStartS(source);
+    const endS = sourceTrimEndS(source);
     return `
       <article class="trim-source-card" data-source-id="${sourceId}">
         <div class="trim-source-card-header">
           <div class="trim-source-card-copy">
             <strong>${fileName(asset.path || "")}</strong>
-            <small>${asset.is_still_image ? "Image" : "Video"} • ${trimStatus}</small>
+            <small>${asset.is_still_image ? "Image" : "Video"}${trimActive ? "  •  Trim active" : ""}</small>
           </div>
           <span class="pane-summary-token">${formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</span>
         </div>
         <div class="trim-source-card-body">
+          <small class="trim-computed-label">${computedTrimLabel(source)}</small>
           <div class="trim-card-row">
             <label class="merge-source-field">
-              <span>Start</span>
-              <input type="number" min="0" step="0.001" placeholder="0.000" data-trim-start="${sourceId}" />
+              <span>Start (s)</span>
+              <input type="number" min="0" step="0.01" value="${formatSeconds(startS)}" data-trim-start="${sourceId}" />
             </label>
             <label class="merge-source-field">
-              <span>End</span>
-              <input type="number" min="0" step="0.001" placeholder="0.000" data-trim-end="${sourceId}" />
+              <span>End (s)</span>
+              <input type="number" min="0" step="0.01" value="${formatSeconds(endS)}" data-trim-end="${sourceId}" />
             </label>
             <div class="trim-card-actions">
               <button type="button" class="btn-sm btn-primary trim-apply-btn" data-source-id="${sourceId}">Apply</button>
               <button type="button" class="btn-sm btn-secondary trim-clear-btn" data-source-id="${sourceId}">Clear</button>
             </div>
+          </div>
+          <div class="trim-card-row trim-card-row-quick">
+            <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}">Start at Beep</button>
+            <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}">End after Last Shot</button>
           </div>
           <div class="trim-card-row trim-card-row-sync">
             <label class="merge-source-field trim-sync-offset-field">
@@ -133,6 +226,19 @@ export function createTrimSyncPane({
     `;
   }
 
+  function renderSectionHeader(title, sectionId, detail = "") {
+    const expanded = isExpanded(sectionId);
+    return `
+      <div class="section-header trim-section-header">
+        <strong>${title}</strong>
+        <div class="section-header-actions">
+          ${detail ? `<small>${detail}</small>` : ""}
+          <button type="button" class="pane-toggle" data-trim-toggle="${sectionId}" aria-label="${expanded ? "Collapse" : "Expand"} ${title}">${expanded ? "\u25BC" : "\u25B6"}</button>
+        </div>
+      </div>
+    `;
+  }
+
   function bindEvents() {
     documentObject.querySelectorAll("[data-trim-toggle]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -141,26 +247,27 @@ export function createTrimSyncPane({
         renderTrimSyncList();
       });
     });
-    $("trim-sync-apply-all")?.addEventListener("click", () => trimAll(false));
-    $("trim-sync-clear-all")?.addEventListener("click", () => trimAll(true));
+    $("trim-global-apply")?.addEventListener("click", () => trimAll(false));
+    $("trim-global-clear")?.addEventListener("click", () => trimAll(true));
+    $("trim-global-defaults-btn")?.addEventListener("click", applyGlobalDefaults);
     documentObject.querySelectorAll(".trim-apply-btn").forEach((button) => {
       button.addEventListener("click", () => {
-        const sourceId = button.dataset.sourceId || "";
-        const startValue = parseFloat(documentObject.querySelector(`[data-trim-start="${sourceId}"]`)?.value || "");
-        const endValue = parseFloat(documentObject.querySelector(`[data-trim-end="${sourceId}"]`)?.value || "");
-        activity("trim.apply", { sourceId, start_s: startValue, end_s: endValue });
-        callApi("/api/merge/source/trim", {
-          source_id: sourceId,
-          start_s: Number.isFinite(startValue) && startValue > 0 ? startValue : null,
-          end_s: Number.isFinite(endValue) && endValue > 0 ? endValue : null,
-        });
+        trimSource(button.dataset.sourceId || "", false);
       });
     });
     documentObject.querySelectorAll(".trim-clear-btn").forEach((button) => {
       button.addEventListener("click", () => {
-        const sourceId = button.dataset.sourceId || "";
-        activity("trim.clear", { sourceId });
-        callApi("/api/merge/source/trim", { source_id: sourceId, clear: true });
+        trimSource(button.dataset.sourceId || "", true);
+      });
+    });
+    documentObject.querySelectorAll(".trim-beep-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        setSourceTrimToBeep(button.dataset.sourceId || "");
+      });
+    });
+    documentObject.querySelectorAll(".trim-last-shot-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        setSourceTrimToLastShot(button.dataset.sourceId || "");
       });
     });
     documentObject.querySelectorAll("[data-source-sync-offset]").forEach((input) => {
@@ -196,6 +303,12 @@ export function createTrimSyncPane({
     if (!pane) return;
     const sources = mergeSources();
     const existingList = $("trim-sync-list");
+    const primaryBeep = beepTimeMs();
+    const primaryLastShot = lastShotTimeMs();
+    const primaryDurMs = primaryVideo()?.duration_ms ?? 0;
+    const beepS = primaryBeep !== null ? (primaryBeep / 1000).toFixed(2) : "--.--";
+    const lastShotS = primaryLastShot !== null ? (primaryLastShot / 1000).toFixed(2) : "--.--";
+    const durS = primaryDurMs ? (primaryDurMs / 1000).toFixed(2) : "--.--";
     withPreservedScrollState(existingList ? [existingList] : [], () => {
       pane.innerHTML = `
         <div class="pane-section trim-pane-shell">
@@ -205,23 +318,31 @@ export function createTrimSyncPane({
           </div>
           <div class="settings-section trim-pane-section ${isExpanded("bulk") ? "" : "collapsed"}" data-trim-section="bulk">
             ${renderSectionHeader("Bulk Trim", "bulk")}
-            <div class="trim-bulk-grid">
-              <label class="merge-source-field">
-                <span>Start</span>
-                <input id="trim-sync-bulk-start" type="number" min="0" step="0.001" placeholder="0.000" />
-              </label>
-              <label class="merge-source-field">
-                <span>End</span>
-                <input id="trim-sync-bulk-end" type="number" min="0" step="0.001" placeholder="0.000" />
-              </label>
-              <div class="trim-bulk-actions">
-                <button id="trim-sync-apply-all" type="button" class="btn btn-primary">Apply All</button>
-                <button id="trim-sync-clear-all" type="button" class="btn btn-secondary">Clear All</button>
+            <div class="trim-pane-section-body"${isExpanded("bulk") ? "" : " hidden"}>
+              <div class="trim-timing-bar">
+                <span>Beep: ${beepS}s</span>
+                <span>Last Shot: ${lastShotS}s</span>
+                <span>Total: ${durS}s</span>
               </div>
+              <div class="trim-global-row">
+              <label class="merge-source-field">
+                <span>Keep before beep (s)</span>
+                <input id="trim-global-start" type="number" min="0" step="0.01" value="2.00" placeholder="2.00" />
+              </label>
+              <label class="merge-source-field">
+                <span>Keep after last shot (s)</span>
+                <input id="trim-global-end" type="number" min="0" step="0.01" value="2.00" placeholder="2.00" />
+              </label>
+              <div class="trim-global-actions">
+                <button id="trim-global-defaults-btn" type="button" class="btn-sm btn-secondary">Reset to 2/2</button>
+                <button id="trim-global-apply" type="button" class="btn btn-primary">Apply to All</button>
+                <button id="trim-global-clear" type="button" class="btn btn-secondary">Clear All</button>
+              </div>
+            </div>
             </div>
           </div>
           <div class="settings-section trim-pane-section ${isExpanded("sources") ? "" : "collapsed"}" data-trim-section="sources">
-            ${renderSectionHeader("Sources", "sources")}
+            ${renderSectionHeader("Sources", "sources", `Beep: ${beepS}s  •  Last Shot: ${lastShotS}s`)}
             <div id="trim-sync-list" class="trim-source-list">
               ${sources.length ? sources.map((source, index) => buildSourceCard(source, index)).join("") : '<div class="empty-state">No added media for this stage.</div>'}
             </div>
@@ -235,6 +356,5 @@ export function createTrimSyncPane({
   return Object.freeze({
     renderTrimSyncList,
     trimAll,
-    activeStageLabel,
   });
 }

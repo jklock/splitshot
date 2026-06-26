@@ -127,7 +127,13 @@ def test_v1_without_imported_stage_uses_fallback_label():
         "id": "nostage",
         "name": "No Stage Info",
         "schema_version": 1,
-        "primary_video": {"path": "/fake/video.mp4", "duration_ms": 5000, "width": 1920, "height": 1080, "fps": 30.0},
+        "primary_video": {
+            "path": "/fake/video.mp4",
+            "duration_ms": 5000,
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+        },
         "merge_sources": [],
         "scoring": {"enabled": True, "ruleset": "uspsa_minor"},
         "analysis": {"shots": []},
@@ -146,8 +152,12 @@ def test_v2_project_saved_and_loaded_roundtrip():
     """Save a v2 project to disk and reload it, verifying stages and queue persist."""
     p = Project()
     s1 = ProjectStage(
-        id="s1", label="Stage 1", order_index=1,
-        primary_media=VideoAsset(path="/tmp/test.mp4", duration_ms=5000, width=1920, height=1080, fps=30.0),
+        id="s1",
+        label="Stage 1",
+        order_index=1,
+        primary_media=VideoAsset(
+            path="/tmp/test.mp4", duration_ms=5000, width=1920, height=1080, fps=30.0
+        ),
     )
     s2 = ProjectStage(id="s2", label="Stage 2", order_index=2)
     p.stages = [s1, s2]

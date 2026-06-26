@@ -32,8 +32,16 @@ class PenaltyField:
 
 USPSA_IPSC_PENALTIES = (
     PenaltyField("procedural_errors", "Procedural Error", 10, "points", "Usually -10 points each."),
-    PenaltyField("manual_no_shoots", "Extra No-Shoot", 10, "points", "Use for no-shoots not tied to a shot marker."),
-    PenaltyField("manual_misses", "Extra Miss", 10, "points", "Use for misses not tied to a shot marker."),
+    PenaltyField(
+        "manual_no_shoots",
+        "Extra No-Shoot",
+        10,
+        "points",
+        "Use for no-shoots not tied to a shot marker.",
+    ),
+    PenaltyField(
+        "manual_misses", "Extra Miss", 10, "points", "Use for misses not tied to a shot marker."
+    ),
 )
 
 IDPA_PENALTIES = (
@@ -263,11 +271,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
 
 
 def scoring_presets_for_api() -> list[dict[str, object]]:
-    return [
-        asdict(preset)
-        for preset in SCORING_PRESETS.values()
-        if preset.id != "gpa_time_plus"
-    ]
+    return [asdict(preset) for preset in SCORING_PRESETS.values() if preset.id != "gpa_time_plus"]
 
 
 def get_scoring_preset(ruleset: str) -> ScoringPreset:
@@ -293,7 +297,9 @@ def penalty_field_short_label(field_id: str, fallback_label: str = "") -> str:
     return PENALTY_FIELD_SHORT_LABELS.get(field_id, fallback_label or field_id.replace("_", " "))
 
 
-def normalize_score_letter_for_ruleset(ruleset: str, letter: str | ScoreLetter | None) -> str | None:
+def normalize_score_letter_for_ruleset(
+    ruleset: str, letter: str | ScoreLetter | None
+) -> str | None:
     if letter in {None, ""}:
         return None
     preset = get_scoring_preset(ruleset)
@@ -352,7 +358,9 @@ def _scoring_color_options(preset: ScoringPreset) -> list[dict[str, object]]:
     for letter in preset.score_options:
         add_option(letter, "Score token")
     for penalty_field in preset.penalty_fields:
-        add_option(penalty_field_short_label(penalty_field.id, penalty_field.label), penalty_field.label)
+        add_option(
+            penalty_field_short_label(penalty_field.id, penalty_field.label), penalty_field.label
+        )
     return options
 
 
@@ -402,10 +410,7 @@ def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
 
 def _field_penalty_total(project: Project, preset: ScoringPreset) -> float:
     penalty_counts = normalize_penalty_counts_for_ruleset(preset.id, project.scoring.penalty_counts)
-    return sum(
-        penalty_counts.get(field.id, 0.0) * field.value
-        for field in preset.penalty_fields
-    )
+    return sum(penalty_counts.get(field.id, 0.0) * field.value for field in preset.penalty_fields)
 
 
 def total_penalties(project: Project, preset: ScoringPreset | None = None) -> float:
@@ -438,20 +443,12 @@ def format_imported_stage_overlay_text(
     display_raw_seconds = (
         float(raw_seconds)
         if raw_seconds is not None
-        else (
-            float(imported_stage.raw_seconds)
-            if imported_stage.raw_seconds is not None
-            else None
-        )
+        else (float(imported_stage.raw_seconds) if imported_stage.raw_seconds is not None else None)
     )
     display_final_time = (
         float(final_time)
         if final_time is not None
-        else (
-            float(imported_stage.final_time)
-            if imported_stage.final_time is not None
-            else None
-        )
+        else (float(imported_stage.final_time) if imported_stage.final_time is not None else None)
     )
 
     lines = ["Summary"]
@@ -523,11 +520,7 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         if imported_stage is not None and imported_stage.raw_seconds is not None
         else None
     )
-    raw_seconds = (
-        video_raw_seconds
-        if video_raw_seconds is not None
-        else official_raw_seconds
-    )
+    raw_seconds = video_raw_seconds if video_raw_seconds is not None else official_raw_seconds
     shot_points = _shot_score_total(project)
     shot_penalties = _shot_penalty_total(project, preset)
     field_penalties = _field_penalty_total(project, preset)

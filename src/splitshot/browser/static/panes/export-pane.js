@@ -1,8 +1,6 @@
 export function createExportPane({
   $ = (id) => document.getElementById(id),
   getState = () => null,
-  getExportPathDraft = () => "",
-  setExportPathDraft = () => {},
   getExportLogLines = () => [],
   getActiveProcessingPath = () => null,
   getProcessingProgressPercent = () => 0,
@@ -120,18 +118,7 @@ export function createExportPane({
   }
 
   function syncExportPathControl() {
-    const input = $("export-path");
-    if (!input) return;
-    const state = currentState();
-    const savedPath = state?.project?.export?.output_path || "";
-    const defaultPath = state?.project?.path
-      ? `${state.project.path}/Output/output.mp4`
-      : `${state?.default_project_path || "~/splitshot"}/output.mp4`;
-    const draftPath = getExportPathDraft().trim();
-    const hasUnsavedDraft = draftPath && draftPath !== savedPath;
-    const nextValue = hasUnsavedDraft ? getExportPathDraft() : savedPath || draftPath || input.value || defaultPath;
-    if (input.value !== nextValue) input.value = nextValue;
-    if (!draftPath) setExportPathDraft(nextValue);
+    return "";
   }
 
   function readExportLayoutPayload() {
@@ -142,9 +129,7 @@ export function createExportPane({
   }
 
   function readExportSettingsPayload() {
-    const outputPath = $("export-path")?.value.trim() || getExportPathDraft().trim() || currentState()?.project?.export?.output_path || "";
     return {
-      output_path: outputPath,
       target_width: $("target-width").value ? Number($("target-width").value) : "",
       target_height: $("target-height").value ? Number($("target-height").value) : "",
       frame_rate: $("frame-rate").value,

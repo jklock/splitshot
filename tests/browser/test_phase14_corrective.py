@@ -1,4 +1,8 @@
-"""Phase 14 corrective assertions — Project context, Media workflow, Queue routing, Review formatting."""
+"""Corrective assertions for pane ownership, media workflow, queue routing, and review formatting.
+
+Phase 16D updated for restored match-context ownership in Project, backend-driven media dialogs,
+queue filtering, and full workflow proof.
+"""
 
 from __future__ import annotations
 
@@ -8,54 +12,154 @@ STATIC_ROOT = Path("src/splitshot/browser/static")
 
 
 # ---------------------------------------------------------------------------
-# V107-1400 — Project context ownership
+# V107-1400 — Project context ownership (RESTORED)
 # ---------------------------------------------------------------------------
 
-def test_project_retains_competitor_selectors():
+
+def test_project_has_practiscore_competitor_selectors():
+    html = (STATIC_ROOT / "index.html").read_text()
+    assert 'id="match-competitor-name"' in html
+    assert 'id="match-competitor-place"' in html
+    assert 'id="match-class"' in html
+    assert 'id="match-division"' in html
+
+
+def test_project_does_not_render_stage_number_in_project_pane():
     source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    within = source[
+        source.index("readPractiScoreContextPayload") : source.index(
+            "readPractiScoreContextPayload"
+        )
+        + 500
+    ]
+    assert "stage_number" not in within
+
+
+def test_project_practiscore_functions_are_implemented():
+    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    assert "ensurePractiScoreSelectionControls" in source
+    assert "renderPractiScoreSelect" in source
     assert "renderPractiScoreOptionLists" in source
     assert "syncPractiScoreSelectionFields" in source
-    assert "renderPractiScoreImportSummary" in source
-    assert "match-stage-number" in source
     assert "match-competitor-name" in source
     assert "match-competitor-place" in source
+    assert "match-class" in source
+    assert "match-division" in source
 
 
-def test_project_summary_is_four_row_contract():
+def test_project_reads_classification_and_division_in_payload():
     source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
-    within = source[source.index("renderPractiScoreImportSummary"):]
-    assert '"Name"' in within
-    assert '"Place"' in within
-    assert '"Match Time"' in within
-    assert '"Division"' in within
+    within = source[
+        source.index("readPractiScoreContextPayload") : source.index(
+            "readPractiScoreContextPayload"
+        )
+        + 500
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_practiscore_context_payload_includes_classification_and_division():
+    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    within = source[
+        source.index("readPractiScoreContextPayload") : source.index(
+            "readPractiScoreContextPayload"
+        )
+        + 500
+    ]
+    assert "classification" in within
+    assert "division" in within
+    assert "match-class" in source
+    assert "match-division" in source
+
+
+def test_controller_set_practiscore_context_accepts_classification_division():
+    source = Path("src/splitshot/ui/controller.py").read_text()
+    within = source[
+        source.index("def set_practiscore_context") : source.index("def set_practiscore_context")
+        + 2000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_server_practiscore_context_passes_classification_division():
+    source = Path("src/splitshot/browser/server.py").read_text()
+    within = source[
+        source.index("def _set_practiscore_context") : source.index("def _set_practiscore_context")
+        + 2000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_scoring_state_has_classification_division_fields():
+    source = Path("src/splitshot/domain/models.py").read_text()
+    within = source[source.index("class ScoringState") : source.index("class ScoringState") + 800]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_scoring_from_dict_handles_classification_division():
+    source = Path("src/splitshot/domain/models.py").read_text()
+    within = source[
+        source.index("def _scoring_from_dict") : source.index("def _scoring_from_dict") + 1000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_project_summary_is_compact_no_match_time():
+    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    within = source[
+        source.index("renderPractiScoreImportSummary") : source.index(
+            "renderPractiScoreImportSummary"
+        )
+        + 1500
+    ]
+    assert "practiscore-import-summary" in within
+    assert "classification" in within
+    assert "Match Time" not in within
 
 
 def test_project_does_not_own_stage_media():
     source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
-    within = source[source.index("renderPractiScoreImportSummary"):source.index("renderPractiScoreImportSummary") + source[source.index("renderPractiScoreImportSummary"):].index("function") if "function" in source[source.index("renderPractiScoreImportSummary"):] else len(source[source.index("renderPractiScoreImportSummary"):])]
-    # The four-row summary must not include media-file language
+    start = source.index("renderPractiScoreImportSummary")
+    end = (
+        source.index("function", source.index("function", start) + 1)
+        if "function" in source[source.index("function", start) + 1 :]
+        else len(source)
+    )
+    within = source[start : start + 1200]
     assert "primary_media" not in within
     assert "added_media" not in within
     assert "file_intake" not in within.lower()
+
+
+def test_project_owns_output_root_control():
+    html = (STATIC_ROOT / "index.html").read_text()
+    assert 'id="project-output-root"' in html
+    assert 'id="browse-project-output-root"' in html
 
 
 # ---------------------------------------------------------------------------
 # V107-1410 — Media stage-first workflow
 # ---------------------------------------------------------------------------
 
-def test_media_pane_has_stage_toggles():
+
+def test_media_pane_has_section_toggles():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "scoring-shot-toggle" in source
-    assert "media-stage-toggle" in source
-    assert "section-header-with-toggle" in source
-    assert "isStageExpanded" in source
-    assert "toggleStage" in source
+    assert "pane-toggle" in source
+    assert "media-section-toggle" in source
+    assert "sectionExpanded" in source
+    assert "toggleSection" in source
 
 
-def test_media_pane_uses_openMediaAddMoreInput_not_openMergeMediaInput():
+def test_media_pane_uses_backend_dialog_not_file_inputs():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "openMediaAddMoreInput" in source
-    assert "openMergeMediaInput" not in source
+    assert "pickPath" in source
+    assert 'callApi("/api/project/stage/import-primary"' in source
+    assert 'callApi("/api/project/stage/import-added"' in source
 
 
 def test_media_pane_has_file_rows_with_primary_badge():
@@ -70,24 +174,23 @@ def test_media_pane_has_file_rows_with_primary_badge():
 def test_media_pane_uses_real_set_primary_route():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert 'callApi("/api/project/stage/set-primary"' in source
-    assert 'openPrimaryForStage(button.dataset.stageId || "")' not in source
 
 
-def test_media_pane_has_add_more_and_edit_stage():
+def test_media_pane_has_add_more_edit_stage_and_create_stage():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "media-add-more-btn" in source
     assert "media-edit-stage-btn" in source
+    assert "media-add-stage-btn" in source
     assert "Add More" in source
     assert "Edit Stage" in source
+    assert 'callApi("/api/project/stage/create"' in source
 
 
-def test_media_pane_has_no_inline_competitor_edits():
+def test_media_pane_has_stage_name_edit_not_competitor_edits():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "data-stage-field" not in source
+    assert "media-save-stage-btn" in source
     assert "competitor_name" not in source.lower()
     assert "competitor_place" not in source.lower()
-    assert "Save Stage Details" not in source
-    assert "Save Stage" not in source
 
 
 def test_media_pane_has_no_filler_copy():
@@ -103,21 +206,23 @@ def test_media_file_rows_use_asset_meta():
 
 def test_media_pane_expansion_is_persisted():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "splitshot.media.stageExpanded" in source
+    assert "splitshot.media.sectionExpanded" in source
     assert "localStorage" in source
 
 
 # ---------------------------------------------------------------------------
-# V107-1420 — Queue routing, filler removal, Compose overlap
+# V107-1420 — Queue routing, filtering, filler removal, Compose overlap
 # ---------------------------------------------------------------------------
+
 
 def test_media_inventory_and_stage_navigator_are_separate():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "media-pane-active-stage" in source
-    assert "media-stage-nav-list" in source
+    assert "renderActiveStageSection" in source
     assert "renderPrimarySection" in source
     assert "renderAddedSection" in source
-    assert "renderStageNavigatorRow" in source
+    assert "renderStageNavigator" in source
+    assert "renderInventoryFileRow" in source
+    assert "media-stage-card" not in source
 
 
 def test_queue_edit_stage_routes_to_media_not_merge():
@@ -128,7 +233,7 @@ def test_queue_edit_stage_routes_to_media_not_merge():
 
 def test_queue_activity_log_is_media():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    within_edit = source[source.index("editStage"):]
+    within_edit = source[source.index("editStage") :]
     assert 'tool: "media"' in within_edit
     assert 'tool: "merge"' not in within_edit
 
@@ -138,21 +243,10 @@ def test_queue_has_no_filler_copy():
     assert "pane-flow-hint" not in source
 
 
-def test_media_add_more_input_exists_in_html():
-    html = (STATIC_ROOT / "index.html").read_text()
-    assert 'id="media-add-more-input"' in html
-
-
-def test_media_add_more_input_has_handler_in_shell():
-    shell = (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
-    assert 'media-add-more-input' in shell
-    assert 'addEventListener("change"' in shell
-
-
-def test_app_js_wires_openMediaAddMoreInput():
-    app = (STATIC_ROOT / "app.js").read_text()
-    assert "openMediaAddMoreInput" in app
-    assert 'media-add-more-input' in app
+def test_queue_visible_entries_excludes_not_queued():
+    source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
+    within = source[source.index("visibleQueueEntries") : source.index("visibleQueueEntries") + 500]
+    assert 'status !== "not_queued"' in within
 
 
 def test_queue_needs_requeue_label_exists():
@@ -162,7 +256,7 @@ def test_queue_needs_requeue_label_exists():
 
 def test_queue_has_stage_toggles():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    assert "scoring-shot-toggle" in source
+    assert "pane-toggle" in source
     assert "queue-stage-toggle" in source
     assert "section-header-with-toggle" in source
     assert "isStageExpanded" in source
@@ -175,27 +269,34 @@ def test_queue_expansion_is_persisted():
     assert "localStorage" in source
 
 
+def test_export_drops_output_path_browser_controls():
+    html = (STATIC_ROOT / "index.html").read_text()
+    assert 'id="export-path"' not in html
+    assert 'id="browse-export-path"' not in html
+
+
 # ---------------------------------------------------------------------------
 # V107-1430 — Review summary denominator formatting
 # ---------------------------------------------------------------------------
 
+
 def test_formatPlacement_uses_denominator():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     start = source.index("function formatPlacement")
-    within = source[start:start + 600]
+    within = source[start : start + 600]
     assert "${numericPlace}/${numericTotal}" in within
     assert "String(numericPlace)" in within
 
 
 def test_formatPlacement_has_no_hash_format():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
-    within = source[source.index("formatPlacement"):source.index("formatPlacement") + 400]
-    assert "#" not in within  # no ordinal-hash formatting
+    within = source[source.index("formatPlacement") : source.index("formatPlacement") + 400]
+    assert "#" not in within
 
 
 def test_review_metric_value_wires_placement_dimensions():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
-    within = source[source.index("reviewMetricValue"):]
+    within = source[source.index("reviewMetricValue") :]
     assert "overall_placement" in within
     assert "division_placement" in within
     assert "class_placement" in within
@@ -205,11 +306,15 @@ def test_review_metric_value_wires_placement_dimensions():
 
 def test_review_passes_denominator_to_all_placement_fields():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
-    within = source[source.index("reviewMetricValue"):]
-    assert 'formatPlacement(imported.competitor_place, groups.overall.items.length)' in within
-    assert 'formatPlacement(groups.division.place, groups.division.items.length)' in within
-    assert 'formatPlacement(groups.class.place, groups.class.items.length)' in within
-    assert 'formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length)' in within
+    within = source[source.index("reviewMetricValue") :]
+    assert "formatPlacement(imported.competitor_place, groups.overall.items.length)" in within
+    assert "formatPlacement(groups.division.place, groups.division.items.length)" in within
+    assert "formatPlacement(groups.class.place, groups.class.items.length)" in within
+    assert (
+        "formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length)" in within
+    )
+
+
 def test_queue_uses_compact_stage_cards():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
     assert "queue-stage-card" in source
@@ -220,9 +325,10 @@ def test_queue_uses_compact_stage_cards():
 def test_trim_uses_source_cards_and_bulk_sections():
     source = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
     assert "trim-source-card" in source
-    assert "trim-bulk-grid" in source
+    assert "trim-global-row" in source
     assert "trim-card-row" in source
     assert "trim-sync-nudge-buttons" in source
+    assert "computedTrimLabel" in source
 
 
 def test_waveform_renderer_declares_lane_clipping():
@@ -251,3 +357,76 @@ def test_v107_pane_audit_collects_visual_parity_metrics():
     assert "Pane visual parity audit failed" in source
     assert "toggle_right_offsets_px" in source
     assert "control_column_counts" in source
+
+
+# ---------------------------------------------------------------------------
+# Phase 16D — New assertions for full ownership restoration
+# ---------------------------------------------------------------------------
+
+
+def test_practiscore_context_payload_includes_classification_and_division():
+    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    within = source[
+        source.index("readPractiScoreContextPayload") : source.index(
+            "readPractiScoreContextPayload"
+        )
+        + 500
+    ]
+    assert "classification" in within
+    assert "division" in within
+    assert "match-class" in source
+    assert "match-division" in source
+
+
+def test_controller_set_practiscore_context_accepts_classification_division():
+    source = Path("src/splitshot/ui/controller.py").read_text()
+    within = source[
+        source.index("def set_practiscore_context") : source.index("def set_practiscore_context")
+        + 2000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_server_practiscore_context_passes_classification_division():
+    source = Path("src/splitshot/browser/server.py").read_text()
+    within = source[
+        source.index("def _set_practiscore_context") : source.index("def _set_practiscore_context")
+        + 2000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_scoring_state_has_classification_division_fields():
+    source = Path("src/splitshot/domain/models.py").read_text()
+    within = source[source.index("class ScoringState") : source.index("class ScoringState") + 800]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_scoring_from_dict_handles_classification_division():
+    source = Path("src/splitshot/domain/models.py").read_text()
+    within = source[
+        source.index("def _scoring_from_dict") : source.index("def _scoring_from_dict") + 1000
+    ]
+    assert "classification" in within
+    assert "division" in within
+
+
+def test_shell_runtime_wires_practiscore_selectors():
+    source = (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
+    assert "match-competitor-name" in source
+    assert "match-competitor-place" in source
+    assert "match-class" in source
+    assert "match-division" in source
+    assert "syncPractiScoreSelectionFields" in source
+
+
+def test_project_pane_functions_return_results_not_noop():
+    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    ensure_start = source.index("function ensurePractiScoreSelectionControls")
+    ensure_end = source.index("function renderPractiScoreSelect", ensure_start)
+    ensure_body = source[ensure_start:ensure_end]
+    assert "currentState()?.practiscore_options" in ensure_body
+    assert len(ensure_body) > 20

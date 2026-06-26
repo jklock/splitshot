@@ -51,7 +51,9 @@ class _FakeStatus:
 
 
 class _FakeSessionManager:
-    def __init__(self, tmp_path: Path, *, state: str = "authenticated_ready", message: str | None = None) -> None:
+    def __init__(
+        self, tmp_path: Path, *, state: str = "authenticated_ready", message: str | None = None
+    ) -> None:
         self.profile_paths = type("ProfilePaths", (), {"app_dir": tmp_path})()
         self._state = state
         self._message = message or {
@@ -126,7 +128,9 @@ def _build_downloaded_artifacts(tmp_path: Path, remote_id: str) -> SelectedRemot
     )
 
 
-def test_practiscore_match_list_route_exposes_sync_payload_shape(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_match_list_route_exposes_sync_payload_shape(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "discover_remote_matches",
@@ -165,7 +169,9 @@ def test_practiscore_match_list_route_exposes_sync_payload_shape(monkeypatch, tm
     assert state_payload["practiscore_sync"]["state"] == "match_list_ready"
 
 
-def test_practiscore_selected_match_import_route_exposes_success_payload_shape(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_selected_match_import_route_exposes_success_payload_shape(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "discover_remote_matches",
@@ -182,7 +188,9 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(m
     monkeypatch.setattr(
         controller_module,
         "download_remote_match_artifacts",
-        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_downloaded_artifacts(tmp_path, remote_id),
+        lambda browser_context, remote_id, cache_root, match_catalog=None: (
+            _build_downloaded_artifacts(tmp_path, remote_id)
+        ),
     )
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
@@ -209,7 +217,9 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(m
     assert state_payload["practiscore_options"]["has_source"] is True
 
 
-def test_practiscore_match_list_route_reports_expired_session_error(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_match_list_route_reports_expired_session_error(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(controller_module, "discover_remote_matches", lambda browser_context: [])
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
@@ -226,7 +236,9 @@ def test_practiscore_match_list_route_reports_expired_session_error(monkeypatch,
     assert payload["practiscore_sync"]["error_category"] == "expired_authentication"
 
 
-def test_practiscore_selected_match_import_route_reports_missing_artifact_error(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_selected_match_import_route_reports_missing_artifact_error(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "download_remote_match_artifacts",

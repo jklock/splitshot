@@ -56,7 +56,9 @@ class _FakePage:
 
 
 class _FakeContext:
-    def __init__(self, landing_page: _FakePage, detail_pages: dict[str, _FakePage] | None = None) -> None:
+    def __init__(
+        self, landing_page: _FakePage, detail_pages: dict[str, _FakePage] | None = None
+    ) -> None:
         self.pages = [landing_page]
         self._detail_pages = dict(detail_pages or {})
         self._new_pages: list[_FakePage] = []
@@ -123,7 +125,9 @@ def test_discover_remote_matches_returns_stable_match_shape() -> None:
     ]
 
 
-def test_download_remote_match_artifacts_writes_deterministic_cache_metadata(tmp_path: Path) -> None:
+def test_download_remote_match_artifacts_writes_deterministic_cache_metadata(
+    tmp_path: Path,
+) -> None:
     landing_page = _FakePage(
         url="https://practiscore.com/clubs",
         html="<html></html>",
@@ -206,7 +210,9 @@ def test_download_remote_match_artifacts_writes_deterministic_cache_metadata(tmp
     }
 
 
-def test_download_remote_match_artifacts_captures_source_html_and_summary_together(tmp_path: Path) -> None:
+def test_download_remote_match_artifacts_captures_source_html_and_summary_together(
+    tmp_path: Path,
+) -> None:
     landing_page = _FakePage(
         url="https://practiscore.com/clubs",
         html="<html></html>",
@@ -244,7 +250,10 @@ def test_download_remote_match_artifacts_captures_source_html_and_summary_togeth
 
     artifacts = download_remote_match_artifacts(context, "match-200", tmp_path)
 
-    assert artifacts.source_artifact_path.read_text(encoding="utf-8") == "$INFO Region:USPSA\nD FirstName,LastName\n"
+    assert (
+        artifacts.source_artifact_path.read_text(encoding="utf-8")
+        == "$INFO Region:USPSA\nD FirstName,LastName\n"
+    )
     assert "Rendered HTML" in artifacts.html_path.read_text(encoding="utf-8")
     assert artifacts.summary_snapshot["artifact"]["source_name"] == "classifier-report.txt"
     assert artifacts.summary_snapshot["metadata"] == {"Range": "North Bay"}

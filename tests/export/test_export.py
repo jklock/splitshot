@@ -13,8 +13,27 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, OverlayTextBox, Project, ScoreLetter, ScoreMark, ShotEvent, TimingEvent, VideoAsset
-from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
+from splitshot.domain.models import (
+    AspectRatio,
+    ExportFrameRate,
+    ImportedStageScore,
+    MergeLayout,
+    MergeSource,
+    OverlayPosition,
+    OverlayTextBox,
+    Project,
+    ScoreLetter,
+    ScoreMark,
+    ShotEvent,
+    TimingEvent,
+    VideoAsset,
+)
+from splitshot.export.pipeline import (
+    _is_expected_decoder_pipe_shutdown,
+    _merged_duration_ms,
+    _prune_expected_decoder_pipe_shutdown_lines,
+    export_project,
+)
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import (
@@ -135,7 +154,9 @@ def test_export_project_initializes_qt_gui_application_for_headless_runs(
         called = True
         return None
 
-    monkeypatch.setattr("splitshot.export.pipeline._ensure_qt_gui_application", fake_ensure_qt_gui_application)
+    monkeypatch.setattr(
+        "splitshot.export.pipeline._ensure_qt_gui_application", fake_ensure_qt_gui_application
+    )
 
     output_path = tmp_path / "headless-export.mp4"
     export_project(project, output_path)
@@ -169,7 +190,9 @@ def test_overlay_qfont_uses_known_fallback_stacks() -> None:
     resolved_families = set(helvetica_font.families())
     primary_family = helvetica_font.families()[0]
     if sys.platform.startswith("win"):
-        assert helvetica_font.families()[: len(WINDOWS_SANS_FONT_FAMILIES)] == list(WINDOWS_SANS_FONT_FAMILIES)
+        assert helvetica_font.families()[: len(WINDOWS_SANS_FONT_FAMILIES)] == list(
+            WINDOWS_SANS_FONT_FAMILIES
+        )
         assert "Helvetica Neue" not in resolved_families
     elif sys.platform == "darwin":
         assert primary_family in {"Helvetica Neue", "Helvetica", "Arial"}
@@ -189,7 +212,9 @@ def test_overlay_font_policy_uses_windows_ui_defaults() -> None:
     assert WINDOWS_SERIF_FONT_FAMILIES[0] == "Georgia"
 
 
-def test_overlay_renderer_score_marks_use_overlay_qfont(monkeypatch, synthetic_video_factory) -> None:
+def test_overlay_renderer_score_marks_use_overlay_qfont(
+    monkeypatch, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(resolution=(320, 180))
     project = Project(name="Score Mark Font")
     project.primary_video = probe_video(video_path)
@@ -245,7 +270,9 @@ def test_export_supports_common_output_containers(
     assert int(video_stream["height"]) == 90
 
 
-def test_export_rejects_unsupported_output_container(synthetic_video_factory, tmp_path: Path) -> None:
+def test_export_rejects_unsupported_output_container(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     video_path = synthetic_video_factory()
     project = Project(name="Unsupported Container Export")
     project.primary_video = probe_video(video_path)
@@ -254,7 +281,9 @@ def test_export_rejects_unsupported_output_container(synthetic_video_factory, tm
         export_project(project, tmp_path / "export.webm")
 
 
-def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
+def test_export_burns_overlay_badges_into_output_video(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     video_path = synthetic_video_factory(resolution=(320, 180))
     project = Project(name="Overlay Export Test")
     project.primary_video = probe_video(video_path)
@@ -344,9 +373,13 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     project.overlay.current_shot_badge.text_color = "#000000"
     project.overlay.shot_badge.background_color = "#f97316"
     project.overlay.shot_badge.text_color = "#000000"
-    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1})
+    project.analysis.shots[0].score = ScoreMark(
+        letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1}
+    )
 
-    badges, score_marks = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)
+    badges, score_marks = OverlayRenderer().build_badges(
+        project, project.analysis.shots[0].time_ms + 50
+    )
 
     scored_badge = next(badge for badge in badges if badge.text.startswith("Shot 1 "))
 
@@ -361,7 +394,9 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     assert ("PE", "#112233") in scored_badge.text_runs
 
 
-def test_overlay_renderer_paint_handles_scored_badge_runs_without_crashing(synthetic_video_factory) -> None:
+def test_overlay_renderer_paint_handles_scored_badge_runs_without_crashing(
+    synthetic_video_factory,
+) -> None:
     video_path = synthetic_video_factory(resolution=(320, 180))
     project = Project(name="Scored Paint")
     project.primary_video = probe_video(video_path)
@@ -371,7 +406,9 @@ def test_overlay_renderer_paint_handles_scored_badge_runs_without_crashing(synth
     project.scoring.enabled = True
     project.overlay.show_score = False
     project.overlay.show_shots = True
-    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1})
+    project.analysis.shots[0].score = ScoreMark(
+        letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1}
+    )
 
     image = QImage(320, 180, QImage.Format_ARGB32)
     image.fill(QColor("black"))
@@ -424,7 +461,9 @@ def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_fact
 
 def test_overlay_renderer_reveals_shot_badges_on_frame_boundaries() -> None:
     project = Project(name="Frame Safe Overlay")
-    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0
+    )
     project.analysis.beep_time_ms_primary = 0
     project.analysis.shots = [ShotEvent(time_ms=150)]
     project.overlay.show_timer = False
@@ -563,9 +602,17 @@ def test_overlay_renderer_shows_imported_summary_custom_box_only_after_final_sho
         for x in range(0, 220):
             before_color = before.pixelColor(x, y)
             after_color = after.pixelColor(x, y)
-            if before_color.red() > 120 and before_color.red() > before_color.green() + 40 and before_color.red() > before_color.blue() + 40:
+            if (
+                before_color.red() > 120
+                and before_color.red() > before_color.green() + 40
+                and before_color.red() > before_color.blue() + 40
+            ):
                 before_red += 1
-            if after_color.red() > 120 and after_color.red() > after_color.green() + 40 and after_color.red() > after_color.blue() + 40:
+            if (
+                after_color.red() > 120
+                and after_color.red() > after_color.green() + 40
+                and after_color.red() > after_color.blue() + 40
+            ):
                 after_red += 1
 
     assert before_red == 0
@@ -600,7 +647,11 @@ def test_overlay_renderer_respects_fixed_custom_box_dimensions() -> None:
     for y in range(image.height()):
         for x in range(image.width()):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 red_pixels.append((x, y))
 
     assert red_pixels
@@ -654,7 +705,11 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
             color = image.pixelColor(x, y)
             if color.red() > 180 and color.green() > 70 and color.blue() < 80:
                 orange_pixels.append((x, y))
-            if color.green() > 90 and color.green() > color.red() + 20 and color.green() > color.blue() + 20:
+            if (
+                color.green() > 90
+                and color.green() > color.red() + 20
+                and color.green() > color.blue() + 20
+            ):
                 green_pixels.append((x, y))
 
     assert orange_pixels
@@ -669,7 +724,9 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     assert orange_bottom < green_top
 
 
-def test_overlay_renderer_prefers_final_score_anchor_over_badge_stack_for_imported_summary() -> None:
+def test_overlay_renderer_prefers_final_score_anchor_over_badge_stack_for_imported_summary() -> (
+    None
+):
     project = Project(name="Imported Summary Above Final Score")
     project.analysis.beep_time_ms_primary = 100
     project.analysis.shots = [
@@ -739,8 +796,13 @@ def test_overlay_renderer_prefers_final_score_anchor_over_badge_stack_for_import
     assert renderer.stack_anchor_rect is not None
     assert renderer.final_score_rect is not None
     assert renderer.summary_anchor_rect is not None
-    assert abs(renderer.summary_anchor_rect.center().x() - renderer.final_score_rect.center().x()) <= 1
-    assert abs(renderer.summary_anchor_rect.center().x() - renderer.stack_anchor_rect.center().x()) > 20
+    assert (
+        abs(renderer.summary_anchor_rect.center().x() - renderer.final_score_rect.center().x()) <= 1
+    )
+    assert (
+        abs(renderer.summary_anchor_rect.center().x() - renderer.stack_anchor_rect.center().x())
+        > 20
+    )
 
 
 def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot() -> None:
@@ -754,8 +816,14 @@ def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot()
         score_counts={"PD": 4},
     )
 
-    assert OverlayRenderer._text_box_text(project, 1200, "imported_summary", "Edited summary", True) == "Edited summary"
-    assert OverlayRenderer._text_box_text(project, 800, "imported_summary", "Edited summary", True) == ""
+    assert (
+        OverlayRenderer._text_box_text(project, 1200, "imported_summary", "Edited summary", True)
+        == "Edited summary"
+    )
+    assert (
+        OverlayRenderer._text_box_text(project, 800, "imported_summary", "Edited summary", True)
+        == ""
+    )
 
 
 def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
@@ -797,7 +865,11 @@ def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_sum
     for y in range(image.height()):
         for x in range(image.width()):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 red_pixels.append((x, y))
 
     assert red_pixels
@@ -842,7 +914,11 @@ def test_overlay_renderer_can_lock_review_boxes_to_overlay_stack() -> None:
     for y in range(image.height()):
         for x in range(image.width()):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 red_pixels.append((x, y))
 
     assert red_pixels
@@ -887,7 +963,11 @@ def test_overlay_renderer_uses_unlocked_review_box_custom_coordinates() -> None:
     for y in range(image.height()):
         for x in range(image.width()):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 red_pixels.append((x, y))
 
     assert red_pixels
@@ -898,7 +978,9 @@ def test_overlay_renderer_uses_unlocked_review_box_custom_coordinates() -> None:
     assert center_y == pytest.approx(180 * 0.25, abs=3)
 
 
-def test_export_burns_manual_custom_box_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
+def test_export_burns_manual_custom_box_into_output_video(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     video_path = synthetic_video_factory(name="custom-box-export")
     project = Project(name="Manual Custom Box Export")
     project.primary_video = probe_video(video_path)
@@ -953,12 +1035,20 @@ def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
     for y in range(30, 62):
         for x in range(34, 126):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 center_red += 1
     for y in range(0, 24):
         for x in range(0, 70):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 corner_red += 1
 
     assert center_red > 20
@@ -989,12 +1079,20 @@ def test_overlay_renderer_defaults_empty_custom_quadrant_coordinates_to_center()
     for y in range(30, 62):
         for x in range(34, 126):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 center_red += 1
     for y in range(0, 24):
         for x in range(0, 70):
             color = image.pixelColor(x, y)
-            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+            if (
+                color.red() > 120
+                and color.red() > color.green() + 40
+                and color.red() > color.blue() + 40
+            ):
                 corner_red += 1
 
     assert center_red > 20
@@ -1041,7 +1139,11 @@ def test_overlay_renderer_keeps_timer_anchor_stable_in_custom_quadrant() -> None
         for y in range(image.height()):
             for x in range(image.width()):
                 color = image.pixelColor(x, y)
-                if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                if (
+                    color.red() > 120
+                    and color.red() > color.green() + 40
+                    and color.red() > color.blue() + 40
+                ):
                     total_x += x
                     total_y += y
                     count += 1
@@ -1086,7 +1188,9 @@ def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: 
     assert int(video_stream["height"]) == 360
 
 
-def test_merge_export_supports_many_sources_and_still_images(synthetic_video_factory, tmp_path: Path) -> None:
+def test_merge_export_supports_many_sources_and_still_images(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     primary_path = synthetic_video_factory(name="primary", resolution=(640, 360), beep_ms=400)
     secondary_path = synthetic_video_factory(name="secondary", resolution=(640, 360), beep_ms=650)
     tertiary_path = synthetic_video_factory(name="tertiary", resolution=(640, 360), beep_ms=900)
@@ -1131,14 +1235,20 @@ def test_merge_export_supports_many_sources_and_still_images(synthetic_video_fac
 
 def test_merged_duration_uses_per_source_sync_offsets() -> None:
     project = Project(name="Per Source Sync Duration")
-    project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=1000, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/primary.mp4", duration_ms=1000, width=640, height=360, fps=30.0
+    )
     project.merge_sources = [
         MergeSource(
-            asset=VideoAsset(path="/tmp/secondary.mp4", duration_ms=1200, width=640, height=360, fps=30.0),
+            asset=VideoAsset(
+                path="/tmp/secondary.mp4", duration_ms=1200, width=640, height=360, fps=30.0
+            ),
             sync_offset_ms=-300,
         ),
         MergeSource(
-            asset=VideoAsset(path="/tmp/tertiary.mp4", duration_ms=1500, width=640, height=360, fps=30.0),
+            asset=VideoAsset(
+                path="/tmp/tertiary.mp4", duration_ms=1500, width=640, height=360, fps=30.0
+            ),
             sync_offset_ms=400,
         ),
     ]
@@ -1158,7 +1268,12 @@ def test_export_presets_map_to_explicit_encoding_variables() -> None:
     assert project.export.audio_sample_rate == 48000
     assert project.export.audio_bitrate_kbps == 320
     preset_ids = {preset["id"] for preset in export_presets_for_api()}
-    assert {"universal_vertical", "short_form_vertical", "youtube_long_1080p", "youtube_long_4k"} <= preset_ids
+    assert {
+        "universal_vertical",
+        "short_form_vertical",
+        "youtube_long_1080p",
+        "youtube_long_4k",
+    } <= preset_ids
 
 
 def test_export_accepts_expected_decoder_broken_pipe_after_successful_encode() -> None:
@@ -1183,10 +1298,15 @@ def test_export_prunes_expected_decoder_broken_pipe_lines_from_successful_log() 
     assert _prune_expected_decoder_pipe_shutdown_lines(log_lines)
     assert "Broken pipe" not in "\n".join(log_lines)
     assert "Conversion failed!" not in "\n".join(log_lines)
-    assert log_lines[-1] == "decoder: rawvideo pipe closed after the encoder finished the shortest stream; decoder shutdown was expected."
+    assert (
+        log_lines[-1]
+        == "decoder: rawvideo pipe closed after the encoder finished the shortest stream; decoder shutdown was expected."
+    )
 
 
-def test_export_uses_target_dimensions_and_stores_ffmpeg_log(synthetic_video_factory, tmp_path: Path) -> None:
+def test_export_uses_target_dimensions_and_stores_ffmpeg_log(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     video_path = synthetic_video_factory(resolution=(640, 360))
     project = Project(name="Preset Export Test")
     project.primary_video = probe_video(video_path)

@@ -123,7 +123,9 @@ def default_browser_names() -> list[str]:
     return ["firefox", "webkit"]
 
 
-def expect(condition: bool, name: str, detail: str, data: dict[str, Any] | None = None) -> CheckResult:
+def expect(
+    condition: bool, name: str, detail: str, data: dict[str, Any] | None = None
+) -> CheckResult:
     return CheckResult(name=name, passed=condition, detail=detail, data=data)
 
 
@@ -137,7 +139,9 @@ def launch_browser(playwright: Playwright, target: BrowserTarget, headed: bool) 
     return browser_type.launch(**launch_kwargs)
 
 
-def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool) -> tuple[Browser, Page]:
+def open_page(
+    playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
+) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1440, "height": 1024})
     page.goto(base_url, wait_until="domcontentloaded")
@@ -154,7 +158,9 @@ def import_primary_video(page: Page, primary_video: Path) -> dict[str, Any]:
     show_project_tool(page)
     page.locator("#primary-file-path").fill(str(primary_video))
     page.locator("#primary-file-path").press("Enter")
-    page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    page.wait_for_function(
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
+    )
     page.wait_for_function(
         """
         () => {
@@ -275,8 +281,12 @@ def run_browser_audit(
         import_state = import_primary_video(page, primary_video)
         probe = collect_video_probe(page)
         entries = server.activity.snapshot(after_seq=before_seq, limit=400)["entries"]
-        compat_created = [entry for entry in entries if entry.get("event") == "media.compatibility.created"]
-        compat_rejected = [entry for entry in entries if entry.get("event") == "media.compatibility.rejected"]
+        compat_created = [
+            entry for entry in entries if entry.get("event") == "media.compatibility.created"
+        ]
+        compat_rejected = [
+            entry for entry in entries if entry.get("event") == "media.compatibility.rejected"
+        ]
         media_starts = media_start_summary(entries)
 
         proxied_preview = any(entry.get("proxied") for entry in media_starts)
@@ -294,8 +304,13 @@ def run_browser_audit(
             and probe["unmuted"].get("muted") is False
             and probe["unmuted"].get("default_muted") is False
         )
-        playback_advanced = probe.get("play_error") is None and float(probe.get("advanced_s") or 0.0) > 0.25
-        analysis_loaded = int(import_state.get("shot_count") or 0) > 0 and float(import_state["primary_snapshot"].get("duration_s") or 0.0) > 0
+        playback_advanced = (
+            probe.get("play_error") is None and float(probe.get("advanced_s") or 0.0) > 0.25
+        )
+        analysis_loaded = (
+            int(import_state.get("shot_count") or 0) > 0
+            and float(import_state["primary_snapshot"].get("duration_s") or 0.0) > 0
+        )
 
         data = {
             "log_path": str(server.activity.path),

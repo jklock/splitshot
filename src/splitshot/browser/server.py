@@ -102,7 +102,9 @@ def _metadata_format_names(metadata: dict[str, Any]) -> set[str]:
     return {item.strip().lower() for item in format_name.split(",") if item.strip()}
 
 
-def _browser_audio_proxy_reason(path: Path, metadata: dict[str, Any]) -> tuple[str | None, str | None]:
+def _browser_audio_proxy_reason(
+    path: Path, metadata: dict[str, Any]
+) -> tuple[str | None, str | None]:
     streams = metadata.get("streams", [])
     if not isinstance(streams, list):
         return None, None
@@ -113,7 +115,9 @@ def _browser_audio_proxy_reason(path: Path, metadata: dict[str, Any]) -> tuple[s
     if not audio_codec or not audio_codec.startswith("pcm_"):
         return None, audio_codec
     format_names = _metadata_format_names(metadata)
-    if path.suffix.lower() in _PCM_BROWSER_PROXY_SUFFIXES or format_names.intersection(_PCM_BROWSER_PROXY_FORMATS):
+    if path.suffix.lower() in _PCM_BROWSER_PROXY_SUFFIXES or format_names.intersection(
+        _PCM_BROWSER_PROXY_FORMATS
+    ):
         return "pcm_audio_in_mov_mp4", audio_codec
     return None, audio_codec
 
@@ -123,21 +127,29 @@ def _browser_preview_output_path(session_path: Path, source_path: Path) -> Path:
     return session_path / f"{uuid4().hex}_{safe_stem}_browser.mp4"
 
 
-def _browser_preview_command(source_path: Path, preview_path: Path, metadata: dict[str, Any]) -> list[str]:
+def _browser_preview_command(
+    source_path: Path, preview_path: Path, metadata: dict[str, Any]
+) -> list[str]:
     streams = metadata.get("streams", [])
     video_stream = next(
         (item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"),
         None,
     )
-    video_codec = str(video_stream.get("codec_name", "")).lower() if isinstance(video_stream, dict) else ""
-    video_args = ["-c:v", "copy"] if video_codec in _BROWSER_COPY_SAFE_VIDEO_CODECS else [
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-preset",
-        "ultrafast",
-    ]
+    video_codec = (
+        str(video_stream.get("codec_name", "")).lower() if isinstance(video_stream, dict) else ""
+    )
+    video_args = (
+        ["-c:v", "copy"]
+        if video_codec in _BROWSER_COPY_SAFE_VIDEO_CODECS
+        else [
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "ultrafast",
+        ]
+    )
     return [
         "-i",
         str(source_path),
@@ -211,7 +223,11 @@ def _browser_preview_matches_source_timeline(
 
     start_pts_source = _int_metadata_value(source_timeline.get("start_pts"))
     start_pts_preview = _int_metadata_value(preview_timeline.get("start_pts"))
-    if start_pts_source is not None and start_pts_preview is not None and start_pts_source != start_pts_preview:
+    if (
+        start_pts_source is not None
+        and start_pts_preview is not None
+        and start_pts_source != start_pts_preview
+    ):
         return False
 
     source_frames = _int_metadata_value(source_timeline.get("nb_frames"))
@@ -262,9 +278,9 @@ def _video_packet_timeline_rows(packet_csv: str) -> tuple[tuple[str, str, str], 
 def _browser_preview_matches_source_packets(source_path: Path, preview_path: Path) -> bool:
     # FFprobe packet flags can change after an audio-only compatibility remux even when
     # the copied video packet timeline remains exact. Compare timing only.
-    return _video_packet_timeline_rows(_ffprobe_video_packet_csv(source_path)) == _video_packet_timeline_rows(
-        _ffprobe_video_packet_csv(preview_path)
-    )
+    return _video_packet_timeline_rows(
+        _ffprobe_video_packet_csv(source_path)
+    ) == _video_packet_timeline_rows(_ffprobe_video_packet_csv(preview_path))
 
 
 def _validate_browser_preview_timeline(
@@ -308,9 +324,11 @@ def _existing_dialog_directory(current: str | None, *, project_path: bool = Fals
     return Path.home()
 
 
-def choose_local_path(kind: str, current: str | None = None) -> str | None:
+def choose_local_path(
+    kind: str, current: str | None = None, default_root: str | None = None
+) -> str | None:
     if sys.platform == "darwin":
-        return choose_local_path_macos(kind, current)
+        return choose_local_path_macos(kind, current, default_root)
 
     try:
         import tkinter as tk
@@ -320,7 +338,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
 
     initial_dir = str(
         _existing_dialog_directory(
-            current,
+            default_root or current,
             project_path=kind in {"project", "project_save", "project_open", "project_folder"},
         )
     )
@@ -336,7 +354,11 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                 title=(
                     "Choose stage video"
                     if kind == "primary"
-                    else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+                    else (
+                        "Choose secondary angle video"
+                        if kind == "secondary"
+                        else "Choose marker image"
+                    )
                 ),
                 initialdir=initial_dir,
                 filetypes=[
@@ -363,9 +385,11 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
         root.destroy()
 
 
-def choose_local_path_macos(kind: str, current: str | None = None) -> str | None:
+def choose_local_path_macos(
+    kind: str, current: str | None = None, default_root: str | None = None
+) -> str | None:
     default_dir = _existing_dialog_directory(
-        current,
+        default_root or current,
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
@@ -382,7 +406,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
                 "POSIX path of chosenFile",
             ]
         )
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, check=False
+        )
         if result.returncode == 0:
             return result.stdout.strip()
         if "User canceled" in result.stderr:
@@ -396,7 +422,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
                 "POSIX path of chosenFolder",
             ]
         )
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, check=False
+        )
         if result.returncode == 0:
             return result.stdout.strip()
         if "User canceled" in result.stderr:
@@ -415,7 +443,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
             "POSIX path of chosenFile",
         ]
     )
-    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True, check=False
+    )
     if result.returncode == 0:
         return result.stdout.strip()
     if "User canceled" in result.stderr:
@@ -474,7 +504,9 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
 def _sync_export_payload(controller: ProjectController, payload: dict[str, Any]) -> None:
     selected_preset = str(payload.get("preset") or controller.project.export.preset.value)
     controller.apply_export_preset(selected_preset)
-    if selected_preset == "custom" or not _payload_matches_export_state(controller.project, payload):
+    if selected_preset == "custom" or not _payload_matches_export_state(
+        controller.project, payload
+    ):
         controller.set_export_settings(payload)
 
 
@@ -527,7 +559,9 @@ class BrowserControlServer:
         self._media_url_token = uuid4().hex
         self.practiscore_session = PractiScoreSessionManager()
         prepare_export_runtime()
-        self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
+        self.activity.log(
+            "server.initialized", host=host, port=port, log_path=str(self.activity.path)
+        )
 
     @property
     def url(self) -> str:
@@ -646,7 +680,9 @@ class BrowserControlServer:
 
         preview_path = _browser_preview_output_path(self._session_path, path)
         run_ffmpeg(_browser_preview_command(path, preview_path, metadata))
-        timeline_valid, source_timeline, preview_timeline = _validate_browser_preview_timeline(path, metadata, preview_path)
+        timeline_valid, source_timeline, preview_timeline = _validate_browser_preview_timeline(
+            path, metadata, preview_path
+        )
         if not timeline_valid:
             preview_path.unlink(missing_ok=True)
             with self._browser_media_lock:
@@ -689,7 +725,11 @@ class BrowserControlServer:
 
     def _clear_browser_media_cache(self) -> None:
         with self._browser_media_lock:
-            cached_paths = [entry.preview_path for entry in self._browser_media_cache.values() if entry.preview_path]
+            cached_paths = [
+                entry.preview_path
+                for entry in self._browser_media_cache.values()
+                if entry.preview_path
+            ]
             self._browser_media_cache.clear()
         for preview_path in cached_paths:
             Path(preview_path).unlink(missing_ok=True)
@@ -836,6 +876,8 @@ class BrowserControlServer:
                     "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
                     "/api/project/select-stage": self._select_stage,
+                    "/api/project/stage/create": self._create_stage,
+                    "/api/project/stage/delete": self._delete_stage,
                     "/api/project/stage/update": self._update_stage_metadata,
                     "/api/project/stage/import-primary": self._import_stage_primary,
                     "/api/project/stage/import-added": self._import_stage_added,
@@ -859,8 +901,16 @@ class BrowserControlServer:
                         controller.autosave_project_if_needed()
                     if "/api/settings/reset-defaults" in self.path:
                         import sys as _sys
-                        _merge_layout = controller.project.merge.layout if hasattr(controller, 'project') and controller.project else 'NO_PROJECT'
-                        print(f"[DEBUG] reset-defaults: project.merge.layout = {_merge_layout}", file=_sys.stderr)
+
+                        _merge_layout = (
+                            controller.project.merge.layout
+                            if hasattr(controller, "project") and controller.project
+                            else "NO_PROJECT"
+                        )
+                        print(
+                            f"[DEBUG] reset-defaults: project.merge.layout = {_merge_layout}",
+                            file=_sys.stderr,
+                        )
                     activity.log("api.success", path=self.path, status=controller.status_message)
                     self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
@@ -886,7 +936,9 @@ class BrowserControlServer:
                 self.send_header("Pragma", "no-cache")
                 self.send_header("Expires", "0")
 
-            def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+            def _send_json(
+                self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK
+            ) -> None:
                 data = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -931,9 +983,19 @@ class BrowserControlServer:
                 try:
                     payload = self._read_json()
                     kind = str(payload.get("kind", ""))
-                    current = None if payload.get("current") in {"", None} else str(payload["current"])
+                    current = (
+                        None if payload.get("current") in {"", None} else str(payload["current"])
+                    )
                     activity.log("api.dialog.path.start", kind=kind, current=current)
-                    selected_path = path_chooser(kind, current) or ""
+                    default_root = (
+                        None
+                        if payload.get("default_root") in {None, ""}
+                        else str(payload["default_root"])
+                    )
+                    try:
+                        selected_path = path_chooser(kind, current, default_root) or ""
+                    except TypeError:
+                        selected_path = path_chooser(kind, current) or ""
                     activity.log("api.dialog.path.success", kind=kind, selected=selected_path)
                     self._send_json({"path": selected_path})
                 except Exception as exc:  # noqa: BLE001
@@ -947,7 +1009,9 @@ class BrowserControlServer:
                     if not target:
                         raise ValueError("Project path is required")
                     normalized_target = str(controller.normalize_project_folder_path(target))
-                    activity.log("api.project.probe.start", path=target, normalized_path=normalized_target)
+                    activity.log(
+                        "api.project.probe.start", path=target, normalized_path=normalized_target
+                    )
                     has_project_file = controller.project_folder_has_project_file(normalized_target)
                     missing_dirs = missing_required_project_dirs(normalized_target)
                     activity.log(
@@ -957,12 +1021,14 @@ class BrowserControlServer:
                         has_project_file=has_project_file,
                         missing_dirs=missing_dirs,
                     )
-                    self._send_json({
-                        "path": target,
-                        "normalized_path": str(normalize_project_path(normalized_target)),
-                        "has_project_file": has_project_file,
-                        "missing_required_dirs": missing_dirs,
-                    })
+                    self._send_json(
+                        {
+                            "path": target,
+                            "normalized_path": str(normalize_project_path(normalized_target)),
+                            "has_project_file": has_project_file,
+                            "missing_required_dirs": missing_dirs,
+                        }
+                    )
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.project.probe.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -1006,7 +1072,9 @@ class BrowserControlServer:
                     secondary_path,
                     display_name_for_path(secondary_path, "None"),
                 )
-                payload["project"]["path"] = "" if controller.project_path is None else str(controller.project_path)
+                payload["project"]["path"] = (
+                    "" if controller.project_path is None else str(controller.project_path)
+                )
                 return payload
 
             def _start_practiscore_session(self) -> None:
@@ -1045,7 +1113,9 @@ class BrowserControlServer:
                     )
                     return
                 if not opened:
-                    activity.log("api.practiscore.dashboard.open.error", error="browser open returned false")
+                    activity.log(
+                        "api.practiscore.dashboard.open.error", error="browser open returned false"
+                    )
                     self._send_structured_error(
                         code="practiscore_dashboard_open_failed",
                         message="Unable to open the PractiScore dashboard in your browser.",
@@ -1057,10 +1127,12 @@ class BrowserControlServer:
                     )
                     return
                 activity.log("api.practiscore.dashboard.open", url=dashboard_url)
-                self._send_json({
-                    "status": "Opened PractiScore dashboard in your browser.",
-                    "url": dashboard_url,
-                })
+                self._send_json(
+                    {
+                        "status": "Opened PractiScore dashboard in your browser.",
+                        "url": dashboard_url,
+                    }
+                )
 
             def _clear_practiscore_session(self) -> None:
                 with controller_lock:
@@ -1118,22 +1190,43 @@ class BrowserControlServer:
             def _set_project_details(self, payload: dict[str, Any]) -> None:
                 controller.set_project_details(
                     name=None if payload.get("name") in {None, ""} else str(payload["name"]),
-                    description=None if payload.get("description") is None else str(payload["description"]),
+                    description=None
+                    if payload.get("description") is None
+                    else str(payload["description"]),
+                    output_root=None
+                    if payload.get("output_root") is None
+                    else str(payload.get("output_root", "")),
                 )
 
             def _set_practiscore_context(self, payload: dict[str, Any]) -> None:
                 controller.set_practiscore_context(
-                    match_type=None if payload.get("match_type") is None else str(payload.get("match_type", "")),
+                    match_type=None
+                    if payload.get("match_type") is None
+                    else str(payload.get("match_type", "")),
                     stage_number=(
-                        None if payload.get("stage_number") in {None, ""} else int(payload["stage_number"])
+                        None
+                        if payload.get("stage_number") in {None, ""}
+                        else int(payload["stage_number"])
                     ),
                     competitor_name=(
-                        None if payload.get("competitor_name") is None else str(payload.get("competitor_name", ""))
+                        None
+                        if payload.get("competitor_name") is None
+                        else str(payload.get("competitor_name", ""))
                     ),
                     competitor_place=(
                         None
                         if payload.get("competitor_place") in {None, ""}
                         else int(payload["competitor_place"])
+                    ),
+                    classification=(
+                        None
+                        if payload.get("classification") is None
+                        else str(payload.get("classification", ""))
+                    ),
+                    division=(
+                        None
+                        if payload.get("division") is None
+                        else str(payload.get("division", ""))
                     ),
                 )
 
@@ -1145,15 +1238,21 @@ class BrowserControlServer:
                     stage_number=(
                         ""
                         if payload.get("stage_number") == ""
-                        else None if payload.get("stage_number") is None else int(payload["stage_number"])
+                        else None
+                        if payload.get("stage_number") is None
+                        else int(payload["stage_number"])
                     ),
                     competitor_name=(
-                        None if payload.get("competitor_name") is None else str(payload.get("competitor_name", ""))
+                        None
+                        if payload.get("competitor_name") is None
+                        else str(payload.get("competitor_name", ""))
                     ),
                     competitor_place=(
                         ""
                         if raw_competitor_place == ""
-                        else None if raw_competitor_place is None else int(raw_competitor_place)
+                        else None
+                        if raw_competitor_place is None
+                        else int(raw_competitor_place)
                     ),
                 )
 
@@ -1172,7 +1271,9 @@ class BrowserControlServer:
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 data = target.read_bytes()
-                guessed = content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+                guessed = (
+                    content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+                )
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", guessed)
                 self.send_header("Content-Length", str(len(data)))
@@ -1222,7 +1323,9 @@ class BrowserControlServer:
                             end = min(end, size - 1)
                             status = HTTPStatus.PARTIAL_CONTENT
                     if start > end:
-                        activity.log("media.range_invalid", path=str(requested_path), start=start, end=end)
+                        activity.log(
+                            "media.range_invalid", path=str(requested_path), start=start, end=end
+                        )
                         self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                         return
                     content_length = end - start + 1
@@ -1230,7 +1333,9 @@ class BrowserControlServer:
                     if content_type and guessed_content_type in {None, "audio/x-wav"}:
                         resolved_content_type = content_type
                     else:
-                        resolved_content_type = guessed_content_type or content_type or "application/octet-stream"
+                        resolved_content_type = (
+                            guessed_content_type or content_type or "application/octet-stream"
+                        )
                     self.send_response(status)
                     self.send_header("Content-Type", resolved_content_type)
                     self.send_header("Accept-Ranges", "bytes")
@@ -1271,7 +1376,12 @@ class BrowserControlServer:
                             )
                             return
                         remaining -= len(chunk)
-                activity.log(f"{event_prefix}.complete", path=str(served_path), bytes=content_length, proxied=proxied)
+                activity.log(
+                    f"{event_prefix}.complete",
+                    path=str(served_path),
+                    bytes=content_length,
+                    proxied=proxied,
+                )
 
             def _send_media(self, path: Path) -> None:
                 if not path.exists() or not path.is_file():
@@ -1282,16 +1392,28 @@ class BrowserControlServer:
                 proxied = False
                 proxy_reason = None
                 try:
-                    served_path, proxied, proxy_reason, _audio_codec = server._prepare_browser_media(path)
+                    served_path, proxied, proxy_reason, _audio_codec = (
+                        server._prepare_browser_media(path)
+                    )
                 except Exception as exc:  # noqa: BLE001
                     activity.log("media.compatibility.error", source_path=str(path), error=str(exc))
                     served_path = path
                     proxied = False
                     proxy_reason = None
-                self._send_file_response(path, served_path, proxied=proxied, proxy_reason=proxy_reason, event_prefix="media", content_type="video/mp4")
+                self._send_file_response(
+                    path,
+                    served_path,
+                    proxied=proxied,
+                    proxy_reason=proxy_reason,
+                    event_prefix="media",
+                    content_type="video/mp4",
+                )
 
             def _send_merge_media(self, source_id: str) -> None:
-                source = next((item for item in controller.project.merge_sources if item.id == source_id), None)
+                source = next(
+                    (item for item in controller.project.merge_sources if item.id == source_id),
+                    None,
+                )
                 if source is None or not source.asset.path:
                     activity.log("media.missing", source_id=source_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
@@ -1307,7 +1429,9 @@ class BrowserControlServer:
                 self._send_media(Path(active_path))
 
             def _send_popup_media(self, popup_id: str) -> None:
-                popup = next((item for item in controller.project.popups if item.id == popup_id), None)
+                popup = next(
+                    (item for item in controller.project.popups if item.id == popup_id), None
+                )
                 if popup is None or not popup.image_path:
                     activity.log("popup_media.missing", popup_id=popup_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
@@ -1333,7 +1457,12 @@ class BrowserControlServer:
                             continue
                         event = str(entry.get("event", "browser.event"))
                         detail = entry.get("detail", {})
-                        activity.log("browser.activity", browser_event=event, detail=detail, browser_ts=entry.get("ts"))
+                        activity.log(
+                            "browser.activity",
+                            browser_event=event,
+                            detail=detail,
+                            browser_ts=entry.get("ts"),
+                        )
                 else:
                     event = str(payload.get("event", "browser.event"))
                     detail = payload.get("detail", {})
@@ -1451,8 +1580,10 @@ class BrowserControlServer:
                             str(path),
                             source_name=display_names.get(str(path), Path(path).name),
                         )
-                        _preview_path, proxied, _reason, audio_codec = server._prepare_browser_media(
-                            Path(controller.project.primary_video.path)
+                        _preview_path, proxied, _reason, audio_codec = (
+                            server._prepare_browser_media(
+                                Path(controller.project.primary_video.path)
+                            )
                         )
                         if proxied:
                             controller.status_message = _append_browser_preview_status(
@@ -1599,7 +1730,9 @@ class BrowserControlServer:
 
             def _set_settings_defaults(self, payload: dict[str, Any]) -> None:
                 controller.set_settings_defaults(
-                    payload.get("settings", payload) if isinstance(payload.get("settings", payload), dict) else {},
+                    payload.get("settings", payload)
+                    if isinstance(payload.get("settings", payload), dict)
+                    else {},
                     scope=str(payload.get("scope", "app") or "app"),
                 )
 
@@ -1637,10 +1770,7 @@ class BrowserControlServer:
                     controller.set_penalties(float(payload["penalties"]))
                 if "penalty_counts" in payload:
                     controller.set_penalty_counts(
-                        {
-                            str(key): float(value)
-                            for key, value in payload["penalty_counts"].items()
-                        }
+                        {str(key): float(value) for key, value in payload["penalty_counts"].items()}
                     )
 
             def _set_scoring_profile(self, payload: dict[str, Any]) -> None:
@@ -1659,10 +1789,7 @@ class BrowserControlServer:
                     None if letter_value in {None, ""} else ScoreLetter(str(letter_value)),
                     None
                     if penalty_counts is None
-                    else {
-                        str(key): float(value)
-                        for key, value in dict(penalty_counts).items()
-                    },
+                    else {str(key): float(value) for key, value in dict(penalty_counts).items()},
                 )
 
             def _set_score_position(self, payload: dict[str, Any]) -> None:
@@ -1721,15 +1848,21 @@ class BrowserControlServer:
                 if source_id in {None, ""}:
                     raise ValueError("source_id is required")
                 if payload.get("sync_delta_ms") not in {None, ""}:
-                    controller.adjust_merge_source_sync_offset(str(source_id), int(payload["sync_delta_ms"]))
+                    controller.adjust_merge_source_sync_offset(
+                        str(source_id), int(payload["sync_delta_ms"])
+                    )
                     return
                 controller.set_merge_source_position(
                     str(source_id),
-                    None if payload.get("pip_size_percent") in {None, ""} else int(payload["pip_size_percent"]),
+                    None
+                    if payload.get("pip_size_percent") in {None, ""}
+                    else int(payload["pip_size_percent"]),
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
-                    None if payload.get("camera_role") in {None, ""} else str(payload["camera_role"]),
+                    None
+                    if payload.get("camera_role") in {None, ""}
+                    else str(payload["camera_role"]),
                     None
                     if (
                         payload.get("placement_mode") in {None, ""}
@@ -1742,7 +1875,9 @@ class BrowserControlServer:
                     ),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
-                    controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
+                    controller.set_merge_source_sync_offset(
+                        str(source_id), int(payload["sync_offset_ms"])
+                    )
 
             def _analyze_merge_source(self, payload: dict[str, Any]) -> None:
                 source_id = payload.get("source_id") or payload.get("id")
@@ -1812,8 +1947,12 @@ class BrowserControlServer:
             def _add_event(self, payload: dict[str, Any]) -> None:
                 controller.add_timing_event(
                     kind=str(payload.get("kind", "reload")),
-                    after_shot_id=None if payload.get("after_shot_id") in {None, ""} else str(payload["after_shot_id"]),
-                    before_shot_id=None if payload.get("before_shot_id") in {None, ""} else str(payload["before_shot_id"]),
+                    after_shot_id=None
+                    if payload.get("after_shot_id") in {None, ""}
+                    else str(payload["after_shot_id"]),
+                    before_shot_id=None
+                    if payload.get("before_shot_id") in {None, ""}
+                    else str(payload["before_shot_id"]),
                     label=None if payload.get("label") in {None, ""} else str(payload["label"]),
                     note=str(payload.get("note", "")),
                 )
@@ -1868,29 +2007,38 @@ class BrowserControlServer:
                     shots_payload = analysis_payload.get("shots")
                     if isinstance(shots_payload, list):
                         controller.project.analysis.shots = [
-                            _shot_from_dict(item) for item in shots_payload if isinstance(item, dict)
+                            _shot_from_dict(item)
+                            for item in shots_payload
+                            if isinstance(item, dict)
                         ]
                     events_payload = analysis_payload.get("events")
                     if isinstance(events_payload, list):
                         controller.project.analysis.events = [
-                            _timing_event_from_dict(item) for item in events_payload if isinstance(item, dict)
+                            _timing_event_from_dict(item)
+                            for item in events_payload
+                            if isinstance(item, dict)
                         ]
                     beep_ms = analysis_payload.get("beep_time_ms_primary")
                     if beep_ms is not None:
                         controller.project.analysis.beep_time_ms_primary = int(beep_ms)
                 _sync_export_payload(controller, payload)
-                output_path = Path(str(payload["path"]))
+                output_path = (
+                    Path(str(payload["path"]))
+                    if payload.get("path") not in {None, ""}
+                    else controller.stage_output_path()
+                )
                 activity.log("api.export.start", path=str(output_path))
                 prepare_export_runtime()
                 exported_path = export_project(
                     controller.project,
                     output_path,
-                    progress_callback=lambda value: activity.log("api.export.progress", progress=value),
+                    progress_callback=lambda value: activity.log(
+                        "api.export.progress", progress=value
+                    ),
                     log_callback=lambda line: activity.log("api.export.log", line=line),
                 )
                 if not exported_path.exists() or exported_path.stat().st_size <= 0:
                     raise RuntimeError("Export did not produce an output file.")
-                controller.project.export.output_path = str(exported_path)
                 activity.log(
                     "api.export.complete",
                     path=str(exported_path),
@@ -1905,10 +2053,25 @@ class BrowserControlServer:
                     raise ValueError("stage_id is required")
                 controller.select_stage(stage_id)
 
+            def _create_stage(self, payload: dict[str, Any]) -> None:
+                controller.create_stage(
+                    None if payload.get("label") in {None, ""} else str(payload["label"])
+                )
+
+            def _delete_stage(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.delete_stage(stage_id)
+
             def _import_stage_primary(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")
                 paths = payload.get("paths", [])
-                path = str(paths[0]) if isinstance(paths, list) and paths else str(payload.get("path") or "")
+                path = (
+                    str(paths[0])
+                    if isinstance(paths, list) and paths
+                    else str(payload.get("path") or "")
+                )
                 if not stage_id or not path:
                     raise ValueError("stage_id and path are required")
                 server._bump_media_url_token()
@@ -1917,7 +2080,11 @@ class BrowserControlServer:
             def _import_stage_added(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")
                 paths = payload.get("paths", [])
-                path = str(paths[0]) if isinstance(paths, list) and paths else str(payload.get("path") or "")
+                path = (
+                    str(paths[0])
+                    if isinstance(paths, list) and paths
+                    else str(payload.get("path") or "")
+                )
                 if not stage_id or not path:
                     raise ValueError("stage_id and path are required")
                 server._bump_media_url_token()

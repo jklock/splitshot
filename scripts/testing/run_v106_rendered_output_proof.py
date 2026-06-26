@@ -10,7 +10,12 @@ import subprocess
 from pathlib import Path
 
 from splitshot.analysis.detection import analyze_video_audio
-from splitshot.domain.models import ImportedStageScore, MergeLayout, MergeSource, OverlayTextBox, VideoAsset
+from splitshot.domain.models import (
+    ImportedStageScore,
+    MergeLayout,
+    MergeSource,
+    OverlayTextBox,
+)
 from splitshot.export.pipeline import export_project
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffprobe_json
 from splitshot.media.probe import probe_video
@@ -39,7 +44,9 @@ def _extract_frames(video_path: Path, frame_dir: Path, stem: str) -> list[str]:
     metadata = run_ffprobe_json(video_path)
     duration = float((metadata.get("format") or {}).get("duration") or 0.0)
     duration = max(duration, 6.0)
-    sample_points = [max(0.5, round(duration * fraction, 2)) for fraction in (0.15, 0.35, 0.55, 0.75)]
+    sample_points = [
+        max(0.5, round(duration * fraction, 2)) for fraction in (0.15, 0.35, 0.55, 0.75)
+    ]
     ffmpeg = resolve_media_binary("ffmpeg")
     frame_paths: list[str] = []
     for index, timestamp in enumerate(sample_points, start=1):
@@ -79,7 +86,9 @@ def _write_contact_sheet_html(contact_sheet: Path, entries: list[dict[str, objec
     contact_sheet.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _build_project(primary_path: Path, secondary_path: Path, layout: MergeLayout) -> ProjectController:
+def _build_project(
+    primary_path: Path, secondary_path: Path, layout: MergeLayout
+) -> ProjectController:
     controller = ProjectController()
     controller.load_primary_video(str(primary_path))
     controller.project.name = f"Rendered Output Proof {layout.value}"
@@ -171,7 +180,9 @@ def main() -> int:
         controller = _build_project(PRIMARY_CLIP, secondary_path, layout)
         shot_count = len(controller.project.analysis.shots)
         if shot_count < 3:
-            raise RuntimeError(f"{PRIMARY_CLIP} only produced {shot_count} detected shots; expected at least 3 for proof.")
+            raise RuntimeError(
+                f"{PRIMARY_CLIP} only produced {shot_count} detected shots; expected at least 3 for proof."
+            )
         output_path = exports_dir / f"{layout.value}.mp4"
         export_project(controller.project, output_path)
         ffprobe_payload = run_ffprobe_json(output_path)

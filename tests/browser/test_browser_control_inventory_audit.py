@@ -116,7 +116,7 @@ id:audio-bitrate
 id:audio-codec
 id:audio-sample-rate
 id:badge-size
-id:browse-export-path
+id:browse-project-output-root
 id:browse-project-path
 id:bubble-height
 id:bubble-width
@@ -143,7 +143,6 @@ id:expand-timing
 id:expand-waveform
 id:export-badges
 id:export-export-log
-id:export-path
 id:export-preset
 id:ffmpeg-preset
 id:frame-rate
@@ -151,6 +150,10 @@ id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
 id:match-type
+id:match-class
+id:match-competitor-name
+id:match-competitor-place
+id:match-division
 id:max-visible-shots
 id:markers-enable
 id:markers-workbench-filter
@@ -189,14 +192,16 @@ id:primary-file-input
 id:project-description
 id:project-name
 id:project-path
+id:project-output-root
 id:quality
 id:reset-shotml-defaults
 id:restore-merge-defaults
 id:reset-waveform-view
-id:trim-sync-apply-all
-id:trim-sync-bulk-end
-id:trim-sync-bulk-start
-id:trim-sync-clear-all
+id:trim-global-apply
+id:trim-global-clear
+id:trim-global-defaults-btn
+id:trim-global-end
+id:trim-global-start
 id:resize-rail
 id:resize-sidebar
 id:resize-waveform
@@ -330,12 +335,17 @@ class _InteractiveControlParser(HTMLParser):
         control_id = attr_map.get("id")
         if not control_id or tag == "section":
             return
-        if tag == "input" and attr_map.get("type") == "hidden" and control_id not in {
-            "primary-file-input",
-            "merge-media-input",
-            "media-add-more-input",
-            "practiscore-file-input",
-        }:
+        if (
+            tag == "input"
+            and attr_map.get("type") == "hidden"
+            and control_id
+            not in {
+                "primary-file-input",
+                "merge-media-input",
+                "media-add-more-input",
+                "practiscore-file-input",
+            }
+        ):
             return
         if tag not in {"button", "input", "select", "textarea"}:
             return
@@ -359,7 +369,9 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
     unexpected = actual_identifiers - EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
-    assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
+    assert not unexpected, (
+        f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
+    )
     assert len(actual_identifiers) == len(EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS)
 
 
@@ -367,8 +379,14 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
     inventory_plan = INVENTORY_PLAN.read_text(encoding="utf-8")
     full_e2e_plan = FULL_E2E_PLAN.read_text(encoding="utf-8")
 
-    assert "For the phase-gated execution plan that defines what counts as truthful full-control end-to-end coverage" in inventory_plan
-    assert "A full-app end-to-end QA claim requires satisfying the stricter exit criteria" in inventory_plan
+    assert (
+        "For the phase-gated execution plan that defines what counts as truthful full-control end-to-end coverage"
+        in inventory_plan
+    )
+    assert (
+        "A full-app end-to-end QA claim requires satisfying the stricter exit criteria"
+        in inventory_plan
+    )
 
     for snippet in [
         "Phase 0: Lock The Truth Boundary",

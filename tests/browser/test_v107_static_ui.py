@@ -29,11 +29,10 @@ def test_media_pane_js_exists():
     source = media_js.read_text()
     assert "createMediaPane" in source
     assert "selectStage" in source
-    assert "openPrimaryFileInput" in source
-    assert "openMediaAddMoreInput" in source
-    assert "renderPrimarySection" in source
-    assert "renderAddedSection" in source
-    assert "renderStageNavigatorRow" in source
+    assert "renderActiveStageSection" in source
+    assert "createStage" in source
+    assert "renderInventoryFileRow" in source
+    assert "media-stage-card" in source
 
 
 def test_queue_pane_js_exists():
@@ -48,6 +47,7 @@ def test_queue_pane_js_exists():
     assert "queueStatusLabel" in source
     assert "Process Many" in source
     assert "queue-stage-card" in source
+    assert "visibleQueueEntries" in source
 
 
 def test_trim_sync_pane_js_exists():
@@ -56,15 +56,15 @@ def test_trim_sync_pane_js_exists():
     source = trim_js.read_text()
     assert "createTrimSyncPane" in source
     assert "trim-source-card" in source
-    assert "trim-bulk-grid" in source
+    assert "trim-global-row" in source
 
 
 def test_app_js_imports_media_and_queue():
     app_source = (STATIC_ROOT / "app.js").read_text()
-    assert 'createMediaPane' in app_source
-    assert 'createQueuePane' in app_source
-    assert 'media-pane.js' in app_source
-    assert 'queue-pane.js' in app_source
+    assert "createMediaPane" in app_source
+    assert "createQueuePane" in app_source
+    assert "media-pane.js" in app_source
+    assert "queue-pane.js" in app_source
 
 
 def test_app_js_registers_valid_tool_ids():

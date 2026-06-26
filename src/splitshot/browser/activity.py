@@ -36,6 +36,7 @@ class ActivityLogger:
 
     def __init__(self, log_dir: str | Path | None = None, console_level: str = "off") -> None:
         import tempfile
+
         default = Path(tempfile.gettempdir()) / "splitshot-activity-logs"
         root = Path(log_dir) if log_dir is not None else default
         root.mkdir(parents=True, exist_ok=True)
@@ -101,7 +102,9 @@ class ActivityLogger:
 
     def snapshot(self, after_seq: int = 0, limit: int = 1000) -> dict[str, object]:
         with self._lock:
-            entries = [record for record in self._recent_records if int(record.get("seq", 0)) > after_seq]
+            entries = [
+                record for record in self._recent_records if int(record.get("seq", 0)) > after_seq
+            ]
             if limit > 0:
                 entries = entries[-limit:]
             return {

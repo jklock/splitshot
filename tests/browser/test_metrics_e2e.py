@@ -137,8 +137,8 @@ def _metrics_row_for_shot(page, shot_id: str) -> list[str]:
 
 
 def _metrics_summary_values(page) -> dict[str, str]:
-        return page.evaluate(
-                """() => {
+    return page.evaluate(
+        """() => {
                     const values = {};
                     document.querySelectorAll("#metrics-summary-grid .metric-card").forEach((card) => {
                         const label = (card.querySelector("small")?.textContent || "").trim();
@@ -147,7 +147,7 @@ def _metrics_summary_values(page) -> dict[str, str]:
                     });
                     return values;
                 }"""
-        )
+    )
 
 
 def _metrics_graph_snapshot(page) -> list[dict[str, object]]:
@@ -193,7 +193,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 baseline_metrics_row = _metrics_row_for_shot(page, first_shot_id)
 
                 _open_scoring_workbench(page)
-                score_select = page.locator('#scoring-workbench-table select[data-score-field="letter"]').first
+                score_select = page.locator(
+                    '#scoring-workbench-table select[data-score-field="letter"]'
+                ).first
                 lock_button = page.locator("#scoring-workbench-table .lock-button").first
                 lock_button.click()
                 score_select.wait_for(state="visible")
@@ -202,7 +204,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 score_values = score_select.evaluate(
                     "select => [...select.options].map((option) => option.value)"
                 )
-                next_letter = next((value for value in score_values if value != original_letter), original_letter)
+                next_letter = next(
+                    (value for value in score_values if value != original_letter), original_letter
+                )
                 assert next_letter != original_letter
 
                 score_select.select_option(next_letter)
@@ -222,7 +226,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 assert updated_metrics_row[5] == next_letter
 
                 _open_scoring_workbench(page)
-                page.locator("#scoring-workbench-table button.restore-button:not(.danger-button)").first.click()
+                page.locator(
+                    "#scoring-workbench-table button.restore-button:not(.danger-button)"
+                ).first.click()
                 page.wait_for_function(
                     """({ shotId, originalLetter }) => {
                       const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
@@ -282,11 +288,15 @@ def test_metrics_pane_reflects_timing_event_position_and_delete(synthetic_video_
                     arg="Manual note",
                 )
                 metrics_rows = _metrics_table_rows(page)
-                first_shot_index = next(index for index, row in enumerate(metrics_rows) if row[0] == first_shot_label)
+                first_shot_index = next(
+                    index for index, row in enumerate(metrics_rows) if row[0] == first_shot_label
+                )
                 assert "Manual note" in metrics_rows[first_shot_index][-1]
 
                 _open_timing_workbench(page)
-                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(force=True)
+                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(
+                    force=True
+                )
                 page.wait_for_function(
                     """() => !(state?.project?.analysis?.events || []).some((event) => event.label === "Manual note")"""
                 )
@@ -362,7 +372,9 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
         server.shutdown()
 
 
-def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synthetic_video_factory) -> None:
+def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="metrics-graphs-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -393,7 +405,9 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synt
                 )
 
                 _open_metrics_pane(page)
-                graph_titles = page.locator("#metrics-workbench-graphs .metrics-graph-header strong").all_inner_texts()
+                graph_titles = page.locator(
+                    "#metrics-workbench-graphs .metrics-graph-header strong"
+                ).all_inner_texts()
                 assert "Split Timeline" in graph_titles
                 assert "Split Distribution" in graph_titles
                 assert "Shooting vs Non-Shooting Time" in graph_titles
@@ -404,10 +418,14 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synt
                 assert "split_distribution" in graph_ids
                 assert "shooting_vs_non_shooting" in graph_ids
 
-                timeline_graph = next(graph for graph in graph_snapshot if graph["id"] == "split_timeline")
+                timeline_graph = next(
+                    graph for graph in graph_snapshot if graph["id"] == "split_timeline"
+                )
                 assert timeline_graph["type"] == "lines"
 
-                shooting_graph = next(graph for graph in graph_snapshot if graph["id"] == "shooting_vs_non_shooting")
+                shooting_graph = next(
+                    graph for graph in graph_snapshot if graph["id"] == "shooting_vs_non_shooting"
+                )
                 assert shooting_graph["barCount"] >= 2
             finally:
                 browser.close()

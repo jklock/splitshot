@@ -440,7 +440,7 @@ export function createMergePane({
 
         const toggle = documentObject.createElement("button");
         toggle.type = "button";
-        toggle.className = "scoring-shot-toggle";
+        toggle.className = "pane-toggle";
         toggle.textContent = expanded ? "v" : ">";
         toggle.title = expanded ? "Hide stage media controls" : "Show stage media controls";
         toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} stage media controls`);
@@ -456,21 +456,9 @@ export function createMergePane({
           );
         });
 
-        const remove = documentObject.createElement("button");
-        remove.type = "button";
-        remove.className = "btn-sm btn-danger";
-        remove.textContent = "Remove";
-        remove.dataset.mergeSourceRemove = sourceId;
-        remove.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
-          callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
-        });
-
         const headerActions = documentObject.createElement("div");
         headerActions.className = "merge-media-card-actions";
-        headerActions.append(remove, toggle);
+        headerActions.append(toggle);
         const meta = documentObject.createElement("small");
         meta.className = "merge-media-card-meta";
         const mediaType = asset.is_still_image ? "Image" : "Video";

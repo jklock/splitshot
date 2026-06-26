@@ -51,7 +51,9 @@ def _default_packaged_artifact_root() -> Path:
 
 
 def _prepare_test_video(out_dir: Path, source_override: Path | None = None) -> Path:
-    source = (source_override or Path(os.environ.get("SPLITSHOT_E2E_VIDEO", DEFAULT_VIDEO_FIXTURE))).resolve()
+    source = (
+        source_override or Path(os.environ.get("SPLITSHOT_E2E_VIDEO", DEFAULT_VIDEO_FIXTURE))
+    ).resolve()
     if not source.exists():
         raise FileNotFoundError(f"Packaged E2E video fixture not found at {source}")
     target = out_dir / source.name
@@ -108,7 +110,9 @@ def _resolve_tool(command: str, *, windows_fallbacks: tuple[str, ...] = ()) -> s
 def _expand_windows_vars(path: str) -> str:
     def _replacer(m):
         return os.environ.get(m.group(1), m.group(0))
+
     return re.sub(r"%(\w+)%", _replacer, path).replace("\\", os.sep)
+
 
 def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
     ffmpeg = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFMPEG", "ffmpeg"))
@@ -200,7 +204,9 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR)
     parser.add_argument("--artifact-root", type=Path, default=None)
-    parser.add_argument("--scope", choices=("standard", "export-proof", "release-proof"), default=None)
+    parser.add_argument(
+        "--scope", choices=("standard", "export-proof", "release-proof"), default=None
+    )
     parser.add_argument("--primary-video", type=Path, default=None)
     parser.add_argument("--secondary-video", type=Path, default=None)
     parser.add_argument("--tertiary-video", type=Path, default=None)
@@ -217,7 +223,10 @@ def main():
     port = _free_port()
     project_path = work_dir / "e2e.ssproj"
     scope = args.scope or os.environ.get("SPLITSHOT_E2E_SCOPE", "standard")
-    artifact_root = (args.artifact_root or Path(os.environ.get("SPLITSHOT_E2E_ARTIFACT_ROOT", _default_packaged_artifact_root()))).resolve()
+    artifact_root = (
+        args.artifact_root
+        or Path(os.environ.get("SPLITSHOT_E2E_ARTIFACT_ROOT", _default_packaged_artifact_root()))
+    ).resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
 
     if scope == "release-proof":
@@ -242,9 +251,13 @@ def main():
     log_out = log_dir / "stdout.log"
     log_err = log_dir / "stderr.log"
 
-    env = {**os.environ, "CI": "1", "SPLITSHOT_ELECTRON_TEST": "1",
-           "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
-           "SPLITSHOT_TEST_PORT": str(port)}
+    env = {
+        **os.environ,
+        "CI": "1",
+        "SPLITSHOT_ELECTRON_TEST": "1",
+        "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
+        "SPLITSHOT_TEST_PORT": str(port),
+    }
     cmd = [str(executable)]
     if sys.platform.startswith("linux"):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
@@ -275,14 +288,17 @@ def main():
         pw_log_dir = artifact_root / "e2e-logs"
         shutil.rmtree(pw_log_dir, ignore_errors=True)
         pw_log_dir.mkdir(parents=True, exist_ok=True)
-        pw_env = {**os.environ, "E2E_PORT": str(port),
-                   "E2E_LOG_DIR": str(pw_log_dir),
-                   "E2E_VIDEO_PATH": str(video_path),
-                   "E2E_PRIMARY_VIDEO_PATH": str(video_path),
-                   "E2E_EXPORT_DIR": str(export_file.parent),
-                   "E2E_ARTIFACT_ROOT": str(artifact_root),
-                   "SPLITSHOT_E2E_SCOPE": scope,
-                   "NODE_PATH": str(electron_dir / "node_modules")}
+        pw_env = {
+            **os.environ,
+            "E2E_PORT": str(port),
+            "E2E_LOG_DIR": str(pw_log_dir),
+            "E2E_VIDEO_PATH": str(video_path),
+            "E2E_PRIMARY_VIDEO_PATH": str(video_path),
+            "E2E_EXPORT_DIR": str(export_file.parent),
+            "E2E_ARTIFACT_ROOT": str(artifact_root),
+            "SPLITSHOT_E2E_SCOPE": scope,
+            "NODE_PATH": str(electron_dir / "node_modules"),
+        }
         if secondary_video_path is not None:
             pw_env["E2E_SECONDARY_VIDEO_PATH"] = str(secondary_video_path)
         if tertiary_video_path is not None:
@@ -292,8 +308,13 @@ def main():
 
         result = subprocess.run(
             ["node", str(pw_script)],
-            capture_output=True, encoding="utf-8", errors="replace", timeout=300,
-            cwd=REPO, env=pw_env)
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+            cwd=REPO,
+            env=pw_env,
+        )
 
         if result.stdout:
             print(result.stdout, flush=True)
@@ -304,9 +325,12 @@ def main():
         if summary_file.exists():
             try:
                 summary = json.loads(summary_file.read_text())
-                print(f"E2E SUMMARY: result={summary.get('result')} "
-                      f"errors={summary.get('pageErrors', 0)} "
-                      f"artifacts={summary.get('artifacts', 0)}", flush=True)
+                print(
+                    f"E2E SUMMARY: result={summary.get('result')} "
+                    f"errors={summary.get('pageErrors', 0)} "
+                    f"artifacts={summary.get('artifacts', 0)}",
+                    flush=True,
+                )
                 failures = summary.get("failures") or []
                 if failures:
                     print("E2E FAILURES:", flush=True)
@@ -320,7 +344,9 @@ def main():
             print(f"E2E ARTIFACTS ({len(captured)} files):", flush=True)
             for f in sorted(captured):
                 sz = f.stat().st_size
-                print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True)
+                print(
+                    f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True
+                )
 
         summary = None
         if summary_file.exists():
@@ -332,7 +358,9 @@ def main():
             raise RuntimeError("Playwright did not produce summary.json")
 
         if summary.get("result") != "passed":
-            raise RuntimeError(f"Playwright summary reported failure: {summary.get('failures') or summary.get('error') or 'unknown'}")
+            raise RuntimeError(
+                f"Playwright summary reported failure: {summary.get('failures') or summary.get('error') or 'unknown'}"
+            )
 
         if result.returncode != 0:
             print(f"FAIL: Playwright exited code {result.returncode}", file=sys.stderr, flush=True)

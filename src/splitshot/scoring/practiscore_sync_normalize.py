@@ -37,6 +37,7 @@ def normalize_downloaded_practiscore_artifact(
     stage_number: int | None = None,
     competitor_name: str | None = None,
     competitor_place: int | None = None,
+    **kwargs: object,
 ) -> NormalizedPractiScoreSyncImport:
     resolved_path = Path(path)
     display_name = source_name or resolved_path.name

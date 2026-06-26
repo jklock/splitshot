@@ -67,7 +67,9 @@ def _cookie_payload(cookie: Cookie) -> dict[str, object] | None:
     normalized_domain = domain.lower().lstrip(".")
     if not name or not value or not normalized_domain:
         return None
-    if normalized_domain != _PRACTISCORE_DOMAIN and not normalized_domain.endswith(f".{_PRACTISCORE_DOMAIN}"):
+    if normalized_domain != _PRACTISCORE_DOMAIN and not normalized_domain.endswith(
+        f".{_PRACTISCORE_DOMAIN}"
+    ):
         return None
 
     payload: dict[str, object] = {
@@ -80,7 +82,9 @@ def _cookie_payload(cookie: Cookie) -> dict[str, object] | None:
     if cookie.expires is not None:
         payload["expires"] = int(cookie.expires)
 
-    rest = {str(key).lower(): value for key, value in dict(getattr(cookie, "_rest", {}) or {}).items()}
+    rest = {
+        str(key).lower(): value for key, value in dict(getattr(cookie, "_rest", {}) or {}).items()
+    }
     if "httponly" in rest:
         payload["http_only"] = True
     same_site = str(rest.get("samesite") or "").strip()

@@ -307,6 +307,15 @@ def _normalize_merge_source_index(value: Any) -> int | None:
         return None
 
 
+def _trim_float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_merge_source_active_path_kind(
     value: Any,
     *,
@@ -377,6 +386,8 @@ class MergeSourceTrimDerivative:
     original_path: str = ""
     derivative_path: str | None = None
     active_path_kind: MergeSourceAssetPathKind = MergeSourceAssetPathKind.ORIGINAL
+    start_s: float | None = None
+    end_s: float | None = None
 
 
 @dataclass(slots=True)
@@ -412,7 +423,9 @@ def output_profile_from_dict(data: dict[str, Any]) -> OutputProfile:
         scope_type=str(data.get("scope_type", "stage")),
         scope_id=str(data.get("scope_id", "")),
         profile_name=str(data.get("profile_name", "")),
-        profile_kind=OutputProfileKind(str(data.get("profile_kind", "stage_output")).strip().lower()),
+        profile_kind=OutputProfileKind(
+            str(data.get("profile_kind", "stage_output")).strip().lower()
+        ),
         frame_profile=_normalize_frame_profile(data.get("frame_profile", "source")),
         metric_caption_preset=str(data.get("metric_caption_preset", "")),
         lead_in_card=str(data.get("lead_in_card", "")),
@@ -643,6 +656,8 @@ class ScoringState:
     stage_number: int | None = None
     competitor_name: str = ""
     competitor_place: int | None = None
+    classification: str = ""
+    division: str = ""
     practiscore_source_path: str = ""
     practiscore_source_name: str = ""
     penalties: float = 0.0
@@ -706,9 +721,7 @@ class OverlaySettings:
     custom_box_height: int = 0
     text_boxes: list["OverlayTextBox"] = field(default_factory=list)
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
-    shot_badge: BadgeStyle = field(
-        default_factory=lambda: BadgeStyle(background_color="#1D4ED8")
-    )
+    shot_badge: BadgeStyle = field(default_factory=lambda: BadgeStyle(background_color="#1D4ED8"))
     current_shot_badge: BadgeStyle = field(
         default_factory=lambda: BadgeStyle(background_color="#DC2626")
     )
@@ -942,6 +955,7 @@ class Project:
     id: str = field(default_factory=lambda: uuid4().hex)
     name: str = "Untitled Project"
     description: str = ""
+    output_root: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     primary_video: VideoAsset = field(default_factory=VideoAsset)
@@ -1047,27 +1061,47 @@ def stage_to_dict(stage: ProjectStage) -> dict[str, Any]:
 
 def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
     primary_media_data = data.get("primary_media")
-    primary_media = _video_from_dict(primary_media_data) if isinstance(primary_media_data, dict) else VideoAsset()
+    primary_media = (
+        _video_from_dict(primary_media_data)
+        if isinstance(primary_media_data, dict)
+        else VideoAsset()
+    )
     added_media_data = data.get("added_media", [])
-    added_media = [_merge_source_from_dict(item) for item in added_media_data] if isinstance(added_media_data, list) else []
+    added_media = (
+        [_merge_source_from_dict(item) for item in added_media_data]
+        if isinstance(added_media_data, list)
+        else []
+    )
     analysis_data = data.get("analysis")
     return ProjectStage(
         id=str(data.get("id", uuid4().hex)),
         label=str(data.get("label", "")),
         order_index=int(data.get("order_index", 1)),
-        imported_stage_number=None if data.get("imported_stage_number") in {None, ""} else int(data["imported_stage_number"]),
+        imported_stage_number=None
+        if data.get("imported_stage_number") in {None, ""}
+        else int(data["imported_stage_number"]),
         imported_stage_name=str(data.get("imported_stage_name", "")),
         primary_media=primary_media,
         added_media=added_media,
         analysis=_analysis_state_from_dict(analysis_data),
-        scoring=_scoring_from_dict(data.get("scoring")) if isinstance(data.get("scoring"), dict) else ScoringState(),
-        overlay=_overlay_from_dict(data.get("overlay")) if isinstance(data.get("overlay"), dict) else OverlaySettings(),
+        scoring=_scoring_from_dict(data.get("scoring"))
+        if isinstance(data.get("scoring"), dict)
+        else ScoringState(),
+        overlay=_overlay_from_dict(data.get("overlay"))
+        if isinstance(data.get("overlay"), dict)
+        else OverlaySettings(),
         popups=[],
         popup_template=_popup_template_from_dict(data.get("popup_template")),
-        merge=_merge_from_dict(data.get("merge")) if isinstance(data.get("merge"), dict) else MergeSettings(),
-        export=_export_from_dict(data.get("export")) if isinstance(data.get("export"), dict) else ExportSettings(),
+        merge=_merge_from_dict(data.get("merge"))
+        if isinstance(data.get("merge"), dict)
+        else MergeSettings(),
+        export=_export_from_dict(data.get("export"))
+        if isinstance(data.get("export"), dict)
+        else ExportSettings(),
         queue_status=QueueStatus(str(data.get("queue_status", "not_queued")).strip().lower()),
-        queue_snapshot=data.get("queue_snapshot", {}) if isinstance(data.get("queue_snapshot"), dict) else {},
+        queue_snapshot=data.get("queue_snapshot", {})
+        if isinstance(data.get("queue_snapshot"), dict)
+        else {},
         last_processed_at=str(data.get("last_processed_at", "") or ""),
         last_output_path=str(data.get("last_output_path", "") or ""),
     )
@@ -1080,12 +1114,18 @@ def _scoring_from_dict(data: dict[str, Any]) -> ScoringState:
         match_type=str(data.get("match_type", "")),
         stage_number=None if data.get("stage_number") in {None, ""} else int(data["stage_number"]),
         competitor_name=str(data.get("competitor_name", "")),
-        competitor_place=None if data.get("competitor_place") in {None, ""} else int(data["competitor_place"]),
+        competitor_place=None
+        if data.get("competitor_place") in {None, ""}
+        else int(data["competitor_place"]),
+        classification=str(data.get("classification", "")),
+        division=str(data.get("division", "")),
         practiscore_source_path=str(data.get("practiscore_source_path", "")),
         practiscore_source_name=str(data.get("practiscore_source_name", "")),
         penalties=float(data.get("penalties", 0)),
         point_map={str(key): float(value) for key, value in data.get("point_map", {}).items()},
-        penalty_counts={str(key): float(value) for key, value in data.get("penalty_counts", {}).items()},
+        penalty_counts={
+            str(key): float(value) for key, value in data.get("penalty_counts", {}).items()
+        },
         hit_factor=None if data.get("hit_factor") is None else float(data["hit_factor"]),
         imported_stage=_imported_stage_from_dict(data.get("imported_stage")),
     )
@@ -1133,7 +1173,9 @@ def _export_from_dict(data: dict[str, Any]) -> ExportSettings:
         output_path=data.get("output_path"),
         preset=ExportPreset(data.get("preset", ExportPreset.SOURCE.value)),
         target_width=None if data.get("target_width") in {None, ""} else int(data["target_width"]),
-        target_height=None if data.get("target_height") in {None, ""} else int(data["target_height"]),
+        target_height=None
+        if data.get("target_height") in {None, ""}
+        else int(data["target_height"]),
         frame_rate=ExportFrameRate(data.get("frame_rate", ExportFrameRate.SOURCE.value)),
         video_codec=ExportVideoCodec(data.get("video_codec", ExportVideoCodec.H264.value)),
         video_bitrate_mbps=float(data.get("video_bitrate_mbps", 15.0)),
@@ -1229,6 +1271,10 @@ def project_to_dict(project: Project) -> dict[str, Any]:
             if isinstance(trim_derivative, dict):
                 if source.trim_derivative.derivative_path in {None, ""}:
                     trim_derivative.pop("derivative_path", None)
+                if source.trim_derivative.start_s is None:
+                    trim_derivative.pop("start_s", None)
+                if source.trim_derivative.end_s is None:
+                    trim_derivative.pop("end_s", None)
                 if source.trim_derivative.active_path_kind == MergeSourceAssetPathKind.ORIGINAL:
                     trim_derivative.pop("active_path_kind", None)
                 default_original_path = ""
@@ -1358,6 +1404,7 @@ _UI_STATE_ACTIVE_TOOLS = {
 
 _UI_STATE_WAVEFORM_MODES = {"select", "add"}
 
+
 def _normalize_text_box_source(value: str | None) -> str:
     normalized = str(value or "manual")
     return normalized if normalized in _TEXT_BOX_SOURCES else "manual"
@@ -1486,7 +1533,9 @@ def _ui_state_string_list(data: Any) -> list[str]:
     return normalized
 
 
-def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool = False) -> OverlayTextBox:
+def _overlay_text_box_from_dict(
+    data: dict[str, Any], legacy_lock_to_stack: bool = False
+) -> OverlayTextBox:
     box = OverlayTextBox(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", True)),
@@ -1503,7 +1552,9 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
         height=int(data.get("height", 0)),
         summary_metric_ids=_ui_state_string_list(data.get("summary_metric_ids")),
         style_type=str(data.get("style_type", "square") or "square"),
-        font_family=str(data.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
+        font_family=str(
+            data.get("font_family", default_overlay_font_family()) or default_overlay_font_family()
+        )[:80],
         font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
         font_bold=bool(data.get("font_bold", True)),
         font_italic=bool(data.get("font_italic", False)),
@@ -1544,7 +1595,9 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         width=max(0, int(data.get("width", 0) or 0)),
         height=max(0, int(data.get("height", 0) or 0)),
         style_type=str(data.get("style_type", "square") or "square"),
-        font_family=str(data.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
+        font_family=str(
+            data.get("font_family", default_overlay_font_family()) or default_overlay_font_family()
+        )[:80],
         font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
         font_bold=bool(data.get("font_bold", True)),
         font_italic=bool(data.get("font_italic", False)),
@@ -1566,20 +1619,27 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         quadrant=_normalize_popup_bubble_quadrant(payload.get("quadrant")),
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),
-        motion_mode=_normalize_popup_motion_mode(payload.get("motion_mode"), follow_motion=follow_motion),
+        motion_mode=_normalize_popup_motion_mode(
+            payload.get("motion_mode"), follow_motion=follow_motion
+        ),
         follow_motion=follow_motion,
         background_color=str(payload.get("background_color", "#000000") or "#000000"),
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", 0.9)))),
         style_type=str(payload.get("style_type", "square") or "square"),
-        font_family=str(payload.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
+        font_family=str(
+            payload.get("font_family", default_overlay_font_family())
+            or default_overlay_font_family()
+        )[:80],
         font_size=max(8, min(72, int(payload.get("font_size", 14) or 14))),
         font_bold=bool(payload.get("font_bold", True)),
         font_italic=bool(payload.get("font_italic", False)),
     )
 
 
-def legacy_custom_box_as_text_box(overlay: OverlaySettings, legacy_lock_to_stack: bool = False) -> OverlayTextBox | None:
+def legacy_custom_box_as_text_box(
+    overlay: OverlaySettings, legacy_lock_to_stack: bool = False
+) -> OverlayTextBox | None:
     has_legacy_box = (
         overlay.custom_box_enabled
         or overlay.custom_box_mode == "imported_summary"
@@ -1650,8 +1710,7 @@ def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark:
         y_norm=float(data.get("y_norm", 0.5)),
         animation_preset=str(data.get("animation_preset", "fade_scale")),
         penalty_counts={
-            str(key): float(value)
-            for key, value in data.get("penalty_counts", {}).items()
+            str(key): float(value) for key, value in data.get("penalty_counts", {}).items()
         },
     )
 
@@ -1672,11 +1731,7 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
         source_path=str(data.get("source_path", "")),
         match_type=str(data.get("match_type", "")),
         competitor_name=str(data.get("competitor_name", "")),
-        competitor_place=(
-            None
-            if competitor_place in {None, ""}
-            else int(competitor_place)
-        ),
+        competitor_place=(None if competitor_place in {None, ""} else int(competitor_place)),
         stage_number=None if stage_number in {None, ""} else int(stage_number),
         stage_name=str(data.get("stage_name", "")),
         division=str(data.get("division", "")),
@@ -1691,8 +1746,7 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
         stage_points=None if stage_points in {None, ""} else float(stage_points),
         stage_place=None if stage_place in {None, ""} else int(stage_place),
         score_counts={
-            str(key): float(value)
-            for key, value in data.get("score_counts", {}).items()
+            str(key): float(value) for key, value in data.get("score_counts", {}).items()
         },
     )
 
@@ -1807,6 +1861,8 @@ def _merge_source_trim_derivative_from_dict(
             original_path=original_path,
             derivative_path=derivative_path,
         ),
+        start_s=_trim_float_or_none(trim_data.get("start_s")),
+        end_s=_trim_float_or_none(trim_data.get("end_s")),
     )
 
 
@@ -2006,8 +2062,12 @@ def _timing_event_from_dict(data: dict[str, Any]) -> TimingEvent:
         id=str(data.get("id", uuid4().hex)),
         kind=str(data.get("kind", "reload")),
         label=str(data.get("label", data.get("kind", "Reload"))),
-        after_shot_id=None if data.get("after_shot_id") in {None, ""} else str(data["after_shot_id"]),
-        before_shot_id=None if data.get("before_shot_id") in {None, ""} else str(data["before_shot_id"]),
+        after_shot_id=None
+        if data.get("after_shot_id") in {None, ""}
+        else str(data["after_shot_id"]),
+        before_shot_id=None
+        if data.get("before_shot_id") in {None, ""}
+        else str(data["before_shot_id"]),
         note=str(data.get("note", "")),
     )
 
@@ -2024,7 +2084,9 @@ def _coerce_dataclass_value(default: Any, value: Any) -> Any:
     return str(value)
 
 
-def _shotml_settings_from_dict(data: dict[str, Any] | None, *, detection_threshold: float | None = None) -> ShotMLSettings:
+def _shotml_settings_from_dict(
+    data: dict[str, Any] | None, *, detection_threshold: float | None = None
+) -> ShotMLSettings:
     defaults = ShotMLSettings()
     payload = data if isinstance(data, dict) else {}
     values: dict[str, Any] = {}
@@ -2050,12 +2112,22 @@ def _timing_change_proposal_from_dict(data: dict[str, Any]) -> TimingChangePropo
         status=str(data.get("status", "pending")),
         shot_id=None if data.get("shot_id") in {None, ""} else str(data["shot_id"]),
         shot_number=None if data.get("shot_number") in {None, ""} else int(data["shot_number"]),
-        source_time_ms=None if data.get("source_time_ms") in {None, ""} else int(data["source_time_ms"]),
-        target_time_ms=None if data.get("target_time_ms") in {None, ""} else int(data["target_time_ms"]),
-        alternate_shot_id=None if data.get("alternate_shot_id") in {None, ""} else str(data["alternate_shot_id"]),
-        alternate_time_ms=None if data.get("alternate_time_ms") in {None, ""} else int(data["alternate_time_ms"]),
+        source_time_ms=None
+        if data.get("source_time_ms") in {None, ""}
+        else int(data["source_time_ms"]),
+        target_time_ms=None
+        if data.get("target_time_ms") in {None, ""}
+        else int(data["target_time_ms"]),
+        alternate_shot_id=None
+        if data.get("alternate_shot_id") in {None, ""}
+        else str(data["alternate_shot_id"]),
+        alternate_time_ms=None
+        if data.get("alternate_time_ms") in {None, ""}
+        else int(data["alternate_time_ms"]),
         confidence=None if data.get("confidence") in {None, ""} else float(data["confidence"]),
-        support_confidence=None if data.get("support_confidence") in {None, ""} else float(data["support_confidence"]),
+        support_confidence=None
+        if data.get("support_confidence") in {None, ""}
+        else float(data["support_confidence"]),
         message=str(data.get("message", "")),
         evidence=evidence if isinstance(evidence, dict) else {},
     )
@@ -2066,9 +2138,7 @@ def _secondary_source_analysis_from_dict(data: dict[str, Any]) -> SecondarySourc
     return SecondarySourceAnalysis(
         source_id=str(payload.get("source_id", "") or ""),
         beep_time_ms=(
-            None
-            if payload.get("beep_time_ms") in {None, ""}
-            else int(payload.get("beep_time_ms"))
+            None if payload.get("beep_time_ms") in {None, ""} else int(payload.get("beep_time_ms"))
         ),
         sync_offset_ms=int(payload.get("sync_offset_ms", 0)),
         analysis_status=str(payload.get("analysis_status", "idle") or "idle"),
@@ -2088,7 +2158,9 @@ def _analysis_state_from_dict(data: dict[str, Any] | None) -> AnalysisState:
             if analysis_data.get("analyzed_secondary_source_id") in {None, ""}
             else str(analysis_data.get("analyzed_secondary_source_id"))
         ),
-        secondary_analysis_status=str(analysis_data.get("secondary_analysis_status", "idle") or "idle"),
+        secondary_analysis_status=str(
+            analysis_data.get("secondary_analysis_status", "idle") or "idle"
+        ),
         secondary_analysis_message=str(analysis_data.get("secondary_analysis_message", "") or ""),
         secondary_sync_source=str(analysis_data.get("secondary_sync_source", "manual") or "manual"),
         sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
@@ -2137,7 +2209,9 @@ def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
         source=source,
         confidence=None if data.get("confidence") is None else float(data["confidence"]),
         score=_score_mark_from_dict(data.get("score")),
-        user_added=bool(data.get("user_added", source == ShotSource.MANUAL and shotml_time_ms in {None, ""})),
+        user_added=bool(
+            data.get("user_added", source == ShotSource.MANUAL and shotml_time_ms in {None, ""})
+        ),
     )
 
 
@@ -2184,7 +2258,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     ui_data = data.get("ui_state", {})
     analysis_data = data.get("analysis", {})
     secondary_video = (
-        None if data.get("secondary_video") is None else _video_from_dict(data.get("secondary_video"))
+        None
+        if data.get("secondary_video") is None
+        else _video_from_dict(data.get("secondary_video"))
     )
     raw_merge_sources = data.get("merge_sources", [])
     merge_sources = [_merge_source_from_dict(item) for item in raw_merge_sources]
@@ -2221,6 +2297,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         id=str(data.get("id", uuid4().hex)),
         name=str(data.get("name", "Untitled Project")),
         description=str(data.get("description", "")),
+        output_root=str(data.get("output_root", "") or ""),
         created_at=datetime.fromisoformat(data.get("created_at", datetime.now(UTC).isoformat())),
         updated_at=datetime.fromisoformat(data.get("updated_at", datetime.now(UTC).isoformat())),
         primary_video=_video_from_dict(data.get("primary_video")),
@@ -2254,7 +2331,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 for key, value in scoring_data.get("penalty_counts", {}).items()
             },
             hit_factor=(
-                None if scoring_data.get("hit_factor") is None else float(scoring_data["hit_factor"])
+                None
+                if scoring_data.get("hit_factor") is None
+                else float(scoring_data["hit_factor"])
             ),
             imported_stage=_imported_stage_from_dict(scoring_data.get("imported_stage")),
         ),
@@ -2274,16 +2353,24 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             shot_quadrant=str(overlay_data.get("shot_quadrant", "bottom_left")),
             shot_direction=str(overlay_data.get("shot_direction", "right")),
             custom_x=(
-                None if overlay_data.get("custom_x") in {None, ""} else float(overlay_data["custom_x"])
+                None
+                if overlay_data.get("custom_x") in {None, ""}
+                else float(overlay_data["custom_x"])
             ),
             custom_y=(
-                None if overlay_data.get("custom_y") in {None, ""} else float(overlay_data["custom_y"])
+                None
+                if overlay_data.get("custom_y") in {None, ""}
+                else float(overlay_data["custom_y"])
             ),
             timer_x=(
-                None if overlay_data.get("timer_x") in {None, ""} else float(overlay_data["timer_x"])
+                None
+                if overlay_data.get("timer_x") in {None, ""}
+                else float(overlay_data["timer_x"])
             ),
             timer_y=(
-                None if overlay_data.get("timer_y") in {None, ""} else float(overlay_data["timer_y"])
+                None
+                if overlay_data.get("timer_y") in {None, ""}
+                else float(overlay_data["timer_y"])
             ),
             draw_x=(
                 None if overlay_data.get("draw_x") in {None, ""} else float(overlay_data["draw_x"])
@@ -2292,10 +2379,14 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 None if overlay_data.get("draw_y") in {None, ""} else float(overlay_data["draw_y"])
             ),
             score_x=(
-                None if overlay_data.get("score_x") in {None, ""} else float(overlay_data["score_x"])
+                None
+                if overlay_data.get("score_x") in {None, ""}
+                else float(overlay_data["score_x"])
             ),
             score_y=(
-                None if overlay_data.get("score_y") in {None, ""} else float(overlay_data["score_y"])
+                None
+                if overlay_data.get("score_y") in {None, ""}
+                else float(overlay_data["score_y"])
             ),
             bubble_width=int(overlay_data.get("bubble_width", 0)),
             bubble_height=int(overlay_data.get("bubble_height", 0)),
@@ -2310,42 +2401,54 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             timer_lock_to_stack=bool(
                 overlay_data.get(
                     "timer_lock_to_stack",
-                    overlay_data.get("timer_x") in {None, ""} and overlay_data.get("timer_y") in {None, ""},
+                    overlay_data.get("timer_x") in {None, ""}
+                    and overlay_data.get("timer_y") in {None, ""},
                 )
             ),
             draw_lock_to_stack=bool(
                 overlay_data.get(
                     "draw_lock_to_stack",
-                    overlay_data.get("draw_x") in {None, ""} and overlay_data.get("draw_y") in {None, ""},
+                    overlay_data.get("draw_x") in {None, ""}
+                    and overlay_data.get("draw_y") in {None, ""},
                 )
             ),
             score_lock_to_stack=bool(
                 overlay_data.get(
                     "score_lock_to_stack",
-                    overlay_data.get("score_x") in {None, ""} and overlay_data.get("score_y") in {None, ""},
+                    overlay_data.get("score_x") in {None, ""}
+                    and overlay_data.get("score_y") in {None, ""},
                 )
             ),
             custom_box_enabled=bool(overlay_data.get("custom_box_enabled", False)),
             custom_box_mode=(
                 str(overlay_data.get("custom_box_mode", "manual"))
-                if str(overlay_data.get("custom_box_mode", "manual")) in {"manual", "imported_summary"}
+                if str(overlay_data.get("custom_box_mode", "manual"))
+                in {"manual", "imported_summary"}
                 else "manual"
             ),
             custom_box_text=str(overlay_data.get("custom_box_text", "")),
             custom_box_quadrant=str(overlay_data.get("custom_box_quadrant", "top_right")),
             custom_box_x=(
-                None if overlay_data.get("custom_box_x") in {None, ""} else float(overlay_data["custom_box_x"])
+                None
+                if overlay_data.get("custom_box_x") in {None, ""}
+                else float(overlay_data["custom_box_x"])
             ),
             custom_box_y=(
-                None if overlay_data.get("custom_box_y") in {None, ""} else float(overlay_data["custom_box_y"])
+                None
+                if overlay_data.get("custom_box_y") in {None, ""}
+                else float(overlay_data["custom_box_y"])
             ),
-            custom_box_background_color=str(overlay_data.get("custom_box_background_color", "#000000")),
+            custom_box_background_color=str(
+                overlay_data.get("custom_box_background_color", "#000000")
+            ),
             custom_box_text_color=str(overlay_data.get("custom_box_text_color", "#ffffff")),
             custom_box_opacity=float(overlay_data.get("custom_box_opacity", 0.9)),
             custom_box_width=int(overlay_data.get("custom_box_width", 0)),
             custom_box_height=int(overlay_data.get("custom_box_height", 0)),
             text_boxes=[
-                _overlay_text_box_from_dict(item, legacy_lock_to_stack=legacy_review_boxes_lock_to_stack)
+                _overlay_text_box_from_dict(
+                    item, legacy_lock_to_stack=legacy_review_boxes_lock_to_stack
+                )
                 for item in overlay_data.get("text_boxes", [])
                 if isinstance(item, dict)
             ],
@@ -2375,23 +2478,35 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             output_path=export_data.get("output_path"),
             preset=ExportPreset(export_data.get("preset", ExportPreset.SOURCE.value)),
             target_width=(
-                None if export_data.get("target_width") in {None, ""} else int(export_data["target_width"])
+                None
+                if export_data.get("target_width") in {None, ""}
+                else int(export_data["target_width"])
             ),
             target_height=(
-                None if export_data.get("target_height") in {None, ""} else int(export_data["target_height"])
+                None
+                if export_data.get("target_height") in {None, ""}
+                else int(export_data["target_height"])
             ),
             frame_rate=ExportFrameRate(export_data.get("frame_rate", ExportFrameRate.SOURCE.value)),
-            video_codec=ExportVideoCodec(export_data.get("video_codec", ExportVideoCodec.H264.value)),
+            video_codec=ExportVideoCodec(
+                export_data.get("video_codec", ExportVideoCodec.H264.value)
+            ),
             video_bitrate_mbps=float(export_data.get("video_bitrate_mbps", 15.0)),
-            audio_codec=ExportAudioCodec(export_data.get("audio_codec", ExportAudioCodec.AAC.value)),
+            audio_codec=ExportAudioCodec(
+                export_data.get("audio_codec", ExportAudioCodec.AAC.value)
+            ),
             audio_sample_rate=int(export_data.get("audio_sample_rate", 48000)),
             audio_bitrate_kbps=int(export_data.get("audio_bitrate_kbps", 320)),
-            color_space=ExportColorSpace(export_data.get("color_space", ExportColorSpace.BT709_SDR.value)),
+            color_space=ExportColorSpace(
+                export_data.get("color_space", ExportColorSpace.BT709_SDR.value)
+            ),
             two_pass=bool(export_data.get("two_pass", False)),
             ffmpeg_preset=str(export_data.get("ffmpeg_preset", "medium")),
             last_log=str(export_data.get("last_log", "")),
             last_error=(
-                None if export_data.get("last_error") in {None, ""} else str(export_data["last_error"])
+                None
+                if export_data.get("last_error") in {None, ""}
+                else str(export_data["last_error"])
             ),
         ),
         ui_state=UIState(
@@ -2417,7 +2532,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 ui_data.get("scoring_edit_shot_ids")
                 or [
                     key
-                    for key, value in _ui_state_bool_map(ui_data.get("scoring_shot_expansion")).items()
+                    for key, value in _ui_state_bool_map(
+                        ui_data.get("scoring_shot_expansion")
+                    ).items()
                     if value
                 ]
             ),
@@ -2472,15 +2589,22 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     if schema_version >= 2 or "stages" in data:
         raw_stages = data.get("stages", [])
         if isinstance(raw_stages, list):
-            project.stages = [_stage_from_dict(item) for item in raw_stages if isinstance(item, dict)]
+            project.stages = [
+                _stage_from_dict(item) for item in raw_stages if isinstance(item, dict)
+            ]
         project.active_stage_id = str(data.get("active_stage_id", ""))
         raw_queue = data.get("queue", [])
         if isinstance(raw_queue, list):
-            project.queue = [_queue_entry_from_dict(item) for item in raw_queue if isinstance(item, dict)]
-        project.combined_export_settings = _combined_export_settings_from_dict(data.get("combined_export_settings"))
+            project.queue = [
+                _queue_entry_from_dict(item) for item in raw_queue if isinstance(item, dict)
+            ]
+        project.combined_export_settings = _combined_export_settings_from_dict(
+            data.get("combined_export_settings")
+        )
         project.practiscore_source_file = str(data.get("practiscore_source_file", ""))
     else:
         from copy import deepcopy
+
         imported_stage_number = project.scoring.stage_number
         imported_stage_name = ""
         if project.scoring.imported_stage:

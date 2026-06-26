@@ -93,6 +93,7 @@
                 </div>
               </div>
               <div class="waveform-actions waveform-footer">
+                <span id="waveform-total-time" class="waveform-total-time">0.00s</span>
                 <button id="zoom-waveform-out" type="button">Zoom -</button>
                 <button id="zoom-waveform-in" type="button">Zoom +</button>
                 <button id="amp-waveform-out" type="button">Amp -</button>
@@ -201,7 +202,7 @@
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context tools">
             <section class="tool-pane" data-tool-pane="review">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Review</h3>
               </div>
               <section class="review-visibility-manager">
@@ -238,27 +239,33 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="trim-sync">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Trim</h3>
-                <strong id="trim-sync-stage-label">No stage</strong>
+                <span class="pane-summary-token">0 sources</span>
+              </div>
+              <div class="trim-timing-bar">
+                <span>Beep: --.--s</span>
+                <span>Last Shot: --.--s</span>
+                <span>Total: --.--s</span>
               </div>
               <div class="control-grid">
-                <label>Start (s)
-                  <input id="trim-sync-bulk-start" type="number" min="0" step="0.001" placeholder="Start" />
+                <label>Keep before beep (s)
+                  <input id="trim-global-start" type="number" min="0" step="0.01" placeholder="2.00" />
                 </label>
-                <label>End (s)
-                  <input id="trim-sync-bulk-end" type="number" min="0" step="0.001" placeholder="End" />
+                <label>Keep after last shot (s)
+                  <input id="trim-global-end" type="number" min="0" step="0.01" placeholder="2.00" />
                 </label>
               </div>
               <div class="queue-toolbar">
-                <button id="trim-sync-apply-all" class="btn btn-primary" type="button">Apply To All</button>
-                <button id="trim-sync-clear-all" class="btn btn-secondary" type="button">Clear All</button>
+                <button id="trim-global-defaults-btn" class="btn-sm btn-secondary" type="button">Reset to 2/2</button>
+                <button id="trim-global-apply" class="btn btn-primary" type="button">Apply to All</button>
+                <button id="trim-global-clear" class="btn btn-secondary" type="button">Clear All</button>
               </div>
               <div id="trim-sync-list" class="merge-media-list" aria-label="Trim controls"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="metrics">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Metrics</h3>
                 <button id="expand-metrics" type="button">Expand</button>
               </div>
@@ -284,7 +291,7 @@
             </section>
 
             <section class="tool-pane active" data-tool-pane="timing">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Splits</h3>
                 <div class="section-header-actions scoring-header-actions">
                   <strong id="timing-result">--</strong>
@@ -300,7 +307,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="shotml">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>ShotML</h3>
                 <div class="section-header-actions">
                   <span id="shotml-confidence-summary">Avg auto confidence --</span>
@@ -445,7 +452,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Score</h3>
                 <div class="section-header-actions scoring-header-actions">
                   <strong id="scoring-result">--</strong>
@@ -464,7 +471,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Overlay</h3>
                 <small>Auto-applies</small>
               </div>
@@ -594,7 +601,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="markers">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Markers</h3>
                 <div class="section-header-actions">
                   <span id="popup-pane-status">0 enabled</span>
@@ -667,7 +674,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Export</h3>
                 <small>Active stage settings</small>
               </div>
@@ -782,20 +789,14 @@
                 <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
                 <label class="check-row"><input id="multi-track" type="checkbox" /> Multi-Track</label>
               </div>
-              <label>Output path template
-                <div class="path-row">
-                  <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
-                  <button id="browse-export-path" type="button">Browse</button>
-                </div>
-              </label>
               <div class="button-grid two-up">
                 <button id="show-export-log" type="button">Show Export Log</button>
               </div>
-              <p id="export-log-status" class="hint">Queue stages after review, then process one or many from Queue.</p>
+              <p id="export-log-status" class="hint"></p>
             </section>
 
             <section class="tool-pane" data-tool-pane="settings">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Settings</h3>
                 <small>Master defaults</small>
               </div>
@@ -1171,7 +1172,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="project">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Project</h3>
                 <span id="media-badge">No project open</span>
               </div>
@@ -1191,6 +1192,12 @@
               <label>Project description
                 <textarea id="project-description" rows="5" placeholder="Save match-level notes and context for this project."></textarea>
               </label>
+              <label>Output folder
+                <div class="path-row">
+                  <input id="project-output-root" placeholder="Project Output folder" readonly />
+                  <button id="browse-project-output-root" type="button">Select Output</button>
+                </div>
+              </label>
               <div class="section-header">
                 <h3>PractiScore Import</h3>
                 <span id="practiscore-status">No results imported</span>
@@ -1208,6 +1215,28 @@
                     <option value="uspsa">USPSA</option>
                     <option value="ipsc">IPSC</option>
                     <option value="idpa">IDPA</option>
+                  </select>
+                </label>
+                <label>Competitor
+                  <select id="match-competitor-name">
+                    <option value="">Select competitor</option>
+                  </select>
+                </label>
+                <label>Overall Place
+                  <select id="match-competitor-place">
+                    <option value="">Place</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Classification
+                  <select id="match-class">
+                    <option value="">Class</option>
+                  </select>
+                </label>
+                <label>Division
+                  <select id="match-division">
+                    <option value="">Division</option>
                   </select>
                 </label>
               </div>

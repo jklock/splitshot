@@ -126,7 +126,9 @@ def _normalize_practiscore_sync_payload(payload: object) -> dict[str, Any]:
             if isinstance(item, dict) and str(item.get("remote_id") or "").strip()
         ]
     selected_remote_id = payload.get("selected_remote_id")
-    normalized["selected_remote_id"] = None if selected_remote_id in {None, ""} else str(selected_remote_id)
+    normalized["selected_remote_id"] = (
+        None if selected_remote_id in {None, ""} else str(selected_remote_id)
+    )
     normalized["error_category"] = str(payload.get("error_category") or "")
     details = payload.get("details")
     normalized["details"] = dict(details) if isinstance(details, dict) else {}
@@ -150,9 +152,7 @@ def browser_state(
         if shot.shotml_confidence is not None:
             shot.confidence = shot.shotml_confidence
     shotml_rows_by_id = {
-        row.shot_id: row
-        for row in compute_split_rows(shotml_project)
-        if row.shot_id is not None
+        row.shot_id: row for row in compute_split_rows(shotml_project) if row.shot_id is not None
     }
     presentation = build_stage_presentation(project)
     scoring_summary = dict(presentation.metrics.scoring_summary)
@@ -181,7 +181,10 @@ def browser_state(
                 continue
             asset_payload = item.get("asset")
             if isinstance(asset_payload, dict):
-                item["media_kind"] = str(asset_payload.get("media_kind") or ("still_image" if asset_payload.get("is_still_image") else "video"))
+                item["media_kind"] = str(
+                    asset_payload.get("media_kind")
+                    or ("still_image" if asset_payload.get("is_still_image") else "video")
+                )
             source_id = item.get("id")
             supports_sync_analysis = bool(
                 source_id
@@ -195,12 +198,20 @@ def browser_state(
             item["supports_sync_analysis"] = supports_sync_analysis
             item["can_rerun_sync_analysis"] = supports_sync_analysis
             item["sync_analysis_status"] = (
-                str(sync_payload.get("analysis_status") or analysis_payload.get("secondary_analysis_status") or "idle")
+                str(
+                    sync_payload.get("analysis_status")
+                    or analysis_payload.get("secondary_analysis_status")
+                    or "idle"
+                )
                 if is_analyzed_sync_source or supports_sync_analysis or sync_payload
                 else "idle"
             )
             item["sync_analysis_message"] = (
-                str(sync_payload.get("analysis_message") or analysis_payload.get("secondary_analysis_message") or "")
+                str(
+                    sync_payload.get("analysis_message")
+                    or analysis_payload.get("secondary_analysis_message")
+                    or ""
+                )
                 if is_analyzed_sync_source or supports_sync_analysis or sync_payload
                 else ""
             )
@@ -210,7 +221,11 @@ def browser_state(
                 else None
             )
             item["sync_offset_source"] = (
-                str(sync_payload.get("sync_source") or analysis_payload.get("secondary_sync_source") or "manual")
+                str(
+                    sync_payload.get("sync_source")
+                    or analysis_payload.get("secondary_sync_source")
+                    or "manual"
+                )
                 if is_analyzed_sync_source or supports_sync_analysis or sync_payload
                 else "manual"
             )
@@ -225,7 +240,9 @@ def browser_state(
             row_payload["shotml_cumulative_ms"] = shotml_row.cumulative_ms
             row_payload["shotml_confidence"] = shotml_row.confidence
             row_payload["adjustment_ms"] = (
-                None if row.split_ms is None or shotml_row.split_ms is None else row.split_ms - shotml_row.split_ms
+                None
+                if row.split_ms is None or shotml_row.split_ms is None
+                else row.split_ms - shotml_row.split_ms
             )
             row_payload["final_time_ms"] = row.cumulative_ms
         split_rows_payload.append(row_payload)
@@ -240,7 +257,9 @@ def browser_state(
         else None
     )
     primary_available = bool(primary_path and primary_path.exists() and primary_path.is_file())
-    secondary_available = bool(secondary_path and secondary_path.exists() and secondary_path.is_file())
+    secondary_available = bool(
+        secondary_path and secondary_path.exists() and secondary_path.is_file()
+    )
     return {
         "status": status_message,
         "project": project_payload,
@@ -253,7 +272,8 @@ def browser_state(
         "scoring_presets": scoring_presets_for_api(),
         "practiscore_session": practiscore_session_payload,
         "practiscore_sync": practiscore_sync_payload,
-        "practiscore_options": practiscore_payload or {
+        "practiscore_options": practiscore_payload
+        or {
             "has_source": False,
             "source_name": "",
             "detected_match_type": "",
@@ -267,11 +287,7 @@ def browser_state(
             "primary_available": primary_available,
             "secondary_available": secondary_available,
             "primary_url": "/media/primary" if primary_available else None,
-            "secondary_url": (
-                "/media/secondary"
-                if secondary_available
-                else None
-            ),
+            "secondary_url": ("/media/secondary" if secondary_available else None),
             "secondary_source_id": project.analysis.analyzed_secondary_source_id,
             "cache_token": media_cache_token or "",
         },

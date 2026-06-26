@@ -44,7 +44,9 @@ def test_analyze_video_shots_emits_json_sweep_and_shot_details(synthetic_video_f
     assert payload["shots"][0]["confidence_percent"] is not None
 
 
-def test_analyze_video_shots_writes_json_report_and_table_output(tmp_path: Path, synthetic_video_factory) -> None:
+def test_analyze_video_shots_writes_json_report_and_table_output(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="preflight-table")
     json_output = tmp_path / "preflight-report.json"
 

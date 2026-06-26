@@ -40,7 +40,10 @@ def test_normalize_downloaded_idpa_artifact_matches_existing_import_semantics() 
     assert normalized.stage_import.imported_stage.source_name == "remote-idpa.csv"
     assert normalized.stage_import.imported_stage.final_time == 39.83
     assert normalized.stage_import.imported_stage.raw_seconds == 29.83
-    assert normalized.stage_import.imported_stage.score_counts == {"Points Down": 5.0, "Non-Threat": 1.0}
+    assert normalized.stage_import.imported_stage.score_counts == {
+        "Points Down": 5.0,
+        "Non-Threat": 1.0,
+    }
 
 
 def test_normalize_downloaded_artifact_preserves_place_change_name_fallback(tmp_path: Path) -> None:

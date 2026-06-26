@@ -124,15 +124,15 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert 'title: "Split / Interval Bar Chart"' in js
     assert 'title: "Run Comparison Overlay"' in js
     assert 'title: "Stage Segment Breakdown"' in js
-    assert 'function buildMetricsStageSegments(points = []) {' in js
-    assert 'ShotML Reference' in js
-    assert 'return `${clamped.toFixed(1)}%`;' in js
+    assert "function buildMetricsStageSegments(points = []) {" in js
+    assert "ShotML Reference" in js
+    assert "return `${clamped.toFixed(1)}%`;" in js
     assert "estimated confidence" not in js
     assert "ShotML ${formatConfidenceValue(entry.confidence)}" in js
-    assert "scoreStatus.dataset.importedSource = imported.source_name || \"\";" in js
-    assert "scoreStatus.dataset.importedStage = imported.stage_number ?? \"\";" in js
-    assert "scoreStatus.dataset.importedCompetitor = imported.competitor_name || \"\";" in js
-    assert "scoreStatus.dataset.importedPlace = imported.competitor_place ?? \"\";" in js
+    assert 'scoreStatus.dataset.importedSource = imported.source_name || "";' in js
+    assert 'scoreStatus.dataset.importedStage = imported.stage_number ?? "";' in js
+    assert 'scoreStatus.dataset.importedCompetitor = imported.competitor_name || "";' in js
+    assert 'scoreStatus.dataset.importedPlace = imported.competitor_place ?? "";' in js
     assert '"result_label"' in js
     assert '"result_value"' in js
     assert '"raw_time_s"' in js
@@ -158,8 +158,13 @@ def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None
 
     assert 'import { createScoringPane } from "./panes/scoring-pane.js";' in app_js
     assert "scoringPane = createScoringPane({" in app_js
-    assert "function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {" in app_js
-    assert "return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);" in app_js
+    assert (
+        "function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {" in app_js
+    )
+    assert (
+        "return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);"
+        in app_js
+    )
     assert 'function renderScoringTable(tableId = "scoring-table") {' in app_js
     assert "return scoringPane?.renderScoringTable(tableId);" in app_js
     assert "function renderScoringTables() {" in app_js
@@ -183,7 +188,10 @@ def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None
     assert '"PS - Penalties"' in scoring_js
     assert '"Stage Place"' not in scoring_js
     assert "function readScoringPayload() {" in scoring_js
-    assert "async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $(\"scoring-preset\")?.value || \"\") {" in scoring_js
+    assert (
+        'async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset")?.value || "") {'
+        in scoring_js
+    )
     assert "function scheduleScoringApply() {" in scoring_js
 
     assert "export function createPaneBase({" in pane_base_js

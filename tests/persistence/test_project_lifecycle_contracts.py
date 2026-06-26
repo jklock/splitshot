@@ -61,8 +61,13 @@ def test_save_project_stages_practiscore_source_once_and_load_resolves_path(tmp_
 
     assert staged_path.read_text(encoding="utf-8") == "stage data"
     from pathlib import Path
-    assert Path(saved["scoring"]["practiscore_source_path"]) == Path(f"{PRACTISCORE_DIRNAME}/IDPA.csv")
-    assert Path(saved["scoring"]["imported_stage"]["source_path"]) == Path(f"{PRACTISCORE_DIRNAME}/IDPA.csv")
+
+    assert Path(saved["scoring"]["practiscore_source_path"]) == Path(
+        f"{PRACTISCORE_DIRNAME}/IDPA.csv"
+    )
+    assert Path(saved["scoring"]["imported_stage"]["source_path"]) == Path(
+        f"{PRACTISCORE_DIRNAME}/IDPA.csv"
+    )
 
     loaded = load_project(project_path / "project.json")
 
@@ -72,13 +77,17 @@ def test_save_project_stages_practiscore_source_once_and_load_resolves_path(tmp_
     assert loaded.scoring.imported_stage.final_time == 29.83
 
 
-def test_save_project_preserves_details_and_primary_after_project_json_path_round_trip(tmp_path: Path) -> None:
+def test_save_project_preserves_details_and_primary_after_project_json_path_round_trip(
+    tmp_path: Path,
+) -> None:
     project_path = tmp_path / "details-round-trip.ssproj"
     primary = tmp_path / "primary.mp4"
     primary.write_bytes(b"not a real video but enough for persistence staging")
 
     project = Project(name="Classifier Template", description="Carry these settings forward")
-    project.primary_video = VideoAsset(path=str(primary), duration_ms=1234, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path=str(primary), duration_ms=1234, width=640, height=360, fps=30.0
+    )
 
     save_project(project, project_path / "project.json")
     loaded = load_project(project_path / "project.json")
