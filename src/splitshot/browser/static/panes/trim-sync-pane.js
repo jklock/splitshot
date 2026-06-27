@@ -7,6 +7,7 @@ export function createTrimSyncPane({
   callApi = async () => null,
   scheduleInteractionPreviewRender = () => {},
   renderVideo = () => {},
+  setStatus = () => {},
   fileName = (value) => String(value || ""),
   sourceIdentifier = (source, fallback) => String(source?.id || fallback || ""),
   currentSourceSyncOffsetMs = (source) => Math.round(Number(source?.sync_offset_ms) || 0),
@@ -15,6 +16,8 @@ export function createTrimSyncPane({
     ["bulk", true],
     ["sources", true],
   ]);
+  const trimUndoHistory = [];
+  let restoringUndo = false;
 
   function currentState() {
     return getState() || {};
@@ -105,11 +108,81 @@ export function createTrimSyncPane({
     return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
   }
 
-  async function trimAll(clear = false) {
+  function queueUndoSnapshot(kind, sourceId = null) {
+    if (restoringUndo) return;
+    trimUndoHistory.push({
+      kind,
+      sourceId,
+      snapshot: {
+        global_start: $("trim-global-start")?.value || "",
+        global_end: $("trim-global-end")?.value || "",
+        sources: mergeSources().map((source, index) => {
+          const nextSourceId = sourceIdentifier(source, String(index));
+          return {
+            source_id: nextSourceId,
+            sync_offset_ms: currentSourceSyncOffsetMs(source),
+            start_s: source?.trim_derivative?.start_s ?? null,
+            end_s: source?.trim_derivative?.end_s ?? null,
+            clear: !(
+              source?.trim_derivative
+              && source.trim_derivative.active_path_kind === "local_derivative"
+              && source.trim_derivative.derivative_path
+            ),
+          };
+        }),
+      },
+    });
+    if (trimUndoHistory.length > 40) trimUndoHistory.shift();
+  }
+
+  function refreshTrimPreview() {
+    scheduleInteractionPreviewRender({ video: true, waveform: true });
+    renderVideo();
+  }
+
+  async function restoreTrimSnapshot(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.sources)) return;
+    restoringUndo = true;
+    try {
+      for (const source of snapshot.sources) {
+        await callApi("/api/merge/source", {
+          source_id: source.source_id,
+          sync_offset_ms: Math.round(Number(source.sync_offset_ms) || 0),
+        });
+        await callApi("/api/merge/source/trim", {
+          source_id: source.source_id,
+          clear: Boolean(source.clear),
+          start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
+          end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+        });
+      }
+      if ($("trim-global-start")) $("trim-global-start").value = snapshot.global_start || "";
+      if ($("trim-global-end")) $("trim-global-end").value = snapshot.global_end || "";
+      refreshTrimPreview();
+      setStatus("Restored trim changes.");
+    } finally {
+      restoringUndo = false;
+    }
+  }
+
+  async function undoLastTrimChange(sourceId = null) {
+    const index = sourceId
+      ? [...trimUndoHistory].map((entry, idx) => ({ entry, idx })).reverse().find((item) => item.entry.sourceId === sourceId)?.idx
+      : trimUndoHistory.length - 1;
+    if (index === undefined || index < 0) {
+      setStatus(sourceId ? "No source-level trim changes to undo." : "No trim changes to undo.");
+      return;
+    }
+    const [entry] = trimUndoHistory.splice(index, 1);
+    await restoreTrimSnapshot(entry?.snapshot);
+  }
+
+  async function trimAll(clear = false, { recordUndo = true } = {}) {
     const startInput = $("trim-global-start");
     const endInput = $("trim-global-end");
     const startValue = parseFloat(startInput?.value || "");
     const endValue = parseFloat(endInput?.value || "");
+    if (recordUndo) queueUndoSnapshot("bulk");
     activity(clear ? "trim.clear-all" : "trim.apply-all", {
       start_s: startValue,
       end_s: endValue,
@@ -119,13 +192,16 @@ export function createTrimSyncPane({
       start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
       end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
     });
+    setStatus(clear ? "Cleared all trims." : "Applied trim to all sources.");
+    refreshTrimPreview();
   }
 
-  async function trimSource(sourceId, clear = false) {
+  async function trimSource(sourceId, clear = false, { recordUndo = true } = {}) {
     const startInput = documentObject.querySelector(`[data-trim-start="${sourceId}"]`);
     const endInput = documentObject.querySelector(`[data-trim-end="${sourceId}"]`);
     const startValue = parseFloat(startInput?.value || "");
     const endValue = parseFloat(endInput?.value || "");
+    if (recordUndo) queueUndoSnapshot("source", sourceId);
     activity(clear ? "trim.clear" : "trim.apply", { sourceId, start_s: startValue, end_s: endValue });
     await callApi("/api/merge/source/trim", {
       source_id: sourceId,
@@ -133,9 +209,11 @@ export function createTrimSyncPane({
       start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
       end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
     });
+    setStatus(clear ? `Cleared trim for source.` : `Applied trim to source.`);
+    refreshTrimPreview();
   }
 
-  function setSourceTrimToBeep(sourceId) {
+  async function setSourceTrimToBeep(sourceId) {
     const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
     const beep = source ? sourceBeepTimeMs(source) : null;
     if (beep === null) return;
@@ -143,10 +221,12 @@ export function createTrimSyncPane({
     if (input) {
       input.value = (beep / 1000).toFixed(2);
       activity("trim.set-beep", { sourceId, start_s: beep / 1000 });
+      await trimSource(sourceId, false, { recordUndo: true });
+      setStatus("Set trim start to beep time.");
     }
   }
 
-  function setSourceTrimToLastShot(sourceId) {
+  async function setSourceTrimToLastShot(sourceId) {
     const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
     const lastShot = source ? sourceLastShotTimeMs(source) : null;
     if (lastShot === null) return;
@@ -154,6 +234,8 @@ export function createTrimSyncPane({
     if (input) {
       input.value = (lastShot / 1000).toFixed(2);
       activity("trim.set-last-shot", { sourceId, end_s: lastShot / 1000 });
+      await trimSource(sourceId, false, { recordUndo: true });
+      setStatus("Set trim end to last shot time.");
     }
   }
 
@@ -165,6 +247,7 @@ export function createTrimSyncPane({
     if (primaryBeep !== null && startInput) startInput.value = Math.max(0, (primaryBeep / 1000) - 2).toFixed(2);
     if (primaryLastShot !== null && endInput) endInput.value = (primaryLastShot / 1000) + 2;
     activity("trim.global-defaults", { beep_ms: primaryBeep, last_shot_ms: primaryLastShot });
+    setStatus("Reset trim defaults to 2-second buffers.");
   }
 
   function buildSourceCard(source, index) {
@@ -197,6 +280,7 @@ export function createTrimSyncPane({
             <div class="trim-card-actions">
               <button type="button" class="btn-sm btn-primary trim-apply-btn" data-source-id="${sourceId}">Apply</button>
               <button type="button" class="btn-sm btn-secondary trim-clear-btn" data-source-id="${sourceId}">Clear</button>
+              <button type="button" class="btn-sm btn-secondary trim-undo-btn" data-source-id="${sourceId}">Undo</button>
             </div>
           </div>
           <div class="trim-card-row trim-card-row-quick">
@@ -249,6 +333,7 @@ export function createTrimSyncPane({
     });
     $("trim-global-apply")?.addEventListener("click", () => trimAll(false));
     $("trim-global-clear")?.addEventListener("click", () => trimAll(true));
+    $("trim-global-undo")?.addEventListener("click", () => undoLastTrimChange());
     $("trim-global-defaults-btn")?.addEventListener("click", applyGlobalDefaults);
     documentObject.querySelectorAll(".trim-apply-btn").forEach((button) => {
       button.addEventListener("click", () => {
@@ -258,6 +343,11 @@ export function createTrimSyncPane({
     documentObject.querySelectorAll(".trim-clear-btn").forEach((button) => {
       button.addEventListener("click", () => {
         trimSource(button.dataset.sourceId || "", true);
+      });
+    });
+    documentObject.querySelectorAll(".trim-undo-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        undoLastTrimChange(button.dataset.sourceId || "");
       });
     });
     documentObject.querySelectorAll(".trim-beep-btn").forEach((button) => {
@@ -271,29 +361,35 @@ export function createTrimSyncPane({
       });
     });
     documentObject.querySelectorAll("[data-source-sync-offset]").forEach((input) => {
-      input.addEventListener("change", () => {
+      input.addEventListener("change", async () => {
         const sourceId = input.dataset.sourceSyncOffset || "";
         const offsetMs = Math.round(Number(input.value) || 0);
+        queueUndoSnapshot("source", sourceId);
         activity("trim.sync.set", { sourceId, offset_ms: offsetMs });
-        callApi("/api/merge/source", { source_id: sourceId, sync_offset_ms: offsetMs });
-        scheduleInteractionPreviewRender({ video: true });
-        renderVideo();
+        await callApi("/api/merge/source", { source_id: sourceId, sync_offset_ms: offsetMs });
+        setStatus(`Updated sync offset to ${offsetMs > 0 ? "+" : ""}${offsetMs} ms.`);
+        refreshTrimPreview();
       });
     });
     documentObject.querySelectorAll("[data-sync-delta]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const sourceId = button.dataset.sourceId || "";
         const deltaMs = Math.round(Number(button.dataset.syncDelta) || 0);
+        queueUndoSnapshot("source", sourceId);
         activity("trim.sync.nudge", { sourceId, delta_ms: deltaMs });
-        callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
-        renderVideo();
+        await callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
+        setStatus(`Nudged sync offset by ${deltaMs > 0 ? "+" : ""}${deltaMs} ms.`);
+        refreshTrimPreview();
       });
     });
     documentObject.querySelectorAll(".trim-analyze-btn").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const sourceId = button.dataset.sourceId || "";
+        queueUndoSnapshot("source", sourceId);
         activity("trim.sync.analyze", { sourceId });
-        callApi("/api/merge/source/analyze", { source_id: sourceId });
+        await callApi("/api/merge/source/analyze", { source_id: sourceId });
+        setStatus("Sync analysis started.");
+        refreshTrimPreview();
       });
     });
   }
@@ -335,6 +431,7 @@ export function createTrimSyncPane({
               </label>
               <div class="trim-global-actions">
                 <button id="trim-global-defaults-btn" type="button" class="btn-sm btn-secondary">Reset to 2/2</button>
+                <button id="trim-global-undo" type="button" class="btn-sm btn-secondary">Undo Last Change</button>
                 <button id="trim-global-apply" type="button" class="btn btn-primary">Apply to All</button>
                 <button id="trim-global-clear" type="button" class="btn btn-secondary">Clear All</button>
               </div>

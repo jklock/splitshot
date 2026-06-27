@@ -372,7 +372,7 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
 
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip() == "IDPA imported"
-                assert page.locator("#practiscore-import-summary").text_content().strip()
+                assert page.locator("#practiscore-import-summary").is_hidden() is True
                 page.locator("#import-practiscore").click()
                 page.wait_for_function("() => (state?.project?.stages || []).length > 0")
                 _open_tool(page, "media")
@@ -385,7 +385,7 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
         server.shutdown()
 
 
-def test_project_pane_keeps_compact_import_summary_without_stage_selectors(tmp_path: Path) -> None:
+def test_project_pane_hides_import_summary_line_without_stage_selectors(tmp_path: Path) -> None:
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
     try:
@@ -401,12 +401,8 @@ def test_project_pane_keeps_compact_import_summary_without_stage_selectors(tmp_p
                     str(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
                 )
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
-                page.wait_for_function(
-                    "() => document.getElementById('practiscore-import-summary')?.textContent?.length > 0"
-                )
-                summary = page.locator("#practiscore-import-summary").text_content()
-                assert summary
-                assert "Match Time" not in summary
+                page.wait_for_timeout(250)
+                assert page.locator("#practiscore-import-summary").is_hidden() is True
             finally:
                 browser.close()
     finally:

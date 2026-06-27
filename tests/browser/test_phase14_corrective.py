@@ -109,7 +109,7 @@ def test_scoring_from_dict_handles_classification_division():
     assert "division" in within
 
 
-def test_project_summary_is_compact_no_match_time():
+def test_project_summary_line_is_removed_but_container_remains():
     source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
     within = source[
         source.index("renderPractiScoreImportSummary") : source.index(
@@ -118,8 +118,9 @@ def test_project_summary_is_compact_no_match_time():
         + 1500
     ]
     assert "practiscore-import-summary" in within
-    assert "classification" in within
-    assert "Match Time" not in within
+    assert 'summary.textContent = ""' in within
+    assert "summary.hidden = true" in within
+    assert "John Klockenkemper" not in within
 
 
 def test_project_does_not_own_stage_media():
@@ -149,10 +150,11 @@ def test_project_owns_output_root_control():
 
 def test_media_pane_has_section_toggles():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    assert "pane-toggle" in source
     assert "media-section-toggle" in source
     assert "sectionExpanded" in source
     assert "toggleSection" in source
+    assert "Active Stage" in source
+    assert 'data-media-section="stages"' in source
 
 
 def test_media_pane_uses_backend_dialog_not_file_inputs():
@@ -181,8 +183,8 @@ def test_media_pane_has_add_more_edit_stage_and_create_stage():
     assert "media-add-more-btn" in source
     assert "media-edit-stage-btn" in source
     assert "media-add-stage-btn" in source
-    assert "Add More" in source
-    assert "Edit Stage" in source
+    assert "media-add-stage-full" in source
+    assert "Add Media" in source
     assert 'callApi("/api/project/stage/create"' in source
 
 
@@ -218,24 +220,30 @@ def test_media_pane_expansion_is_persisted():
 def test_media_inventory_and_stage_navigator_are_separate():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "renderActiveStageSection" in source
-    assert "renderPrimarySection" in source
-    assert "renderAddedSection" in source
-    assert "renderStageNavigator" in source
+    assert "renderStagesSection" in source
+    assert "Primary" in source
+    assert "Active Media" in source
+    assert "Stage Navigator" in source
     assert "renderInventoryFileRow" in source
     assert "media-stage-card" not in source
 
 
-def test_queue_edit_stage_routes_to_media_not_merge():
-    source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    assert 'setActiveTool("media")' in source
-    assert 'setActiveTool("merge")' not in source
+def test_media_active_stage_is_not_collapsible_and_does_not_queue():
+    source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
+    active_section = source[source.index("function renderActiveStageSection") : source.index("function renderStagesSection")]
+    assert "pane-toggle" not in active_section
+    assert "Queue Stage" not in source
+    assert "Requeue" not in source
+    assert "/api/project/queue/" not in source
 
 
-def test_queue_activity_log_is_media():
-    source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    within_edit = source[source.index("editStage") :]
-    assert 'tool: "media"' in within_edit
-    assert 'tool: "merge"' not in within_edit
+def test_media_picker_root_prefers_stage_media_then_project_input():
+    source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
+    within = source[source.index("function mediaPickerDefaultRoot") : source.index("function readSectionExpansion")]
+    assert "stage?.primary_media?.path" in within
+    assert "stageAddedMedia(stage)[0]" in within
+    assert 'joinProjectPath(projectPath, "Input")' in within
+    assert "projectPath ||" in within
 
 
 def test_queue_has_no_filler_copy():
@@ -319,7 +327,18 @@ def test_queue_uses_compact_stage_cards():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
     assert "queue-stage-card" in source
     assert "queue-status-pill" in source
-    assert "queue-pane-actions" in source
+    assert "Queue Controls" in source
+    assert "Queued Stages" in source
+
+
+def test_queue_owns_membership_actions_without_edit_or_remove():
+    source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
+    assert "queue-membership-btn" in source
+    assert '"Queue"' in source
+    assert '"Requeue"' in source
+    assert '"Unqueue"' in source
+    assert "Edit Stage" not in source
+    assert "Remove" not in source
 
 
 def test_trim_uses_source_cards_and_bulk_sections():
@@ -329,12 +348,16 @@ def test_trim_uses_source_cards_and_bulk_sections():
     assert "trim-card-row" in source
     assert "trim-sync-nudge-buttons" in source
     assert "computedTrimLabel" in source
+    assert "Undo Last Change" in source
+    assert "trim-undo-btn" in source
+    assert "setStatus" in source
 
 
 def test_waveform_renderer_declares_lane_clipping():
     source = (STATIC_ROOT / "components" / "waveform.js").read_text()
     assert 'canvas.dataset.waveformLaneClipping = "isolated"' in source
     assert 'canvas.dataset.waveformLaneBleed = "false"' in source
+    assert 'canvas.dataset.waveformTimeScaleVisible = "true"' in source
     assert "ctx.clip();" in source
 
 
@@ -348,6 +371,17 @@ def test_phase15_pane_css_forces_single_column_flow_in_new_panes():
     assert ".media-stage-nav-actions,\n.queue-stage-actions {" in css
     assert "grid-template-columns: minmax(0, 1fr);" in css
     assert ".trim-bulk-grid,\n.trim-card-row {" in css
+    assert ".media-stage-nav-actions-split" in css
+    assert ".merge-source-layout-row" in css
+
+
+def test_compose_active_source_places_opacity_before_layout():
+    source = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    within = source[
+        source.index("const placementModeSelect") : source.index("const body = documentObject.createElement")
+    ]
+    assert "const opacityAndLayoutRow" in within
+    assert "opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);" in within
 
 
 def test_v107_pane_audit_collects_visual_parity_metrics():

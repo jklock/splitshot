@@ -425,13 +425,11 @@ export function createProjectPane({
     } else if (status) {
       status.textContent = "No results imported";
     }
-    const parts = [];
-    if (scoring.competitor_name) parts.push(scoring.competitor_name);
-    if (scoring.classification) parts.push(scoring.classification);
-    if (scoring.division) parts.push(scoring.division);
-    const summaryText = parts.join(" • ") || "";
     const summary = $("practiscore-import-summary");
-    if (summary) summary.textContent = summaryText;
+    if (summary) {
+      summary.textContent = "";
+      summary.hidden = true;
+    }
   }
 
   function hasActiveProject() {

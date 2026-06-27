@@ -3,7 +3,6 @@ export function createQueuePane({
   documentObject = document,
   windowObject = window,
   getState = () => null,
-  setActiveTool = () => {},
   setActiveStageId = () => {},
   activity = () => {},
   callApi = async () => null,
@@ -33,6 +32,10 @@ export function createQueuePane({
     return project().active_stage_id || "";
   }
 
+  function activeStage() {
+    return stages().find((stage) => stage.id === activeStageId()) || stages()[0] || null;
+  }
+
   function queuedCount() {
     return queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
   }
@@ -43,9 +46,7 @@ export function createQueuePane({
       .sort((left, right) => {
         const leftStage = stages().find((stage) => stage.id === left.stage_id) || null;
         const rightStage = stages().find((stage) => stage.id === right.stage_id) || null;
-        const leftOrder = leftStage?.order_index ?? 999;
-        const rightOrder = rightStage?.order_index ?? 999;
-        return leftOrder - rightOrder;
+        return (leftStage?.order_index ?? 999) - (rightStage?.order_index ?? 999);
       });
   }
 
@@ -104,23 +105,46 @@ export function createQueuePane({
     render();
   }
 
-  async function addToQueue(stageId = activeStageId()) {
-    if (!stageId) return;
-    activity("queue.add", { stageId });
-    const result = await callApi("/api/project/queue/add", { stage_id: stageId });
-    if (result) setStatus(`Queued ${stageLabel(stages().find((stage) => stage.id === stageId))}.`);
+  function selectStage(stageId) {
+    const proj = project();
+    if (!proj || !stageId) return;
+    proj.active_stage_id = stageId;
+    setActiveStageId(stageId);
+    sendKeepaliveJson("/api/project/select-stage", { active_stage_id: stageId });
+    activity("queue.select-stage", { stageId });
+    render();
   }
 
-  async function removeFromQueue(stageId) {
-    if (!stageId) return;
-    activity("queue.remove", { stageId });
-    await callApi("/api/project/queue/remove", { stage_id: stageId });
+  function queueActionLabel(stageId) {
+    const entry = findQueueEntry(stageId);
+    const status = String(entry?.status || "not_queued");
+    if (status === "not_queued") return "Queue";
+    if (status === "stale" || status === "failed" || status === "complete") return "Requeue";
+    if (status === "processing") return "Processing";
+    return "Unqueue";
   }
 
-  async function applySettingsToAll() {
+  async function updateQueueMembership(stageId = activeStageId()) {
+    if (!stageId) return;
+    const action = queueActionLabel(stageId);
+    if (action === "Queue" || action === "Requeue") {
+      activity("queue.add", { stageId });
+      const result = await callApi("/api/project/queue/add", { stage_id: stageId });
+      if (result) setStatus(`${action}d ${stageLabel(stages().find((stage) => stage.id === stageId))}.`);
+      return;
+    }
+    if (action === "Unqueue") {
+      activity("queue.remove", { stageId });
+      await callApi("/api/project/queue/remove", { stage_id: stageId });
+      setStatus(`Unqueued ${stageLabel(stages().find((stage) => stage.id === stageId))}.`);
+      return;
+    }
+  }
+
+  async function applySettingsToQueued() {
     activity("queue.apply-all");
     await callApi("/api/project/queue/apply-all", {});
-    setStatus("Applied the current stage template across the queue.");
+    setStatus("Applied the active stage settings to queued stages.");
   }
 
   async function processAll() {
@@ -135,29 +159,14 @@ export function createQueuePane({
     await callApi("/api/project/queue/process", { mode: "combined" });
   }
 
-  function selectStageFromQueue(stageId) {
-    const proj = project();
-    if (!proj || !stageId) return;
-    proj.active_stage_id = stageId;
-    setActiveStageId(stageId);
-    sendKeepaliveJson("/api/project/select-stage", { active_stage_id: stageId });
-    activity("queue.select-stage", { stageId });
-    render();
-  }
-
-  function editStage(stageId) {
-    if (!stageId) return;
-    activity("queue.edit-stage", { stageId, tool: "media" });
-    selectStageFromQueue(stageId);
-    setActiveTool("media");
-  }
-
   function renderQueueStage(queueEntry) {
     const stage = stages().find((item) => item.id === queueEntry.stage_id) || null;
     const stageId = queueEntry.stage_id;
     const status = queueEntry?.status || stage?.queue_status || "not_queued";
     const selected = stageId === activeStageId();
     const expanded = isStageExpanded(stageId);
+    const actionLabel = queueActionLabel(stageId);
+    const disabled = status === "processing";
     return `
       <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stageId}">
         <div class="queue-stage-header section-header-with-toggle">
@@ -172,11 +181,33 @@ export function createQueuePane({
         </div>
         <div class="queue-stage-body"${expanded ? "" : " hidden"}>
           <div class="queue-stage-actions">
-            <button class="btn-sm btn-ghost queue-edit-btn" type="button" data-stage-id="${stageId}">Edit Stage</button>
-            <button class="btn-sm btn-danger queue-remove-btn" type="button" data-stage-id="${stageId}">Remove</button>
+            <button class="btn-sm btn-secondary queue-membership-btn" type="button" data-stage-id="${stageId}" ${disabled ? "disabled" : ""}>${actionLabel}</button>
           </div>
         </div>
       </article>
+    `;
+  }
+
+  function renderControlsSection() {
+    const stage = activeStage();
+    const stageOptions = stages()
+      .map((item) => `<option value="${item.id}" ${item.id === stage?.id ? "selected" : ""}>${stageLabel(item)}</option>`)
+      .join("");
+    return `
+      <section class="settings-section queue-pane-section">
+        <div class="section-header media-section-header">
+          <strong>Queue Controls</strong>
+        </div>
+        <div class="queue-controls-body">
+          <label>Stage
+            <select id="queue-stage-select">${stageOptions}</select>
+          </label>
+          <button class="btn btn-secondary queue-membership-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>${queueActionLabel(stage?.id || "")}</button>
+          <button id="queue-apply-all-btn" class="btn btn-secondary queue-apply-all-btn" type="button">Apply Active Stage Settings to Queued</button>
+          <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Many</button>
+          <button id="queue-combined-btn" class="btn btn-primary queue-combined-btn" type="button">Process Into 1 File</button>
+        </div>
+      </section>
     `;
   }
 
@@ -192,23 +223,13 @@ export function createQueuePane({
         toggleStage(toggle.dataset.stageId || "");
         return;
       }
-      const editButton = target.closest(".queue-edit-btn");
-      if (editButton instanceof HTMLElement) {
-        editStage(editButton.dataset.stageId || "");
-        return;
-      }
-      const removeButton = target.closest(".queue-remove-btn");
-      if (removeButton instanceof HTMLElement) {
-        removeFromQueue(removeButton.dataset.stageId || "");
-        return;
-      }
-      const addButton = target.closest(".queue-add-btn");
-      if (addButton instanceof HTMLElement) {
-        addToQueue(addButton.dataset.stageId || "");
+      const membershipButton = target.closest(".queue-membership-btn");
+      if (membershipButton instanceof HTMLElement) {
+        updateQueueMembership(membershipButton.dataset.stageId || activeStage()?.id || "");
         return;
       }
       if (target.closest(".queue-apply-all-btn")) {
-        applySettingsToAll();
+        applySettingsToQueued();
         return;
       }
       if (target.closest(".queue-process-btn")) {
@@ -221,7 +242,14 @@ export function createQueuePane({
       }
       const card = target.closest("[data-queue-stage-id]");
       if (card instanceof HTMLElement) {
-        selectStageFromQueue(card.dataset.queueStageId || "");
+        selectStage(card.dataset.queueStageId || "");
+      }
+    };
+    pane.onchange = (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target) return;
+      if (target.id === "queue-stage-select") {
+        selectStage(target.value || "");
       }
     };
   }
@@ -236,14 +264,15 @@ export function createQueuePane({
           <h3>Queue</h3>
           <span class="pane-summary-token">${count} queued</span>
         </div>
-        <div class="queue-stage-list">
-          ${visibleQueueEntries().length ? visibleQueueEntries().map((entry) => renderQueueStage(entry)).join("") : '<div class="empty-state">No queued stages.</div>'}
-        </div>
-        <div class="queue-pane-actions">
-          <button id="queue-apply-all-btn" class="btn btn-secondary queue-apply-all-btn" type="button">Apply To All</button>
-          <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Many</button>
-          <button id="queue-combined-btn" class="btn btn-primary queue-combined-btn" type="button">Process Into 1 File</button>
-        </div>
+        ${renderControlsSection()}
+        <section class="settings-section queue-pane-section">
+          <div class="section-header media-section-header">
+            <strong>Queued Stages</strong>
+          </div>
+          <div class="queue-stage-list">
+            ${visibleQueueEntries().length ? visibleQueueEntries().map((entry) => renderQueueStage(entry)).join("") : '<div class="empty-state">No queued stages.</div>'}
+          </div>
+        </section>
       </div>
     `;
     bindEvents(pane);
@@ -256,7 +285,7 @@ export function createQueuePane({
   return Object.freeze({
     render,
     mount,
-    addToQueue,
+    updateQueueMembership,
     toggleStage,
   });
 }

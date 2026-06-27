@@ -2588,11 +2588,23 @@ class ProjectController(QObject):
 
     def apply_settings_to_all_stages(self) -> None:
         active = self.project.active_stage
-        if active is None or len(self.project.stages) <= 1:
-            self._set_status("No other stages to apply settings to.")
+        queued_stage_ids = {
+            entry.stage_id
+            for entry in self.project.queue
+            if entry.status in (
+                QueueStatus.QUEUED,
+                QueueStatus.STALE,
+                QueueStatus.PROCESSING,
+                QueueStatus.COMPLETE,
+                QueueStatus.FAILED,
+            )
+        }
+        if active is None or not queued_stage_ids:
+            self._set_status("No queued stages to update.")
             return
+        applied_count = 0
         for stage in self.project.stages:
-            if stage.id == active.id:
+            if stage.id == active.id or stage.id not in queued_stage_ids:
                 continue
             stage.analysis = deepcopy(active.analysis)
             stage.scoring = deepcopy(active.scoring)
@@ -2601,12 +2613,16 @@ class ProjectController(QObject):
             stage.popup_template = deepcopy(active.popup_template)
             stage.merge = deepcopy(active.merge)
             stage.export = deepcopy(active.export)
+            applied_count += 1
             if stage.queue_status == QueueStatus.QUEUED:
                 stage.queue_status = QueueStatus.STALE
                 entry = next((e for e in self.project.queue if e.stage_id == stage.id), None)
                 if entry:
                     entry.status = QueueStatus.STALE
-        self._set_status("Applied settings to all stages (markers excluded).")
+        if applied_count == 0:
+            self._set_status("No other queued stages to update.")
+            return
+        self._set_status("Applied active stage settings to queued stages (markers excluded).")
         self.project.touch()
         self.project_changed.emit()
 

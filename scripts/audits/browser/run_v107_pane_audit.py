@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import json
+from datetime import datetime, UTC
 from statistics import median
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot import __version__ as APP_VERSION
 from splitshot.domain.models import MergeSource, QueueStatus
 from splitshot.media.probe import probe_video
 from splitshot.ui.controller import ProjectController
@@ -62,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--primary-video", type=Path, default=DEFAULT_PRIMARY)
     parser.add_argument("--added-video", type=Path, action="append", dest="added_videos")
     parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
+    parser.add_argument(
+        "--proof-source",
+        choices=("source-browser", "installed-app"),
+        default="source-browser",
+    )
     return parser
 
 
@@ -140,6 +148,24 @@ def _set_stage_expansion(page: Page, storage_key: str, expanded: bool, tool: str
     page.wait_for_timeout(150)
 
 
+def _set_section_expansion(page: Page, storage_key: str, values: dict[str, bool], tool: str) -> None:
+    page.evaluate(
+        """
+        ({ storageKey, values, tool }) => {
+          window.localStorage.setItem(storageKey, JSON.stringify(values));
+          window.localStorage.setItem('splitshot.activeTool', tool);
+        }
+        """,
+        {"storageKey": storage_key, "values": values, "tool": tool},
+    )
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#current-file")
+    page.locator(f'[data-tool="{tool}"]').click()
+    _wait_for_processing_bar(page)
+    _wait_for_active_tool(page, tool)
+    page.wait_for_timeout(150)
+
+
 def _prepare_review_capture(page: Page) -> None:
     page.wait_for_timeout(200)
     imported_button = page.locator("#review-add-imported-box")
@@ -166,7 +192,7 @@ def _prepare_capture_state(page: Page, tool: str) -> None:
         _reset_inspector_scroll(page)
         return
     if tool == "media":
-        _set_stage_expansion(page, "splitshot.media.stageExpanded", True, tool)
+        _set_section_expansion(page, "splitshot.media.sectionExpanded", {"stages": True}, tool)
         _reset_inspector_scroll(page)
         return
     if tool == "queue":
@@ -325,7 +351,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             const summary = summaryElement(tool);
             const sectionHeaders = Array.from(root.querySelectorAll(':scope .section-header'))
               .filter((header) => header.closest('[data-tool-pane]') === root);
-            const toggleButtons = Array.from(root.querySelectorAll('.scoring-shot-toggle'))
+            const toggleButtons = Array.from(root.querySelectorAll('.pane-toggle'))
               .filter((button) => button.closest('[data-tool-pane]') === root);
             const controlGrids = Array.from(root.querySelectorAll('.control-grid, .trim-bulk-grid, .trim-card-row, .merge-source-controls, .media-stage-nav-actions, .queue-stage-actions'))
               .filter((element) => element.closest('[data-tool-pane]') === root);
@@ -372,6 +398,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
           const queueCards = Array.from(document.querySelectorAll('.queue-stage-card')).map((card) => ({
             label: card.querySelector('strong')?.textContent?.trim() || '',
             meta: Array.from(card.querySelectorAll('small, .queue-status-pill')).map((item) => item.textContent?.trim() || ''),
+            actions: Array.from(card.querySelectorAll('button')).map((button) => button.textContent?.trim() || ''),
             selected: card.classList.contains('selected'),
           }));
           const trimCards = Array.from(document.querySelectorAll('.trim-source-card')).map((card) => ({
@@ -393,12 +420,35 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             'Review the export settings already prepared',
           ].filter((token) => document.body.textContent?.includes(token));
           const headerSummaryToken = (selector) => document.querySelector(selector)?.textContent?.trim() || '';
+          const sectionLabels = (selector) => Array.from(document.querySelectorAll(selector)).map((node) => node.textContent?.replace(/\\s+/g, ' ').trim()).filter(Boolean);
+          const mediaPane = document.getElementById('media-pane');
+          const mediaPaneShell = mediaPane?.querySelector('.pane-section.media-pane-shell');
+          const activeStageHeader = mediaPane?.querySelector('.media-pane-section-static .section-header');
+          const activeStageToggle = activeStageHeader?.querySelector('.pane-toggle');
+          const activeStageHeaderButtons = Array.from(activeStageHeader?.querySelectorAll('button') || []).map((button) => button.textContent?.trim() || '');
+          const addStageBottomButton = document.querySelector('#media-pane .media-add-stage-full');
+          const addStageWidth = addStageBottomButton instanceof HTMLElement
+            ? (addStageBottomButton.offsetWidth || addStageBottomButton.getBoundingClientRect().width || 0)
+            : 0;
+          const mediaPaneWidth = mediaPaneShell instanceof HTMLElement
+            ? (mediaPaneShell.clientWidth || mediaPaneShell.getBoundingClientRect().width || 0)
+            : 0;
+          const summaryNode = document.getElementById('practiscore-import-summary');
+          const waveformScaleLabels = document.getElementById('waveform-scale-labels');
           return {
             media_pane_text: pane('media'),
             trim_pane_text: pane('trim-sync'),
             queue_pane_text: pane('queue'),
             compose_pane_text: pane('merge'),
             project_pane_text: pane('project'),
+            practiscore_selector_count: [
+              'match-competitor-name',
+              'match-competitor-place',
+              'match-class',
+              'match-division',
+            ].filter((id) => Boolean(document.getElementById(id))).length,
+            practiscore_summary_hidden: summaryNode instanceof HTMLElement ? summaryNode.hidden : false,
+            practiscore_summary_text: summaryNode?.textContent?.replace(/\\s+/g, ' ').trim() || '',
             project_output_root_present: Boolean(document.getElementById('project-output-root')),
             export_path_controls_present: {
               browse: Boolean(document.getElementById('browse-export-path')),
@@ -411,6 +461,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             waveform_lane_layout: waveform?.dataset.waveformLaneLayout || '',
             waveform_lane_clipping: waveform?.dataset.waveformLaneClipping || '',
             waveform_lane_bleed: waveform?.dataset.waveformLaneBleed || '',
+            waveform_time_scale_visible: waveform?.dataset.waveformTimeScaleVisible || '',
             compose_merge_enabled: composeEnabled instanceof HTMLInputElement ? composeEnabled.checked : null,
             duplicate_summary_counts: {
               project: duplicateTokens(pane('project')),
@@ -422,14 +473,25 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             forbidden_helper_copy: forbiddenHelperCopy,
             media_header_text: text('#media-pane .pane-title-row h3'),
             media_header_summary: headerSummaryToken('#media-pane .pane-title-row .pane-summary-token'),
+            media_section_labels: sectionLabels('#media-pane > .pane-section > .settings-section > .section-header strong'),
+            media_stage_inner_labels: sectionLabels('#media-pane .media-pane-inner-section .media-inner-section-header strong'),
+            media_active_stage_has_toggle: Boolean(activeStageToggle),
+            media_active_stage_header_buttons: activeStageHeaderButtons,
+            media_queue_action_present: /Queue Stage|Requeue/.test(pane('media')),
+            media_bottom_add_stage_present: Boolean(addStageBottomButton),
+            media_bottom_add_stage_width_ratio: addStageWidth / Math.max(1, mediaPaneWidth),
+            media_bottom_add_stage_is_last: mediaPaneShell?.lastElementChild === addStageBottomButton,
             queue_header_text: text('#queue-pane .pane-title-row h3'),
             queue_header_summary: headerSummaryToken('#queue-pane .pane-title-row .pane-summary-token'),
+            queue_section_labels: sectionLabels('#queue-pane > .pane-section > .settings-section > .section-header strong'),
+            queue_forbidden_actions_present: Array.from(document.querySelectorAll('#queue-pane .queue-stage-card button')).map((button) => button.textContent?.trim() || '').filter((label) => label === 'Edit Stage' || label === 'Remove'),
             trim_header_text: text('#trim-sync-pane .pane-title-row h3'),
             trim_header_summary: headerSummaryToken('#trim-sync-pane .pane-title-row .pane-summary-token'),
             media_toggle_count: document.querySelectorAll('.media-section-toggle').length,
             queue_toggle_count: document.querySelectorAll('.queue-stage-toggle').length,
             trim_toggle_count: document.querySelectorAll('[data-trim-toggle]').length,
             media_primary_button_count: document.querySelectorAll('.media-set-primary-btn').length,
+            queue_not_queued_hidden: document.querySelectorAll('#queue-pane .queue-status-not_queued').length === 0,
             pane_metrics: {
               project: paneMetrics('project'),
               scoring: paneMetrics('scoring'),
@@ -482,13 +544,13 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
         ),
     }
     expected_sections = {
-        "media": ["Active Stage", "Primary", "Added Media", "Stages"],
         "merge": ["Stage Defaults"],
         "trim-sync": ["Bulk Trim", "Sources"],
+        "queue": ["Queue Controls", "Queued Stages"],
     }
     allowed_multi_column = {
         "media": set(),
-        "merge": set(),
+        "merge": {"merge-source-layout-row"},
         "trim-sync": {"trim-sync-nudge-buttons"},
         "queue": set(),
     }
@@ -582,9 +644,65 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
         failures.append({"pane": "waveform", "failure": "expected 3 waveform lanes"})
     if str(dom_summary.get("waveform_lane_bleed") or "").lower() != "false":
         failures.append({"pane": "waveform", "failure": "waveform bleed flag is not false"})
+    if str(dom_summary.get("waveform_time_scale_visible") or "").lower() != "true":
+        failures.append({"pane": "waveform", "failure": "waveform time scale flag is not true"})
     if bool(dom_summary.get("compose_merge_enabled")):
         failures.append({"pane": "merge", "failure": "compose auto-enabled after media import"})
+    if int(dom_summary.get("practiscore_selector_count") or 0) != 4:
+        failures.append({"pane": "project", "failure": "missing practiscore selectors"})
+    if not bool(dom_summary.get("practiscore_summary_hidden")):
+        failures.append({"pane": "project", "failure": "project practiscore summary line is still visible"})
+    if str(dom_summary.get("practiscore_summary_text") or "").strip():
+        failures.append({"pane": "project", "failure": "project practiscore summary line still has text"})
+    if list(dom_summary.get("media_section_labels") or []) != ["Active Stage", "Stages"]:
+        failures.append(
+            {
+                "pane": "media",
+                "failure": f"media top-level sections {list(dom_summary.get('media_section_labels') or [])} != ['Active Stage', 'Stages']",
+            }
+        )
+    if list(dom_summary.get("media_stage_inner_labels") or []) != ["Primary", "Added Media", "Stage Navigator"]:
+        failures.append(
+            {
+                "pane": "media",
+                "failure": f"media stage inner sections {list(dom_summary.get('media_stage_inner_labels') or [])} != ['Primary', 'Added Media', 'Stage Navigator']",
+            }
+        )
+    if bool(dom_summary.get("media_active_stage_has_toggle")):
+        failures.append({"pane": "media", "failure": "Active Stage is collapsible"})
+    if "Add Stage" in list(dom_summary.get("media_active_stage_header_buttons") or []):
+        failures.append({"pane": "media", "failure": "Add Stage appears in Active Stage header"})
+    if bool(dom_summary.get("media_queue_action_present")):
+        failures.append({"pane": "media", "failure": "Queue membership still appears in Media"})
+    if not bool(dom_summary.get("media_bottom_add_stage_present")):
+        failures.append({"pane": "media", "failure": "missing bottom Add Stage button"})
+    if not bool(dom_summary.get("media_bottom_add_stage_is_last")):
+        failures.append({"pane": "media", "failure": "bottom Add Stage button is not the final pane action"})
+    if list(dom_summary.get("queue_section_labels") or []) != ["Queue Controls", "Queued Stages"]:
+        failures.append(
+            {
+                "pane": "queue",
+                "failure": f"queue sections {list(dom_summary.get('queue_section_labels') or [])} != ['Queue Controls', 'Queued Stages']",
+            }
+        )
+    if list(dom_summary.get("queue_forbidden_actions_present") or []):
+        failures.append(
+            {
+                "pane": "queue",
+                "failure": f"queue contains forbidden actions {list(dom_summary.get('queue_forbidden_actions_present') or [])}",
+            }
+        )
+    if not bool(dom_summary.get("queue_not_queued_hidden")):
+        failures.append({"pane": "queue", "failure": "Queue still shows not_queued entries"})
     return {"baseline": baseline, "per_pane": per_pane, "failures": failures}
+
+
+def _git_head_sha() -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        text=True,
+    ).strip()
 
 
 def _compose_sheet(artifact_root: Path, captures: list[dict[str, object]]) -> None:
@@ -645,6 +763,10 @@ def main() -> int:
             parity = _compute_visual_parity(dom_summary)
             _compose_sheet(artifact_root, captures)
             payload = {
+                "git_head_sha": _git_head_sha(),
+                "app_version": APP_VERSION,
+                "proof_source": args.proof_source,
+                "artifact_timestamp": datetime.now(UTC).isoformat(),
                 "project_path": str(project_path),
                 "primary_video": str(primary_video),
                 "added_videos": [str(path) for path in added_videos],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
@@ -31,6 +32,31 @@ def _ensure_project_with_primary_and_merge(
     if merge_count == 0:
         page.locator("#merge-media-input").set_input_files(str(merge_path))
         page.wait_for_function("() => (state?.project?.merge_sources || []).length > 0")
+
+
+def _navigate_to_trim_pane(page) -> None:
+    page.locator("button[data-tool='trim-sync']").click(force=True)
+    page.wait_for_timeout(300)
+    assert page.evaluate("activeTool") == "trim-sync"
+
+
+def _get_first_merge_source_state(page):
+    return page.evaluate(
+        "() => {"
+        "  const sources = state?.project?.merge_sources || [];"
+        "  if (!sources.length) return null;"
+        "  const s = sources[0];"
+        "  const td = s.trim_derivative;"
+        "  return {"
+        "    source_id: s.id,"
+        "    has_derivative: Boolean(td),"
+        "    active_path_kind: td?.active_path_kind ?? null,"
+        "    derivative_path: td?.derivative_path ?? null,"
+        "    start_s: td?.start_s ?? null,"
+        "    end_s: td?.end_s ?? null,"
+        "  };"
+        "}"
+    )
 
 
 def test_trim_pane_renders_global_and_source_sections(synthetic_video_factory) -> None:
@@ -186,6 +212,403 @@ def test_trim_pane_computed_label_format(synthetic_video_factory) -> None:
                 assert "After trim:" in label
                 assert "Kept:" in label
                 assert "Total:" in label
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-applyall", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-applyall-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-applyall.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                page.locator("#trim-global-start").fill("0.50")
+                page.locator("#trim-global-end").fill("2.50")
+                page.wait_for_timeout(100)
+                page.locator("#trim-global-apply").click()
+                page.wait_for_timeout(800)
+
+                state = _get_first_merge_source_state(page)
+                assert state is not None
+                assert state["has_derivative"] is True
+                assert state["active_path_kind"] == "local_derivative"
+                assert state["start_s"] == pytest.approx(0.50, abs=0.1)
+                assert state["end_s"] == pytest.approx(2.50, abs=0.1)
+
+                deriv_path = state.get("derivative_path")
+                assert deriv_path
+                assert Path(deriv_path).exists()
+                assert Path(deriv_path).stat().st_size > 0
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_clear_all_removes_derivative(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-clear", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-clear-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-clear.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                page.locator("#trim-global-start").fill("0.50")
+                page.locator("#trim-global-end").fill("2.50")
+                page.wait_for_timeout(100)
+                page.locator("#trim-global-apply").click()
+                page.wait_for_timeout(800)
+
+                before = _get_first_merge_source_state(page)
+                assert before["has_derivative"] is True
+
+                page.locator("#trim-global-clear").click()
+                page.wait_for_timeout(800)
+
+                after = _get_first_merge_source_state(page)
+                assert after["active_path_kind"] is None
+                assert after["derivative_path"] is None
+                assert after["start_s"] is None
+                assert after["end_s"] is None
+
+                deriv_path = before.get("derivative_path")
+                assert deriv_path
+                if Path(deriv_path).exists():
+                    Path(deriv_path).unlink()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_start_at_beep_sets_input_to_beep_time(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-beep", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-beep-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-beep.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                before = page.locator("[data-trim-start]").first.input_value()
+
+                page.locator(".trim-beep-btn").first.click()
+                page.wait_for_timeout(800)
+
+                after = page.locator("[data-trim-start]").first.input_value()
+                assert before != after
+                assert float(after) > 0
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_end_after_last_shot_sets_input_to_last_shot_time(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-lastshot", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1800]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-lastshot-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-lastshot.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                before = page.locator("[data-trim-end]").first.input_value()
+
+                page.locator(".trim-last-shot-btn").first.click()
+                page.wait_for_timeout(800)
+
+                after = page.locator("[data-trim-end]").first.input_value()
+                assert before != after
+                assert float(after) > 0
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-undo", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-undo-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-undo.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                page.locator("#trim-global-start").fill("0.30")
+                page.locator("#trim-global-end").fill("2.10")
+                page.wait_for_timeout(100)
+                page.locator("#trim-global-apply").click()
+                page.wait_for_timeout(800)
+
+                after_first = _get_first_merge_source_state(page)
+                assert after_first["has_derivative"] is True
+
+                page.locator("#trim-global-start").fill("1.50")
+                page.locator("#trim-global-end").fill("1.80")
+                page.wait_for_timeout(100)
+                page.locator("#trim-global-apply").click()
+                page.wait_for_timeout(800)
+
+                after_second = _get_first_merge_source_state(page)
+                assert after_second["start_s"] == pytest.approx(1.50, abs=0.2)
+
+                page.locator("#trim-global-undo").click()
+                page.wait_for_timeout(800)
+
+                restored = _get_first_merge_source_state(page)
+                assert restored["start_s"] == pytest.approx(0.30, abs=0.2)
+                assert restored["end_s"] == pytest.approx(2.10, abs=0.2)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_per_source_apply_persists(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-srcapply", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-srcapply-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-srcapply.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                start_input = page.locator("[data-trim-start]").first
+                end_input = page.locator("[data-trim-end]").first
+                start_input.fill("0.30")
+                end_input.fill("2.10")
+                page.wait_for_timeout(100)
+                page.locator(".trim-apply-btn").first.click()
+                page.wait_for_timeout(800)
+
+                state = _get_first_merge_source_state(page)
+                assert state["has_derivative"] is True
+                assert state["active_path_kind"] == "local_derivative"
+                assert state["start_s"] == pytest.approx(0.30, abs=0.1)
+                assert state["end_s"] == pytest.approx(2.10, abs=0.1)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_sync_nudge_adjusts_offset(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-nudge", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-nudge-merge", duration_ms=3000, beep_ms=400)
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-nudge.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                label_el = page.locator(".pane-summary-token").nth(1)
+                before_label = label_el.inner_text()
+                assert "ms" in before_label.lower()
+
+                page.locator("[data-sync-delta='10']").first.click()
+                page.wait_for_timeout(800)
+
+                after_label = label_el.inner_text()
+                assert after_label != before_label
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_status_bar_updates_after_apply(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-status", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(synthetic_video_factory(name="trim-qa-status-merge", beep_ms=400))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-status.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                page.locator("#trim-global-start").fill("0.50")
+                page.locator("#trim-global-end").fill("2.50")
+                page.wait_for_timeout(100)
+                page.locator("#trim-global-apply").click()
+                page.wait_for_timeout(1000)
+
+                status_text = page.locator("#status-copy").inner_text()
+                assert len(status_text.strip()) > 0
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_per_source_apply_creates_valid_derivative(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-valid", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(synthetic_video_factory(name="trim-qa-valid-merge", duration_ms=3000, beep_ms=400))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-valid.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id
+
+                page.locator("[data-trim-start]").first.fill("0.20")
+                page.locator("[data-trim-end]").first.fill("1.80")
+                page.wait_for_timeout(100)
+                page.locator(".trim-apply-btn").first.click()
+                page.wait_for_timeout(1000)
+
+                deriv_path = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.trim_derivative?.derivative_path || ''"
+                )
+                assert deriv_path
+                deriv_file = Path(deriv_path)
+                assert deriv_file.exists()
+                assert deriv_file.stat().st_size > 0
+
+                orig_size = Path(merge_path).stat().st_size
+                assert deriv_file.stat().st_size != orig_size
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_computed_label_updates_after_source_apply(synthetic_video_factory) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-label", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
+        )
+    )
+    merge_path = Path(synthetic_video_factory(name="trim-qa-label-merge", duration_ms=3000, beep_ms=400))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-qa-label.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+
+                before_label = page.locator(".trim-computed-label").first.inner_text()
+
+                page.locator("[data-trim-start]").first.fill("0.20")
+                page.locator("[data-trim-end]").first.fill("2.80")
+                page.wait_for_timeout(100)
+                page.locator(".trim-apply-btn").first.click()
+                page.wait_for_timeout(800)
+
+                after_label = page.locator(".trim-computed-label").first.inner_text()
+                assert after_label != before_label
+                assert "Before trim:" in after_label
+                assert "After trim:" in after_label
+                assert "Kept:" in after_label
             finally:
                 browser.close()
     finally:

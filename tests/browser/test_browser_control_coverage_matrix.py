@@ -14,11 +14,11 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | project details, project output root, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, match-type selection, compact imported summary rows |"
+        "| Project / import | project details, project output root, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, match-type selection, competitor/place/class/division selectors |"
         in matrix
     )
     assert (
-        "| Media | active stage selector, `Add Stage`, `Save Stage`, `Delete Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Primary`, `Remove`, `Add More`, `Edit Stage`, queue from active stage |"
+        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, bottom `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add More`, stage navigator |"
         in matrix
     )
     assert (
@@ -27,6 +27,10 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     )
     assert (
         "| Markers / Review / Overlay | marker authoring, review visibility selectors, overlay badge/text-box controls, imported summary preview formatting, popup editor, text-box drag |"
+        in matrix
+    )
+    assert (
+        "| Queue | stage selector, queue membership, queue status, per-stage collapse, `Apply Active Stage Settings to Queued`, `Process Many`, `Process Into 1 File` |"
         in matrix
     )
     assert (

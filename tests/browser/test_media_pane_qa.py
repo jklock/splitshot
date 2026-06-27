@@ -15,7 +15,7 @@ def _open_test_page(playwright, server: BrowserControlServer):
     return browser, page
 
 
-def test_media_pane_active_stage_card_present(synthetic_video_factory) -> None:
+def test_media_pane_active_stage_workspace_present(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="media-qa-card"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -31,8 +31,8 @@ def test_media_pane_active_stage_card_present(synthetic_video_factory) -> None:
                 page.wait_for_timeout(100)
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
-                assert page.locator(".media-stage-card").count() == 1
-                assert page.locator(".media-stage-card .primary-badge").count() >= 1
+                assert page.locator("#media-pane").get_by_text("Active Stage").count() >= 1
+                assert page.locator("#media-pane").get_by_text("Stages").count() >= 1
                 assert page.locator("button.media-add-stage-btn").count() >= 1
             finally:
                 browser.close()
@@ -40,7 +40,7 @@ def test_media_pane_active_stage_card_present(synthetic_video_factory) -> None:
         server.shutdown()
 
 
-def test_media_pane_stage_navigator_expands(synthetic_video_factory) -> None:
+def test_media_pane_stage_navigator_present(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="media-qa-nav"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -56,7 +56,7 @@ def test_media_pane_stage_navigator_expands(synthetic_video_factory) -> None:
                 page.wait_for_timeout(100)
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
-                assert page.locator("[data-media-section='navigator']").count() >= 1
+                assert page.locator("[data-media-section='stages']").count() >= 1
             finally:
                 browser.close()
     finally:
@@ -79,9 +79,9 @@ def test_media_pane_primary_and_added_sections_present(synthetic_video_factory) 
                 page.wait_for_timeout(100)
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
-                inner_text = page.locator(".media-stage-card-body").inner_text()
-                assert "Primary Media" in inner_text
-                assert "Added Media" in inner_text
+                inner_text = page.locator("#media-pane").inner_text()
+                assert "Primary" in inner_text
+                assert "Active Media" in inner_text
             finally:
                 browser.close()
     finally:

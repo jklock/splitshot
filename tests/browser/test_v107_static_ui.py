@@ -30,9 +30,10 @@ def test_media_pane_js_exists():
     assert "createMediaPane" in source
     assert "selectStage" in source
     assert "renderActiveStageSection" in source
+    assert "renderStagesSection" in source
     assert "createStage" in source
     assert "renderInventoryFileRow" in source
-    assert "media-stage-card" in source
+    assert "media-add-stage-full" in source
 
 
 def test_queue_pane_js_exists():
@@ -40,8 +41,8 @@ def test_queue_pane_js_exists():
     assert queue_js.exists()
     source = queue_js.read_text()
     assert "createQueuePane" in source
-    assert "addToQueue" in source
-    assert "applySettingsToAll" in source
+    assert "updateQueueMembership" in source
+    assert "applySettingsToQueued" in source
     assert "processAll" in source
     assert "processIntoOneFile" in source
     assert "queueStatusLabel" in source

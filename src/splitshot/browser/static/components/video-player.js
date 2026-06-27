@@ -43,7 +43,16 @@ export function createVideoPlayerComponent({
       resetMediaElement(video);
     }
 
-    const secondaryPath = state.project.secondary_video?.path || "";
+    let secondaryPath = state.project.secondary_video?.path || "";
+    const firstMergeSource = state.project.merge_sources?.[0];
+    const trimDerivative = firstMergeSource?.trim_derivative;
+    if (
+      trimDerivative
+      && trimDerivative.active_path_kind === "local_derivative"
+      && trimDerivative.derivative_path
+    ) {
+      secondaryPath = trimDerivative.derivative_path;
+    }
     const imageSecondary = isImagePath(secondaryPath);
     const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);
     if (state.media.secondary_available && imageSecondary) {

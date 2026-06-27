@@ -404,9 +404,11 @@ export function createWaveformComponent({
     canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform
       ? String(secondaryLanePayloads.reduce((total, lane) => total + lane.waveform.length, 0))
       : "0";
+    const scaleGutterHeight = 26;
     canvas.dataset.waveformLaneCount = String(1 + secondaryLanePayloads.length);
     canvas.dataset.waveformLaneClipping = "isolated";
     canvas.dataset.waveformLaneBleed = "false";
+    canvas.dataset.waveformTimeScaleVisible = "true";
     const visible = waveformState?.waveformWindow?.() || { start: 0, end: durationMs(), duration: durationMs() };
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = "#102033";
@@ -414,10 +416,11 @@ export function createWaveformComponent({
     drawWaveformScale(ctx, visible, width, height);
     const totalDuration = Math.max(1, durationMs());
     const totalLaneCount = 1 + secondaryLanePayloads.length;
+    const drawableHeight = Math.max(48, height - scaleGutterHeight);
     const laneGap = totalLaneCount > 1 ? Math.max(10, Math.round(height * 0.04)) : 0;
     const laneHeight = totalLaneCount > 1
-      ? Math.max(38, Math.floor((height - (laneGap * (totalLaneCount - 1))) / totalLaneCount))
-      : height;
+      ? Math.max(38, Math.floor((drawableHeight - (laneGap * (totalLaneCount - 1))) / totalLaneCount))
+      : drawableHeight;
     const laneColors = [
       { color: "#39d06f", baseline: "rgba(57, 208, 111, 0.24)" },
       { color: "#ff9f4a", baseline: "rgba(255, 159, 74, 0.24)" },
@@ -426,7 +429,7 @@ export function createWaveformComponent({
     ];
 
     drawLaneBackdrop(ctx, 0, laneHeight, "rgba(18, 34, 52, 0.96)");
-    drawSelectedRegion(ctx, width, height, 0, laneHeight);
+    drawSelectedRegion(ctx, width, drawableHeight, 0, laneHeight);
 
     drawWaveformLane(ctx, waveform, {
       width,

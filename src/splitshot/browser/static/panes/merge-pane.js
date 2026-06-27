@@ -28,6 +28,7 @@ export function createMergePane({
   previewFrameGeometry = () => null,
   pipDefaultsSectionId = "pip-defaults",
   sendKeepaliveJson = () => false,
+  setStatus = () => {},
 } = {}) {
   function currentState() {
     return getState() || {};
@@ -307,7 +308,7 @@ export function createMergePane({
         media.volume = 1;
         media.playsInline = true;
         media.disablePictureInPicture = true;
-        media.preload = "auto";
+        media.preload = "metadata";
         ["loadedmetadata", "loadeddata"].forEach((eventName) => {
           media.addEventListener(eventName, () => {
             scheduleSecondaryPreviewSync();
@@ -386,7 +387,10 @@ export function createMergePane({
       currentMergeSourceCommitTimers().delete(sourceId);
       const nextPayload = currentPendingMergeSourcePayloads().get(sourceId);
       currentPendingMergeSourcePayloads().delete(sourceId);
-      if (nextPayload) callApi("/api/merge/source", nextPayload);
+      if (nextPayload) {
+        callApi("/api/merge/source", nextPayload);
+        setStatus("Applied source layout.");
+      }
     }, 120);
     currentMergeSourceCommitTimers().set(sourceId, timerId);
   }
@@ -587,13 +591,6 @@ export function createMergePane({
         syncLabel.dataset.sourceId = sourceId;
         syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
 
-        controls.append(
-          sizeField,
-          buildSourceOpacityInput(),
-          buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-          buildSourceNumberInput("Position Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
-        );
-
         const placementModeSelect = documentObject.createElement("select");
         placementModeSelect.dataset.mergeSourceField = "placement_mode";
         placementModeSelect.dataset.sourceId = sourceId;
@@ -614,7 +611,16 @@ export function createMergePane({
         placementModeLabelEl.append(documentObject.createElement("span"));
         placementModeLabelEl.querySelector("span").textContent = "Layout";
         placementModeLabelEl.append(placementModeSelect);
-        controls.append(placementModeLabelEl);
+        const opacityAndLayoutRow = documentObject.createElement("div");
+        opacityAndLayoutRow.className = "merge-source-layout-row";
+        opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);
+
+        controls.append(
+          sizeField,
+          opacityAndLayoutRow,
+          buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
+          buildSourceNumberInput("Position Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+        );
 
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
@@ -649,6 +655,7 @@ export function createMergePane({
     const payload = readMergePayload();
     applyMergeDraft(payload);
     autoApplyMerge(payload);
+    setStatus("Applied stage compose defaults.");
   }
 
   return Object.freeze({

@@ -9817,6 +9817,7 @@ mergePane = createMergePane({
   previewFrameGeometry,
   pipDefaultsSectionId: PIP_DEFAULTS_SECTION_ID,
   sendKeepaliveJson,
+  setStatus,
 });
 
 projectPane = createProjectPane({
@@ -10077,6 +10078,7 @@ trimSyncPane = createTrimSyncPane({
   callApi,
   scheduleInteractionPreviewRender,
   renderVideo,
+  setStatus,
   fileName,
   sourceIdentifier: (source, fallback) => mergePane?.sourceIdentifier(source, fallback) ?? fallback,
   currentSourceSyncOffsetMs: (source) => mergePane?.currentSourceSyncOffsetMs(source) ?? 0,
