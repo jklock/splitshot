@@ -140,7 +140,6 @@ export function createExportPane({
       audio_bitrate_kbps: Number($("audio-bitrate").value || 320),
       color_space: $("color-space").value,
       two_pass: $("two-pass").checked,
-      multi_track: $("multi-track")?.checked ?? false,
       ffmpeg_preset: $("ffmpeg-preset").value,
     };
   }

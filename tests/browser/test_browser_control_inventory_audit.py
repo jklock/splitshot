@@ -300,7 +300,6 @@ id:timing-event-position
 id:toggle-layout-lock-video
 id:toggle-rail
 id:two-pass
-id:multi-track
 id:video-bitrate
 id:video-codec
 id:zoom-waveform-in

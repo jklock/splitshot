@@ -299,8 +299,6 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 assert len(shot_ids) >= 2
 
                 first_popup_id = popup_ids[0]
-                second_popup_id = popup_ids[1]
-                third_popup_id = popup_ids[2]
                 second_shot_id = next(
                     shot_id for shot_id in shot_ids if shot_id != selected_shot["id"]
                 )

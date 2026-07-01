@@ -39,8 +39,8 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 25
-    assert payload["summary"]["total_runs"] == 25
+    assert payload["summary"]["planned"] == 36
+    assert payload["summary"]["total_runs"] == 36
     assert {tuple(run["targets"]) for run in payload["runs"]} == {
         ("tests/browser/test_browser_control.py",),
         ("tests/browser/test_browser_control_coverage_matrix.py",),
@@ -50,23 +50,34 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
         ("tests/browser/test_browser_rail_layout.py",),
         ("tests/browser/test_browser_remaining_controls_e2e.py",),
         ("tests/browser/test_browser_static_ui.py",),
+        ("tests/browser/test_compose_layout_actual.py",),
         ("tests/browser/test_compose_pane_qa.py",),
+        ("tests/browser/test_export_pipeline_actual.py",),
+        ("tests/browser/test_markers_video_actual.py",),
         ("tests/browser/test_media_pane_qa.py",),
         ("tests/browser/test_merge_export_contracts.py",),
+        ("tests/browser/test_merge_preview_actual.py",),
         ("tests/browser/test_metrics_e2e.py",),
         ("tests/browser/test_overlay_review_contracts.py",),
+        ("tests/browser/test_overlay_video_actual.py",),
         ("tests/browser/test_phase14_corrective.py",),
         ("tests/browser/test_practiscore_session_api.py",),
         ("tests/browser/test_practiscore_sync_controller.py",),
         ("tests/browser/test_project_lifecycle_contracts.py",),
+        ("tests/browser/test_queue_membership_actual.py",),
         ("tests/browser/test_queue_pane_qa.py",),
         ("tests/browser/test_scoring_metrics_contracts.py",),
+        ("tests/browser/test_secondary_video_sync_actual.py",),
         ("tests/browser/test_settings_defaults_truth_gate.py",),
         ("tests/browser/test_settings_e2e.py",),
         ("tests/browser/test_timing_waveform_contracts.py",),
         ("tests/browser/test_trim_pane_qa.py",),
+        ("tests/browser/test_trim_sync_actual.py",),
         ("tests/browser/test_v107_static_ui.py",),
+        ("tests/browser/test_video_import_actual.py",),
+        ("tests/browser/test_video_playback_actual.py",),
         ("tests/browser/test_waveform_qa.py",),
+        ("tests/browser/test_waveform_timing_actual.py",),
     }
 
 

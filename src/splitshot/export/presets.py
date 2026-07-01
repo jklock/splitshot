@@ -191,6 +191,7 @@ def export_settings_summary(settings: ExportSettings) -> dict[str, object]:
         "audio_bitrate_kbps": settings.audio_bitrate_kbps,
         "color_space": settings.color_space.value,
         "two_pass": settings.two_pass,
+        "multi_track": settings.multi_track,
         "ffmpeg_preset": settings.ffmpeg_preset,
         "last_log": settings.last_log,
         "last_error": settings.last_error,

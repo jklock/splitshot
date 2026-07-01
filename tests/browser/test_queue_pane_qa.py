@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
@@ -119,7 +118,9 @@ def test_queue_process_individual_creates_output_file(synthetic_video_factory) -
                 page.wait_for_timeout(15000)
 
                 stage_status = page.evaluate("() => (state?.project?.queue || [])[0]?.status || ''")
-                output_path = page.evaluate("() => (state?.project?.queue || [])[0]?.output_path || ''")
+                output_path = page.evaluate(
+                    "() => (state?.project?.queue || [])[0]?.output_path || ''"
+                )
 
                 if stage_status == "complete":
                     assert output_path

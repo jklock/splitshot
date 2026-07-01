@@ -35,3 +35,7 @@ ci-artifacts*/
 
 # Flutter rewrite lives on its own branch/worktree, never on main
 flutter_app/
+
+# Test artifacts
+.tmp_tests/
+pytest-of-klock/

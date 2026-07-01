@@ -668,9 +668,9 @@ def _exercise_settings_and_shotml(page) -> None:
                 arg=f'[data-settings-section="{section_id}"]',
             )
 
-    _set_select = lambda selector: page.locator(selector).select_option(
-        _alternate_select_value(page.locator(selector))
-    )
+    def _set_select(selector: str) -> None:
+        page.locator(selector).select_option(_alternate_select_value(page.locator(selector)))
+
     _set_select("#settings-scope")
     _set_select("#settings-default-tool")
     page.locator("#settings-reopen-last-tool").uncheck()

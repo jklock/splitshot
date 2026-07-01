@@ -90,6 +90,8 @@ def test_import_idpa_stage_results_from_csv() -> None:
     assert result.imported_stage.competitor_name == "John Klockenkemper"
     assert result.imported_stage.competitor_place == 4
     assert result.imported_stage.stage_number == 2
+    assert result.imported_stage.classification == "UN"
+    assert result.imported_stage.division == "CO"
     assert result.imported_stage.raw_seconds == 29.83
     assert result.imported_stage.aggregate_points == 5.0
     assert result.imported_stage.final_time == 39.83

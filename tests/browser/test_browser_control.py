@@ -1082,6 +1082,10 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
         assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
         assert state["project"]["scoring"]["imported_stage"]["aggregate_points"] == 101.0
+        assert state["project"]["scoring"]["classification"] == "M"
+        assert state["project"]["scoring"]["division"] == "Limited"
+        assert state["project"]["scoring"]["imported_stage"]["classification"] == "M"
+        assert state["project"]["scoring"]["imported_stage"]["division"] == "Limited"
         assert state["practiscore_options"]["source_name"] == "report.txt"
         assert state["practiscore_options"]["detected_match_type"] == "uspsa"
         assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4, 5, 6]
@@ -1189,12 +1193,16 @@ def test_browser_control_reimports_practiscore_from_staged_file_when_context_cha
         assert state["project"]["scoring"]["stage_number"] == 2
         assert state["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
         assert state["project"]["scoring"]["competitor_place"] == 4
+        assert state["project"]["scoring"]["classification"] == "UN"
+        assert state["project"]["scoring"]["division"] == "CO"
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
         assert state["project"]["scoring"]["imported_stage"]["stage_number"] == 2
         assert (
             state["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
         )
         assert state["project"]["scoring"]["imported_stage"]["competitor_place"] == 4
+        assert state["project"]["scoring"]["imported_stage"]["classification"] == "UN"
+        assert state["project"]["scoring"]["imported_stage"]["division"] == "CO"
     finally:
         server.shutdown()
 

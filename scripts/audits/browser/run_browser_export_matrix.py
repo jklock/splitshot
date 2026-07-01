@@ -437,7 +437,7 @@ def main() -> int:
     exports_dir.mkdir(parents=True, exist_ok=True)
 
     if not DEFAULT_STAGE_VIDEOS:
-        raise SystemExit(f"No bundled test videos were found under {TEST_VIDEO_DIR}.")
+        raise SystemExit(f"No bundled test videos were found under {FIXTURE_VIDEO_DIR}.")
 
     missing = [path for path in DEFAULT_STAGE_VIDEOS if not path.exists()]
     if missing:

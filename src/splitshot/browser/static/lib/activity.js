@@ -162,13 +162,67 @@ export function createActivityRuntime({
     };
   }
 
+  function elementDescriptor(el) {
+    const tag = el.tagName || "";
+    let className = "";
+    if (el instanceof Element) {
+      try { className = typeof el.className === "string" ? el.className : el.className?.animVal ?? ""; } catch (_) { className = ""; }
+    }
+    let text = "";
+    if (el instanceof HTMLElement) text = el.textContent ?? "";
+    else if (el.nodeValue) text = el.nodeValue;
+    text = String(text).trim().replace(/\s+/g, " ").slice(0, 80);
+    let rect = null;
+    if (el instanceof Element) {
+      try { const r = el.getBoundingClientRect(); rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; } catch (_) {}
+    }
+    return { tag, id: el.id || "", class: className, text, rect };
+  }
+
   function wireGlobalActivityLogging() {
+    let dragOriginEl = null;
+    let dragOriginPos = null;
+
+    document.addEventListener("mousedown", (event) => {
+      if (!(event.target instanceof Element)) return;
+      dragOriginEl = event.target;
+      dragOriginPos = { x: event.clientX, y: event.clientY };
+      activity("element.mousedown", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    }, true);
+
+    document.addEventListener("mouseup", (event) => {
+      if (!(event.target instanceof Element)) return;
+      const wasDrag = dragOriginEl !== null && dragOriginPos !== null && (
+        Math.abs(event.clientX - dragOriginPos.x) > 3 || Math.abs(event.clientY - dragOriginPos.y) > 3
+      );
+      dragOriginEl = null;
+      dragOriginPos = null;
+      activity("element.mouseup", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+        wasDrag,
+      });
+    }, true);
+
     document.addEventListener("click", (event) => {
       if (!(event.target instanceof Element)) return;
       const button = event.target.closest("button");
-      if (!button) return;
-      activity("button.click", buttonDescriptor(button));
+      if (button) {
+        activity("button.click", buttonDescriptor(button));
+        return;
+      }
+      activity("element.click", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
     }, true);
+
     document.addEventListener("change", (event) => {
       if (!(event.target instanceof HTMLElement)) return;
       const control = event.target;

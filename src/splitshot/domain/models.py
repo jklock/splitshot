@@ -871,6 +871,7 @@ class ExportSettings:
     audio_bitrate_kbps: int = 320
     color_space: ExportColorSpace = ExportColorSpace.BT709_SDR
     two_pass: bool = False
+    multi_track: bool = False
     ffmpeg_preset: str = "medium"
     last_log: str = ""
     last_error: str | None = None

@@ -89,7 +89,7 @@ class TestV107MultiStageWorkflow:
         project = Project()
         project_stages = []
         for s in stages:
-            shooter = _get_first_shooter_stage_data(CSV_PATH, s["number"])
+            _get_first_shooter_stage_data(CSV_PATH, s["number"])
             ps = ProjectStage(
                 label=s["name"],
                 order_index=s["number"],
@@ -339,10 +339,18 @@ class TestV107MultiStageWorkflow:
         # Only queued stages (3, 4) receive settings from stage 2 via apply-all.
         # Stage 1 is not queued — skipped. Stage 2 is the active source — skipped,
         # but its font_size was manually set to 18 above.
-        assert project.stages[0].overlay.font_size == 14, "Stage 1 (not queued) should keep default font_size"
-        assert project.stages[1].overlay.font_size == 18, "Stage 2 (active source, manually set) should have font_size=18"
-        assert project.stages[2].overlay.font_size == 18, "Stage 3 (queued) should have font_size=18"
-        assert project.stages[3].overlay.font_size == 18, "Stage 4 (queued) should have font_size=18"
+        assert project.stages[0].overlay.font_size == 14, (
+            "Stage 1 (not queued) should keep default font_size"
+        )
+        assert project.stages[1].overlay.font_size == 18, (
+            "Stage 2 (active source, manually set) should have font_size=18"
+        )
+        assert project.stages[2].overlay.font_size == 18, (
+            "Stage 3 (queued) should have font_size=18"
+        )
+        assert project.stages[3].overlay.font_size == 18, (
+            "Stage 4 (queued) should have font_size=18"
+        )
 
         # Queued stages should be marked stale after apply-all (except stage 2 which is the source)
         for stage_num in [3, 4]:

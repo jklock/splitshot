@@ -20,7 +20,7 @@ from PySide6.QtGui import QGuiApplication
 
 _app = QGuiApplication(sys.argv)
 
-from splitshot.domain.models import (
+from splitshot.domain.models import (  # noqa: E402
     Project,
     ProjectStage,
     MergeLayout,
@@ -30,7 +30,7 @@ from splitshot.domain.models import (
     VideoAsset,
     ExportPreset,
 )
-from splitshot.export.pipeline import export_project
+from splitshot.export.pipeline import export_project  # noqa: E402
 
 
 DATA_ROOT = Path("05072026")

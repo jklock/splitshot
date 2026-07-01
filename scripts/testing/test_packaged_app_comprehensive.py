@@ -56,7 +56,6 @@ def _create_synthetic_video(out_dir, name="primary.mp4"):
 
     path = out_dir / name
     audio_path = out_dir / f"{name}.wav"
-    raw_vid = out_dir / f"{name}.raw.mp4"
 
     sr = 22050
     ns = int(sr * 4)
@@ -212,7 +211,6 @@ def main():
             state = json.loads(resp.read().decode())
             prj = state.get("project", {})
             shots = len(prj.get("analysis", {}).get("shots", []))
-            popups = len(prj.get("popups", []))
             boxes = len(prj.get("overlay", {}).get("text_boxes", []))
             merged = len(prj.get("merge_sources", []))
             events = len(prj.get("analysis", {}).get("events", []))

@@ -42,7 +42,7 @@ from splitshot.persistence.projects import (
     normalize_project_path,
     resolve_project_path,
 )
-from splitshot.ui.controller import ProjectController
+from splitshot.ui.controller import VALID_OVERLAY_BADGE_NAMES, ProjectController
 
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
@@ -478,6 +478,7 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
         "audio_bitrate_kbps": export.audio_bitrate_kbps,
         "color_space": export.color_space.value,
         "two_pass": export.two_pass,
+        "multi_track": export.multi_track,
         "ffmpeg_preset": export.ffmpeg_preset,
     }
     for key, current in current_values.items():
@@ -492,7 +493,7 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
             normalized = max(8000, int(value))
         elif key == "audio_bitrate_kbps":
             normalized = max(32, int(value))
-        elif key == "two_pass":
+        elif key in {"two_pass", "multi_track"}:
             normalized = bool(value)
         else:
             normalized = str(value)
@@ -503,10 +504,12 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
 
 def _sync_export_payload(controller: ProjectController, payload: dict[str, Any]) -> None:
     selected_preset = str(payload.get("preset") or controller.project.export.preset.value)
+    if selected_preset == "custom":
+        if not _payload_matches_export_state(controller.project, payload):
+            controller.set_export_settings(payload)
+        return
     controller.apply_export_preset(selected_preset)
-    if selected_preset == "custom" or not _payload_matches_export_state(
-        controller.project, payload
-    ):
+    if not _payload_matches_export_state(controller.project, payload):
         controller.set_export_settings(payload)
 
 
@@ -1191,17 +1194,17 @@ class BrowserControlServer:
                 controller.set_project_details(
                     name=None if payload.get("name") in {None, ""} else str(payload["name"]),
                     description=None
-                    if payload.get("description") is None
+                    if payload.get("description") in {None, ""}
                     else str(payload["description"]),
                     output_root=None
-                    if payload.get("output_root") is None
+                    if payload.get("output_root") in {None, ""}
                     else str(payload.get("output_root", "")),
                 )
 
             def _set_practiscore_context(self, payload: dict[str, Any]) -> None:
                 controller.set_practiscore_context(
                     match_type=None
-                    if payload.get("match_type") is None
+                    if payload.get("match_type") in {None, ""}
                     else str(payload.get("match_type", "")),
                     stage_number=(
                         None
@@ -1210,7 +1213,7 @@ class BrowserControlServer:
                     ),
                     competitor_name=(
                         None
-                        if payload.get("competitor_name") is None
+                        if payload.get("competitor_name") in {None, ""}
                         else str(payload.get("competitor_name", ""))
                     ),
                     competitor_place=(
@@ -1220,12 +1223,12 @@ class BrowserControlServer:
                     ),
                     classification=(
                         None
-                        if payload.get("classification") is None
+                        if payload.get("classification") in {None, ""}
                         else str(payload.get("classification", ""))
                     ),
                     division=(
                         None
-                        if payload.get("division") is None
+                        if payload.get("division") in {None, ""}
                         else str(payload.get("division", ""))
                     ),
                 )
@@ -1234,7 +1237,9 @@ class BrowserControlServer:
                 raw_competitor_place = payload.get("competitor_place")
                 controller.update_stage_metadata(
                     str(payload.get("stage_id", "")),
-                    label=None if payload.get("label") is None else str(payload.get("label", "")),
+                    label=None
+                    if payload.get("label") in {None, ""}
+                    else str(payload.get("label", "")),
                     stage_number=(
                         ""
                         if payload.get("stage_number") == ""
@@ -1244,14 +1249,14 @@ class BrowserControlServer:
                     ),
                     competitor_name=(
                         None
-                        if payload.get("competitor_name") is None
+                        if payload.get("competitor_name") in {None, ""}
                         else str(payload.get("competitor_name", ""))
                     ),
                     competitor_place=(
                         ""
                         if raw_competitor_place == ""
                         else None
-                        if raw_competitor_place is None
+                        if raw_competitor_place in {None, ""}
                         else int(raw_competitor_place)
                     ),
                 )
@@ -1805,25 +1810,33 @@ class BrowserControlServer:
                 if "badge_size" in payload:
                     controller.set_badge_size(BadgeSize(str(payload["badge_size"])))
                 controller.set_overlay_badge_layout(
-                    str(payload.get("style_type", controller.project.overlay.style_type)),
-                    int(payload.get("spacing", controller.project.overlay.spacing)),
-                    int(payload.get("margin", controller.project.overlay.margin)),
+                    str(
+                        payload.get("style_type")
+                        if payload.get("style_type") not in {None, ""}
+                        else controller.project.overlay.style_type
+                    ),
+                    int(
+                        payload.get("spacing")
+                        if payload.get("spacing") not in {None, ""}
+                        else controller.project.overlay.spacing
+                    ),
+                    int(
+                        payload.get("margin")
+                        if payload.get("margin") not in {None, ""}
+                        else controller.project.overlay.margin
+                    ),
                 )
+                styles = payload.get("styles")
+                if isinstance(styles, dict):
+                    for badge_name in styles:
+                        if badge_name not in VALID_OVERLAY_BADGE_NAMES:
+                            raise ValueError(f"Unknown badge style: {badge_name}")
+                scoring_colors = payload.get("scoring_colors")
+                if isinstance(scoring_colors, dict):
+                    for score_key in scoring_colors:
+                        if "|" in str(score_key):
+                            raise ValueError("score color keys must be individual tokens")
                 controller.set_overlay_display_options(payload)
-                styles = payload.get("styles", {})
-                if not isinstance(styles, dict):
-                    raise ValueError("styles must be an object")
-                for badge_name, style in styles.items():
-                    if not isinstance(style, dict):
-                        raise ValueError(f"Overlay style for {badge_name} must be an object")
-                    controller.set_overlay_badge_style(
-                        str(badge_name),
-                        background_color=style.get("background_color"),
-                        text_color=style.get("text_color"),
-                        opacity=None if style.get("opacity") is None else float(style["opacity"]),
-                    )
-                for letter, color in payload.get("scoring_colors", {}).items():
-                    controller.set_scoring_color(str(letter), str(color))
 
             def _set_popups(self, payload: dict[str, Any]) -> None:
                 controller.set_popups(payload)

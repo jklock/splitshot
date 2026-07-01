@@ -138,8 +138,12 @@ def test_compose_pip_preview_layer_renders_with_items(synthetic_video_factory) -
                 page.locator("button[data-tool='merge']").click(force=True)
                 page.wait_for_timeout(300)
 
-                page.evaluate("() => { const cb = document.getElementById('merge-enabled'); if (cb) cb.checked = true; }")
-                page.evaluate("() => { const cb = document.getElementById('show-pip'); if (cb) cb.checked = true; }")
+                page.evaluate(
+                    "() => { const cb = document.getElementById('merge-enabled'); if (cb) cb.checked = true; }"
+                )
+                page.evaluate(
+                    "() => { const cb = document.getElementById('show-pip'); if (cb) cb.checked = true; }"
+                )
                 page.wait_for_timeout(100)
 
                 page.locator("#merge-layout").select_option("pip")
@@ -203,8 +207,12 @@ def test_compose_per_source_size_changes_preview_dimensions(synthetic_video_fact
                 page.locator("button[data-tool='merge']").click(force=True)
                 page.wait_for_timeout(300)
 
-                page.evaluate("() => { const cb = document.getElementById('merge-enabled'); if (cb) cb.checked = true; }")
-                page.evaluate("() => { const cb = document.getElementById('show-pip'); if (cb) cb.checked = true; }")
+                page.evaluate(
+                    "() => { const cb = document.getElementById('merge-enabled'); if (cb) cb.checked = true; }"
+                )
+                page.evaluate(
+                    "() => { const cb = document.getElementById('show-pip'); if (cb) cb.checked = true; }"
+                )
                 page.wait_for_timeout(100)
                 page.locator("#merge-layout").select_option("pip")
                 page.wait_for_timeout(400)
@@ -219,9 +227,13 @@ def test_compose_per_source_size_changes_preview_dimensions(synthetic_video_fact
                 assert size_slider.count() == 1
 
                 size_before = size_slider.evaluate("el => el.value")
-                size_slider.evaluate("el => { el.value = '65'; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+                size_slider.evaluate(
+                    "el => { el.value = '65'; el.dispatchEvent(new Event('input', {bubbles: true})); }"
+                )
                 page.wait_for_timeout(100)
-                size_slider.evaluate("el => { el.dispatchEvent(new Event('change', {bubbles: true})); }")
+                size_slider.evaluate(
+                    "el => { el.dispatchEvent(new Event('change', {bubbles: true})); }"
+                )
                 page.wait_for_timeout(500)
 
                 source_state = page.evaluate(

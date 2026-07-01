@@ -539,7 +539,9 @@ def test_trim_per_source_apply_creates_valid_derivative(synthetic_video_factory)
             name="trim-qa-valid", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
         )
     )
-    merge_path = Path(synthetic_video_factory(name="trim-qa-valid-merge", duration_ms=3000, beep_ms=400))
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-valid-merge", duration_ms=3000, beep_ms=400)
+    )
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -584,7 +586,9 @@ def test_trim_computed_label_updates_after_source_apply(synthetic_video_factory)
             name="trim-qa-label", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
         )
     )
-    merge_path = Path(synthetic_video_factory(name="trim-qa-label-merge", duration_ms=3000, beep_ms=400))
+    merge_path = Path(
+        synthetic_video_factory(name="trim-qa-label-merge", duration_ms=3000, beep_ms=400)
+    )
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:

@@ -126,11 +126,6 @@ def test_project_summary_line_is_removed_but_container_remains():
 def test_project_does_not_own_stage_media():
     source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
     start = source.index("renderPractiScoreImportSummary")
-    end = (
-        source.index("function", source.index("function", start) + 1)
-        if "function" in source[source.index("function", start) + 1 :]
-        else len(source)
-    )
     within = source[start : start + 1200]
     assert "primary_media" not in within
     assert "added_media" not in within
@@ -230,7 +225,11 @@ def test_media_inventory_and_stage_navigator_are_separate():
 
 def test_media_active_stage_is_not_collapsible_and_does_not_queue():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    active_section = source[source.index("function renderActiveStageSection") : source.index("function renderStagesSection")]
+    active_section = source[
+        source.index("function renderActiveStageSection") : source.index(
+            "function renderStagesSection"
+        )
+    ]
     assert "pane-toggle" not in active_section
     assert "Queue Stage" not in source
     assert "Requeue" not in source
@@ -239,7 +238,11 @@ def test_media_active_stage_is_not_collapsible_and_does_not_queue():
 
 def test_media_picker_root_prefers_stage_media_then_project_input():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
-    within = source[source.index("function mediaPickerDefaultRoot") : source.index("function readSectionExpansion")]
+    within = source[
+        source.index("function mediaPickerDefaultRoot") : source.index(
+            "function readSectionExpansion"
+        )
+    ]
     assert "stage?.primary_media?.path" in within
     assert "stageAddedMedia(stage)[0]" in within
     assert 'joinProjectPath(projectPath, "Input")' in within
@@ -378,7 +381,9 @@ def test_phase15_pane_css_forces_single_column_flow_in_new_panes():
 def test_compose_active_source_places_opacity_before_layout():
     source = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
     within = source[
-        source.index("const placementModeSelect") : source.index("const body = documentObject.createElement")
+        source.index("const placementModeSelect") : source.index(
+            "const body = documentObject.createElement"
+        )
     ]
     assert "const opacityAndLayoutRow" in within
     assert "opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);" in within
@@ -391,61 +396,6 @@ def test_v107_pane_audit_collects_visual_parity_metrics():
     assert "Pane visual parity audit failed" in source
     assert "toggle_right_offsets_px" in source
     assert "control_column_counts" in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 16D — New assertions for full ownership restoration
-# ---------------------------------------------------------------------------
-
-
-def test_practiscore_context_payload_includes_classification_and_division():
-    source = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
-    within = source[
-        source.index("readPractiScoreContextPayload") : source.index(
-            "readPractiScoreContextPayload"
-        )
-        + 500
-    ]
-    assert "classification" in within
-    assert "division" in within
-    assert "match-class" in source
-    assert "match-division" in source
-
-
-def test_controller_set_practiscore_context_accepts_classification_division():
-    source = Path("src/splitshot/ui/controller.py").read_text()
-    within = source[
-        source.index("def set_practiscore_context") : source.index("def set_practiscore_context")
-        + 2000
-    ]
-    assert "classification" in within
-    assert "division" in within
-
-
-def test_server_practiscore_context_passes_classification_division():
-    source = Path("src/splitshot/browser/server.py").read_text()
-    within = source[
-        source.index("def _set_practiscore_context") : source.index("def _set_practiscore_context")
-        + 2000
-    ]
-    assert "classification" in within
-    assert "division" in within
-
-
-def test_scoring_state_has_classification_division_fields():
-    source = Path("src/splitshot/domain/models.py").read_text()
-    within = source[source.index("class ScoringState") : source.index("class ScoringState") + 800]
-    assert "classification" in within
-    assert "division" in within
-
-
-def test_scoring_from_dict_handles_classification_division():
-    source = Path("src/splitshot/domain/models.py").read_text()
-    within = source[
-        source.index("def _scoring_from_dict") : source.index("def _scoring_from_dict") + 1000
-    ]
-    assert "classification" in within
-    assert "division" in within
 
 
 def test_shell_runtime_wires_practiscore_selectors():

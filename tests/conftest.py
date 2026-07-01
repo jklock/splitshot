@@ -1,17 +1,39 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import tempfile
 import wave
 from pathlib import Path
 
 import numpy as np
 import pytest
-import subprocess
 
 import splitshot.config as splitshot_config
 
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("TMPDIR", "/Volumes/Storage/GitHub/splitshot/.tmp_tests")
+tempfile.tempdir = None  # force re-evaluation after setting TMPDIR
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    _cleanup_repo_temp_dirs()
+
+
+def _cleanup_repo_temp_dirs() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    for name in (".tmp_tests", "pytest-of-klock"):
+        path = repo_root / name
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

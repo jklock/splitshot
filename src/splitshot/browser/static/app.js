@@ -822,7 +822,6 @@ function normalizeExportDraftValue(key, value) {
     "audio_bitrate_kbps",
     "color_space",
     "two_pass",
-    "multi_track",
     "ffmpeg_preset",
   ].includes(key)) {
     return undefined;
@@ -840,7 +839,7 @@ function normalizeExportDraftValue(key, value) {
   if (key === "audio_bitrate_kbps") {
     return Math.max(32, Number(value));
   }
-  if (key === "two_pass" || key === "multi_track") {
+  if (key === "two_pass") {
     return Boolean(value);
   }
   return String(value ?? "");

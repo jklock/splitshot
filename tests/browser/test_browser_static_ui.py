@@ -1919,7 +1919,6 @@ def test_browser_color_picker_is_custom_and_os_agnostic() -> None:
 
 def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
-    js = (STATIC_ROOT / "app.js").read_text()
     activity_js = (STATIC_ROOT / "lib" / "activity.js").read_text()
 
     assert 'activity("button.click"' in activity_js

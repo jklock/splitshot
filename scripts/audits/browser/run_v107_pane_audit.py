@@ -148,7 +148,9 @@ def _set_stage_expansion(page: Page, storage_key: str, expanded: bool, tool: str
     page.wait_for_timeout(150)
 
 
-def _set_section_expansion(page: Page, storage_key: str, values: dict[str, bool], tool: str) -> None:
+def _set_section_expansion(
+    page: Page, storage_key: str, values: dict[str, bool], tool: str
+) -> None:
     page.evaluate(
         """
         ({ storageKey, values, tool }) => {
@@ -651,9 +653,13 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
     if int(dom_summary.get("practiscore_selector_count") or 0) != 4:
         failures.append({"pane": "project", "failure": "missing practiscore selectors"})
     if not bool(dom_summary.get("practiscore_summary_hidden")):
-        failures.append({"pane": "project", "failure": "project practiscore summary line is still visible"})
+        failures.append(
+            {"pane": "project", "failure": "project practiscore summary line is still visible"}
+        )
     if str(dom_summary.get("practiscore_summary_text") or "").strip():
-        failures.append({"pane": "project", "failure": "project practiscore summary line still has text"})
+        failures.append(
+            {"pane": "project", "failure": "project practiscore summary line still has text"}
+        )
     if list(dom_summary.get("media_section_labels") or []) != ["Active Stage", "Stages"]:
         failures.append(
             {
@@ -661,7 +667,11 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
                 "failure": f"media top-level sections {list(dom_summary.get('media_section_labels') or [])} != ['Active Stage', 'Stages']",
             }
         )
-    if list(dom_summary.get("media_stage_inner_labels") or []) != ["Primary", "Added Media", "Stage Navigator"]:
+    if list(dom_summary.get("media_stage_inner_labels") or []) != [
+        "Primary",
+        "Added Media",
+        "Stage Navigator",
+    ]:
         failures.append(
             {
                 "pane": "media",
@@ -677,7 +687,9 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
     if not bool(dom_summary.get("media_bottom_add_stage_present")):
         failures.append({"pane": "media", "failure": "missing bottom Add Stage button"})
     if not bool(dom_summary.get("media_bottom_add_stage_is_last")):
-        failures.append({"pane": "media", "failure": "bottom Add Stage button is not the final pane action"})
+        failures.append(
+            {"pane": "media", "failure": "bottom Add Stage button is not the final pane action"}
+        )
     if list(dom_summary.get("queue_section_labels") or []) != ["Queue Controls", "Queued Stages"]:
         failures.append(
             {

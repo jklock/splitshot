@@ -8,6 +8,7 @@ from datetime import datetime, UTC
 from inspect import Parameter, signature
 from pathlib import Path
 import re
+from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -1112,7 +1113,7 @@ class ProjectController(QObject):
                 if scoring.ruleset != target_ruleset:
                     changed = True
                 apply_scoring_preset(self.project, target_ruleset)
-        if stage_number is not None or scoring.stage_number is not None:
+        if stage_number is not None:
             next_stage_number = None if stage_number is None else max(1, int(stage_number))
             if scoring.stage_number != next_stage_number:
                 scoring.stage_number = next_stage_number
@@ -1122,20 +1123,18 @@ class ProjectController(QObject):
             if scoring.competitor_name != next_competitor_name:
                 scoring.competitor_name = next_competitor_name
                 changed = True
-        if competitor_place is not None or (
-            competitor_place is None and scoring.competitor_place is not None
-        ):
+        if competitor_place is not None:
             if scoring.competitor_place != competitor_place:
                 scoring.competitor_place = competitor_place
                 changed = True
         if classification is not None:
             next_classification = str(classification).strip()
-            if scoring.classification != next_classification:
+            if next_classification and scoring.classification != next_classification:
                 scoring.classification = next_classification
                 changed = True
         if division is not None:
             next_division = str(division).strip()
-            if scoring.division != next_division:
+            if next_division and scoring.division != next_division:
                 scoring.division = next_division
                 changed = True
         if changed:
@@ -2378,7 +2377,7 @@ class ProjectController(QObject):
                 changed = True
         if competitor_name is not None:
             next_competitor_name = str(competitor_name).strip()
-            if stage.scoring.competitor_name != next_competitor_name:
+            if next_competitor_name and stage.scoring.competitor_name != next_competitor_name:
                 stage.scoring.competitor_name = next_competitor_name
                 changed = True
         if competitor_place is not None:
@@ -2591,7 +2590,8 @@ class ProjectController(QObject):
         queued_stage_ids = {
             entry.stage_id
             for entry in self.project.queue
-            if entry.status in (
+            if entry.status
+            in (
                 QueueStatus.QUEUED,
                 QueueStatus.STALE,
                 QueueStatus.PROCESSING,
@@ -3941,37 +3941,6 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def set_overlay_badge_style(
-        self,
-        badge_name: str,
-        background_color: str | None = None,
-        text_color: str | None = None,
-        opacity: float | None = None,
-    ) -> None:
-        if badge_name not in VALID_OVERLAY_BADGE_NAMES:
-            raise ValueError(f"Unknown badge style: {badge_name}")
-        style = getattr(self.project.overlay, badge_name)
-        if not isinstance(style, BadgeStyle):
-            raise ValueError(f"Unknown badge style: {badge_name}")
-        if background_color is not None:
-            style.background_color = background_color
-        if text_color is not None:
-            style.text_color = text_color
-        if opacity is not None:
-            style.opacity = max(0.0, min(1.0, opacity))
-        self.project.touch()
-        self.project_changed.emit()
-
-    def set_scoring_color(self, score_key: str, color: str) -> None:
-        normalized_key = str(score_key).strip()
-        if not normalized_key:
-            raise ValueError("score color key is required")
-        if "|" in normalized_key:
-            raise ValueError("score color keys must be individual tokens")
-        self.project.overlay.scoring_colors[normalized_key] = color
-        self.project.touch()
-        self.project_changed.emit()
-
     def set_merge_enabled(self, enabled: bool) -> None:
         self.project.merge.enabled = enabled
         self.project.touch()
@@ -4151,6 +4120,7 @@ class ProjectController(QObject):
             "audio_bitrate_kbps",
             "color_space",
             "two_pass",
+            "multi_track",
             "ffmpeg_preset",
         }
         if "quality" in payload:
@@ -4186,6 +4156,8 @@ class ProjectController(QObject):
             export.color_space = ExportColorSpace(str(payload["color_space"]))
         if "two_pass" in payload:
             export.two_pass = bool(payload["two_pass"])
+        if "multi_track" in payload:
+            export.multi_track = bool(payload["multi_track"])
         if "ffmpeg_preset" in payload:
             export.ffmpeg_preset = str(payload["ffmpeg_preset"])
         if "output_path" in payload:
