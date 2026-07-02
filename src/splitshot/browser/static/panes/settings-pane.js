@@ -10,7 +10,6 @@ export function createSettingsPane({
   normalizePopupTemplate = (template = {}) => template,
   renderExportPresetOptions = () => {},
   ensureSectionToggle = () => {},
-  settingsLayerFields = [],
 } = {}) {
   let settingsDraft = null;
 
@@ -54,6 +53,7 @@ export function createSettingsPane({
     syncControlValue($("settings-marker-height"), template.height ?? 0);
     syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
     syncControlValue($("settings-marker-motion-mode"), Boolean(template.follow_motion ?? false) ? "guided" : "fixed");
+    syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
     syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
     syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
     syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
@@ -79,51 +79,6 @@ export function createSettingsPane({
 
   function sameSettingsValue(left, right) {
     return JSON.stringify(left) === JSON.stringify(right);
-  }
-
-  function settingsSourceLabel(source) {
-    return {
-      project: "Project",
-      folder: "Folder",
-      app: "App",
-      effective: "Effective",
-    }[source] || "Effective";
-  }
-
-  function formatSettingsValue(value) {
-    if (value === null || value === undefined) return "-";
-    if (typeof value === "boolean") return value ? "true" : "false";
-    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
-    return String(value);
-  }
-
-  function settingFieldCurrentValue(field, settings, markerTemplate) {
-    if (!field.usesProjectTemplate) return settingsValueAtPath(settings, field.path);
-    const markerKey = field.path[field.path.length - 1];
-    return markerTemplate?.[markerKey];
-  }
-
-  function settingFieldSource(field, currentValue, layers) {
-    const effectivePath = ["effective", ...field.path];
-    const appPath = ["app", ...field.path];
-    const folderPath = ["folder", ...field.path];
-    const effectiveValue = settingsValueAtPath(layers, effectivePath);
-    const appValue = settingsValueAtPath(layers, appPath);
-    if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
-      const projectValue = settingsValueAtPath(layers, field.projectPath);
-      if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
-        return "project";
-      }
-    }
-    if (settingsHasPath(layers, folderPath)) {
-      const folderValue = settingsValueAtPath(layers, folderPath);
-      if (sameSettingsValue(folderValue, appValue)) return "app";
-      if (sameSettingsValue(folderValue, currentValue)) return "folder";
-    }
-    if (settingsHasPath(layers, appPath)) {
-      if (sameSettingsValue(appValue, currentValue)) return "app";
-    }
-    return "effective";
   }
 
   function sanitizeMergeSourceDefaults(mergeSources = []) {
@@ -221,31 +176,6 @@ export function createSettingsPane({
       },
     };
     return Object.fromEntries(Object.entries(payloads[section] || {}).filter(([, value]) => value !== undefined));
-  }
-
-  function renderSettingsLayerSummary(settings, markerTemplate, layers) {
-    const container = $("settings-layer-summary");
-    if (!container) return;
-    const table = documentObject.createElement("table");
-    table.className = "data-table";
-    table.setAttribute("aria-label", "Settings layer summary");
-    table.innerHTML = "<thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>";
-    const body = documentObject.createElement("tbody");
-    settingsLayerFields.forEach((field) => {
-      const currentValue = settingFieldCurrentValue(field, settings, markerTemplate);
-      const source = settingFieldSource(field, currentValue, layers);
-      const row = documentObject.createElement("tr");
-      const labelCell = documentObject.createElement("td");
-      labelCell.textContent = field.label;
-      const valueCell = documentObject.createElement("td");
-      valueCell.textContent = formatSettingsValue(currentValue);
-      const sourceCell = documentObject.createElement("td");
-      sourceCell.textContent = settingsSourceLabel(source);
-      row.append(labelCell, valueCell, sourceCell);
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    container.replaceChildren(table);
   }
 
   function isSettingsSectionExpanded(sectionId) {
@@ -368,7 +298,6 @@ export function createSettingsPane({
         : "No saved Compose defaults.";
     }
     renderSettingsSections();
-    renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);
 
     const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
     if (!settingsPaneIsActive()) {
@@ -408,11 +337,6 @@ export function createSettingsPane({
     settingsValueAtPath,
     settingsHasPath,
     sameSettingsValue,
-    settingsSourceLabel,
-    formatSettingsValue,
-    settingFieldCurrentValue,
-    settingFieldSource,
-    renderSettingsLayerSummary,
     renderSettingsPane,
     isSettingsSectionExpanded,
     setSettingsSectionExpanded,

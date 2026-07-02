@@ -449,7 +449,7 @@ export function createScoringPane({
     const state = currentState();
     return {
       enabled: $("scoring-enabled")?.checked ?? Boolean(state.project?.scoring?.enabled),
-      penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state.project?.scoring?.penalties || 0),
+      penalties: Number(state.project?.scoring?.penalties || 0),
       penalty_counts: { ...(state.project?.scoring?.penalty_counts || {}) },
     };
   }

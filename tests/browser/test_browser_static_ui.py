@@ -387,8 +387,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="close-wizard"' not in html
     assert 'id="wizard-back"' not in html
     assert 'id="wizard-next"' not in html
-    assert "const SETTINGS_LAYER_FIELDS = [" in js
-    assert "function renderSettingsLayerSummary(settings, markerTemplate, layers) {" in js
     assert "const WIZARD_STEPS = Object.freeze([" not in js
     assert "function renderWizardPanel() {" not in js
     assert "function openWizardGuide() {" not in js
@@ -1986,6 +1984,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "trim-global-apply",
         "trim-global-clear",
         "trim-global-defaults-btn",
+        "trim-global-undo",
         "generate-shotml-proposals",
         "reset-shotml-defaults",
         "restore-merge-defaults",

@@ -258,6 +258,7 @@
               </div>
               <div class="queue-toolbar">
                 <button id="trim-global-defaults-btn" class="btn-sm btn-secondary" type="button">Reset to 2/2</button>
+                <button id="trim-global-undo" class="btn-sm btn-secondary" type="button">Undo</button>
                 <button id="trim-global-apply" class="btn btn-primary" type="button">Apply to All</button>
                 <button id="trim-global-clear" class="btn btn-secondary" type="button">Clear All</button>
               </div>
@@ -1069,6 +1070,20 @@
                     </label>
                     <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Enable motion</label>
                     <input id="settings-marker-motion-mode" type="hidden" value="fixed" />
+                    <label>Quadrant
+                      <select id="settings-marker-quadrant">
+                        <option value="top_left">Top left</option>
+                        <option value="top_middle">Top middle</option>
+                        <option value="top_right">Top right</option>
+                        <option value="middle_left">Middle left</option>
+                        <option value="middle_middle">Middle middle</option>
+                        <option value="middle_right">Middle right</option>
+                        <option value="bottom_left">Bottom left</option>
+                        <option value="bottom_middle">Bottom middle</option>
+                        <option value="bottom_right">Bottom right</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </label>
                   </div>
                   <div class="control-grid">
                     <label>Background

@@ -5506,78 +5506,10 @@ function syncSettingsMarkerTemplate(template = {}) {
   syncControlValue($("settings-marker-height"), template.height ?? 0);
   syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
   syncControlValue($("settings-marker-motion-mode"), Boolean(template.follow_motion ?? false) ? "guided" : "fixed");
+  syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
   syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
   syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
   syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
-}
-
-const SETTINGS_LAYER_FIELDS = [
-  { label: "Landing pane", path: ["default_tool"] },
-  { label: "Reopen last pane", path: ["reopen_last_tool"] },
-  { label: "Overlay position", path: ["overlay_position"] },
-  { label: "Badge size", path: ["badge_size"] },
-  { label: "Compose layout", path: ["merge_layout"] },
-  { label: "Compose size", path: ["pip_size"] },
-  { label: "Export quality", path: ["export_quality"] },
-  { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
-  {
-    label: "Marker enabled",
-    path: ["marker_template", "enabled"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "enabled"],
-  },
-  {
-    label: "Marker content",
-    path: ["marker_template", "content_type"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "content_type"],
-  },
-  {
-    label: "Marker text source",
-    path: ["marker_template", "text_source"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "text_source"],
-  },
-  {
-    label: "Marker duration ms",
-    path: ["marker_template", "duration_ms"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "duration_ms"],
-  },
-  {
-    label: "Marker use shot split duration",
-    path: ["marker_template", "use_shot_split_duration"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "use_shot_split_duration"],
-  },
-  {
-    label: "Marker width",
-    path: ["marker_template", "width"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "width"],
-  },
-  {
-    label: "Marker height",
-    path: ["marker_template", "height"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "height"],
-  },
-  {
-    label: "Marker follow motion",
-    path: ["marker_template", "follow_motion"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "follow_motion"],
-  },
-  {
-    label: "Marker motion mode",
-    path: ["marker_template", "motion_mode"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "motion_mode"],
-  },
-];
-
-function renderSettingsLayerSummary(settings, markerTemplate, layers) {
-  return settingsPane?.renderSettingsLayerSummary(settings, markerTemplate, layers);
 }
 
 function renderSettingsPane() {
@@ -8765,7 +8697,7 @@ function readExportLayoutPayload() {
 function readScoringPayload() {
   return scoringPane?.readScoringPayload() ?? {
     enabled: $("scoring-enabled")?.checked ?? false,
-    penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state?.project?.scoring?.penalties || 0),
+    penalties: Number(state?.project?.scoring?.penalties || 0),
     penalty_counts: { ...(state?.project?.scoring?.penalty_counts || {}) },
   };
 }
@@ -9783,7 +9715,6 @@ settingsPane = createSettingsPane({
   normalizePopupTemplate,
   renderExportPresetOptions,
   ensureSectionToggle,
-  settingsLayerFields: SETTINGS_LAYER_FIELDS,
 });
 
 mergePane = createMergePane({
