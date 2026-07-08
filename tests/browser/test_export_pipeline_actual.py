@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
+from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.export_verifier import assert_video_file
 from tests.browser.helpers.video_test_helpers import (
     ensure_project_with_primary_and_merge,
@@ -127,7 +129,11 @@ def test_export_queue_process_individual(synthetic_video_factory) -> None:
 
 @pytest.mark.slow
 def test_export_queue_process_combined(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "queue-combined-primary"},
+        merge_kwargs={"name": "queue-combined-merge"},
+    )
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -158,16 +164,85 @@ def test_export_queue_process_combined(synthetic_video_factory) -> None:
                     "setTimeout(() => callApi('/api/project/queue/process', { mode: 'combined' }), 0)"
                 )
                 page.wait_for_function(
-                    "() => (state?.project?.queue || []).some(q => q.status === 'complete' || q.status === 'failed')",
+                    """() => {
+                        const entries = state?.project?.queue || [];
+                        return entries.length > 0 && entries.every((entry) => entry.status !== 'processing');
+                    }""",
                     timeout=300000,
                 )
-                page.wait_for_timeout(1000)
-
-                output_path = page.evaluate(
-                    "() => { const e = (state?.project?.queue || []).find(q => q.status === 'complete'); return e?.output_path || null; }"
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.last_combined_output_path || '')",
+                    timeout=300000,
                 )
-                assert output_path, "Expected an output path for combined queue export"
-                assert_video_file(output_path, min_duration_s=0.5)
+
+                combined_output_path = page.evaluate(
+                    "() => state?.project?.last_combined_output_path || null"
+                )
+                assert combined_output_path, (
+                    "Expected a combined output path for combined queue export"
+                )
+                combined_output = Path(combined_output_path)
+                assert combined_output.name.endswith("-combined.mp4")
+                assert_video_file(combined_output, min_duration_s=0.5)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.slow
+def test_export_queue_process_combined_surfaces_concat_failure(
+    synthetic_video_factory, monkeypatch
+) -> None:
+    controller = ProjectController()
+    monkeypatch.setattr(
+        controller,
+        "_concat_outputs",
+        lambda results, output_dir: (_ for _ in ()).throw(RuntimeError("combined output missing")),
+    )
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    primary_path = Path(synthetic_video_factory(name="queue-combined-fail-primary"))
+    merge_path = Path(synthetic_video_factory(name="queue-combined-fail-merge"))
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "export-queue-combined-fail.ssproj"
+                )
+
+                stage_id = page.evaluate(
+                    "() => new Promise(resolve => { const f = () => { const s = state?.project?.stages?.[0]; if (s) resolve(s.id); else setTimeout(f, 100); }; callApi('/api/project/stage/create', { label: 'Stage 1' }); f(); })"
+                )
+                assert stage_id, "Stage must be created"
+
+                page.evaluate(
+                    "({ sid, p }) => callApi('/api/project/stage/import-primary', { stage_id: sid, path: p })",
+                    {"sid": stage_id, "p": str(primary_path)},
+                )
+                page.wait_for_timeout(300)
+                page.evaluate(
+                    "(sid) => callApi('/api/project/queue/add', { stage_id: sid })",
+                    stage_id,
+                )
+                page.wait_for_timeout(300)
+
+                result = page.evaluate(
+                    """() => fetch('/api/project/queue/process', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: 'combined' }),
+                    }).then(async (response) => ({
+                        ok: response.ok,
+                        status: response.status,
+                        body: await response.json(),
+                    }))"""
+                )
+                assert result["ok"] is False
+                assert result["status"] == 400
+                assert "combined output missing" in str(result["body"].get("error", ""))
+                assert page.evaluate("() => state?.project?.last_combined_output_path || ''") == ""
             finally:
                 browser.close()
     finally:

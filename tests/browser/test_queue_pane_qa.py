@@ -77,7 +77,7 @@ def test_queue_membership_changes_state(synthetic_video_factory) -> None:
                 assert queue_before == 0
 
                 page.locator(".queue-membership-btn").first.click()
-                page.wait_for_timeout(500)
+                page.wait_for_function("() => (state?.project?.queue || []).length >= 1")
 
                 queue_after = page.evaluate("() => (state?.project?.queue || []).length")
                 assert queue_after >= 1
@@ -106,7 +106,7 @@ def test_queue_process_individual_creates_output_file(synthetic_video_factory) -
                 page.wait_for_timeout(300)
 
                 page.locator(".queue-membership-btn").first.click()
-                page.wait_for_timeout(500)
+                page.wait_for_function("() => (state?.project?.queue || []).length >= 1")
 
                 queue_count = page.evaluate("() => (state?.project?.queue || []).length")
                 assert queue_count >= 1
@@ -160,6 +160,46 @@ def test_queue_apply_all_copies_settings(synthetic_video_factory) -> None:
 
                 status_text = page.locator("#status-copy").inner_text()
                 assert "Applied" in status_text or "settings" in status_text.lower()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_queue_process_combined_surfaces_combined_output(synthetic_video_factory) -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary(synthetic_video_factory, page, "queue-qa-combined")
+
+                page.locator("button[data-tool='queue']").click(force=True)
+                page.wait_for_timeout(300)
+
+                page.locator(".queue-membership-btn").first.click()
+                page.wait_for_timeout(500)
+
+                page.locator("#queue-combined-btn").click()
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.last_combined_output_path)",
+                    timeout=300000,
+                )
+                page.wait_for_timeout(500)
+
+                combined_output_path = page.evaluate(
+                    "() => state?.project?.last_combined_output_path || ''"
+                )
+                assert combined_output_path
+                combined_output = Path(combined_output_path)
+                assert combined_output.exists()
+                assert combined_output.stat().st_size > 0
+                assert page.locator("[data-queue-combined-output]").count() == 1
+                assert (
+                    page.locator("[data-queue-combined-output] strong").inner_text()
+                    == "Combined Output"
+                )
             finally:
                 browser.close()
     finally:

@@ -184,15 +184,16 @@ export function createTrimSyncPane({
     const endValue = parseFloat(endInput?.value || "");
     if (recordUndo) queueUndoSnapshot("bulk");
     activity(clear ? "trim.clear-all" : "trim.apply-all", {
-      start_s: startValue,
-      end_s: endValue,
+      keep_before_beep_s: startValue,
+      keep_after_last_shot_s: endValue,
     });
+    setStatus(clear ? "Clearing trim derivatives..." : "Trimming added media...");
     await callApi("/api/merge/source/trim-all", {
       clear,
-      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
-      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+      keep_before_beep_s: clear || !Number.isFinite(startValue) || startValue < 0 ? null : startValue,
+      keep_after_last_shot_s: clear || !Number.isFinite(endValue) || endValue < 0 ? null : endValue,
     });
-    setStatus(clear ? "Cleared all trims." : "Applied trim to all sources.");
+    setStatus(clear ? "Cleared all trims." : "Trimmed all added media.");
     refreshTrimPreview();
   }
 
@@ -203,13 +204,14 @@ export function createTrimSyncPane({
     const endValue = parseFloat(endInput?.value || "");
     if (recordUndo) queueUndoSnapshot("source", sourceId);
     activity(clear ? "trim.clear" : "trim.apply", { sourceId, start_s: startValue, end_s: endValue });
+    setStatus(clear ? "Clearing trim derivative..." : "Trimming source...");
     await callApi("/api/merge/source/trim", {
       source_id: sourceId,
       clear,
       start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
       end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
     });
-    setStatus(clear ? `Cleared trim for source.` : `Applied trim to source.`);
+    setStatus(clear ? "Cleared trim for source." : "Trimmed source.");
     refreshTrimPreview();
   }
 
@@ -255,6 +257,7 @@ export function createTrimSyncPane({
     const sourceId = sourceIdentifier(source, String(index));
     const trimDerivative = source.trim_derivative;
     const trimActive = trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path;
+    const activePath = source?.effective_media_path || trimDerivative?.derivative_path || asset.path || "";
     const startS = sourceTrimStartS(source);
     const endS = sourceTrimEndS(source);
     return `
@@ -267,6 +270,10 @@ export function createTrimSyncPane({
           <span class="pane-summary-token">${formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</span>
         </div>
         <div class="trim-source-card-body">
+          <div class="trim-active-path-row">
+            <span class="trim-active-path-badge">${trimActive ? "Trimmed media active" : "Original media active"}</span>
+            <small class="trim-active-path-value">${fileName(activePath)}</small>
+          </div>
           <small class="trim-computed-label">${computedTrimLabel(source)}</small>
           <div class="trim-card-row">
             <label class="merge-source-field">

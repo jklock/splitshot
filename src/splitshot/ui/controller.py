@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, UTC
 from inspect import Parameter, signature
+import json
 from pathlib import Path
 import re
+import subprocess
 from typing import Any
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal
 
@@ -284,6 +287,12 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
     }[size]
 
 
+def _float_matches(left: float | int | None, right: float | int | None, *, tolerance: float = 1e-6) -> bool:
+    if left is None or right is None:
+        return left == right
+    return abs(float(left) - float(right)) <= tolerance
+
+
 def _optional_layout_dimension(value: object, minimum: int, maximum: int) -> int | None:
     if value in {None, ""}:
         return None
@@ -517,6 +526,34 @@ def _source_supports_secondary_analysis(source: MergeSource | None) -> bool:
     return bool(asset.path) and not asset.is_still_image and asset.media_kind != "animated_gif"
 
 
+def _merge_source_trim_derivative_is_active(source: MergeSource | None) -> bool:
+    trim_derivative = getattr(source, "trim_derivative", None)
+    return bool(
+        trim_derivative is not None
+        and trim_derivative.active_path_kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+        and trim_derivative.derivative_path
+    )
+
+
+def _effective_merge_source_media_path(source: MergeSource | None) -> str:
+    if source is None:
+        return ""
+    if _merge_source_trim_derivative_is_active(source):
+        return str(source.trim_derivative.derivative_path or "")
+    return str(source.asset.path or "")
+
+
+def _effective_merge_source_asset(source: MergeSource | None) -> VideoAsset | None:
+    if source is None:
+        return None
+    active_path = _effective_merge_source_media_path(source)
+    if not active_path:
+        return None
+    if active_path == source.asset.path:
+        return source.asset
+    return replace(source.asset, path=active_path)
+
+
 def _first_analyzable_merge_source(project: Project) -> MergeSource | None:
     for source in project.merge_sources:
         if _source_supports_secondary_analysis(source):
@@ -588,7 +625,7 @@ def _refresh_secondary_analysis_projection(
     if selected_source is None:
         selected_source = analyzable_sources[0]
     entry = _secondary_analysis_entry_for_source(project, selected_source.id, create=False)
-    project.secondary_video = selected_source.asset
+    project.secondary_video = _effective_merge_source_asset(selected_source)
     project.analysis.analyzed_secondary_source_id = selected_source.id
     if entry is None:
         project.analysis.beep_time_ms_secondary = None
@@ -993,11 +1030,12 @@ class ProjectController(QObject):
             if source_id
             else _first_analyzable_merge_source(self.project)
         )
-        if source is None or not source.asset.path:
+        active_path = _effective_merge_source_media_path(source)
+        if source is None or not active_path:
             _clear_secondary_analysis_state(self.project, preserve_sync_offset=True)
             self.project.secondary_video = None
             return
-        self.project.secondary_video = source.asset
+        self.project.secondary_video = _effective_merge_source_asset(source)
         self.project.analysis.analyzed_secondary_source_id = source.id
         self.project.analysis.secondary_analysis_status = "running"
         self.project.analysis.secondary_analysis_message = "Analyzing PiP sync source."
@@ -1007,7 +1045,7 @@ class ProjectController(QObject):
             running_entry.analysis_message = "Analyzing PiP sync source."
         self._set_status("Analyzing secondary video and computing sync offset...")
         result = _run_analyze_video_audio(
-            source.asset.path,
+            active_path,
             self.project.analysis.shotml_settings.detection_threshold,
             self.project.analysis.shotml_settings,
         )
@@ -1051,6 +1089,14 @@ class ProjectController(QObject):
         )
         self.project.touch()
         self.project_changed.emit()
+
+    def effective_merge_source_media_path(self, source_id: str | None = None) -> str:
+        source = (
+            next((item for item in self.project.merge_sources if item.id == source_id), None)
+            if source_id
+            else _first_analyzable_merge_source(self.project)
+        )
+        return _effective_merge_source_media_path(source)
 
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
@@ -2303,12 +2349,12 @@ class ProjectController(QObject):
         stage = self.project.active_stage
         if stage is None:
             return
-        self.project.primary_video = stage.primary_media
-        self.project.merge_sources = list(stage.added_media)
+        self.project.primary_video = deepcopy(stage.primary_media)
+        self.project.merge_sources = deepcopy(stage.added_media)
         self.project.analysis = deepcopy(stage.analysis)
         self.project.scoring = deepcopy(stage.scoring)
         self.project.overlay = deepcopy(stage.overlay)
-        self.project.popups = list(stage.popups)
+        self.project.popups = deepcopy(stage.popups)
         self.project.popup_template = deepcopy(stage.popup_template)
         self.project.merge = deepcopy(stage.merge)
         self.project.export = deepcopy(stage.export)
@@ -2320,12 +2366,12 @@ class ProjectController(QObject):
         stage = self.project.active_stage
         if stage is None:
             return
-        stage.primary_media = self.project.primary_video
-        stage.added_media = list(self.project.merge_sources)
+        stage.primary_media = deepcopy(self.project.primary_video)
+        stage.added_media = deepcopy(self.project.merge_sources)
         stage.analysis = deepcopy(self.project.analysis)
         stage.scoring = deepcopy(self.project.scoring)
         stage.overlay = deepcopy(self.project.overlay)
-        stage.popups = list(self.project.popups)
+        stage.popups = deepcopy(self.project.popups)
         stage.popup_template = deepcopy(self.project.popup_template)
         stage.merge = deepcopy(self.project.merge)
         stage.export = deepcopy(self.project.export)
@@ -2640,6 +2686,7 @@ class ProjectController(QObject):
         original_active_stage_id = self.project.active_stage_id
         output_dir = self._ensure_output_dir()
         results: list[Path] = []
+        self.project.last_combined_output_path = ""
 
         try:
             for idx, entry in enumerate(
@@ -2661,31 +2708,40 @@ class ProjectController(QObject):
                 self._sync_active_stage_to_project()
                 slug = self._stage_slug(stage)
                 output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
+                render_path = self._temporary_output_path(output_path)
                 try:
                     from splitshot.export.pipeline import export_project
 
                     export_project(
                         self.project,
-                        str(output_path),
+                        str(render_path),
                         progress_callback=None,
                         log_callback=None,
                     )
+                    self._validate_rendered_output(render_path)
+                    render_path.replace(output_path)
                     entry.status = QueueStatus.COMPLETE
                     entry.output_path = str(output_path)
+                    entry.error_message = ""
                     entry.processed_at = datetime.now(UTC).isoformat()
                     stage.queue_status = QueueStatus.COMPLETE
                     stage.last_output_path = str(output_path)
                     stage.last_processed_at = entry.processed_at
+                    self._sync_project_to_active_stage()
                     results.append(output_path)
                     self._set_status(f"Completed stage {idx + 1}/{len(queued)}: {stage.label}")
                 except Exception as exc:
+                    render_path.unlink(missing_ok=True)
                     entry.status = QueueStatus.FAILED
                     entry.error_message = str(exc)
                     stage.queue_status = QueueStatus.FAILED
+                    self._sync_project_to_active_stage()
                     self._set_status(f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}")
 
             if mode == "combined" and len(results) >= 1:
                 combined_path = self._concat_outputs(results, output_dir)
+                self._validate_rendered_output(combined_path)
+                self.project.last_combined_output_path = str(combined_path)
                 self._set_status(f"Combined export complete: {combined_path}")
             else:
                 self._set_status(f"Processed {len(results)} stage(s).")
@@ -2716,12 +2772,52 @@ class ProjectController(QObject):
 
     def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
         combined_path = output_dir / f"{self.project.name}-combined.mp4"
+        temp_combined_path = self._temporary_output_path(combined_path)
         ces = self.project.combined_export_settings
 
-        if not ces.separator_enabled:
-            return self._plain_concat(results, output_dir, combined_path)
+        try:
+            if not ces.separator_enabled:
+                self._plain_concat(results, output_dir, temp_combined_path)
+            else:
+                self._separator_concat(results, output_dir, temp_combined_path, ces)
+            self._validate_rendered_output(temp_combined_path)
+            temp_combined_path.replace(combined_path)
+            return combined_path
+        except Exception:
+            temp_combined_path.unlink(missing_ok=True)
+            raise
 
-        return self._separator_concat(results, output_dir, combined_path, ces)
+    def _validate_rendered_output(self, output_path: Path) -> None:
+        if not output_path.exists():
+            raise RuntimeError(f"Rendered output missing: {output_path}")
+        if output_path.stat().st_size <= 0:
+            raise RuntimeError(f"Rendered output is empty: {output_path}")
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "quiet",
+                    "-print_format",
+                    "json",
+                    "-show_format",
+                    "-show_streams",
+                    str(output_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=True,
+            )
+            info = json.loads(result.stdout)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Rendered output is invalid: {output_path} ({exc})") from exc
+        streams = info.get("streams", [])
+        if not any(stream.get("codec_type") == "video" for stream in streams):
+            raise RuntimeError(f"Rendered output has no video stream: {output_path}")
+
+    def _temporary_output_path(self, output_path: Path) -> Path:
+        return output_path.with_name(f"{output_path.stem}.tmp-{uuid4().hex}{output_path.suffix}")
 
     def _plain_concat(self, results: list[Path], output_dir: Path, combined_path: Path) -> Path:
         import subprocess
@@ -2933,6 +3029,27 @@ class ProjectController(QObject):
             end_s=end_s,
         )
 
+    def _source_trim_window_from_buffers(
+        self,
+        source: MergeSource,
+        *,
+        keep_before_beep_s: float | None = None,
+        keep_after_last_shot_s: float | None = None,
+    ) -> tuple[float | None, float | None]:
+        start_s = None
+        end_s = None
+        primary_beep_ms = self.project.analysis.beep_time_ms_primary
+        if primary_beep_ms is not None and keep_before_beep_s is not None:
+            start_s = max(0.0, ((int(primary_beep_ms) + int(source.sync_offset_ms)) / 1000) - keep_before_beep_s)
+        shots = self.project.analysis.shots or []
+        if shots and keep_after_last_shot_s is not None:
+            last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
+            end_s = ((last_shot_ms + int(source.sync_offset_ms)) / 1000) + keep_after_last_shot_s
+            duration_ms = int(source.asset.duration_ms or 0)
+            if duration_ms > 0:
+                end_s = min(end_s, duration_ms / 1000)
+        return start_s, end_s
+
     def trim_merge_source(
         self,
         source_id: str,
@@ -2967,12 +3084,32 @@ class ProjectController(QObject):
         *,
         start_s: float | None = None,
         end_s: float | None = None,
+        keep_before_beep_s: float | None = None,
+        keep_after_last_shot_s: float | None = None,
         clear: bool = False,
     ) -> None:
         if not self.project.merge_sources:
             return
+        self._set_status(
+            "Clearing trim derivatives..."
+            if clear
+            else f"Trimming {len(self.project.merge_sources)} added media file{'s' if len(self.project.merge_sources) != 1 else ''}."
+        )
         for source in self.project.merge_sources:
-            self._apply_merge_source_trim(source, start_s=start_s, end_s=end_s, clear=clear)
+            next_start_s = start_s
+            next_end_s = end_s
+            if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):
+                next_start_s, next_end_s = self._source_trim_window_from_buffers(
+                    source,
+                    keep_before_beep_s=keep_before_beep_s,
+                    keep_after_last_shot_s=keep_after_last_shot_s,
+                )
+            self._apply_merge_source_trim(
+                source,
+                start_s=next_start_s,
+                end_s=next_end_s,
+                clear=clear,
+            )
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
         for source in self.project.merge_sources:
@@ -3943,6 +4080,7 @@ class ProjectController(QObject):
 
     def set_merge_enabled(self, enabled: bool) -> None:
         self.project.merge.enabled = enabled
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_changed.emit()
 
@@ -3951,6 +4089,7 @@ class ProjectController(QObject):
         self.settings.merge_layout = layout
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_changed.emit()
 
@@ -3960,11 +4099,13 @@ class ProjectController(QObject):
         self.settings.pip_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_changed.emit()
 
     def set_pip_size_percent(self, percent: int) -> None:
         self.project.merge.pip_size_percent = max(1, min(95, int(percent)))
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_changed.emit()
 
@@ -3973,6 +4114,7 @@ class ProjectController(QObject):
             self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
         if pip_y is not None:
             self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4006,6 +4148,7 @@ class ProjectController(QObject):
                 source.angle_role = _normalize_merge_source_angle_role(camera_role, source.asset)
             if placement_mode not in {None, ""}:
                 source.placement.mode = _normalize_merge_source_placement_mode(placement_mode)
+            self._sync_project_to_active_stage()
             self.project.touch()
             self.project_changed.emit()
             return
@@ -4028,6 +4171,7 @@ class ProjectController(QObject):
                 self.project.analysis.secondary_sync_source = "manual"
                 _refresh_secondary_analysis_projection(self.project, preferred_source_id=source_id)
             self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
+            self._sync_project_to_active_stage()
             self.project.touch()
             self.project_changed.emit()
             return
@@ -4036,6 +4180,7 @@ class ProjectController(QObject):
     def reset_merge_defaults(self) -> None:
         self.project.merge.enabled = False
         _reset_project_merge_defaults(self.project)
+        self._sync_project_to_active_stage()
         self.project.touch()
         self._set_status("Restored PiP defaults.")
         self.project_changed.emit()

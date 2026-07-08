@@ -41,7 +41,7 @@ The Project pane owns project metadata, PractiScore import, competitor identity 
 ## Downstream Effects
 
 - Imported PractiScore data seeds stage-local scoring context and the four-row project summary.
-- Stage media intake, file rows, primary designation, file removal, and Edit Stage live in Media.
+- Stage media intake, file rows, primary designation, file removal, and active-stage selection live in Media.
 - Queue and export processing live downstream in Queue, not here.
 
 ## Related Guides

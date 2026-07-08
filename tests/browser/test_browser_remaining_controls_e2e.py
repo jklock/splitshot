@@ -757,10 +757,32 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         "(value) => state?.project?.merge?.layout === value", arg=layout
                     )
 
+                source_defaults_before = page.evaluate(
+                    """() => (state?.project?.merge_sources || []).map((item) => ({
+                        id: item.id,
+                        pip_size_percent: Number(item?.pip_size_percent || 0),
+                        pip_x: Number(item?.pip_x || 0),
+                        pip_y: Number(item?.pip_y || 0),
+                    }))"""
+                )
                 _set_input_value(page.locator("#pip-size"), "50")
                 _set_input_value(page.locator("#pip-x"), "0.25")
                 _set_input_value(page.locator("#pip-y"), "0.75")
                 assert page.locator("#pip-size-label").text_content().strip() == "50%"
+                page.wait_for_function(
+                    """() => Number(state?.project?.merge?.pip_size_percent || 0) === 50
+                        && Math.abs(Number(state?.project?.merge?.pip_x || 0) - 0.25) < 0.001
+                        && Math.abs(Number(state?.project?.merge?.pip_y || 0) - 0.75) < 0.001
+                    """
+                )
+                page.wait_for_function(
+                    """(expected) => (state?.project?.merge_sources || []).every((item, index) =>
+                        Number(item?.pip_size_percent || 0) === Number(expected[index]?.pip_size_percent || 0)
+                          && Math.abs(Number(item?.pip_x || 0) - Number(expected[index]?.pip_x || 0)) < 0.001
+                          && Math.abs(Number(item?.pip_y || 0) - Number(expected[index]?.pip_y || 0)) < 0.001
+                    )""",
+                    arg=source_defaults_before,
+                )
                 page.locator(
                     '[data-inspector-section="pip-defaults"] button[aria-label="Hide section"]'
                 ).click()
@@ -880,7 +902,6 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
                         const trim = source?.trim_derivative;
                         return Boolean(source)
-                            && source.placement?.mode === 'above_below'
                             && trim?.active_path_kind === 'local_derivative';
                     }""",
                     arg=source_id,

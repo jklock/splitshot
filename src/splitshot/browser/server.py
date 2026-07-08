@@ -779,10 +779,18 @@ class BrowserControlServer:
                     self._send_media(Path(controller.project.primary_video.path))
                     return
                 if request_path == "/media/secondary":
-                    if controller.project.secondary_video is None:
+                    active_path = controller.effective_merge_source_media_path(
+                        controller.project.analysis.analyzed_secondary_source_id
+                    )
+                    fallback_path = (
+                        ""
+                        if controller.project.secondary_video is None
+                        else controller.project.secondary_video.path
+                    )
+                    if not active_path and not fallback_path:
                         self.send_error(HTTPStatus.NOT_FOUND)
                         return
-                    self._send_media(Path(controller.project.secondary_video.path))
+                    self._send_media(Path(active_path or fallback_path))
                     return
                 if request_path.startswith("/media/merge/"):
                     self._send_merge_media(request_path.removeprefix("/media/merge/"))
@@ -1415,22 +1423,11 @@ class BrowserControlServer:
                 )
 
             def _send_merge_media(self, source_id: str) -> None:
-                source = next(
-                    (item for item in controller.project.merge_sources if item.id == source_id),
-                    None,
-                )
-                if source is None or not source.asset.path:
+                active_path = controller.effective_merge_source_media_path(source_id)
+                if not active_path:
                     activity.log("media.missing", source_id=source_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
-                trim_derivative = getattr(source, "trim_derivative", None)
-                active_path = source.asset.path
-                if (
-                    trim_derivative is not None
-                    and getattr(trim_derivative, "active_path_kind", None) == "local_derivative"
-                    and getattr(trim_derivative, "derivative_path", None)
-                ):
-                    active_path = trim_derivative.derivative_path
                 self._send_media(Path(active_path))
 
             def _send_popup_media(self, popup_id: str) -> None:
@@ -1911,17 +1908,31 @@ class BrowserControlServer:
                     end_s=float(end_s) if end_s not in {None, ""} else None,
                     clear=clear,
                 )
+                server._clear_browser_media_cache()
                 server._bump_media_url_token()
 
             def _trim_all_merge_sources(self, payload: dict[str, Any]) -> None:
                 clear = bool(payload.get("clear", False))
                 start_s = payload.get("start_s")
                 end_s = payload.get("end_s")
+                keep_before_beep_s = payload.get("keep_before_beep_s")
+                keep_after_last_shot_s = payload.get("keep_after_last_shot_s")
                 controller.trim_all_merge_sources(
                     start_s=float(start_s) if start_s not in {None, ""} else None,
                     end_s=float(end_s) if end_s not in {None, ""} else None,
+                    keep_before_beep_s=(
+                        float(keep_before_beep_s)
+                        if keep_before_beep_s not in {None, ""}
+                        else None
+                    ),
+                    keep_after_last_shot_s=(
+                        float(keep_after_last_shot_s)
+                        if keep_after_last_shot_s not in {None, ""}
+                        else None
+                    ),
                     clear=clear,
                 )
+                server._clear_browser_media_cache()
                 server._bump_media_url_token()
 
             def _list_output_profiles(self, payload: dict[str, Any]) -> None:

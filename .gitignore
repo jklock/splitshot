@@ -13,7 +13,11 @@ dist/
 htmlcov/
 coverage.xml
 projects/
-tmp/
+tmp/*
+!tmp/.gitkeep
+!tmp/codex/
+tmp/codex/*
+!tmp/codex/.gitkeep
 logs/
 .training/
 Stage*.MP4

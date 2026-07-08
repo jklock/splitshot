@@ -117,6 +117,86 @@ def test_merge_preview_drag_repositions(synthetic_video_factory) -> None:
         server.shutdown()
 
 
+def test_merge_preview_drag_survives_pending_merge_auto_apply(
+    synthetic_video_factory,
+) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "mp-drag-race-p"},
+        merge_kwargs={"name": "mp-drag-race-m"},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "preview-drag-race.ssproj"
+                )
+                navigate_to_tool(page, "merge")
+                page.locator("#merge-enabled").check()
+                page.locator("#merge-layout").select_option("pip")
+                page.evaluate("() => scheduleInteractionPreviewRender({ video: true })")
+                page.wait_for_timeout(80)
+
+                pip_item = page.locator("#merge-preview-layer .merge-preview-item").last
+                pip_item.wait_for(state="visible", timeout=5000)
+                source_id = pip_item.get_attribute("data-source-id")
+                assert source_id, "PIP item must expose a merge source id"
+
+                before = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((entry) => entry.id === sid);
+                        return {
+                            pip_x: Number(source?.pip_x ?? 0),
+                            pip_y: Number(source?.pip_y ?? 0),
+                        };
+                    }""",
+                    source_id,
+                )
+                box = pip_item.bounding_box()
+                assert box, "PIP item must have a bounding box"
+                start_x = box["x"] + box["width"] / 2
+                start_y = box["y"] + box["height"] / 2
+                page.mouse.move(start_x, start_y)
+                page.mouse.down()
+                page.mouse.move(start_x - 96, start_y - 72, steps=12)
+                page.mouse.up()
+                page.wait_for_timeout(700)
+
+                tracker.assert_activity("merge.preview.drag.commit", timeout=5000)
+                after = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((entry) => entry.id === sid);
+                        return {
+                            pip_x: Number(source?.pip_x ?? 0),
+                            pip_y: Number(source?.pip_y ?? 0),
+                        };
+                    }""",
+                    source_id,
+                )
+                page.evaluate("() => renderVideo()")
+                page.wait_for_timeout(150)
+                after_render = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((entry) => entry.id === sid);
+                        return {
+                            pip_x: Number(source?.pip_x ?? 0),
+                            pip_y: Number(source?.pip_y ?? 0),
+                        };
+                    }""",
+                    source_id,
+                )
+
+                assert (
+                    after["pip_x"] != before["pip_x"] or after["pip_y"] != before["pip_y"]
+                ), "Drag should change the source PiP position"
+                assert after_render == after, "A pending merge auto-apply must not reset PiP drag state"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
     server, tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,

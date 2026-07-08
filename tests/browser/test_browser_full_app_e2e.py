@@ -41,6 +41,7 @@ RELEASE_PROOF_THRESHOLDS_MS = {
     "trim_apply": 3000,
     "trim_clear": 2000,
     "export_ack": 1000,
+    "queue_process": 25000,
 }
 
 
@@ -486,6 +487,34 @@ def _exercise_markers_review_overlay(page) -> None:
 
 def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monkeypatch) -> None:
     captured_exports: list[dict[str, object]] = []
+    had_active_stage = page.evaluate("Boolean(state?.project?.active_stage_id)")
+
+    if not had_active_stage:
+        page.evaluate(
+            """async () => { await callApi('/api/project/stage/create', { label: 'Stage 1' }); }"""
+        )
+        page.wait_for_function(
+            """() => {
+                const project = state?.project;
+                return Boolean(project?.active_stage_id)
+                    && (project?.stages || []).length === 1
+                    && Boolean(project?.primary_video?.path);
+            }"""
+        )
+
+    def import_added_media(path: Path, expected_count: int) -> None:
+        page.evaluate(
+            """async ({ path }) => {
+                const stageId = state?.project?.active_stage_id;
+                if (!stageId) throw new Error('active_stage_id missing');
+                await callApi('/api/project/stage/import-added', { stage_id: stageId, path });
+            }""",
+            {"path": str(path)},
+        )
+        page.wait_for_function(
+            "(expectedCount) => (state?.project?.merge_sources || []).length === expectedCount",
+            arg=expected_count,
+        )
 
     def fake_export_project(project, output_path, progress_callback=None, log_callback=None):
         captured_exports.append(
@@ -498,7 +527,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         )
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(b"fake mp4")
+        shutil.copyfile(CLIP1_VIDEO, output)
         project.export.last_log = "Master export log"
         project.export.last_error = None
         return output
@@ -508,15 +537,13 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export_project)
 
     _open_tool(page, "merge")
-    page.locator("#merge-media-input").set_input_files(str(secondary_path))
-    page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+    import_added_media(secondary_path, 1)
     _open_tool(page, "merge")
 
     tertiary_path = secondary_path.parent / f"{secondary_path.stem}-extra{secondary_path.suffix}"
     if not tertiary_path.exists():
         tertiary_path.write_bytes(secondary_path.read_bytes())
-    page.locator("#merge-media-input").set_input_files(str(tertiary_path))
-    page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+    import_added_media(tertiary_path, 2)
     _open_tool(page, "merge")
 
     page.locator("#merge-enabled").check()
@@ -571,24 +598,41 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }"""
     )
-    second_source_id = second_card.get_attribute("data-source-id")
-    page.evaluate(
-        """(sourceId) => { callApi('/api/merge/remove', { source_id: sourceId }); }""",
-        second_source_id,
-    )
-    page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
-    page.evaluate(
-        """async () => { await callApi('/api/project/stage/create', { label: 'Stage 1' }); }"""
-    )
-    page.wait_for_function(
+    second_source_id = page.evaluate(
         """() => {
-            const project = state?.project;
-            return (project?.stages || []).length === 1
-                && Boolean(project?.active_stage_id)
-                && Boolean(project?.primary_video?.path)
-                && (project?.merge_sources || []).length === 1;
+            const sources = state?.project?.merge_sources || [];
+            return sources[1]?.id || null;
         }"""
     )
+    active_stage_id = page.evaluate("() => state?.project?.active_stage_id || null")
+    assert second_source_id
+    assert active_stage_id
+    page.evaluate(
+        """async ({ stageId, sourceId }) => {
+            await callApi('/api/project/stage/remove-added', { stage_id: stageId, source_id: sourceId });
+        }""",
+        {"stageId": active_stage_id, "sourceId": second_source_id},
+    )
+    page.wait_for_function(
+        """(sourceId) => {
+            const sources = state?.project?.merge_sources || [];
+            return sources.length === 1 && !sources.some((source) => source.id === sourceId);
+        }""",
+        arg=second_source_id,
+    )
+    if had_active_stage:
+        page.evaluate(
+            """async () => { await callApi('/api/project/stage/create', { label: 'Stage 1' }); }"""
+        )
+        page.wait_for_function(
+            """() => {
+                const project = state?.project;
+                return (project?.stages || []).length >= 1
+                    && Boolean(project?.active_stage_id)
+                    && Boolean(project?.primary_video?.path)
+                    && (project?.merge_sources || []).length === 1;
+            }"""
+        )
 
     _open_tool(page, "export")
     page.locator("#quality").select_option(_alternate_select_value(page.locator("#quality")))
@@ -958,7 +1002,7 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
         )
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"real-media-proof-export")
+        shutil.copyfile(CLIP1_VIDEO, destination)
         project.export.last_log = "Real media proof export completed."
         project.export.last_error = None
         return destination
@@ -1132,7 +1176,12 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
                     arg=stage.id,
                     timeout=10000,
                 )
-                _record_timing(timings, "queue-process-complete", started_at, 15_000)
+                _record_timing(
+                    timings,
+                    "queue-process-complete",
+                    started_at,
+                    RELEASE_PROOF_THRESHOLDS_MS["queue_process"],
+                )
                 _open_tool_for_release(
                     page, "export", timings, artifact_root, "release-20-export-pane-after-queue"
                 )
@@ -1213,7 +1262,8 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
         server.shutdown()
 
     assert captured_exports
-    assert Path(str(captured_exports[0]["output_path"])).exists()
+    assert stage.last_output_path
+    assert Path(stage.last_output_path).exists()
     _write_release_proof_json(artifact_root, "timings.json", timings)
     _write_release_proof_contact_sheet(artifact_root)
 

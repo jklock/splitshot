@@ -202,6 +202,7 @@ id:trim-global-clear
 id:trim-global-defaults-btn
 id:trim-global-end
 id:trim-global-start
+id:trim-global-undo
 id:resize-rail
 id:resize-sidebar
 id:resize-waveform
@@ -239,6 +240,7 @@ id:settings-marker-content-type
 id:settings-marker-duration
 id:settings-marker-enabled
 id:settings-marker-follow-motion
+id:settings-marker-quadrant
 id:settings-marker-use-shot-split-duration
 id:settings-marker-height
 id:settings-marker-opacity

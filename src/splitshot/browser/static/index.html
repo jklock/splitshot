@@ -339,7 +339,7 @@
               <section class="shotml-section" data-shotml-section="beep_detection">
                 <div class="section-header sub-section-header">
                   <h3>Beep Detection</h3>
-                  <span>Start tone search and refinement</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Onset fraction <input data-shotml-setting="beep_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
@@ -367,7 +367,7 @@
               <section class="shotml-section" data-shotml-section="shot_candidate_detection">
                 <div class="section-header sub-section-header">
                   <h3>Shot Candidate Detection</h3>
-                  <span>Peak picking and confidence</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Minimum shot interval ms <input data-shotml-setting="min_shot_interval_ms" type="number" min="1" max="1000" step="1" /></label>
@@ -384,7 +384,7 @@
               <section class="shotml-section" data-shotml-section="shot_refinement">
                 <div class="section-header sub-section-header">
                   <h3>Shot Refinement</h3>
-                  <span>Onset placement windows</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Onset fraction <input data-shotml-setting="shot_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
@@ -399,7 +399,7 @@
               <section class="shotml-section" data-shotml-section="false_positive_suppression">
                 <div class="section-header sub-section-header">
                   <h3>False Positive Suppression</h3>
-                  <span>Duplicate and outlier filtering</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Weak onset threshold <input data-shotml-setting="weak_onset_support_threshold" type="number" min="0" max="1" step="0.01" /></label>
@@ -414,7 +414,7 @@
               <section class="shotml-section" data-shotml-section="confidence_review">
                 <div class="section-header sub-section-header">
                   <h3>Confidence And Review</h3>
-                  <span>Support scoring and review pressure</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Refinement confidence weight <input data-shotml-setting="refinement_confidence_weight" type="number" min="0" max="1" step="0.01" /></label>
@@ -442,9 +442,7 @@
               <section class="shotml-section" data-shotml-section="advanced_runtime">
                 <div class="section-header sub-section-header">
                   <h3>Advanced Runtime</h3>
-                  <span>Changes alter model timing granularity</span>
                 </div>
-                <p class="hint">Window size and hop size are model-runtime values. Keep the defaults unless you are validating a detector experiment.</p>
                 <div class="control-grid">
                   <label>Window size <input data-shotml-setting="window_size" type="number" min="128" max="16384" step="1" /></label>
                   <label>Hop size <input data-shotml-setting="hop_size" type="number" min="1" max="4096" step="1" /></label>
@@ -835,14 +833,14 @@
                   <button id="settings-import-current" type="button">Save Current Settings</button>
                   <button id="settings-reset-defaults" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-scope-status" class="hint">No project folder is open. App defaults are the global template.</p>
+                <p id="settings-scope-status" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="layout">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Layout</h3>
-                    <span id="settings-layout-status">No saved layout defaults.</span>
+                    <span id="settings-layout-status"></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -861,14 +859,14 @@
                   <button id="settings-use-current-layout" type="button">Save Current Settings</button>
                   <button id="settings-release-layout" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-layout-summary" class="hint">New projects are using SplitShot's built-in layout defaults.</p>
+                <p id="settings-layout-summary" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="scoring">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Scoring</h3>
-                    <span>Default sport for new projects</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -880,7 +878,6 @@
                     </select>
                   </label>
                 </div>
-                <p class="hint">New projects start with this sport unless an import provides a match type.</p>
                 <div class="button-grid two-up">
                   <button id="settings-save-current-scoring" data-settings-save-section="scoring" type="button">Save Current Settings</button>
                   <button id="settings-reset-section-scoring" data-settings-reset-section="scoring" type="button">Reset to Default</button>
@@ -890,8 +887,8 @@
               <section class="settings-section collapsed" data-settings-section="pip">
                 <div class="section-header sub-section-header">
                   <div>
-                <h3>Compose</h3>
-                    <span>Layout, size, and position defaults</span>
+                    <h3>Compose</h3>
+                    <span id="settings-pip-summary"></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -923,14 +920,14 @@
                   <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Save Current Settings</button>
                   <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-pip-summary" class="hint">No saved Compose defaults.</p>
+                <p id="settings-pip-summary" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="overlay">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Overlay</h3>
-                    <span>Badge placement, color, and opacity defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1110,7 +1107,7 @@
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Export</h3>
-                    <span>Render quality and FFmpeg defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1171,7 +1168,7 @@
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>ShotML</h3>
-                    <span>Detector threshold and defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1219,8 +1216,8 @@
               </div>
               <section class="practiscore-actions" aria-label="PractiScore actions">
                 <div class="button-grid two-up practiscore-action-grid">
-                  <button id="open-practiscore-dashboard" type="button">Open PractiScore Dashboard</button>
-                  <button id="import-practiscore" type="button">Select PractiScore File</button>
+                  <button id="open-practiscore-dashboard" type="button" disabled>Open PractiScore Dashboard</button>
+                  <button id="import-practiscore" type="button" disabled>Select PractiScore File</button>
                 </div>
               </section>
               <div class="control-grid">

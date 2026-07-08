@@ -13,7 +13,7 @@ SplitShot is a local-first browser app for turning stage footage into a reviewed
 
 Every session uses the same workspace:
 
-- The left rail switches between `Project`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, and `ShotML`.
+- The left rail switches between `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Settings`, `Metrics`, and `ShotML`.
 - The top status line reports the active file, analysis state, and sync offset.
 - The center stage shows the primary video, optional added media, overlay badges, markers, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.
@@ -22,7 +22,7 @@ Every session uses the same workspace:
 - The waveform, timing table, metrics table, and right inspector have expanded states where available.
 - Shared modals, including the color picker and export log, appear above the current pane.
 
-Most edits auto-apply. Export is the main exception: the final video is created only when you click `Export Video`.
+Most edits auto-apply. Export saves stage settings. Queue is where packaged processing starts for one file per stage or one combined output.
 
 ## Pane Guides
 
@@ -32,11 +32,13 @@ Most edits auto-apply. Export is the main exception: the final video is created 
 | [panes/score.md](panes/score.md) | Ruleset selection, per-shot score cards, penalty fields, restore/delete actions, and imported score context |
 | [panes/splits.md](panes/splits.md) | Shot timing, waveform review, marker nudges, manual shots, expanded timing edits, and timing events |
 | [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
-| [panes/pip.md](panes/pip.md) | Added media, layout, per-item size/position/opacity, and export inclusion |
+| [panes/media.md](panes/media.md) | Active stage selection, stage naming, primary media, added media, and stage creation |
+| [panes/pip.md](panes/pip.md) | Added-media composition, stage defaults, per-source layout/size/position/opacity/sync, and preview truth |
 | [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
 | [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, guided Start/Finish motion authoring, the expanded markers workbench, and bundled marker images |
 | [panes/review.md](panes/review.md) | Preview artifact toggles, Summary boxes, custom text boxes, placement, size, and style |
-| [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
+| [panes/export.md](panes/export.md) | Stage-local ffmpeg settings, output profiles, codecs, bitrate, and export logs |
+| [panes/queue.md](panes/queue.md) | Queue membership, queue status, Process Many, and Process Into 1 File |
 | [panes/settings.md](panes/settings.md) | App defaults, folder defaults in `splitshot.conf`, settings source attribution, and marker template defaults |
 | [panes/metrics.md](panes/metrics.md) | Read-only post-stage graphs, expanded timing table, scoring context, CSV export, and text export |
 

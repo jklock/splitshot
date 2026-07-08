@@ -225,12 +225,9 @@ export function createSettingsPane({
       ? (Object.keys(layers.folder || {}).length > 0 ? (layers.folder || {}) : (layers.app || {}))
       : (layers.app || {});
     if (scopeStatus) {
-      const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
       scopeStatus.textContent = folderSettingsError
         ? folderSettingsError
-        : hasProjectPath && hasFolderLayer
-          ? "Folder defaults are active for this project."
-          : "";
+        : "";
     }
 
     const shotmlDefaults = persistedSettings.shotml_defaults || {};
@@ -277,25 +274,15 @@ export function createSettingsPane({
     }
     const layoutStatus = $("settings-layout-status");
     if (layoutStatus) {
-      const persistedParts = [
-        persistedSettings.layout_locked === null || persistedSettings.layout_locked === undefined ? null : `Lock ${persistedSettings.layout_locked ? "on" : "off"}`,
-        persistedSettings.layout_rail_width ? `Rail ${persistedSettings.layout_rail_width}` : null,
-        persistedSettings.layout_inspector_width ? `Inspector ${persistedSettings.layout_inspector_width}` : null,
-        persistedSettings.layout_waveform_height ? `Waveform ${persistedSettings.layout_waveform_height}` : null,
-      ].filter(Boolean);
-      layoutStatus.textContent = persistedParts.length ? persistedParts.join(" • ") : "No saved layout defaults.";
+      layoutStatus.textContent = "";
     }
     const layoutSummary = $("settings-layout-summary");
     if (layoutSummary) {
-      const currentLayout = readProjectUiStatePayload() || state?.project?.ui_state || {};
-      layoutSummary.textContent = `Current layout: rail ${currentLayout.rail_width ?? 84}, inspector ${currentLayout.inspector_width ?? 440}, waveform ${currentLayout.waveform_height ?? 206}.`;
+      layoutSummary.textContent = "";
     }
     const pipSummary = $("settings-pip-summary");
     if (pipSummary) {
-      const sourceCount = Array.isArray(persistedSettings.merge_source_defaults) ? persistedSettings.merge_source_defaults.length : 0;
-      pipSummary.textContent = sourceCount > 0
-        ? `${sourceCount} saved Compose source${sourceCount === 1 ? "" : "s"} in defaults.`
-        : "No saved Compose defaults.";
+      pipSummary.textContent = "";
     }
     renderSettingsSections();
 

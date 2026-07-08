@@ -40,6 +40,10 @@ export function createQueuePane({
     return queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
   }
 
+  function combinedOutputPath() {
+    return String(project().last_combined_output_path || "");
+  }
+
   function visibleQueueEntries() {
     return queueEntries()
       .filter((entry) => entry.stage_id && entry.status !== "not_queued")
@@ -193,6 +197,7 @@ export function createQueuePane({
     const stageOptions = stages()
       .map((item) => `<option value="${item.id}" ${item.id === stage?.id ? "selected" : ""}>${stageLabel(item)}</option>`)
       .join("");
+    const combinedOutput = combinedOutputPath();
     return `
       <section class="settings-section queue-pane-section">
         <div class="section-header media-section-header">
@@ -207,6 +212,12 @@ export function createQueuePane({
           <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Many</button>
           <button id="queue-combined-btn" class="btn btn-primary queue-combined-btn" type="button">Process Into 1 File</button>
         </div>
+        ${combinedOutput ? `
+          <div class="queue-combined-output" data-queue-combined-output="${combinedOutput}">
+            <strong>Combined Output</strong>
+            <span>${fileName(combinedOutput)}</span>
+          </div>
+        ` : ""}
       </section>
     `;
   }

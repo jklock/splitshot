@@ -59,6 +59,28 @@ def _get_first_merge_source_state(page):
     )
 
 
+def _wait_for_first_merge_derivative(page, present: bool) -> None:
+    if present:
+        page.wait_for_function(
+            """() => {
+                const source = (state?.project?.merge_sources || [])[0];
+                const trim = source?.trim_derivative;
+                return Boolean(trim?.derivative_path)
+                    && trim?.active_path_kind === 'local_derivative';
+            }"""
+        )
+        return
+    page.wait_for_function(
+        """() => {
+            const source = (state?.project?.merge_sources || [])[0];
+            const trim = source?.trim_derivative;
+            return Boolean(source)
+                && !trim?.derivative_path
+                && trim?.active_path_kind == null;
+        }"""
+    )
+
+
 def test_trim_pane_renders_global_and_source_sections(synthetic_video_factory) -> None:
     primary_path = Path(
         synthetic_video_factory(
@@ -238,18 +260,40 @@ def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> Non
                 )
                 _navigate_to_trim_pane(page)
 
+                expected = page.evaluate(
+                    """() => {
+                        const source = (state?.project?.merge_sources || [])[0];
+                        const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary ?? 0);
+                        const shots = state?.project?.analysis?.shots || [];
+                        const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
+                        const syncOffsetMs = Number(source?.sync_offset_ms || 0);
+                        const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        return {
+                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 0.5),
+                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 2.5),
+                        };
+                    }"""
+                )
                 page.locator("#trim-global-start").fill("0.50")
                 page.locator("#trim-global-end").fill("2.50")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                page.wait_for_timeout(800)
+                page.wait_for_function(
+                    """() => String(document.getElementById('processing-message')?.textContent || '')
+                        .includes('Trimming added media')"""
+                )
+                _wait_for_first_merge_derivative(page, True)
+                page.wait_for_function(
+                    """() => String(state?.status || '').includes('Applied trim to all added media')
+                        || String(state?.status || '').includes('Trimmed all added media')"""
+                )
 
                 state = _get_first_merge_source_state(page)
                 assert state is not None
                 assert state["has_derivative"] is True
                 assert state["active_path_kind"] == "local_derivative"
-                assert state["start_s"] == pytest.approx(0.50, abs=0.1)
-                assert state["end_s"] == pytest.approx(2.50, abs=0.1)
+                assert state["start_s"] == pytest.approx(expected["start_s"], abs=0.1)
+                assert state["end_s"] == pytest.approx(expected["end_s"], abs=0.1)
 
                 deriv_path = state.get("derivative_path")
                 assert deriv_path
@@ -285,13 +329,13 @@ def test_trim_clear_all_removes_derivative(synthetic_video_factory) -> None:
                 page.locator("#trim-global-end").fill("2.50")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, True)
 
                 before = _get_first_merge_source_state(page)
                 assert before["has_derivative"] is True
 
                 page.locator("#trim-global-clear").click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, False)
 
                 after = _get_first_merge_source_state(page)
                 assert after["active_path_kind"] is None
@@ -397,30 +441,59 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                 )
                 _navigate_to_trim_pane(page)
 
+                expected_first = page.evaluate(
+                    """() => {
+                        const source = (state?.project?.merge_sources || [])[0];
+                        const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary ?? 0);
+                        const shots = state?.project?.analysis?.shots || [];
+                        const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
+                        const syncOffsetMs = Number(source?.sync_offset_ms || 0);
+                        const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        return {
+                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 0.3),
+                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 2.1),
+                        };
+                    }"""
+                )
                 page.locator("#trim-global-start").fill("0.30")
                 page.locator("#trim-global-end").fill("2.10")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, True)
 
                 after_first = _get_first_merge_source_state(page)
                 assert after_first["has_derivative"] is True
 
+                expected_second = page.evaluate(
+                    """() => {
+                        const source = (state?.project?.merge_sources || [])[0];
+                        const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary ?? 0);
+                        const shots = state?.project?.analysis?.shots || [];
+                        const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
+                        const syncOffsetMs = Number(source?.sync_offset_ms || 0);
+                        const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        return {
+                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 1.5),
+                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 1.8),
+                        };
+                    }"""
+                )
                 page.locator("#trim-global-start").fill("1.50")
                 page.locator("#trim-global-end").fill("1.80")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, True)
 
                 after_second = _get_first_merge_source_state(page)
-                assert after_second["start_s"] == pytest.approx(1.50, abs=0.2)
+                assert after_second["start_s"] == pytest.approx(expected_second["start_s"], abs=0.2)
+                assert after_second["end_s"] == pytest.approx(expected_second["end_s"], abs=0.2)
 
                 page.locator("#trim-global-undo").click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, True)
 
                 restored = _get_first_merge_source_state(page)
-                assert restored["start_s"] == pytest.approx(0.30, abs=0.2)
-                assert restored["end_s"] == pytest.approx(2.10, abs=0.2)
+                assert restored["start_s"] == pytest.approx(expected_first["start_s"], abs=0.2)
+                assert restored["end_s"] == pytest.approx(expected_first["end_s"], abs=0.2)
             finally:
                 browser.close()
     finally:
@@ -453,7 +526,7 @@ def test_trim_per_source_apply_persists(synthetic_video_factory) -> None:
                 end_input.fill("2.10")
                 page.wait_for_timeout(100)
                 page.locator(".trim-apply-btn").first.click()
-                page.wait_for_timeout(800)
+                _wait_for_first_merge_derivative(page, True)
 
                 state = _get_first_merge_source_state(page)
                 assert state["has_derivative"] is True

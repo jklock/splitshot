@@ -1282,7 +1282,7 @@ function withPreservedScrollState(elements, callback) {
 
 function scrollContainerForElement(element) {
   if (!(element instanceof HTMLElement)) return null;
-  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .media-stage-nav-list, .queue-stage-list, .trim-source-list, .inspector");
+  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .queue-stage-list, .trim-source-list, .inspector");
 }
 
 function preserveElementViewportAnchor(elementOrResolver, callback) {
@@ -1312,7 +1312,7 @@ function resetInspectorHorizontalScroll() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
   inspector.scrollLeft = 0;
-  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .media-stage-nav-list, .media-stage-nav-card, .queue-stage-list, .queue-stage-card, .trim-source-list, .trim-source-card, .shotml-section, .pip-defaults-section").forEach((element) => {
+  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .queue-stage-list, .queue-stage-card, .trim-source-list, .trim-source-card, .shotml-section, .pip-defaults-section").forEach((element) => {
     if (element instanceof HTMLElement) element.scrollLeft = 0;
   });
 }
@@ -6307,6 +6307,7 @@ function renderScoringPresetDescription() {
 function renderPractiScoreSummaries() {
   projectPane?.renderPractiScoreOptionLists?.();
   projectPane?.ensurePractiScoreSelectionControls?.();
+  projectPane?.setProjectActionAvailability?.();
   projectPane?.renderPractiScoreImportSummary?.();
   return scoringPane?.renderPractiScoreSummaries();
 }
@@ -9701,6 +9702,7 @@ exportPane = createExportPane({
   applyExportDraft,
   autoApplyExportLayout,
   autoApplyExportSettings,
+  refreshState: refresh,
 });
 
 settingsPane = createSettingsPane({

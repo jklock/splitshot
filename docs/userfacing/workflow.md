@@ -9,14 +9,14 @@ This is the recommended multi-stage workflow.
 3. Import the PractiScore CSV/TXT source if stage records are needed.
 4. Select the imported stage, competitor name, and competitor place.
 5. Open [panes/media.md](panes/media.md).
-6. Pair one primary video and any added media for each stage using Set Primary, Add More, and file removal.
-7. Click Edit Stage to make the stage live for editing.
+6. Pair one primary video and any added media for each stage using Add Primary, Add Media, Set Primary, and file removal.
+7. Leave the correct stage selected in Media so the rest of the app edits that stage.
 8. Open [panes/pip.md](panes/pip.md) and configure the active stage composition.
 9. Open Trim, Score, Splits, Markers, Overlay, Review, and Metrics as needed for the active stage.
-10. Open [panes/export.md](panes/export.md), configure the active stage output, and queue it.
+10. Open [panes/export.md](panes/export.md) and configure the active stage output settings.
 11. Open [panes/queue.md](panes/queue.md).
-12. Use `Apply Settings To All` if the other stages should inherit the active stage template.
-13. Re-enter any stage that still needs changes via Edit Stage.
+12. Use `Apply Active Stage Settings to Queued` if the other queued stages should inherit the active stage settings.
+13. Re-select any stage that still needs changes from Media or Queue.
 14. Click `Process Many` for one file per stage, or `Process Into 1 File` for a stitched output.
 
 ## Practical Order
@@ -26,7 +26,7 @@ This is the recommended multi-stage workflow.
 - Finish timing before final overlay and review layout.
 - Queue only after the active stage looks correct in preview.
 - Use Queue as the batch export surface rather than exporting each stage manually.
-- Edit Stage routes you into Media, not Compose.
+- Export is settings only. Queue is where processing starts.
 
 ## Related Guides
 

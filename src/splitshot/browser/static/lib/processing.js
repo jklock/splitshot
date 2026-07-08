@@ -185,6 +185,12 @@ export function createProcessingRuntime({
     if (path === "/api/import/secondary") {
       return { message: "Importing media...", detail: "Adding media to the list" };
     }
+    if (path === "/api/merge/source/trim-all") {
+      return { message: "Trimming added media...", detail: "Writing derivative files and refreshing waveform state" };
+    }
+    if (path === "/api/merge/source/trim") {
+      return { message: "Trimming source...", detail: "Writing a derivative file and refreshing preview state" };
+    }
     if (path === "/api/project/details") return { message: "Updating project details...", detail: "Saving metadata locally" };
     if (path === "/api/project/practiscore") return { message: "Updating match import settings...", detail: "Saving stage and competitor details" };
     if (path === "/api/project/open") return { message: "Opening project folder...", detail: "Loading project.json and local assets" };

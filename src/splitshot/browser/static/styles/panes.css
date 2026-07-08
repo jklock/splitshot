@@ -1,15 +1,15 @@
 .shotml-section {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.48rem;
-  padding-top: 0.5rem;
+  gap: 0.55rem;
+  padding-top: 0.6rem;
 }
 
 .settings-section {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 0.62rem;
-  padding-top: 0.72rem;
+  gap: 0.55rem;
+  padding-top: 0.6rem;
 }
 
 .settings-section.collapsed {
@@ -240,12 +240,12 @@
 }
 
 .tool-pane[data-tool-pane="merge"] .merge-media-card {
-  gap: 0.55rem;
-  padding: 0.6rem;
+  gap: 0.42rem;
+  padding: 0.5rem;
 }
 
 .tool-pane[data-tool-pane="merge"] .merge-source-controls {
-  gap: 0.92rem;
+  gap: 0.55rem 0.6rem;
 }
 
 .tool-pane[data-tool-pane="merge"] .section-header.pane-title-row {
@@ -324,6 +324,12 @@
   order: 2;
 }
 
+.tool-pane[data-tool-pane="merge"] .merge-media-card-actions .pane-toggle,
+.tool-pane[data-tool-pane="merge"] .btn-sm {
+  min-height: 28px;
+  padding: 0.16rem 0.48rem;
+}
+
 .tool-pane[data-tool-pane="merge"] .merge-media-card strong {
   font-size: 0.8rem;
   line-height: 1.2;
@@ -342,7 +348,6 @@
 }
 
 .media-pane-active-stage,
-.media-stage-nav-list,
 .queue-stage-list,
 .trim-source-list {
   display: grid;
@@ -350,7 +355,6 @@
 }
 
 .media-active-stage-header,
-.media-stage-nav-copy,
 .queue-stage-copy,
 .trim-source-card-copy {
   display: grid;
@@ -359,7 +363,6 @@
 }
 
 .media-active-stage-header strong,
-.media-stage-nav-copy strong,
 .queue-stage-copy strong,
 .trim-source-card-copy strong {
   font-size: 0.8rem;
@@ -367,7 +370,6 @@
 }
 
 .media-active-stage-header small,
-.media-stage-nav-copy small,
 .queue-stage-copy small,
 .trim-source-card-copy small {
   color: var(--muted);
@@ -404,30 +406,27 @@
   gap: 0.35rem;
 }
 
-.media-stage-nav-actions,
+.media-pane-actions,
 .queue-stage-actions {
   display: grid;
   gap: 0.35rem;
 }
 
 .media-asset-row,
-.media-stage-nav-card,
 .queue-stage-card,
 .trim-source-card {
   border: 1px solid var(--line);
   display: grid;
   gap: 0.55rem;
-  padding: 0.6rem;
+  padding: 0.58rem;
 }
 
-.media-stage-nav-card.selected,
 .queue-stage-card.selected,
 .trim-source-card.selected {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px rgba(255, 123, 34, 0.24);
 }
 
-.media-stage-nav-header,
 .trim-source-card-header {
   align-items: center;
   display: grid;
@@ -442,7 +441,6 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.media-stage-nav-body,
 .queue-stage-body,
 .trim-source-card-body {
   display: grid;
@@ -494,7 +492,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-.media-stage-nav-actions-split {
+.media-pane-actions-split {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -578,6 +576,7 @@
   display: flex;
   justify-content: center;
   justify-self: stretch;
+  margin-top: 0.1rem;
   width: 100%;
 }
 
@@ -684,7 +683,7 @@
   align-items: center;
   display: grid;
   gap: 0.5rem;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .media-inner-section-header strong {
@@ -703,7 +702,7 @@
   border: 1px solid var(--line);
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 0.6rem;
 }
 
@@ -739,10 +738,10 @@
 
 .media-asset-actions {
   align-items: center;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 0.45rem;
-  justify-content: flex-start;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  justify-content: end;
 }
 
 .queue-status-pill {
@@ -840,7 +839,7 @@
 .trim-global-actions {
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .merge-source-layout-row {
@@ -863,19 +862,57 @@
   line-height: 1.25;
 }
 
+.trim-active-path-row {
+  align-items: center;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.trim-active-path-badge {
+  align-items: center;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #86efac;
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 800;
+  min-height: 1.45rem;
+  padding: 0.08rem 0.45rem;
+  white-space: nowrap;
+}
+
+.trim-active-path-value {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @container (max-width: 560px) {
   .media-asset-row,
   .trim-bulk-grid,
   .trim-card-row,
+  .merge-source-controls,
   .merge-source-layout-row,
-  .media-stage-nav-actions-split {
+  .media-pane-actions-split {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .media-asset-actions,
-  .media-stage-nav-actions,
+  .media-pane-actions,
   .queue-stage-actions {
     justify-content: flex-start;
+  }
+
+  .media-inner-section-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .media-asset-actions,
+  .trim-global-actions {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .queue-pane-actions {
@@ -903,7 +940,7 @@
   align-items: stretch;
   display: grid;
   gap: 0.55rem;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .merge-source-field {
@@ -914,10 +951,6 @@
 .merge-source-size-field {
   grid-column: 1 / -1;
   min-width: 0;
-}
-
-.merge-source-opacity-field {
-  grid-column: 1 / -1;
 }
 
 .merge-source-size-field .pip-size-control {
@@ -974,6 +1007,22 @@
   line-height: 1.25;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.merge-source-sync-field {
+  align-content: start;
+}
+
+.merge-source-sync-inline {
+  align-items: center;
+  background: #0f1215;
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  min-height: 30px;
+  padding: 0.18rem 0.45rem;
 }
 
 .merge-media-card .merge-source-sync-hint {
@@ -1225,8 +1274,8 @@
 .review-custom-box {
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.48rem;
-  padding: 0.48rem;
+  gap: 0.55rem;
+  padding: 0.6rem;
 }
 
 .text-box-list {
@@ -1648,7 +1697,7 @@
 }
 
 .popup-bubble-enabled {
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   justify-self: start;
   min-width: 0;
   white-space: nowrap;
@@ -2002,7 +2051,7 @@
 }
 
 .text-box-card .hint {
-  font-size: 0.69rem;
+  font-size: 0.76rem;
 }
 
 .popup-motion-guide {
@@ -2218,7 +2267,7 @@
 .metrics-graph-list {
   display: grid;
   gap: 0.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .metrics-graph-list-workbench {
@@ -2226,9 +2275,11 @@
 }
 
 .metrics-graph-card {
+  border-top: 1px solid var(--line);
   align-content: start;
   gap: 0.42rem;
   min-height: 0;
+  padding-top: 0.5rem;
 }
 
 .metrics-graph-card-wide {
@@ -2242,32 +2293,35 @@
 }
 
 .metrics-graph-summary {
-  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.metrics-graph-chip {
-  align-items: center;
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  display: inline-flex;
-  font-size: 0.68rem;
+.metrics-graph-summary-row {
+  align-items: baseline;
+  column-gap: 0.45rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 1.35rem;
+  padding: 0.22rem 0;
+}
+
+.metrics-graph-summary-label {
+  color: var(--quiet);
+  font-size: 0.72rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-graph-summary-value {
+  font-size: 0.78rem;
   font-weight: 700;
-  gap: 0.4rem;
-  min-height: 30px;
-  padding: 0.2rem 0.42rem;
-}
-
-.metrics-graph-chip::before {
-  background: var(--metrics-graph-chip-color, var(--accent));
-  content: "";
-  display: inline-block;
-  height: 0.55rem;
-  width: 0.55rem;
 }
 
 .metrics-graph-svg {
-  background: linear-gradient(180deg, rgba(10, 15, 24, 0.78), rgba(10, 15, 24, 0.28));
-  border: 1px solid var(--line);
+  background: rgba(12, 15, 19, 0.2);
+  border: 1px solid rgba(244, 245, 246, 0.08);
   display: block;
   height: 132px;
   width: 100%;
@@ -2330,12 +2384,10 @@
 }
 
 .metric-card {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
   display: grid;
-  gap: 0.18rem;
-  min-height: 72px;
-  padding: 0.55rem;
+  gap: 0.3rem;
+  min-height: 0;
+  padding: 0;
 }
 
 .metric-card strong {
@@ -2343,11 +2395,28 @@
 }
 
 .metric-card small {
-  color: var(--quiet);
-  font-size: 0.66rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.queue-combined-output {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.queue-combined-output strong {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.queue-combined-output span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
 }
 
 .metrics-details {
@@ -2499,31 +2568,31 @@
 .compact-style-card,
 .cockpit-shell.inspector-compact .compact-style-card {
   align-content: start;
-  gap: 0.25rem;
+  gap: 0.55rem;
   grid-template-columns: minmax(0, 1fr);
-  min-height: 112px;
-  padding: 0.35rem;
+  min-height: 0;
+  padding: 0.6rem;
 }
 
 .compact-style-card h4 {
-  font-size: 0.68rem;
-  line-height: 1.05;
-  min-height: 0.75rem;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  min-height: 0;
   overflow-wrap: anywhere;
 }
 
 .compact-style-card label,
 .cockpit-shell.inspector-compact .compact-style-card label {
-  align-items: center;
-  flex-direction: row;
-  font-size: 0.62rem;
-  gap: 0.22rem;
+  align-items: stretch;
+  flex-direction: column;
+  font-size: 0.76rem;
+  gap: 0.28rem;
 }
 
 .compact-style-card .style-card-label,
 .cockpit-shell.inspector-compact .compact-style-card .style-card-label {
-  flex: 0 0 2rem;
-  white-space: nowrap;
+  flex: 0 0 auto;
+  white-space: normal;
 }
 
 .compact-style-card .color-control-pair,
@@ -2531,9 +2600,9 @@
 .cockpit-shell.inspector-compact .compact-style-card .color-control-pair,
 .cockpit-shell.inspector-compact .compact-style-card .opacity-control-pair {
   flex: 1 1 auto;
-  gap: 0.22rem;
+  gap: 0.28rem;
   margin-left: 0;
-  width: auto;
+  width: 100%;
 }
 
 .compact-style-card .color-swatch-button,
@@ -2547,25 +2616,25 @@
 .compact-style-card .color-hex-input,
 .cockpit-shell.inspector-compact .compact-style-card .color-hex-input {
   flex: 1 1 auto;
-  font-size: 0.64rem;
-  min-height: 22px;
+  font-size: 0.76rem;
+  min-height: 30px;
   min-width: 0;
-  padding: 0.12rem 0.22rem;
+  padding: 0.34rem 0.55rem;
   width: 100%;
 }
 
 .compact-style-card .opacity-percent-input,
 .cockpit-shell.inspector-compact .compact-style-card .opacity-percent-input {
-  font-size: 0.64rem;
-  min-height: 22px;
+  font-size: 0.76rem;
+  min-height: 30px;
   min-width: 3.1rem;
-  padding: 0.12rem 0.22rem;
+  padding: 0.34rem 0.55rem;
   width: 3.1rem;
 }
 
 .compact-style-card .opacity-percent-suffix,
 .cockpit-shell.inspector-compact .compact-style-card .opacity-percent-suffix {
-  font-size: 0.62rem;
+  font-size: 0.76rem;
 }
 
 .style-card h4 {
@@ -2578,8 +2647,8 @@
   align-items: center;
   display: flex;
   flex-direction: row;
-  font-size: 0.7rem;
-  gap: 0.24rem;
+  font-size: 0.76rem;
+  gap: 0.28rem;
   justify-content: flex-start;
   min-width: 0;
 }
@@ -2678,10 +2747,6 @@
     grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   }
 
-  .merge-source-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .merge-source-sync-row,
   .metrics-trend-table {
     grid-template-columns: minmax(0, 1fr);
@@ -2714,6 +2779,10 @@
 
   .color-hex-input {
     width: 100%;
+  }
+
+  .trim-active-path-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2817,16 +2886,16 @@
 
 #badge-style-grid .badge-style-card label,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card label {
-  align-items: center;
-  flex-direction: row;
-  font-size: 0.62rem;
-  gap: 0.22rem;
+  align-items: stretch;
+  flex-direction: column;
+  font-size: 0.76rem;
+  gap: 0.28rem;
 }
 
 #badge-style-grid .badge-style-card .style-card-label,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .style-card-label {
-  flex: 0 0 2rem;
-  white-space: nowrap;
+  flex: 0 0 auto;
+  white-space: normal;
 }
 
 #badge-style-grid .badge-style-card .color-control-pair,
@@ -2834,9 +2903,9 @@
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .color-control-pair,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-control-pair {
   flex: 1 1 auto;
-  gap: 0.22rem;
+  gap: 0.28rem;
   margin-left: 0;
-  width: auto;
+  width: 100%;
 }
 
 #badge-style-grid .badge-style-card .color-swatch-button,
@@ -2850,25 +2919,25 @@
 #badge-style-grid .badge-style-card .color-hex-input,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .color-hex-input {
   flex: 1 1 auto;
-  font-size: 0.64rem;
-  min-height: 22px;
+  font-size: 0.76rem;
+  min-height: 30px;
   min-width: 0;
-  padding: 0.12rem 0.22rem;
+  padding: 0.34rem 0.55rem;
   width: 100%;
 }
 
 #badge-style-grid .badge-style-card .opacity-percent-input,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-input {
-  font-size: 0.64rem;
-  min-height: 22px;
+  font-size: 0.76rem;
+  min-height: 30px;
   min-width: 3.1rem;
-  padding: 0.12rem 0.22rem;
+  padding: 0.34rem 0.55rem;
   width: 3.1rem;
 }
 
 #badge-style-grid .badge-style-card .opacity-percent-suffix,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-suffix {
-  font-size: 0.62rem;
+  font-size: 0.76rem;
 }
 
 #score-color-grid .score-color-field,
@@ -2926,22 +2995,22 @@
 .settings-badge-style-grid .badge-style-card {
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.25rem;
-  min-height: 112px;
-  padding: 0.35rem;
+  gap: 0.55rem;
+  min-height: 0;
+  padding: 0.6rem;
 }
 
 .settings-badge-style-grid .badge-style-card h4 {
-  font-size: 0.68rem;
-  line-height: 1.05;
+  font-size: 0.76rem;
+  line-height: 1.2;
   margin: 0;
-  min-height: 0.75rem;
+  min-height: 0;
   overflow-wrap: anywhere;
 }
 
 .settings-badge-style-grid .badge-style-card label {
-  font-size: 0.62rem;
-  gap: 0.22rem;
+  font-size: 0.76rem;
+  gap: 0.28rem;
 }
 
 @container (max-width: 460px) {
@@ -3317,8 +3386,8 @@
 .review-source-manager {
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.48rem;
-  padding: 0.48rem;
+  gap: 0.55rem;
+  padding: 0.6rem;
 }
 
 .review-source-controls {
@@ -3334,7 +3403,7 @@
 }
 
 .review-source-status {
-  font-size: 0.8em;
+  font-size: 0.76rem;
   opacity: 0.8;
   width: 100%;
 }

@@ -176,6 +176,8 @@ def browser_state(
             for item in analysis_payload.get("secondary_sources", [])
             if isinstance(item, dict) and str(item.get("source_id") or "").strip()
         }
+        active_secondary_path = ""
+        active_secondary_trimmed = False
         for item in merge_sources_payload:
             if not isinstance(item, dict):
                 continue
@@ -186,6 +188,17 @@ def browser_state(
                     or ("still_image" if asset_payload.get("is_still_image") else "video")
                 )
             source_id = item.get("id")
+            trim_payload = item.get("trim_derivative")
+            trim_active = bool(
+                isinstance(trim_payload, dict)
+                and trim_payload.get("active_path_kind") == "local_derivative"
+                and trim_payload.get("derivative_path")
+            )
+            effective_media_path = (
+                str(trim_payload.get("derivative_path"))
+                if trim_active and isinstance(trim_payload, dict)
+                else str((asset_payload or {}).get("path") or "")
+            )
             supports_sync_analysis = bool(
                 source_id
                 and isinstance(asset_payload, dict)
@@ -194,6 +207,8 @@ def browser_state(
             )
             is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
             sync_payload = secondary_source_payloads.get(str(source_id or ""), {})
+            item["trim_active"] = trim_active
+            item["effective_media_path"] = effective_media_path
             item["is_analyzed_sync_source"] = is_analyzed_sync_source
             item["supports_sync_analysis"] = supports_sync_analysis
             item["can_rerun_sync_analysis"] = supports_sync_analysis
@@ -230,6 +245,12 @@ def browser_state(
                 else "manual"
             )
             item["waveform_sample_count"] = len(sync_payload.get("waveform", []) or [])
+            if is_analyzed_sync_source:
+                active_secondary_path = effective_media_path
+                active_secondary_trimmed = trim_active
+    else:
+        active_secondary_path = ""
+        active_secondary_trimmed = False
     split_rows_payload = []
     for row in rows:
         row_payload = _normalize_scoring_row_payload(asdict(row), ruleset)
@@ -251,11 +272,12 @@ def browser_state(
         for segment in presentation.timing_segments
     ]
     primary_path = Path(project.primary_video.path) if project.primary_video.path else None
-    secondary_path = (
-        Path(project.secondary_video.path)
+    secondary_path_value = active_secondary_path or (
+        project.secondary_video.path
         if project.secondary_video is not None and project.secondary_video.path
-        else None
+        else ""
     )
+    secondary_path = Path(secondary_path_value) if secondary_path_value else None
     primary_available = bool(primary_path and primary_path.exists() and primary_path.is_file())
     secondary_available = bool(
         secondary_path and secondary_path.exists() and secondary_path.is_file()
@@ -289,6 +311,8 @@ def browser_state(
             "primary_url": "/media/primary" if primary_available else None,
             "secondary_url": ("/media/secondary" if secondary_available else None),
             "secondary_source_id": project.analysis.analyzed_secondary_source_id,
+            "secondary_active_path": secondary_path_value,
+            "secondary_trimmed": active_secondary_trimmed,
             "cache_token": media_cache_token or "",
         },
     }

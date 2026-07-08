@@ -376,9 +376,7 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
                 page.locator("#import-practiscore").click()
                 page.wait_for_function("() => (state?.project?.stages || []).length > 0")
                 _open_tool(page, "media")
-                page.wait_for_function(
-                    "() => document.querySelectorAll('#media-pane [data-stage-nav-id]').length > 0"
-                )
+                page.wait_for_function("() => document.querySelector('#media-active-stage-select') !== null")
             finally:
                 browser.close()
     finally:
@@ -3430,7 +3428,22 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
 
                 timer_badge = page.locator('[data-overlay-drag="timer"]')
                 timer_badge.wait_for(state="visible")
-                before_box = timer_badge.bounding_box()
+                page.wait_for_function(
+                    """() => {
+                        const badge = document.querySelector('[data-overlay-drag="timer"]');
+                        if (!badge) return false;
+                        const rect = badge.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    }"""
+                )
+                before_box = page.evaluate(
+                    """() => {
+                        const badge = document.querySelector('[data-overlay-drag="timer"]');
+                        if (!badge) return null;
+                        const rect = badge.getBoundingClientRect();
+                        return { width: rect.width, height: rect.height };
+                    }"""
+                )
                 assert before_box is not None
 
                 before_style = page.evaluate(
@@ -3491,7 +3504,14 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
                     }"""
                 )
 
-                after_box = timer_badge.bounding_box()
+                after_box = page.evaluate(
+                    """() => {
+                        const badge = document.querySelector('[data-overlay-drag="timer"]');
+                        if (!badge) return null;
+                        const rect = badge.getBoundingClientRect();
+                        return { width: rect.width, height: rect.height };
+                    }"""
+                )
                 assert after_box is not None
                 assert after_box["width"] > before_box["width"]
 

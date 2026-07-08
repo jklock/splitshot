@@ -17,7 +17,7 @@ _REAL_VIDEO_MAP = {
 }
 
 
-_TEMP_BASE = _REPO_ROOT / ".tmp_tests" / "video_source"
+_TEMP_BASE = _REPO_ROOT / "tmp" / "codex" / "video_source"
 
 _VIDEO_COUNTER = 0
 
@@ -30,8 +30,12 @@ def _resolve_video(name: str) -> Path:
         _VIDEO_COUNTER += 1
         _TEMP_BASE.mkdir(parents=True, exist_ok=True)
         dest = _TEMP_BASE / f"{name}-{_VIDEO_COUNTER}.mp4"
+        if dest.is_symlink() and not dest.exists():
+            dest.unlink()
         if not dest.exists():
             os.symlink(str(real.resolve()), str(dest))
+        if not dest.exists():
+            raise FileNotFoundError(f"Expected repo-local video symlink to exist: {dest}")
         return dest
     return None
 
@@ -138,12 +142,15 @@ def get_merge_source_state(page, source_id: str | None = None, index: int = 0):
                 has_derivative: Boolean(td),
                 active_path_kind: td?.active_path_kind ?? null,
                 derivative_path: td?.derivative_path ?? null,
+                effective_media_path: s.effective_media_path ?? s.asset?.path ?? null,
+                trim_active: Boolean(s.trim_active),
                 start_s: td?.start_s ?? null,
                 end_s: td?.end_s ?? null,
                 sync_offset_ms: s.sync_offset_ms ?? 0,
                 pip_size_percent: s.pip_size_percent ?? null,
                 opacity: s.opacity ?? null,
                 placement_mode: s.placement?.mode ?? null,
+                waveform_sample_count: s.waveform_sample_count ?? null,
             };
         }""",
         index,

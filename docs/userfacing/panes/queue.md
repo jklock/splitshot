@@ -1,13 +1,12 @@
 # Queue Pane
 
-The Queue pane is the multi-stage export surface. It shows queue status, lets you jump back into a stage via Media, applies settings across stages, and processes one or many outputs.
+The Queue pane is the multi-stage export surface. It shows queue status, selects which stage Queue is acting on, applies settings across stages, and processes one or many outputs.
 
 ## Use This Pane For
 
 - Reviewing queue status across stages.
-- Selecting a stage from the queue without leaving Queue.
-- Jumping back into a stage for edits via Media.
-- Applying one stage template to the rest of the project.
+- Selecting the active stage from Queue without leaving Queue.
+- Applying one stage's settings to the rest of the queued stages.
 - Processing individual outputs or a combined output.
 
 ## Key Controls
@@ -15,10 +14,10 @@ The Queue pane is the multi-stage export surface. It shows queue status, lets yo
 | Control | What it does |
 | --- | --- |
 | `Queue` / `Requeue` | Queues the active stage. |
-| `Apply Current Stage Template To All` | Copies the active stage template to the other stages. |
-| Queue row | Selects that stage as active without leaving Queue. |
-| `Edit Stage` | Makes that stage active and jumps back into Media for edits. |
-| `Remove` | Removes the stage from the queue. |
+| `Unqueue` | Removes the active stage from the queue. |
+| `Apply Active Stage Settings to Queued` | Copies the active stage settings to the queued stages. |
+| `Stage` | Chooses which stage Queue is acting on. |
+| Queue row | Shows one queued stage with its current queue status. |
 | `Process Many` | Exports one output file per queued stage. |
 | `Process Into 1 File` | Renders all queued stages, then concatenates them into one file. |
 
@@ -36,15 +35,15 @@ The Queue pane is the multi-stage export surface. It shows queue status, lets yo
 ## Workflow
 
 1. Configure one stage fully.
-2. Queue it.
-3. Use `Apply Current Stage Template To All` when the other stages should inherit the same template.
-4. Review the queue rows, select stages in place, and re-enter any stage that still needs edits.
+2. Select that stage in Queue and click `Queue`.
+3. Use `Apply Active Stage Settings to Queued` when the other queued stages should inherit the same settings.
+4. Review the queue rows and switch the active stage there when another stage needs attention.
 5. Click `Process Many` for one file per stage, or `Process Into 1 File` for a stitched output.
 
 ## Notes
 
-- `Edit Stage` navigates to Media for file and stage-level editing.
-- `Apply Settings To All` copies stage-local editing settings but excludes markers.
+- Queue does not replace Media. If stage media needs to change, go back to Media after selecting the right stage.
+- `Apply Active Stage Settings to Queued` copies stage-local editing settings but excludes markers.
 - Queue rows always point back to the underlying stage, not a detached export preset.
 - Queue processing preserves queue order for combined output.
 

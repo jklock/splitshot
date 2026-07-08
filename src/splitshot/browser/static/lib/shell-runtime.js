@@ -648,10 +648,25 @@ export function createShellRuntime({
     });
     $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
     $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
-    $("restore-merge-defaults")?.addEventListener("click", () => {
+    $("restore-merge-defaults")?.addEventListener("click", async () => {
       resetMergeDraft();
       cancelMergeAutoApply();
-      callApi("/api/merge/reset-defaults", {});
+      const merge = getState()?.project?.merge;
+      if (merge) {
+        merge.enabled = false;
+        merge.layout = "side_by_side";
+        merge.pip_size_percent = 35;
+        merge.pip_x = 1;
+        merge.pip_y = 1;
+      }
+      if ($("merge-enabled")) $("merge-enabled").checked = false;
+      if ($("merge-layout")) $("merge-layout").value = "side_by_side";
+      if ($("pip-size")) $("pip-size").value = "35";
+      if ($("pip-size-label")) $("pip-size-label").textContent = "35%";
+      if ($("pip-x")) $("pip-x").value = "1";
+      if ($("pip-y")) $("pip-y").value = "1";
+      await callApi("/api/merge/reset-defaults", {});
+      scheduleInteractionPreviewRender({ video: true });
     });
     ["merge-enabled", "merge-layout"].forEach((id) => {
       $(id).addEventListener("change", () => {
@@ -684,6 +699,7 @@ export function createShellRuntime({
     documentObject.addEventListener("pointerdown", beginTextBoxDrag, true);
     documentObject.addEventListener("mousedown", beginTextBoxDrag, true);
     $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
+    $("merge-preview-layer").addEventListener("mousedown", beginMergePreviewDrag);
     $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
     $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
     $("popup-overlay")?.addEventListener("mousedown", beginPopupBubbleDrag);
@@ -946,6 +962,8 @@ export function createShellRuntime({
     documentObject.addEventListener("pointerup", endMergePreviewDrag);
     documentObject.addEventListener("pointercancel", endMergePreviewDrag);
     documentObject.addEventListener("lostpointercapture", endMergePreviewDrag);
+    documentObject.addEventListener("mousemove", moveMergePreviewDrag);
+    documentObject.addEventListener("mouseup", endMergePreviewDrag);
     documentObject.addEventListener("pointermove", moveTextBoxDrag);
     documentObject.addEventListener("pointerup", endTextBoxDrag);
     documentObject.addEventListener("pointercancel", endTextBoxDrag);

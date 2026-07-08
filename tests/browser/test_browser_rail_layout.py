@@ -134,7 +134,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
 
                 toggle_button.click()
                 page.wait_for_function(
-                    "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
+                    "() => document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
                 assert toggle_button.text_content() == "▶"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
@@ -150,7 +150,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
 
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
-                    "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
+                    "() => document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
                 page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
                 assert page.locator('.tool-item.active[data-tool="settings"]').count() == 1

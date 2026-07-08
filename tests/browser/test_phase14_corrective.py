@@ -162,7 +162,6 @@ def test_media_pane_uses_backend_dialog_not_file_inputs():
 def test_media_pane_has_file_rows_with_primary_badge():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "media-asset-row" in source
-    assert "primary-badge" in source
     assert "media-set-primary-btn" in source
     assert "media-remove-file-btn" in source
     assert "renderInventoryFileRow" in source
@@ -173,10 +172,9 @@ def test_media_pane_uses_real_set_primary_route():
     assert 'callApi("/api/project/stage/set-primary"' in source
 
 
-def test_media_pane_has_add_more_edit_stage_and_create_stage():
+def test_media_pane_has_add_more_and_create_stage():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "media-add-more-btn" in source
-    assert "media-edit-stage-btn" in source
     assert "media-add-stage-btn" in source
     assert "media-add-stage-full" in source
     assert "Add Media" in source
@@ -212,15 +210,15 @@ def test_media_pane_expansion_is_persisted():
 # ---------------------------------------------------------------------------
 
 
-def test_media_inventory_and_stage_navigator_are_separate():
+def test_media_inventory_uses_active_stage_selector_only():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "renderActiveStageSection" in source
     assert "renderStagesSection" in source
     assert "Primary" in source
-    assert "Active Media" in source
-    assert "Stage Navigator" in source
+    assert "Added Media" in source
     assert "renderInventoryFileRow" in source
-    assert "media-stage-card" not in source
+    assert "Stage Navigator" not in source
+    assert "data-stage-nav-id" not in source
 
 
 def test_media_active_stage_is_not_collapsible_and_does_not_queue():
@@ -371,10 +369,10 @@ def test_merge_pane_uses_shared_shell_wrapper():
 
 def test_phase15_pane_css_forces_single_column_flow_in_new_panes():
     css = (STATIC_ROOT / "styles" / "panes.css").read_text()
-    assert ".media-stage-nav-actions,\n.queue-stage-actions {" in css
+    assert ".media-pane-actions,\n.queue-stage-actions {" in css
     assert "grid-template-columns: minmax(0, 1fr);" in css
     assert ".trim-bulk-grid,\n.trim-card-row {" in css
-    assert ".media-stage-nav-actions-split" in css
+    assert ".media-pane-actions-split" in css
     assert ".merge-source-layout-row" in css
 
 

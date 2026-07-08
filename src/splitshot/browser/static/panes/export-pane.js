@@ -10,6 +10,7 @@ export function createExportPane({
   applyExportDraft = () => {},
   autoApplyExportLayout = () => {},
   autoApplyExportSettings = () => {},
+  refreshState = async () => {},
 } = {}) {
   function currentState() {
     return getState() || {};
@@ -51,7 +52,7 @@ export function createExportPane({
         description.className = "hint export-preset-description";
         select.closest("label")?.insertAdjacentElement("afterend", description);
       }
-      if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
+      if (description) description.textContent = preset ? preset.description : "";
     }
   }
 
@@ -92,7 +93,10 @@ export function createExportPane({
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
 
-  function openExportLogModal() {
+  async function openExportLogModal() {
+    if (visibleExportLogLines().length === 0) {
+      await refreshState();
+    }
     const modal = $("export-log-modal");
     if (!modal) return;
     modal.hidden = false;

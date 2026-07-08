@@ -123,6 +123,12 @@ export function createMergePane({
       return String(source?.placement?.mode || "auto");
     }
 
+    function resolvedSourcePlacementMode(source = null) {
+      const explicitMode = currentSourcePlacementMode(source);
+      if (explicitMode && explicitMode !== "auto") return explicitMode;
+      return String(currentState()?.project?.merge?.layout || "side_by_side");
+    }
+
     function normalizedPlacementModeValue(value) {
       const modes = ["auto", "base", "side_by_side", "above_below", "pip", "full_screen_portrait", "dual_center_hud", "dual_top_hud"];
       const normalized = String(value || "").trim().toLowerCase();
@@ -285,6 +291,55 @@ export function createMergePane({
     };
   }
 
+  function mergeSourcePreviewRect(source, frameRect, pipSizeValue = null, sourceIndex = 0, totalSources = 1) {
+    const mode = resolvedSourcePlacementMode(source);
+    const role = currentSourceAngleRole(source);
+    if (mode === "pip") {
+      return mergeSourcePipRect(source, frameRect, pipSizeValue);
+    }
+    if (mode === "side_by_side") {
+      const width = Math.max(1, Math.round(frameRect.width / 2));
+      const prefersLeadingSlot = role === "primary";
+      const isLeadingSlot = totalSources <= 1 ? false : (sourceIndex % 2 === 0 ? prefersLeadingSlot : !prefersLeadingSlot);
+      return {
+        left: frameRect.left + (isLeadingSlot ? 0 : frameRect.width - width),
+        top: frameRect.top,
+        width,
+        height: frameRect.height,
+      };
+    }
+    if (mode === "above_below") {
+      const height = Math.max(1, Math.round(frameRect.height / 2));
+      const prefersTopSlot = role === "primary";
+      const isTopSlot = totalSources <= 1 ? false : (sourceIndex % 2 === 0 ? prefersTopSlot : !prefersTopSlot);
+      return {
+        left: frameRect.left,
+        top: frameRect.top + (isTopSlot ? 0 : frameRect.height - height),
+        width: frameRect.width,
+        height,
+      };
+    }
+    if (mode === "base" || mode === "full_screen_portrait") {
+      return {
+        left: frameRect.left,
+        top: frameRect.top,
+        width: frameRect.width,
+        height: frameRect.height,
+      };
+    }
+    const centeredPipX = 0.5;
+    const centeredPipY = mode === "dual_top_hud" ? 0.04 : 0.5;
+    return mergeSourcePipRect(
+      {
+        ...source,
+        pip_x: centeredPipX,
+        pip_y: centeredPipY,
+      },
+      frameRect,
+      pipSizeValue ?? Math.max(35, currentPipSizePercent(source, 35)),
+    );
+  }
+
   function ensureMergePreviewItem(layer, source) {
     const asset = source.asset || source;
     const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
@@ -360,13 +415,14 @@ export function createMergePane({
     });
     mergeSources.forEach((source, index) => {
       const item = ensureMergePreviewItem(layer, source);
-      const rect = mergeSourcePipRect(source, frameRect, pipSizeValue);
+      const rect = mergeSourcePreviewRect(source, frameRect, pipSizeValue, index, mergeSources.length);
       item.style.left = `${rect.left}px`;
       item.style.top = `${rect.top}px`;
       item.style.width = `${rect.width}px`;
       item.style.height = `${rect.height}px`;
       item.style.maxWidth = `${rect.width}px`;
       item.style.maxHeight = `${rect.height}px`;
+      item.dataset.placementMode = resolvedSourcePlacementMode(source);
       item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
     });
   }
@@ -377,17 +433,23 @@ export function createMergePane({
     if (clearPayloads) currentPendingMergeSourcePayloads().clear();
   }
 
-  function scheduleMergeSourceCommit(payload) {
+  function scheduleMergeSourceCommit(payload, { immediate = false } = {}) {
     const sourceId = payload?.source_id;
     if (!sourceId) return;
     currentPendingMergeSourcePayloads().set(sourceId, payload);
     const existingTimer = currentMergeSourceCommitTimers().get(sourceId);
     if (existingTimer !== undefined) windowObject.clearTimeout(existingTimer);
+    if (immediate) {
+      currentMergeSourceCommitTimers().delete(sourceId);
+      void flushPendingMergeSourceCommits();
+      return;
+    }
     const timerId = windowObject.setTimeout(() => {
       currentMergeSourceCommitTimers().delete(sourceId);
       const nextPayload = currentPendingMergeSourcePayloads().get(sourceId);
       currentPendingMergeSourcePayloads().delete(sourceId);
       if (nextPayload) {
+        autoApplyMerge.flush?.();
         callApi("/api/merge/source", nextPayload);
         setStatus("Applied source layout.");
       }
@@ -404,6 +466,7 @@ export function createMergePane({
       pendingPayloads.forEach((payload) => sendKeepaliveJson("/api/merge/source", payload));
       return;
     }
+    autoApplyMerge.flush?.();
     for (const payload of pendingPayloads) {
       await callApi("/api/merge/source", payload);
     }
@@ -590,6 +653,16 @@ export function createMergePane({
         syncLabel.dataset.mergeSourceSyncLabel = "true";
         syncLabel.dataset.sourceId = sourceId;
         syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
+        const syncField = documentObject.createElement("div");
+        syncField.className = "merge-source-field merge-source-sync-field";
+        const syncFieldLabel = documentObject.createElement("span");
+        syncFieldLabel.textContent = "Sync";
+        const syncFieldValue = documentObject.createElement("strong");
+        syncFieldValue.className = "merge-source-sync-inline";
+        syncFieldValue.dataset.mergeSourceSyncLabel = "true";
+        syncFieldValue.dataset.sourceId = sourceId;
+        syncFieldValue.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
+        syncField.append(syncFieldLabel, syncFieldValue);
 
         const placementModeSelect = documentObject.createElement("select");
         placementModeSelect.dataset.mergeSourceField = "placement_mode";
@@ -604,7 +677,7 @@ export function createMergePane({
         });
         placementModeSelect.addEventListener("change", () => {
           previewSourceUpdate();
-          scheduleMergeSourceCommit(readSourcePayload());
+          scheduleMergeSourceCommit(readSourcePayload(), { immediate: true });
         });
         const placementModeLabelEl = documentObject.createElement("label");
         placementModeLabelEl.className = "merge-source-field";
@@ -615,11 +688,17 @@ export function createMergePane({
         opacityAndLayoutRow.className = "merge-source-layout-row";
         opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);
 
+        const positionXField = buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.");
+        positionXField.classList.add("merge-source-position-field");
+        const positionYField = buildSourceNumberInput("Position Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom.");
+        positionYField.classList.add("merge-source-position-field");
+
         controls.append(
           sizeField,
           opacityAndLayoutRow,
-          buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-          buildSourceNumberInput("Position Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+          positionXField,
+          positionYField,
+          syncField,
         );
 
         const body = documentObject.createElement("div");
@@ -669,6 +748,7 @@ export function createMergePane({
     currentSourceAngleRole,
     normalizedAngleRoleValue,
     currentSourcePlacementMode,
+    resolvedSourcePlacementMode,
     normalizedPlacementModeValue,
     placementModeLabel,
     formatSyncOffsetLabel,
@@ -682,6 +762,7 @@ export function createMergePane({
     mergeSourcePositionPayload,
     syncMergePreviewStateFromControls,
     mergeSourcePipRect,
+    mergeSourcePreviewRect,
     ensureMergePreviewItem,
     renderMergePreviewLayer,
     clearMergeSourceCommitTimers,

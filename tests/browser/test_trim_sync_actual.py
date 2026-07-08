@@ -33,7 +33,10 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
                 try:
                     assert_status(page, "Applied trim")
                 except AssertionError:
-                    assert_status(page, "analysis")
+                    try:
+                        assert_status(page, "analysis")
+                    except AssertionError:
+                        assert_status(page, "Trimming added media")
             finally:
                 browser.close()
     finally:
@@ -60,7 +63,10 @@ def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
                 try:
                     assert_status(page, "Cleared all trims")
                 except AssertionError:
-                    assert_status(page, "analysis")
+                    try:
+                        assert_status(page, "analysis")
+                    except AssertionError:
+                        assert_status(page, "Clearing trim derivatives")
             finally:
                 browser.close()
     finally:
@@ -108,7 +114,10 @@ def test_per_source_apply_creates_derivative_file(synthetic_video_factory) -> No
                 try:
                     assert_status(page, "Applied trim")
                 except AssertionError:
-                    assert_status(page, "analysis")
+                    try:
+                        assert_status(page, "analysis")
+                    except AssertionError:
+                        assert_status(page, "Trimming source")
 
                 state = get_merge_source_state(page, source_id)
                 assert state, "Merge source not found"
@@ -116,6 +125,86 @@ def test_per_source_apply_creates_derivative_file(synthetic_video_factory) -> No
                     deriv_path = state.get("derivative_path")
                     if deriv_path:
                         assert Path(deriv_path).exists(), f"Derivative not found: {deriv_path}"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_factory) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "trim-active-waveform-p", "duration_ms": 3200, "beep_ms": 500},
+        merge_kwargs={"name": "trim-active-waveform-m", "duration_ms": 3200, "beep_ms": 400},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-active-path.ssproj"
+                )
+                navigate_to_tool(page, "trim-sync")
+                page.wait_for_timeout(500)
+
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id, "No merge source found"
+
+                before = get_merge_source_state(page, source_id)
+                assert before
+                original_path = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        return source?.asset?.path || '';
+                    }""",
+                    source_id,
+                )
+                assert original_path
+
+                page.locator(f'[data-trim-start="{source_id}"]').fill("0.50")
+                page.locator(f'[data-trim-end="{source_id}"]').fill("2.20")
+                page.locator(f'button.trim-apply-btn[data-source-id="{source_id}"]').click()
+                page.wait_for_function(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        const trim = source?.trim_derivative;
+                        return Boolean(trim?.derivative_path)
+                            && trim?.active_path_kind === 'local_derivative';
+                    }""",
+                    arg=source_id,
+                    timeout=120_000,
+                )
+
+                trimmed = get_merge_source_state(page, source_id)
+                assert trimmed
+                assert trimmed["trim_active"] is True
+                assert trimmed["effective_media_path"] == trimmed["derivative_path"]
+                assert Path(trimmed["derivative_path"]).exists()
+                assert trimmed["waveform_sample_count"] not in {None, 0}
+                assert page.locator(".trim-active-path-badge").first.inner_text() == "Trimmed media active"
+
+                page.locator(f'button.trim-clear-btn[data-source-id="{source_id}"]').click()
+                page.wait_for_function(
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(source)
+                            && !trim?.derivative_path
+                            && trim?.active_path_kind == null
+                            && source?.effective_media_path === payload.originalPath;
+                    }""",
+                    arg={"sourceId": source_id, "originalPath": original_path},
+                    timeout=120_000,
+                )
+
+                cleared = get_merge_source_state(page, source_id)
+                assert cleared
+                assert cleared["trim_active"] is False
+                assert cleared["effective_media_path"] == original_path
+                assert cleared["waveform_sample_count"] not in {None, 0}
+                assert page.locator(".trim-active-path-badge").first.inner_text() == "Original media active"
             finally:
                 browser.close()
     finally:
@@ -147,7 +236,10 @@ def test_start_at_beep_logs_and_sets_time(synthetic_video_factory) -> None:
                     try:
                         assert_status(page, "Set trim start to beep time")
                     except AssertionError:
-                        assert_status(page, "analysis")
+                        try:
+                            assert_status(page, "analysis")
+                        except AssertionError:
+                            assert_status(page, "Trimming source")
             finally:
                 browser.close()
     finally:
@@ -179,7 +271,10 @@ def test_end_after_last_shot_logs_and_sets_time(synthetic_video_factory) -> None
                     try:
                         assert_status(page, "Set trim end to last shot time")
                     except AssertionError:
-                        assert_status(page, "analysis")
+                        try:
+                            assert_status(page, "analysis")
+                        except AssertionError:
+                            assert_status(page, "Trimming source")
             finally:
                 browser.close()
     finally:

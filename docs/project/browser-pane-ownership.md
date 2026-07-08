@@ -1,15 +1,15 @@
 # Browser Pane Ownership
 
-Audit basis: current browser shell/backend wiring plus the released `docs/v107` Phase 14 corrective packet on `2026-06-23`.
+Audit basis: current browser shell/backend wiring plus the released `docs/v107` Phase 18 corrective closeout on `2026-07-07`.
 
 ## Pane owners
 
 - `Project`: project lifecycle, project drafts, PractiScore import source, imported stage selector for context lookup, `match-stage-number`, `match-competitor-name`, `match-competitor-place`, and the compact imported summary rows `Name`, `Place`, `Match Time`, `Division`.
-- `Media`: stage list, per-stage collapse state, stage file rows, file intake, primary designation, file removal, and `Edit Stage` live-stage entry.
+- `Media`: active-stage selection, stage naming, stage file rows, file intake, primary designation, file removal, and stage creation or deletion.
 - `Compose`: composition-only controls for the active stage.
 - `Trim`: active-stage trim and sync controls only.
 - `Review`: review playback state, review visibility state, and imported summary presentation.
-- `Queue`: queue state review, queue membership/state, batch processing, combined processing, and `Edit Stage` navigation back to `Media`.
+- `Queue`: queue state review, queue membership/state, active-stage selection from queue controls, batch processing, and combined processing.
 - `Splits / Timing`: split rows, timing event editing, timing workbench state.
 - `Score`: scoring workbench and imported PractiScore scoring reference.
 - `Markers`: popup and marker authoring.
@@ -21,10 +21,10 @@ Audit basis: current browser shell/backend wiring plus the released `docs/v107` 
 
 ## Explicit non-owners
 
-- `Project` does not own stage media/file intake, stage file rows, primary designation, file removal, stage edit entry, queue review/process UI, or helper prose for downstream workflow panes.
+- `Project` does not own stage media/file intake, stage file rows, primary designation, file removal, active-stage editing controls, queue review/process UI, or helper prose for downstream workflow panes.
 - `Media` does not own competitor identity selectors already wired through `Project`.
 - `Compose` does not own media intake/removal after the Phase 14 correction.
-- `Queue` does not own filler workflow copy and must not route `Edit Stage` into `Compose`.
+- `Queue` does not own filler workflow copy or stage-media editing controls.
 
 ## Shell ownership
 

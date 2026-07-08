@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import shlex
+import json
 import subprocess
 import sys
 import threading
@@ -893,6 +894,36 @@ def _frame_profile_to_aspect_ratio(frame_profile: str) -> AspectRatio:
     return mapping.get(frame_profile.strip().lower(), AspectRatio.ORIGINAL)
 
 
+def _validate_export_output(output_target: Path) -> None:
+    if not output_target.exists():
+        raise RuntimeError(f"Export output missing: {output_target}")
+    if output_target.stat().st_size <= 0:
+        raise RuntimeError(f"Export output is empty: {output_target}")
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(output_target),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        info = json.loads(result.stdout)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Export output is invalid: {output_target} ({exc})") from exc
+    streams = info.get("streams", [])
+    if not any(stream.get("codec_type") == "video" for stream in streams):
+        raise RuntimeError(f"Export output has no video stream: {output_target}")
+
+
 def export_project(
     project: Project,
     output_path: str | Path,
@@ -1020,6 +1051,7 @@ def export_project(
         project.export.last_log = "\n".join(log_lines[-400:])
         raise RuntimeError(project.export.last_log or str(exc)) from exc
 
+    _validate_export_output(output_target)
     project.export.last_log = "\n".join(log_lines[-400:])
 
     return output_target

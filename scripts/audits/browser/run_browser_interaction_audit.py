@@ -463,6 +463,16 @@ def drag_waveform_shot(page: Page, activity_source: BrowserControlServer | str) 
         lambda items: has_api_success(items, "/api/shots/move"),
         timeout_s=5,
     )
+    page.wait_for_function(
+        """
+        ({ shotId, originalTimeMs }) => {
+          const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
+          return Boolean(shot) && Number(shot.time_ms) !== Number(originalTimeMs);
+        }
+        """,
+        arg={"shotId": drag_target["shot_id"], "originalTimeMs": drag_target["original_time_ms"]},
+        timeout=5000,
+    )
     after_drag = page.evaluate(
         """
         ({ shotId, originalTimeMs }) => {
@@ -1190,6 +1200,23 @@ def drag_merge_preview_persists(
         after_cursor,
         lambda items: has_api_success(items, "/api/merge/source"),
         timeout_s=5,
+    )
+    page.wait_for_function(
+        """
+        ({ sourceId, beforePipX, beforePipY }) => {
+          const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+          if (!source) return false;
+          const pipX = Number(source?.pip_x ?? 0);
+          const pipY = Number(source?.pip_y ?? 0);
+          return pipX !== Number(beforePipX) || pipY !== Number(beforePipY);
+        }
+        """,
+        arg={
+            "sourceId": drag_target["source_id"],
+            "beforePipX": drag_target["before_pip_x"],
+            "beforePipY": drag_target["before_pip_y"],
+        },
+        timeout=5_000,
     )
     after_drag = page.evaluate(
         """

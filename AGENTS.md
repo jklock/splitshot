@@ -59,6 +59,13 @@ Format:
 - For browser workflow regressions, prefer pytest/browser tests and existing audit scripts over ad hoc manual checks.
 - Keep `flutter_app/` isolated to its own branch/worktree. Main must treat it as ignored branch-local work.
 
+## Temp Files
+
+- Agent-created temp files, test temp roots, browser profiles, Playwright state, and ad hoc working directories must stay inside `tmp/codex/` under the repo.
+- Before running commands that may allocate temp state, set `TMPDIR`, `TMP`, and `TEMP` to a repo-owned path under `tmp/codex/`.
+- For pytest runs, always pass `--basetemp=tmp/codex/pytest`.
+- Do not write agent temp state to `/private`, `/tmp`, `/var/tmp`, or any other location outside the repository unless the manager explicitly approves it.
+
 ## Documentation
 
 Update documentation only when the change affects:

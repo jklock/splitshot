@@ -459,7 +459,7 @@ export function createMetricsPane({
         id: "split_timeline",
         type: "lines",
         title: "Split Timeline",
-        subtitle: "Split time per shot with average reference",
+        subtitle: "",
         unit: "s",
         lines: [
           buildLine("finalSplitS", "Split", "#ff7b22"),
@@ -491,7 +491,7 @@ export function createMetricsPane({
           id: "split_distribution",
           type: "bars",
           title: "Split Distribution",
-          subtitle: "Histogram of split durations",
+          subtitle: "",
           unit: "count",
           bars: buckets,
           summary: [
@@ -507,7 +507,7 @@ export function createMetricsPane({
         id: "shooting_vs_non_shooting",
         type: "bars",
         title: "Shooting vs Non-Shooting Time",
-        subtitle: "Stacked breakdown of the stage run",
+        subtitle: "",
         unit: "s",
         bars: [
           { label: "Shooting", shortLabel: "Shoot", value: shootingTimeS, category: { color: "#39d06f" }, highlight: true },
@@ -525,7 +525,7 @@ export function createMetricsPane({
         id: "overall_placement",
         type: "bars",
         title: "Overall Placement",
-        subtitle: myRank > 0 ? `You are #${myRank} of ${totalCount}` : `${totalCount} competitors`,
+        subtitle: "",
         unit: "s",
         bars: allCompetitors.map((c) => ({
           key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
@@ -544,7 +544,7 @@ export function createMetricsPane({
         id: "division_placement",
         type: "bars",
         title: `${myDivision} Division Placement`,
-        subtitle: divRank > 0 ? `You are #${divRank} of ${sameDivision.length} in ${myDivision}` : `${sameDivision.length} in division`,
+        subtitle: "",
         unit: "s",
         bars: sameDivision.map((c) => ({
           key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
@@ -563,7 +563,7 @@ export function createMetricsPane({
         id: "class_placement",
         type: "bars",
         title: `${myClass} Class Placement`,
-        subtitle: classRank > 0 ? `You are #${classRank} of ${sameClass.length} in ${myClass}` : `${sameClass.length} in class`,
+        subtitle: "",
         unit: "s",
         bars: sameClass.map((c) => ({
           key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
@@ -915,20 +915,28 @@ export function createMetricsPane({
     header.className = "metrics-graph-header";
     const title = documentObject.createElement("strong");
     title.textContent = graph.title;
-    const subtitle = documentObject.createElement("span");
-    subtitle.className = "hint";
-    subtitle.textContent = graph.subtitle;
-    header.append(title, subtitle);
+    header.appendChild(title);
+    if (graph.subtitle) {
+      const subtitle = documentObject.createElement("span");
+      subtitle.className = "hint";
+      subtitle.textContent = graph.subtitle;
+      header.appendChild(subtitle);
+    }
     card.appendChild(header);
 
     const summary = documentObject.createElement("div");
     summary.className = "metrics-graph-summary";
     metricsGraphSummaryItems(graph).forEach((item) => {
-      const chip = documentObject.createElement("span");
-      chip.className = "metrics-graph-chip";
-      chip.style.setProperty("--metrics-graph-chip-color", item.color || "var(--accent)");
-      chip.textContent = [item.label, item.value].filter(Boolean).join(" ").trim();
-      summary.appendChild(chip);
+      const row = documentObject.createElement("div");
+      row.className = "metrics-graph-summary-row";
+      const label = documentObject.createElement("span");
+      label.className = "metrics-graph-summary-label";
+      label.textContent = item.label || "";
+      const value = documentObject.createElement("strong");
+      value.className = "metrics-graph-summary-value";
+      value.textContent = item.value || "";
+      row.append(label, value);
+      summary.appendChild(row);
     });
     card.appendChild(summary);
 
@@ -1125,7 +1133,7 @@ export function createMetricsPane({
       id: "competitor_overall_placement",
       type: "bars",
       title: "Overall Stage Placement",
-      subtitle: `${total} competitor${total === 1 ? "" : "s"} — sorted fastest to slowest. You are #${myIndex + 1} of ${total}.`,
+      subtitle: "",
       unit: "s",
       bars: overallBars,
       summary: [
@@ -1142,7 +1150,7 @@ export function createMetricsPane({
         id: "competitor_division_placement",
         type: "bars",
         title: `${myDivision} Division Placement`,
-        subtitle: `${sameDivision.length} in division — you are #${divIndex + 1} of ${sameDivision.length}.`,
+        subtitle: "",
         unit: "s",
         bars: buildBars(sameDivision),
         summary: [
@@ -1159,7 +1167,7 @@ export function createMetricsPane({
         id: "competitor_classification_placement",
         type: "bars",
         title: `${myClassification} Classification Placement`,
-        subtitle: `${sameClass.length} in classification — you are #${clsIndex + 1} of ${sameClass.length}.`,
+        subtitle: "",
         unit: "s",
         bars: buildBars(sameClass),
         summary: [
@@ -1183,27 +1191,24 @@ export function createMetricsPane({
     const graphs = buildMetricsGraphSeries(rows);
 
     const summaryCards = [
-      ["Draw", splitSeconds(state.metrics?.draw_ms), "First-shot timing"],
-      ["Raw", splitSeconds(state.metrics?.raw_time_ms ?? state.metrics?.stage_time_ms), "Beep to final shot"],
-      ["Shots", String(state.metrics?.total_shots || 0), "Current timeline shots"],
-      ["Avg Split", splitSeconds(state.metrics?.average_split_ms), "Average split"],
-      ["Beep", splitSeconds(state.metrics?.beep_ms), "Start marker"],
-      [scoringSummary.display_label || "Result", scoringSummary.display_value || "--", scoringSummary.sport || "Scoring summary"],
-      ["Shot Points", formatNumber(scoringSummary.shot_points, 2), "Raw score total"],
-      ["Penalties", formatNumber(scoringSummary.total_penalties, 2), scoringSummary.penalty_label || "Penalty summary"],
+      ["Draw", splitSeconds(state.metrics?.draw_ms)],
+      ["Raw", splitSeconds(state.metrics?.raw_time_ms ?? state.metrics?.stage_time_ms)],
+      ["Shots", String(state.metrics?.total_shots || 0)],
+      ["Avg Split", splitSeconds(state.metrics?.average_split_ms)],
+      ["Beep", splitSeconds(state.metrics?.beep_ms)],
+      [scoringSummary.display_label || "Result", scoringSummary.display_value || "--"],
+      ["Shot Points", formatNumber(scoringSummary.shot_points, 2)],
+      ["Penalties", formatNumber(scoringSummary.total_penalties, 2)],
     ];
     summaryGrid.innerHTML = "";
-    summaryCards.forEach(([label, value, caption]) => {
+    summaryCards.forEach(([label, value]) => {
       const card = documentObject.createElement("article");
       card.className = "metric-card";
       const eyebrow = documentObject.createElement("small");
       eyebrow.textContent = label;
       const strong = documentObject.createElement("strong");
       strong.textContent = value;
-      const hint = documentObject.createElement("span");
-      hint.className = "hint";
-      hint.textContent = caption;
-      card.append(eyebrow, strong, hint);
+      card.append(eyebrow, strong);
       summaryGrid.appendChild(card);
     });
 

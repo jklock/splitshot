@@ -18,7 +18,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, bottom `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add More`, stage navigator |"
+        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, bottom `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (
@@ -34,7 +34,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, overlay defaults, marker defaults, export defaults, ShotML defaults, section collapse, template fields |"
+        "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, overlay defaults, marker defaults including default quadrant, export defaults, ShotML defaults, section collapse, template fields |"
         in matrix
     )
     for surface in [

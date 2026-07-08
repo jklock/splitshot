@@ -301,3 +301,152 @@ def test_per_source_placement_mode_changes(synthetic_video_factory) -> None:
                 browser.close()
     finally:
         server.shutdown()
+
+
+def test_per_source_layout_change_updates_visible_preview_mode(synthetic_video_factory) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "comp-visible-layout-p"},
+        merge_kwargs={"name": "comp-visible-layout-m"},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "visible-layout.ssproj"
+                )
+                navigate_to_tool(page, "merge")
+                page.locator("#merge-enabled").check()
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_timeout(400)
+                assert not page.locator("#merge-preview-layer").evaluate("(el) => el.hidden")
+
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id
+
+                placement_select = page.locator(
+                    f'select[data-merge-source-field="placement_mode"][data-source-id="{source_id}"]'
+                )
+                placement_select.select_option("above_below")
+                page.wait_for_timeout(500)
+
+                preview_state = page.evaluate(
+                    """() => {
+                        const stage = document.getElementById('video-stage');
+                        const preview = document.getElementById('merge-preview-layer');
+                        const secondary = document.getElementById('secondary-video');
+                        return {
+                            stage_above_below: stage?.classList.contains('merge-above-below') ?? false,
+                            stage_pip: stage?.classList.contains('merge-pip') ?? false,
+                            preview_hidden: preview?.hidden ?? true,
+                            secondary_hidden: secondary?.hidden ?? true,
+                        };
+                    }"""
+                )
+                assert preview_state["stage_above_below"] is True
+                assert preview_state["stage_pip"] is False
+                assert preview_state["preview_hidden"] is True
+                assert preview_state["secondary_hidden"] is False
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_layout_change_keeps_per_source_override(synthetic_video_factory) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "comp-override-p"},
+        merge_kwargs={"name": "comp-override-m"},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "layout-override.ssproj"
+                )
+                navigate_to_tool(page, "merge")
+                page.locator("#merge-enabled").check()
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_timeout(400)
+
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id
+
+                placement_select = page.locator(
+                    f'select[data-merge-source-field="placement_mode"][data-source-id="{source_id}"]'
+                )
+                placement_select.select_option("above_below")
+                page.wait_for_timeout(400)
+                page.locator("#merge-layout").select_option("side_by_side")
+                page.wait_for_timeout(500)
+
+                preview_state = page.evaluate(
+                    """(sid) => {
+                        const stage = document.getElementById('video-stage');
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        return {
+                            project_layout: state?.project?.merge?.layout || '',
+                            placement_mode: source?.placement?.mode || '',
+                            stage_above_below: stage?.classList.contains('merge-above-below') ?? false,
+                            stage_side_by_side: stage?.classList.contains('merge-side-by-side') ?? false,
+                        };
+                    }""",
+                    source_id,
+                )
+                assert preview_state["project_layout"] == "side_by_side"
+                assert preview_state["placement_mode"] == "above_below"
+                assert preview_state["stage_above_below"] is True
+                assert preview_state["stage_side_by_side"] is False
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_compose_controls_use_two_columns_before_compact_width(synthetic_video_factory) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "comp-columns-p"},
+        merge_kwargs={"name": "comp-columns-m"},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "compose-columns.ssproj"
+                )
+                navigate_to_tool(page, "merge")
+                page.wait_for_timeout(300)
+
+                wide_columns = page.evaluate(
+                    """() => {
+                        document.documentElement.style.setProperty('--inspector-width', '520px');
+                        window.dispatchEvent(new Event('resize'));
+                        const controls = document.querySelector('.merge-source-controls');
+                        return getComputedStyle(controls).gridTemplateColumns.split(' ').length;
+                    }"""
+                )
+                compact_columns = page.evaluate(
+                    """() => {
+                        document.documentElement.style.setProperty('--inspector-width', '340px');
+                        window.dispatchEvent(new Event('resize'));
+                        const controls = document.querySelector('.merge-source-controls');
+                        return getComputedStyle(controls).gridTemplateColumns.split(' ').length;
+                    }"""
+                )
+                assert wide_columns >= 2, f"Expected dual-column compose controls, got {wide_columns}"
+                assert compact_columns == 1, (
+                    f"Expected single-column compose controls in compact inspector, got {compact_columns}"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()

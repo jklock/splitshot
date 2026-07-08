@@ -974,6 +974,7 @@ class Project:
     stages: list[ProjectStage] = field(default_factory=list)
     active_stage_id: str = ""
     queue: list[QueueEntry] = field(default_factory=list)
+    last_combined_output_path: str = ""
     combined_export_settings: CombinedExportSettings = field(default_factory=CombinedExportSettings)
     practiscore_source_file: str = ""
 
@@ -1292,6 +1293,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     data["stages"] = [stage_to_dict(stage) for stage in project.stages]
     data["active_stage_id"] = project.active_stage_id
     data["queue"] = [queue_entry_to_dict(entry) for entry in project.queue]
+    data["last_combined_output_path"] = project.last_combined_output_path
     data["combined_export_settings"] = _serialize(project.combined_export_settings)
     data["practiscore_source_file"] = project.practiscore_source_file
     data.pop("_stages", None)
@@ -1943,7 +1945,7 @@ def _apply_legacy_merge_defaults_to_source(
     )
 
     migrated_from_legacy_layout = False
-    if not has_explicit_mode and source.placement.mode == MergePlacementMode.AUTO:
+    if raw_source is not None and not has_explicit_mode and source.placement.mode == MergePlacementMode.AUTO:
         source.placement.mode = _merge_layout_to_placement_mode(merge_layout)
         migrated_from_legacy_layout = True
 
@@ -2599,6 +2601,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             project.queue = [
                 _queue_entry_from_dict(item) for item in raw_queue if isinstance(item, dict)
             ]
+        project.last_combined_output_path = str(data.get("last_combined_output_path", "") or "")
         project.combined_export_settings = _combined_export_settings_from_dict(
             data.get("combined_export_settings")
         )

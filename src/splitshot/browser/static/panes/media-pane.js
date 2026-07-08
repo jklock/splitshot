@@ -59,34 +59,12 @@ export function createMediaPane({
     return stage.label || stageImported(stage)?.stage_name || `Stage ${stage.order_index}`;
   }
 
-  function stageDivision(stage) {
-    return String(stageImported(stage)?.division || "");
-  }
-
-  function stageOfficialTime(stage) {
-    const imported = stageImported(stage);
-    const value = imported?.final_time ?? imported?.raw_seconds;
-    if (value === null || value === undefined || value === "") return "";
-    return `${Number(value).toFixed(2)}s`;
-  }
-
   function stageAddedMedia(stage) {
     return Array.isArray(stage?.added_media) ? stage.added_media : [];
   }
 
   function stageAssetCount(stage) {
     return (stage?.primary_media?.path ? 1 : 0) + stageAddedMedia(stage).length;
-  }
-
-  function stageMeta(stage) {
-    const parts = [];
-    const number = stageDisplayNumber(stage);
-    if (number !== "" && number !== null && number !== undefined) parts.push(`#${number}`);
-    const division = stageDivision(stage);
-    if (division) parts.push(division);
-    const time = stageOfficialTime(stage);
-    if (time) parts.push(time);
-    return parts.join(" • ");
   }
 
   function assetTypeLabel(asset) {
@@ -272,10 +250,11 @@ export function createMediaPane({
               <input id="media-active-stage-label" type="text" value="${htmlEscape(stage ? stageLabel(stage) : "")}" placeholder="Stage name" />
             </label>
           </div>
-          <div class="media-active-stage-actions media-stage-nav-actions media-stage-nav-actions-split">
+          <div class="media-active-stage-actions media-pane-actions media-pane-actions-split">
             <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage ? "" : "disabled"}>Save Stage</button>
             <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 ? "" : "disabled"}>Delete Stage</button>
           </div>
+          <button class="primary-button media-add-stage-btn media-add-stage-full" type="button">Add Stage</button>
         </div>
       </section>
     `;
@@ -283,7 +262,6 @@ export function createMediaPane({
 
   function renderStagesSection(stage) {
     const expanded = sectionExpanded("stages");
-    const navExpanded = sectionExpanded("stage-navigator");
     const added = stage ? stageAddedMedia(stage) : [];
     return `
       <section class="settings-section media-pane-section ${expanded ? "" : "collapsed"}">
@@ -297,6 +275,7 @@ export function createMediaPane({
           <section class="media-pane-inner-section">
             <div class="media-inner-section-header">
               <strong>Primary</strong>
+              <span class="pane-summary-token">${stage?.primary_media?.path ? "1 file" : "Empty"}</span>
             </div>
             ${stage?.primary_media?.path
               ? renderInventoryFileRow(stage.id, stage.primary_media, true)
@@ -307,32 +286,14 @@ export function createMediaPane({
           </section>
           <section class="media-pane-inner-section">
             <div class="media-inner-section-header">
-              <strong>Active Media</strong>
+              <strong>Added Media</strong>
+              <span class="pane-summary-token">${added.length} file${added.length === 1 ? "" : "s"}</span>
               <button class="btn-sm btn-secondary media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>Add Media</button>
             </div>
             <div class="media-asset-stack">
               ${added.length
                 ? added.map((source) => renderInventoryFileRow(stage.id, source, false)).join("")
                 : '<div class="empty-state">No added media for this stage.</div>'}
-            </div>
-          </section>
-          <section class="media-pane-inner-section">
-            <div class="media-inner-section-header">
-              <strong>Stage Navigator</strong>
-              <button class="pane-toggle media-section-toggle" type="button" data-media-section="stage-navigator" aria-label="${navExpanded ? "Collapse" : "Expand"} stage navigator">${navExpanded ? "\u25BC" : "\u25B6"}</button>
-            </div>
-            <div class="media-stage-nav-list"${navExpanded ? "" : " hidden"}>
-              ${stages().map((item) => `
-                <article class="media-stage-nav-card ${item.id === stage?.id ? "selected" : ""}" data-stage-nav-id="${item.id}">
-                  <div class="media-stage-nav-copy">
-                    <strong>${htmlEscape(stageLabel(item))}</strong>
-                    <small>${htmlEscape(stageMeta(item) || `${stageAssetCount(item)} assets`)}</small>
-                  </div>
-                  <div class="media-stage-nav-actions">
-                    ${item.id === stage?.id ? '<span class="primary-badge">Live</span>' : '<button class="btn-sm btn-ghost media-edit-stage-btn" type="button" data-stage-id="' + item.id + '">Select</button>'}
-                  </div>
-                </article>
-              `).join("")}
             </div>
           </section>
         </div>
@@ -367,11 +328,6 @@ export function createMediaPane({
         deleteStage(deleteStageButton.dataset.stageId || "");
         return;
       }
-      const editStageButton = target.closest(".media-edit-stage-btn");
-      if (editStageButton instanceof HTMLElement) {
-        selectStage(editStageButton.dataset.stageId || "");
-        return;
-      }
       const addPrimaryButton = target.closest(".media-add-primary-btn, .media-replace-primary-btn");
       if (addPrimaryButton instanceof HTMLElement) {
         openPrimaryForStage(addPrimaryButton.dataset.stageId || activeStage()?.id || "");
@@ -398,10 +354,6 @@ export function createMediaPane({
         removeAdded(stageId, sourceId);
         return;
       }
-      const navCard = target.closest("[data-stage-nav-id]");
-      if (navCard instanceof HTMLElement) {
-        selectStage(navCard.dataset.stageNavId || "");
-      }
     };
     pane.onchange = (event) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
@@ -425,7 +377,6 @@ export function createMediaPane({
         </div>
         ${renderActiveStageSection(stage)}
         ${renderStagesSection(stage)}
-        <button class="primary-button media-add-stage-btn media-add-stage-full" type="button">Add Stage</button>
       </div>
     `;
     bindEvents(pane);
