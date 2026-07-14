@@ -99,13 +99,28 @@ That script is the source-of-truth gate for:
 
 Do not use GitHub Actions as the first place to discover source-level or parity failures.
 
-For local macOS package parity, use:
+For normal local macOS iteration, build the unpacked `.app` only:
+
+```bash
+npm --prefix electron run build:app:mac
+uv run python scripts/testing/run_electron_iterate.py --tier unpacked --scenario launch --build-if-needed
+```
+
+That is the default local packaged artifact path. It reuses `electron/build/mac-arm64/SplitShot.app` and avoids DMG work during ordinary pane or Electron bugfix iteration.
+
+For final installed-app proof, copy that built `.app` into `/Applications` and run the installed tier once:
+
+```bash
+uv run python scripts/testing/run_electron_iterate.py --tier installed --scenario full --app /Applications/SplitShot.app
+```
+
+For local macOS release packaging, use:
 
 ```bash
 npm --prefix electron run build:mac:local
 ```
 
-That helper exports the active login-keychain signing identity to a temporary `.p12`, verifies it via temporary keychain import, runs the Electron mac build through `CSC_LINK`/`CSC_KEY_PASSWORD`, and installs the resulting DMG app into `/Applications/SplitShot.app`. If notarization credentials are absent locally, it disables notarization explicitly instead of silently producing a half-signed app path.
+That helper is release-only. It exports the active login-keychain signing identity to a temporary `.p12`, verifies it via temporary keychain import, runs the Electron mac build through `CSC_LINK`/`CSC_KEY_PASSWORD`, and installs the resulting DMG app into `/Applications/SplitShot.app`. If notarization credentials are absent locally, it disables notarization explicitly instead of silently producing a half-signed app path.
 
 For `v1.0.6`, preflight alone is not enough. The release gate also requires:
 

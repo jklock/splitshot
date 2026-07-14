@@ -17,7 +17,7 @@ from splitshot.domain.models import (
     ShotEvent,
     ShotSource,
 )
-from splitshot.overlay.render import OverlayRenderer
+from splitshot.overlay.render import OverlayRenderer, _shot_score_badge_content
 from splitshot.ui.controller import ProjectController
 
 
@@ -371,6 +371,23 @@ def test_popup_bubble_uses_exact_shot_time_and_auto_size() -> None:
         assert max_y - min_y < 80
     finally:
         server.shutdown()
+
+
+def test_split_badge_can_hide_score_without_hiding_split_text() -> None:
+    controller = ProjectController()
+    controller.project.scoring.enabled = True
+    shot = ShotEvent(
+        score=ScoreMark(letter=ScoreLetter.DOWN_0, penalty_counts={"procedural_errors": 1})
+    )
+
+    visible_text, visible_runs = _shot_score_badge_content(controller.project, shot, "Shot 1 1.23")
+    assert "-0" in visible_text
+    assert visible_runs
+
+    controller.project.overlay.show_shot_scores = False
+    hidden_text, hidden_runs = _shot_score_badge_content(controller.project, shot, "Shot 1 1.23")
+    assert hidden_text == "Shot 1 1.23"
+    assert hidden_runs is None
 
 
 def test_popup_bubble_uses_shot_score_and_penalties_for_text() -> None:

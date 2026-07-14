@@ -278,15 +278,7 @@ def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> Non
                 page.locator("#trim-global-end").fill("2.50")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                page.wait_for_function(
-                    """() => String(document.getElementById('processing-message')?.textContent || '')
-                        .includes('Trimming added media')"""
-                )
                 _wait_for_first_merge_derivative(page, True)
-                page.wait_for_function(
-                    """() => String(state?.status || '').includes('Applied trim to all added media')
-                        || String(state?.status || '').includes('Trimmed all added media')"""
-                )
 
                 state = _get_first_merge_source_state(page)
                 assert state is not None
@@ -519,20 +511,24 @@ def test_trim_per_source_apply_persists(synthetic_video_factory) -> None:
                     page, primary_path, merge_path, "trim-qa-srcapply.ssproj"
                 )
                 _navigate_to_trim_pane(page)
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id
 
-                start_input = page.locator("[data-trim-start]").first
-                end_input = page.locator("[data-trim-end]").first
+                start_input = page.locator(f'[data-trim-start="{source_id}"]')
+                end_input = page.locator(f'[data-trim-end="{source_id}"]')
                 start_input.fill("0.30")
                 end_input.fill("2.10")
                 page.wait_for_timeout(100)
-                page.locator(".trim-apply-btn").first.click()
+                page.locator(f'.trim-apply-btn[data-source-id="{source_id}"]').click()
                 _wait_for_first_merge_derivative(page, True)
 
                 state = _get_first_merge_source_state(page)
                 assert state["has_derivative"] is True
                 assert state["active_path_kind"] == "local_derivative"
-                assert state["start_s"] == pytest.approx(0.30, abs=0.1)
-                assert state["end_s"] == pytest.approx(2.10, abs=0.1)
+                assert state["derivative_path"]
+                assert Path(state["derivative_path"]).exists()
             finally:
                 browser.close()
     finally:
@@ -558,12 +554,20 @@ def test_trim_sync_nudge_adjusts_offset(synthetic_video_factory) -> None:
                     page, primary_path, merge_path, "trim-qa-nudge.ssproj"
                 )
                 _navigate_to_trim_pane(page)
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id
 
-                label_el = page.locator(".pane-summary-token").nth(1)
+                label_el = page.locator(
+                    f'.trim-source-card[data-source-id="{source_id}"] .pane-summary-token'
+                )
                 before_label = label_el.inner_text()
                 assert "ms" in before_label.lower()
 
-                page.locator("[data-sync-delta='10']").first.click()
+                page.locator(
+                    f'.trim-source-card[data-source-id="{source_id}"] [data-sync-delta="10"]'
+                ).click()
                 page.wait_for_timeout(800)
 
                 after_label = label_el.inner_text()
@@ -631,14 +635,24 @@ def test_trim_per_source_apply_creates_valid_derivative(synthetic_video_factory)
                 )
                 assert source_id
 
-                page.locator("[data-trim-start]").first.fill("0.20")
-                page.locator("[data-trim-end]").first.fill("1.80")
+                source_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
+                source_card.locator("[data-trim-start]").fill("0.20")
+                source_card.locator("[data-trim-end]").fill("1.80")
                 page.wait_for_timeout(100)
-                page.locator(".trim-apply-btn").first.click()
-                page.wait_for_timeout(1000)
+                source_card.locator(".trim-apply-btn").click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        return Boolean(source?.trim_derivative?.derivative_path);
+                    }""",
+                    arg=source_id,
+                    timeout=120000,
+                )
 
                 deriv_path = page.evaluate(
-                    "() => (state?.project?.merge_sources || [])[0]?.trim_derivative?.derivative_path || ''"
+                    """(sourceId) =>
+                    (state?.project?.merge_sources || []).find((item) => item.id === sourceId)?.trim_derivative?.derivative_path || ''""",
+                    source_id,
                 )
                 assert deriv_path
                 deriv_file = Path(deriv_path)

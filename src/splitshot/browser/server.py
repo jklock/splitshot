@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import errno
 import json
@@ -155,15 +156,8 @@ def _browser_preview_command(
         str(source_path),
         "-map",
         "0:v:0",
-        "-map",
-        "0:a:0?",
         *video_args,
-        "-c:a",
-        "aac",
-        "-ar",
-        "48000",
-        "-b:a",
-        "192k",
+        "-an",
         "-movflags",
         "+faststart",
         str(preview_path),
@@ -276,7 +270,7 @@ def _video_packet_timeline_rows(packet_csv: str) -> tuple[tuple[str, str, str], 
 
 
 def _browser_preview_matches_source_packets(source_path: Path, preview_path: Path) -> bool:
-    # FFprobe packet flags can change after an audio-only compatibility remux even when
+    # FFprobe packet flags can change after a browser-compatibility remux even when
     # the copied video packet timeline remains exact. Compare timing only.
     return _video_packet_timeline_rows(
         _ffprobe_video_packet_csv(source_path)
@@ -292,6 +286,14 @@ def _validate_browser_preview_timeline(
     source_timeline = _browser_video_timeline_signature(source_metadata)
     preview_timeline = _browser_video_timeline_signature(preview_metadata)
     metadata_match = _browser_preview_matches_source_timeline(source_timeline, preview_timeline)
+    source_codec = source_timeline.get("codec_name", "").lower()
+    preview_codec = preview_timeline.get("codec_name", "").lower()
+    if metadata_match and source_codec in _BROWSER_COPY_SAFE_VIDEO_CODECS:
+        return (
+            preview_codec == source_codec,
+            source_timeline,
+            preview_timeline,
+        )
     return (
         metadata_match and _browser_preview_matches_source_packets(source_path, preview_path),
         source_timeline,
@@ -737,6 +739,72 @@ class BrowserControlServer:
         for preview_path in cached_paths:
             Path(preview_path).unlink(missing_ok=True)
 
+    def _active_browser_media_paths(self) -> tuple[Path, ...]:
+        candidates: list[Path] = []
+        primary_path = self.controller.effective_primary_media_path()
+        if primary_path:
+            candidates.append(Path(primary_path))
+        secondary_path = (
+            ""
+            if self.controller.project.secondary_video is None
+            else self.controller.project.secondary_video.path
+        )
+        if secondary_path:
+            candidates.append(Path(secondary_path))
+        for source in self.controller.project.merge_sources:
+            active_path = self.controller.effective_merge_source_media_path(source.id)
+            if active_path:
+                candidates.append(Path(active_path))
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for path in candidates:
+            try:
+                resolved = str(path.expanduser().resolve())
+            except FileNotFoundError:
+                resolved = str(path)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            unique.append(path)
+        return tuple(unique)
+
+    def _primary_browser_media_paths(self) -> tuple[Path, ...]:
+        primary_path = self.controller.effective_primary_media_path()
+        if not primary_path:
+            return ()
+        path = Path(primary_path)
+        return (path,) if path.exists() and path.is_file() else ()
+
+    def _prewarm_media_paths(self, paths: tuple[Path, ...]) -> None:
+        if not self.browser_media_proxy_enabled:
+            return
+        if not paths:
+            return
+
+        max_workers = min(4, len(paths))
+
+        def prepare(path: Path) -> tuple[Path, str | None]:
+            if not path.exists() or not path.is_file():
+                return path, None
+            try:
+                self._prepare_browser_media(path)
+            except Exception as exc:  # noqa: BLE001
+                return path, str(exc)
+            return path, None
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(prepare, path) for path in paths]
+            for future in as_completed(futures):
+                path, error = future.result()
+                if error:
+                    self.activity.log("media.prewarm.error", path=str(path), error=error)
+
+    def prewarm_primary_media(self) -> None:
+        self._prewarm_media_paths(self._primary_browser_media_paths())
+
+    def prewarm_active_media(self) -> None:
+        self._prewarm_media_paths(self._active_browser_media_paths())
+
     def _handler(self) -> type[BaseHTTPRequestHandler]:
         server = self
         controller = self.controller
@@ -776,7 +844,11 @@ class BrowserControlServer:
                     self._list_practiscore_matches()
                     return
                 if request_path == "/media/primary":
-                    self._send_media(Path(controller.project.primary_video.path))
+                    active_primary_path = controller.effective_primary_media_path()
+                    if not active_primary_path:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_media(Path(active_primary_path))
                     return
                 if request_path == "/media/secondary":
                     active_path = controller.effective_merge_source_media_path(
@@ -835,6 +907,25 @@ class BrowserControlServer:
                 if self.path == "/api/project/probe":
                     self._probe_project()
                     return
+                primary_media_prewarm_routes = {
+                    "/api/project/open",
+                    "/api/project/select-stage",
+                    "/api/project/stage/import-primary",
+                    "/api/project/stage/set-primary",
+                    "/api/project/stage/clear-primary",
+                    "/api/import/primary",
+                }
+                active_media_prewarm_routes = {
+                    "/api/project/stage/import-added",
+                    "/api/project/stage/remove-added",
+                    "/api/import/secondary",
+                    "/api/import/merge",
+                    "/api/merge/remove",
+                    "/api/primary/trim",
+                    "/api/merge/source/trim",
+                    "/api/merge/source/trim-all",
+                    "/api/swap",
+                }
                 routes: dict[str, Callable[[dict[str, Any]], None]] = {
                     "/api/project/details": self._set_project_details,
                     "/api/project/practiscore": self._set_practiscore_context,
@@ -871,6 +962,7 @@ class BrowserControlServer:
                     "/api/merge/reset-defaults": self._reset_merge_defaults,
                     "/api/merge/source": self._set_merge_source,
                     "/api/merge/source/analyze": self._analyze_merge_source,
+                    "/api/primary/trim": self._trim_primary_video,
                     "/api/merge/source/trim": self._trim_merge_source,
                     "/api/merge/source/trim-all": self._trim_all_merge_sources,
                     "/api/output-profiles/list": self._list_output_profiles,
@@ -910,6 +1002,10 @@ class BrowserControlServer:
                     with controller_lock:
                         route(payload)
                         controller.autosave_project_if_needed()
+                    if self.path in active_media_prewarm_routes:
+                        server.prewarm_active_media()
+                    elif self.path in primary_media_prewarm_routes:
+                        server.prewarm_primary_media()
                     if "/api/settings/reset-defaults" in self.path:
                         import sys as _sys
 
@@ -1069,7 +1165,7 @@ class BrowserControlServer:
                     media_cache_token=server._media_url_token,
                     output_profiles=controller.list_output_profiles(),
                 )
-                primary_path = controller.project.primary_video.path
+                primary_path = controller.effective_primary_media_path()
                 secondary_path = (
                     ""
                     if controller.project.secondary_video is None
@@ -1078,6 +1174,12 @@ class BrowserControlServer:
                 payload["media"]["primary_display_name"] = display_names.get(
                     primary_path,
                     display_name_for_path(primary_path, "No Video Selected"),
+                )
+                payload["media"]["primary_original_display_name"] = display_names.get(
+                    controller.project.primary_video.path,
+                    display_name_for_path(
+                        controller.project.primary_video.path, "No Video Selected"
+                    ),
                 )
                 payload["media"]["secondary_display_name"] = display_names.get(
                     secondary_path,
@@ -1212,33 +1314,29 @@ class BrowserControlServer:
             def _set_practiscore_context(self, payload: dict[str, Any]) -> None:
                 controller.set_practiscore_context(
                     match_type=None
-                    if payload.get("match_type") in {None, ""}
+                    if "match_type" not in payload
                     else str(payload.get("match_type", "")),
                     stage_number=(
-                        None
+                        0
                         if payload.get("stage_number") in {None, ""}
                         else int(payload["stage_number"])
                     ),
                     competitor_name=(
-                        None
-                        if payload.get("competitor_name") in {None, ""}
-                        else str(payload.get("competitor_name", ""))
+                        str(payload.get("competitor_name", ""))
+                        if "competitor_name" in payload
+                        else None
                     ),
                     competitor_place=(
-                        None
+                        0
                         if payload.get("competitor_place") in {None, ""}
                         else int(payload["competitor_place"])
                     ),
                     classification=(
-                        None
-                        if payload.get("classification") in {None, ""}
-                        else str(payload.get("classification", ""))
+                        str(payload.get("classification", ""))
+                        if "classification" in payload
+                        else None
                     ),
-                    division=(
-                        None
-                        if payload.get("division") in {None, ""}
-                        else str(payload.get("division", ""))
-                    ),
+                    division=(str(payload.get("division", "")) if "division" in payload else None),
                 )
 
             def _update_stage_metadata(self, payload: dict[str, Any]) -> None:
@@ -1911,6 +2009,18 @@ class BrowserControlServer:
                 server._clear_browser_media_cache()
                 server._bump_media_url_token()
 
+            def _trim_primary_video(self, payload: dict[str, Any]) -> None:
+                clear = bool(payload.get("clear", False))
+                start_s = payload.get("start_s")
+                end_s = payload.get("end_s")
+                controller.trim_primary_video(
+                    start_s=float(start_s) if start_s not in {None, ""} else None,
+                    end_s=float(end_s) if end_s not in {None, ""} else None,
+                    clear=clear,
+                )
+                server._clear_browser_media_cache()
+                server._bump_media_url_token()
+
             def _trim_all_merge_sources(self, payload: dict[str, Any]) -> None:
                 clear = bool(payload.get("clear", False))
                 start_s = payload.get("start_s")
@@ -1921,9 +2031,7 @@ class BrowserControlServer:
                     start_s=float(start_s) if start_s not in {None, ""} else None,
                     end_s=float(end_s) if end_s not in {None, ""} else None,
                     keep_before_beep_s=(
-                        float(keep_before_beep_s)
-                        if keep_before_beep_s not in {None, ""}
-                        else None
+                        float(keep_before_beep_s) if keep_before_beep_s not in {None, ""} else None
                     ),
                     keep_after_last_shot_s=(
                         float(keep_after_last_shot_s)

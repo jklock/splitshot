@@ -75,7 +75,7 @@ export function createLayoutRuntime({
     const reviewWidth = Math.max(720, viewportWidth - railWidth - (2 * 4));
     const reviewHeight = Math.max(360, viewportHeight - 38);
     const previewAspect = currentPreviewAspectRatio();
-    const inspectorMinimum = 320;
+    const inspectorMinimum = 280;
     const inspectorMaximum = Math.max(inspectorMinimum, Math.min(520, reviewWidth * 0.42));
     const targetWaveformHeight = clamp(Math.round(reviewHeight * 0.24), 144, Math.max(160, reviewHeight * 0.34));
     const preferredStageHeight = Math.max(260, reviewHeight - targetWaveformHeight - 4);
@@ -172,7 +172,7 @@ export function createLayoutRuntime({
     setCssPixels("--app-height", viewportHeight);
     runtime.layoutSizes = {
       railWidth: clamp(runtime.layoutSizes.railWidth, 84, 104),
-      inspectorWidth: clamp(runtime.layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
+      inspectorWidth: clamp(runtime.layoutSizes.inspectorWidth, 280, Math.max(280, window.innerWidth * 0.48)),
       waveformHeight: clamp(runtime.layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
     };
     setCssPixels("--rail-width", runtime.railCollapsed ? 48 : runtime.layoutSizes.railWidth);
@@ -295,7 +295,7 @@ export function createLayoutRuntime({
     } else if (kind === "inspectorWidth") {
       const grid = document.querySelector(".review-grid");
       const right = grid?.getBoundingClientRect().right || window.innerWidth;
-      previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 320, Math.max(320, window.innerWidth * 0.48)));
+      previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 280, Math.max(280, window.innerWidth * 0.48)));
     } else if (kind === "waveformHeight") {
       const stack = document.querySelector(".review-stack");
       const rect = stack?.getBoundingClientRect();

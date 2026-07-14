@@ -16,6 +16,48 @@ export function createVideoPlayerComponent({
   renderMergePreviewLayer = () => {},
   scheduleSecondaryPreviewSync = () => {},
 } = {}) {
+  function scheduleVideoFramePrime(video, sourceKey) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    if (!sourceKey) return;
+    if (video.dataset.primeSourceKey === sourceKey && Number(video.readyState || 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return;
+    }
+    video.dataset.primeSourceKey = sourceKey;
+    window.setTimeout(async () => {
+      if (!video.isConnected) return;
+      if (video.dataset.primeSourceKey !== sourceKey) return;
+      if (Number(video.readyState || 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      const previousMuted = video.muted;
+      const previousVolume = Number.isFinite(video.volume) ? video.volume : 1;
+      const previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      try {
+        video.muted = true;
+        const playAttempt = video.play();
+        if (playAttempt && typeof playAttempt.then === "function") {
+          await Promise.race([
+            playAttempt.catch(() => {}),
+            new Promise((resolve) => window.setTimeout(resolve, 600)),
+          ]);
+        } else {
+          await new Promise((resolve) => window.setTimeout(resolve, 150));
+        }
+      } catch {
+        // Ignore autoplay/decode failures; the browser will continue loading normally.
+      } finally {
+        try {
+          video.pause();
+        } catch {}
+        try {
+          if (previousTime > 0 && Number.isFinite(video.duration) && previousTime <= video.duration) {
+            video.currentTime = previousTime;
+          }
+        } catch {}
+        video.muted = previousMuted;
+        video.volume = previousVolume;
+      }
+    }, 0);
+  }
+
   function currentState() {
     return getState() || {};
   }
@@ -37,13 +79,14 @@ export function createVideoPlayerComponent({
     const stage = $("video-stage");
     const merge = state.project.merge;
     const mergeSources = state?.project?.merge_sources || [];
-    const path = state.project.primary_video.path || "";
+    const path = state.media.primary_active_path || state.project.primary_video.effective_media_path || state.project.primary_video.path || "";
     const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);
     if (state.media.primary_available && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
       video.dataset.sourcePath = path;
       video.dataset.mediaUrl = primaryMediaPath;
       video.src = primaryMediaPath;
       video.load();
+      scheduleVideoFramePrime(video, primaryMediaPath);
       logPrimaryVideoState("source.attach");
     }
     if (!state.media.primary_available) {
@@ -68,6 +111,7 @@ export function createVideoPlayerComponent({
         secondary.src = secondaryMediaPath;
         ensurePrimaryVideoAudio(secondary);
         secondary.load();
+        scheduleVideoFramePrime(secondary, secondaryMediaPath);
       }
       secondaryImage.removeAttribute("src");
     } else {

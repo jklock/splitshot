@@ -67,6 +67,7 @@ export function createOverlayPane({
   shotDisplayTimeMs = (value) => value,
   resolvedSplitMsForShot = () => null,
   splitRowIntervalLabel = () => "",
+  shotBadgeBaseText = () => "",
   scoreBadgeContent = () => "",
   splitSeconds = (value) => String(value ?? ""),
   seconds = (value) => String(value ?? ""),
@@ -263,6 +264,7 @@ export function createOverlayPane({
       show_timer: $("show-timer").checked,
       show_draw: $("show-draw").checked,
       show_shots: $("show-shots").checked,
+      show_shot_scores: $("show-shot-scores").checked,
       show_score: $("show-score").checked,
       timer_lock_to_stack: $("timer-lock-to-stack").checked,
       draw_lock_to_stack: $("draw-lock-to-stack").checked,
@@ -326,6 +328,7 @@ export function createOverlayPane({
     overlay.show_timer = Boolean(payload.show_timer);
     overlay.show_draw = Boolean(payload.show_draw);
     overlay.show_shots = Boolean(payload.show_shots);
+    overlay.show_shot_scores = Boolean(payload.show_shot_scores);
     overlay.show_score = Boolean(payload.show_score);
     overlay.timer_lock_to_stack = Boolean(payload.timer_lock_to_stack);
     overlay.draw_lock_to_stack = Boolean(payload.draw_lock_to_stack);
@@ -1088,8 +1091,13 @@ export function createOverlayPane({
         const style = index === activeShotIndex
           ? currentState().project.overlay.current_shot_badge
           : currentState().project.overlay.shot_badge;
+        const splitText = splitSeconds(splitMs);
+        const intervalLabel = splitRowIntervalLabel(splitRow);
+        const badgeContent = currentState().project.overlay.show_shot_scores
+          ? scoreBadgeContent(shot, index + 1, splitText, intervalLabel)
+          : { text: shotBadgeBaseText(index + 1, splitText, intervalLabel), runs: null };
         const shotBadge = badgeElement(
-          scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)),
+          badgeContent,
           style,
           size,
           null,

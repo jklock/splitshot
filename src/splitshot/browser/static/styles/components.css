@@ -799,10 +799,30 @@ button:disabled {
 .tool-pane {
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.42rem;
+  gap: var(--pane-control-gap);
   overflow-anchor: none;
   overflow-x: hidden;
-  padding: 0.48rem;
+  padding: var(--pane-padding);
+}
+
+.inspector :is(.tool-pane, .settings-section, .control-grid, .button-grid, label, dl, article, section, div) > * {
+  min-width: 0;
+}
+
+.inspector :is(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+.inspector label {
+  font-size: var(--pane-label-size);
+}
+
+.inspector :is(.hint, small) {
+  font-size: var(--pane-helper-size);
+}
+
+.tool-pane > .section-header h3 {
+  font-size: var(--pane-title-size);
 }
 
 .inspector :is(

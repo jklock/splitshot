@@ -593,7 +593,7 @@ function normalizeOverlayFieldDraftValue(key, value, fallback = undefined) {
   if (key === "font_size") {
     return Math.max(8, Number(value ?? fallback ?? 14) || 14);
   }
-  if (["font_bold", "font_italic", "show_timer", "show_draw", "show_shots", "show_score"].includes(key)) {
+  if (["font_bold", "font_italic", "show_timer", "show_draw", "show_shots", "show_shot_scores", "show_score"].includes(key)) {
     return Boolean(value ?? fallback);
   }
   return undefined;
@@ -1943,7 +1943,7 @@ function normalizeProjectUiState(uiState = {}) {
     scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
-    inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
+    inspector_width: Math.max(280, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
     waveform_height: Math.max(112, Math.round(Number(uiState.waveform_height ?? DEFAULT_PROJECT_UI_STATE.waveform_height) || DEFAULT_PROJECT_UI_STATE.waveform_height)),
     scoring_edit_shot_ids: normalizedUiStringList(
       uiState.scoring_edit_shot_ids || Object.keys(normalizedUiBooleanMap(uiState.scoring_shot_expansion)).filter((shotId) => uiState.scoring_shot_expansion?.[shotId]),
@@ -5371,7 +5371,8 @@ function syncPractiScoreSelectionFields(changedField) {
 }
 
 function durationMs() {
-  return waveformStateRuntime?.durationMs() || Math.max(1, state?.project?.primary_video?.duration_ms || 1);
+  return waveformStateRuntime?.durationMs()
+    || Math.max(1, state?.project?.primary_video?.active_duration_ms || state?.project?.primary_video?.duration_ms || 1);
 }
 
 function waveformWindow() {
@@ -5681,6 +5682,7 @@ function exportBadges() {
     show_timer: payload.show_timer,
     show_draw: payload.show_draw,
     show_shots: payload.show_shots,
+    show_shot_scores: payload.show_shot_scores,
     show_score: payload.show_score,
     timer_lock_to_stack: payload.timer_lock_to_stack,
     draw_lock_to_stack: payload.draw_lock_to_stack,
@@ -7404,7 +7406,7 @@ function buildMetricsCsv() {
       ],
       rows: [[
         state.project.name || "",
-        fileName(state.project.primary_video.path || ""),
+        state.project.primary_video.active_display_name || fileName(state.project.primary_video.effective_media_path || state.project.primary_video.path || ""),
         imported.competitor_name || state.project.scoring.competitor_name || "",
         imported.stage_number ?? state.project.scoring.stage_number ?? "",
         imported.stage_name || "",
@@ -7530,7 +7532,7 @@ function buildMetricsText() {
   const comparisonGraph = graphs.find((graph) => graph.id === "run_comparison_overlay") || null;
   const lines = [
     state.project.name || "Untitled Project",
-    `Video: ${fileName(state.project.primary_video.path || "")}`,
+    `Video: ${state.project.primary_video.active_display_name || fileName(state.project.primary_video.effective_media_path || state.project.primary_video.path || "")}`,
     `${summary.display_label || "Result"}: ${summary.display_value || "--"}`,
     `Raw Time: ${summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : "--"}`,
     `Shots: ${state.metrics.total_shots || 0}`,
@@ -7799,7 +7801,13 @@ function overlayAutoSizedBadgeContents() {
     shots.forEach((shot, index) => {
       const splitRow = splitRowsByShotId.get(shot.id) || null;
       const splitMs = resolvedSplitMsForShot(shot.id, index + 1, shot.time_ms);
-      contents.push(scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)));
+      const splitText = splitSeconds(splitMs);
+      const intervalLabel = splitRowIntervalLabel(splitRow);
+      contents.push(
+        overlay.show_shot_scores
+          ? scoreBadgeContent(shot, index + 1, splitText, intervalLabel)
+          : { text: shotBadgeBaseText(index + 1, splitText, intervalLabel), runs: null },
+      );
     });
   }
   const summary = state?.scoring_summary || {};
@@ -9653,6 +9661,7 @@ overlayPane = createOverlayPane({
   shotDisplayTimeMs,
   resolvedSplitMsForShot,
   splitRowIntervalLabel,
+  shotBadgeBaseText,
   scoreBadgeContent,
   splitSeconds,
   seconds,

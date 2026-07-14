@@ -373,7 +373,7 @@ def test_phase15_pane_css_forces_single_column_flow_in_new_panes():
     assert "grid-template-columns: minmax(0, 1fr);" in css
     assert ".trim-bulk-grid,\n.trim-card-row {" in css
     assert ".media-pane-actions-split" in css
-    assert ".merge-source-layout-row" in css
+    assert ".merge-source-controls" in css
 
 
 def test_compose_active_source_places_opacity_before_layout():
@@ -383,15 +383,16 @@ def test_compose_active_source_places_opacity_before_layout():
             "const body = documentObject.createElement"
         )
     ]
-    assert "const opacityAndLayoutRow" in within
-    assert "opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);" in within
+    assert "opacityField = buildSourceOpacityInput()" in within
+    opacity_idx = within.index("opacityField,\n          placementModeLabelEl,")
+    assert opacity_idx > within.index("opacityField = buildSourceOpacityInput()")
 
 
 def test_v107_pane_audit_collects_visual_parity_metrics():
     source = Path("scripts/audits/browser/run_v107_pane_audit.py").read_text()
     assert '"pane_metrics"' in source
     assert '"visual_parity"' in source
-    assert "Pane visual parity audit failed" in source
+    assert "Pane visual audit failed" in source
     assert "toggle_right_offsets_px" in source
     assert "control_column_counts" in source
 

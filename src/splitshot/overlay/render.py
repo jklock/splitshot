@@ -204,7 +204,7 @@ def _shot_score_badge_content(
     project: Project, shot: object, base_text: str
 ) -> tuple[str, tuple[tuple[str, str | None], ...] | None]:
     score = getattr(shot, "score", None)
-    if not project.scoring.enabled or score is None:
+    if not project.overlay.show_shot_scores or not project.scoring.enabled or score is None:
         return base_text, None
 
     text_parts: list[tuple[str, str | None]] = [

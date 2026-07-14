@@ -1,4 +1,5 @@
 import { createPaneBase } from "./pane-base.js";
+import { buildCompetitionComparison } from "../lib/competition-comparison.js";
 
 export function createMetricsPane({
   $ = (id) => document.getElementById(id),
@@ -578,6 +579,7 @@ export function createMetricsPane({
     }
 
     return graphs
+      .filter((graph) => !["overall_placement", "division_placement", "class_placement"].includes(graph.id))
       .map((graph) => ({
         ...graph,
         lines: Array.isArray(graph.lines)
@@ -595,6 +597,7 @@ export function createMetricsPane({
     if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
     const numeric = Number(value);
     if (unit === "%") return `${numeric.toFixed(1)}%`;
+    if (unit === "HF") return numeric.toFixed(4);
     return `${numeric.toFixed(3)}s`;
   }
 
@@ -1080,104 +1083,113 @@ export function createMetricsPane({
   function buildCompetitorComparisonGraphs() {
     const state = currentState();
     const importedStage = state?.scoring_summary?.imported_stage || {};
-    const myName = importedStage.competitor_name || "";
-    const myRaw = importedStage.raw_seconds;
-    const myDivision = importedStage.division || "";
-    const myClassification = importedStage.classification || "";
     const comparisonData = Array.isArray(state?.practiscore_options?.comparison_competitors)
       ? state.practiscore_options.comparison_competitors
       : [];
-    if (!myName || myRaw === null || myRaw === undefined || comparisonData.length === 0) return [];
-    const allCompetitors = [
-      {
-        name: myName,
-        place: importedStage.competitor_place,
-        division: myDivision,
-        classification: myClassification,
-        raw_seconds: myRaw,
-        final_time: importedStage.final_time,
-        hit_factor: importedStage.hit_factor,
-        stage_place: importedStage.stage_place,
-        stage_points: importedStage.stage_points,
-      },
-      ...comparisonData,
-    ];
-    const withTime = allCompetitors
-      .filter((c) => c.raw_seconds !== null && c.raw_seconds !== undefined)
-      .map((c) => ({ ...c, raw_seconds: Number(c.raw_seconds) }))
-      .sort((a, b) => a.raw_seconds - b.raw_seconds);
-
-    if (withTime.length < 2) return [];
-
+    const comparison = buildCompetitionComparison({
+      scoring: state?.project?.scoring || {},
+      importedStage,
+      competitors: comparisonData,
+    });
+    const myName = comparison.identity.name;
+    if (!myName) return [];
     const userBarColor = "#ff7b22";
     const otherBarColor = "#4ea7ff";
-
-    function buildBars(competitors) {
-      return competitors.map((c) => ({
+    const unit = comparison.resultKey === "final_time" ? "s" : "HF";
+    function buildBars(cohort) {
+      return cohort.items.map((c) => ({
         key: c.name,
         label: c.name,
         shortLabel: c.name.split(" ").pop() || c.name,
-        value: c.raw_seconds,
+        value: c[comparison.resultKey],
         category: { color: c.name === myName ? userBarColor : otherBarColor },
         highlight: c.name === myName,
         detail: c.division ? `${c.classification || ""} ${c.division}`.trim() : "",
       }));
     }
-
-    const overallBars = buildBars(withTime);
-    const myIndex = withTime.findIndex((c) => c.name === myName);
-    const total = withTime.length;
     const graphs = [];
-
-    graphs.push({
-      id: "competitor_overall_placement",
-      type: "bars",
-      title: "Overall Stage Placement",
-      subtitle: "",
-      unit: "s",
-      bars: overallBars,
-      summary: [
-        { label: "Fastest", value: metricsGraphValueLabel(withTime[0].raw_seconds, "s"), color: "#39d06f" },
-        { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
-        { label: `#${total}`, value: metricsGraphValueLabel(withTime[withTime.length - 1].raw_seconds, "s"), color: "#ef4444" },
-      ],
+    [
+      ["overall", comparison.overall, "Overall Stage Placement"],
+      ["division", comparison.division, `${comparison.identity.division || "Division"} Division Placement`],
+      ["classification", comparison.classification, `${comparison.identity.classification || "Classification"} Classification Placement`],
+    ].forEach(([id, cohort, title]) => {
+      if (cohort.count >= 2 && cohort.current) {
+        graphs.push({
+          id: `competitor_${id}_placement`, type: "bars", title, subtitle: "", unit,
+          bars: buildBars(cohort),
+          summary: [
+            { label: "Leader", value: metricsGraphValueLabel(cohort.leader[comparison.resultKey], unit), color: "#39d06f" },
+            { label: "You", value: metricsGraphValueLabel(cohort.current[comparison.resultKey], unit), color: userBarColor },
+          ],
+        });
+      }
     });
-
-    const sameDivision = withTime.filter((c) => c.division && c.division === myDivision);
-    if (sameDivision.length >= 2) {
-      const divIndex = sameDivision.findIndex((c) => c.name === myName);
-      graphs.push({
-        id: "competitor_division_placement",
-        type: "bars",
-        title: `${myDivision} Division Placement`,
-        subtitle: "",
-        unit: "s",
-        bars: buildBars(sameDivision),
-        summary: [
-          { label: "Fastest", value: metricsGraphValueLabel(sameDivision[0].raw_seconds, "s"), color: "#39d06f" },
-          { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
-        ],
-      });
-    }
-
-    const sameClass = withTime.filter((c) => c.classification && c.classification === myClassification);
-    if (sameClass.length >= 2) {
-      const clsIndex = sameClass.findIndex((c) => c.name === myName);
-      graphs.push({
-        id: "competitor_classification_placement",
-        type: "bars",
-        title: `${myClassification} Classification Placement`,
-        subtitle: "",
-        unit: "s",
-        bars: buildBars(sameClass),
-        summary: [
-          { label: "Fastest", value: metricsGraphValueLabel(sameClass[0].raw_seconds, "s"), color: "#39d06f" },
-          { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
-        ],
-      });
-    }
-
     return graphs;
+  }
+
+  function currentCompetitionComparison() {
+    const state = currentState();
+    return buildCompetitionComparison({
+      scoring: state?.project?.scoring || {},
+      importedStage: state?.scoring_summary?.imported_stage || {},
+      competitors: Array.isArray(state?.practiscore_options?.comparison_competitors)
+        ? state.practiscore_options.comparison_competitors
+        : [],
+    });
+  }
+
+  function competitionResultText(value, comparison) {
+    if (value === null || value === undefined) return "--";
+    return comparison.resultKey === "final_time"
+      ? `${Number(value).toFixed(2)}s`
+      : Number(value).toFixed(4);
+  }
+
+  function renderCompetitionSummaryCards(container) {
+    if (!container) return;
+    const comparison = currentCompetitionComparison();
+    const definitions = [
+      ["Overall", comparison.overall, ""],
+      [comparison.identity.division || "Division", comparison.division, comparison.identity.division ? "Division" : "Division not selected"],
+      [comparison.identity.classification || "Classification", comparison.classification, comparison.identity.classification ? "Classification" : "Classification not selected"],
+    ];
+    container.replaceChildren();
+    definitions.forEach(([label, cohort, unavailableReason]) => {
+      const card = documentObject.createElement("article");
+      card.className = "metrics-placement-card";
+      card.dataset.competitionCohort = label;
+      const heading = documentObject.createElement("small");
+      heading.textContent = label;
+      const placement = documentObject.createElement("strong");
+      placement.textContent = cohort.current && cohort.rank !== null
+        ? `${cohort.rank} / ${cohort.count}`
+        : "Not available";
+      card.append(heading, placement);
+      if (!cohort.current || cohort.rank === null) {
+        const reason = documentObject.createElement("span");
+        reason.className = "hint";
+        reason.textContent = unavailableReason || "No valid result for this competitor in the cohort.";
+        card.appendChild(reason);
+      } else {
+        const details = documentObject.createElement("dl");
+        [
+          ["Percentile", `${cohort.percentile.toFixed(1)}%`],
+          ["You", competitionResultText(cohort.current[comparison.resultKey], comparison)],
+          ["Leader", competitionResultText(cohort.leader?.[comparison.resultKey], comparison)],
+          ["Gap", competitionResultText(cohort.gap, comparison)],
+        ].forEach(([term, value]) => {
+          const row = documentObject.createElement("div");
+          const dt = documentObject.createElement("dt");
+          const dd = documentObject.createElement("dd");
+          dt.textContent = term;
+          dd.textContent = value;
+          row.append(dt, dd);
+          details.appendChild(row);
+        });
+        card.appendChild(details);
+      }
+      container.appendChild(card);
+    });
   }
 
   function renderMetricsPanel() {
@@ -1188,7 +1200,7 @@ export function createMetricsPane({
     const state = currentState();
     const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
     const rows = buildMetricsRows();
-    const graphs = buildMetricsGraphSeries(rows);
+    const graphs = [...buildMetricsGraphSeries(rows), ...buildCompetitorComparisonGraphs()];
 
     const summaryCards = [
       ["Draw", splitSeconds(state.metrics?.draw_ms)],
@@ -1211,6 +1223,8 @@ export function createMetricsPane({
       card.append(eyebrow, strong);
       summaryGrid.appendChild(card);
     });
+
+    renderCompetitionSummaryCards($("metrics-competition-summary"));
 
     withPreservedScrollState([trendList], () => renderMetricsTrendTable(trendList));
 

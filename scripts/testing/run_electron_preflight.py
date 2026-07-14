@@ -17,9 +17,28 @@ def run(command: list[str]) -> None:
 
 def main() -> int:
     if sys.platform == "darwin":
-        build_command = ["npm", "--prefix", "electron", "run", "build:smoke:mac"]
-        source_smoke_command = ["npm", "--prefix", "electron", "run", "test:electron-smoke"]
-        packaged_smoke_command = ["uv", "run", "python", "scripts/testing/test_electron_app.py"]
+        build_command = ["npm", "--prefix", "electron", "run", "build:app:mac"]
+        source_smoke_command = [
+            "uv",
+            "run",
+            "python",
+            "scripts/testing/run_electron_iterate.py",
+            "--tier",
+            "source",
+            "--scenario",
+            "startup",
+        ]
+        packaged_smoke_command = [
+            "uv",
+            "run",
+            "python",
+            "scripts/testing/run_electron_iterate.py",
+            "--tier",
+            "unpacked",
+            "--scenario",
+            "launch",
+            "--build-if-needed",
+        ]
     elif sys.platform == "win32":
         build_command = ["npm", "--prefix", "electron", "run", "build:smoke:win"]
         source_smoke_command = ["npm", "--prefix", "electron", "run", "test:electron-smoke"]
@@ -29,11 +48,14 @@ def main() -> int:
         source_smoke_command = [
             "xvfb-run",
             "-a",
-            "npm",
-            "--prefix",
-            "electron",
+            "uv",
             "run",
-            "test:electron-smoke",
+            "python",
+            "scripts/testing/run_electron_iterate.py",
+            "--tier",
+            "source",
+            "--scenario",
+            "startup",
         ]
         packaged_smoke_command = [
             "xvfb-run",

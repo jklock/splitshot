@@ -1,3 +1,5 @@
+import { buildCompetitionComparison } from "../lib/competition-comparison.js";
+
 export function createReviewPane({
   $ = (id) => document.getElementById(id),
   windowObject = window,
@@ -88,52 +90,16 @@ export function createReviewPane({
     const comparisonData = Array.isArray(currentState()?.practiscore_options?.comparison_competitors)
       ? currentState().practiscore_options.comparison_competitors
       : [];
-    const competitorName = String(imported?.competitor_name || summary?.imported_stage?.competitor_name || "").trim().toLowerCase();
-    const division = String(imported?.division || "").trim().toLowerCase();
-    const classification = String(imported?.classification || "").trim().toLowerCase();
-    const allCompetitors = [
-      {
-        name: imported?.competitor_name || "",
-        place: imported?.competitor_place,
-        division: imported?.division || "",
-        classification: imported?.classification || "",
-        raw_seconds: imported?.raw_seconds,
-        final_time: imported?.final_time,
-        hit_factor: imported?.hit_factor,
-        stage_place: imported?.stage_place,
-        stage_points: imported?.stage_points,
-      },
-      ...comparisonData,
-    ];
-    const metricValue = (competitor) => {
-      if (imported?.match_type === "idpa") {
-        const value = competitor?.final_time;
-        return value === null || value === undefined ? null : Number(value);
-      }
-      const value = competitor?.hit_factor;
-      return value === null || value === undefined ? null : Number(value) * -1;
-    };
-    const sorted = (competitors) => competitors
-      .map((competitor) => ({ ...competitor, metric_value: metricValue(competitor) }))
-      .filter((competitor) => competitor.metric_value !== null && Number.isFinite(competitor.metric_value))
-      .sort((a, b) => a.metric_value - b.metric_value);
-    const buildGroup = (competitors) => {
-      const items = sorted(competitors);
-      const index = items.findIndex((competitor) => String(competitor?.name || "").trim().toLowerCase() === competitorName);
-      return {
-        items,
-        current: index >= 0 ? items[index] : null,
-        place: index >= 0 ? index + 1 : null,
-      };
-    };
+    const comparison = buildCompetitionComparison({
+      scoring: currentState()?.project?.scoring || summary || {},
+      importedStage: imported || summary?.imported_stage || {},
+      competitors: comparisonData,
+    });
     return {
-      overall: buildGroup(allCompetitors),
-      division: buildGroup(allCompetitors.filter((competitor) => String(competitor?.division || "").trim().toLowerCase() === division)),
-      class: buildGroup(allCompetitors.filter((competitor) => String(competitor?.classification || "").trim().toLowerCase() === classification)),
-      divisionClass: buildGroup(allCompetitors.filter(
-        (competitor) => String(competitor?.division || "").trim().toLowerCase() === division
-          && String(competitor?.classification || "").trim().toLowerCase() === classification,
-      )),
+      overall: comparison.overall,
+      division: comparison.division,
+      class: comparison.classification,
+      divisionClass: comparison.divisionClassification,
     };
   }
 

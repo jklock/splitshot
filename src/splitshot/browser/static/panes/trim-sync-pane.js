@@ -12,6 +12,7 @@ export function createTrimSyncPane({
   sourceIdentifier = (source, fallback) => String(source?.id || fallback || ""),
   currentSourceSyncOffsetMs = (source) => Math.round(Number(source?.sync_offset_ms) || 0),
 } = {}) {
+  const PRIMARY_SOURCE_ID = "__primary__";
   const sectionExpansion = new Map([
     ["bulk", true],
     ["sources", true],
@@ -45,13 +46,42 @@ export function createTrimSyncPane({
     return currentState()?.project?.merge_sources || [];
   }
 
+  function primaryTrimSource() {
+    const primary = primaryVideo();
+    if (!primary?.path) return null;
+    return {
+      id: PRIMARY_SOURCE_ID,
+      asset: {
+        ...primary,
+        path: primary.original_path || primary.path || "",
+      },
+      trim_derivative: currentState()?.project?.primary_trim_derivative || {},
+      effective_media_path: primary.effective_media_path || primary.path || "",
+      trim_active: Boolean(primary.trim_active),
+      active_display_name: primary.active_display_name || fileName(primary.effective_media_path || primary.path || ""),
+      original_display_name: primary.original_display_name || fileName(primary.path || ""),
+      active_duration_ms: primary.active_duration_ms ?? primary.duration_ms ?? 0,
+      active_width: primary.active_width ?? primary.width ?? 0,
+      active_height: primary.active_height ?? primary.height ?? 0,
+      active_media_kind: primary.active_media_kind || primary.media_kind || "video",
+      supports_sync_analysis: false,
+      sync_offset_ms: 0,
+      is_primary_source: true,
+    };
+  }
+
+  function stageSources() {
+    const primary = primaryTrimSource();
+    return primary ? [primary, ...mergeSources()] : mergeSources();
+  }
+
   function formatSeconds(value) {
     if (value === null || value === undefined) return "--.--";
     return Number(value).toFixed(2);
   }
 
   function sourceDurationMs(source) {
-    return source?.asset?.duration_ms ?? primaryVideo()?.duration_ms ?? 0;
+    return source?.active_duration_ms ?? source?.asset?.duration_ms ?? primaryVideo()?.active_duration_ms ?? primaryVideo()?.duration_ms ?? 0;
   }
 
   function sourceBeepTimeMs(source) {
@@ -116,7 +146,7 @@ export function createTrimSyncPane({
       snapshot: {
         global_start: $("trim-global-start")?.value || "",
         global_end: $("trim-global-end")?.value || "",
-        sources: mergeSources().map((source, index) => {
+        sources: stageSources().map((source, index) => {
           const nextSourceId = sourceIdentifier(source, String(index));
           return {
             source_id: nextSourceId,
@@ -145,16 +175,24 @@ export function createTrimSyncPane({
     restoringUndo = true;
     try {
       for (const source of snapshot.sources) {
-        await callApi("/api/merge/source", {
-          source_id: source.source_id,
-          sync_offset_ms: Math.round(Number(source.sync_offset_ms) || 0),
-        });
-        await callApi("/api/merge/source/trim", {
-          source_id: source.source_id,
-          clear: Boolean(source.clear),
-          start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
-          end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
-        });
+        if (source.source_id !== PRIMARY_SOURCE_ID) {
+          await callApi("/api/merge/source", {
+            source_id: source.source_id,
+            sync_offset_ms: Math.round(Number(source.sync_offset_ms) || 0),
+          });
+          await callApi("/api/merge/source/trim", {
+            source_id: source.source_id,
+            clear: Boolean(source.clear),
+            start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
+            end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+          });
+        } else {
+          await callApi("/api/primary/trim", {
+            clear: Boolean(source.clear),
+            start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
+            end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+          });
+        }
       }
       if ($("trim-global-start")) $("trim-global-start").value = snapshot.global_start || "";
       if ($("trim-global-end")) $("trim-global-end").value = snapshot.global_end || "";
@@ -187,13 +225,13 @@ export function createTrimSyncPane({
       keep_before_beep_s: startValue,
       keep_after_last_shot_s: endValue,
     });
-    setStatus(clear ? "Clearing trim derivatives..." : "Trimming added media...");
+    setStatus(clear ? "Clearing trim derivatives..." : "Trimming stage media...");
     await callApi("/api/merge/source/trim-all", {
       clear,
       keep_before_beep_s: clear || !Number.isFinite(startValue) || startValue < 0 ? null : startValue,
       keep_after_last_shot_s: clear || !Number.isFinite(endValue) || endValue < 0 ? null : endValue,
     });
-    setStatus(clear ? "Cleared all trims." : "Trimmed all added media.");
+    setStatus(clear ? "Cleared all trims." : "Trimmed all stage media.");
     refreshTrimPreview();
   }
 
@@ -205,18 +243,26 @@ export function createTrimSyncPane({
     if (recordUndo) queueUndoSnapshot("source", sourceId);
     activity(clear ? "trim.clear" : "trim.apply", { sourceId, start_s: startValue, end_s: endValue });
     setStatus(clear ? "Clearing trim derivative..." : "Trimming source...");
-    await callApi("/api/merge/source/trim", {
-      source_id: sourceId,
-      clear,
-      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
-      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
-    });
+    if (sourceId === PRIMARY_SOURCE_ID) {
+      await callApi("/api/primary/trim", {
+        clear,
+        start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
+        end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+      });
+    } else {
+      await callApi("/api/merge/source/trim", {
+        source_id: sourceId,
+        clear,
+        start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
+        end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+      });
+    }
     setStatus(clear ? "Cleared trim for source." : "Trimmed source.");
     refreshTrimPreview();
   }
 
   async function setSourceTrimToBeep(sourceId) {
-    const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
+    const source = stageSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
     const beep = source ? sourceBeepTimeMs(source) : null;
     if (beep === null) return;
     const input = documentObject.querySelector(`[data-trim-start="${sourceId}"]`);
@@ -229,7 +275,7 @@ export function createTrimSyncPane({
   }
 
   async function setSourceTrimToLastShot(sourceId) {
-    const source = mergeSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
+    const source = stageSources().find((s) => sourceIdentifier(s, "") === sourceId) || null;
     const lastShot = source ? sourceLastShotTimeMs(source) : null;
     if (lastShot === null) return;
     const input = documentObject.querySelector(`[data-trim-end="${sourceId}"]`);
@@ -258,16 +304,18 @@ export function createTrimSyncPane({
     const trimDerivative = source.trim_derivative;
     const trimActive = trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path;
     const activePath = source?.effective_media_path || trimDerivative?.derivative_path || asset.path || "";
+    const activeDisplayName = source?.active_display_name || fileName(activePath || asset.path || "");
+    const originalDisplayName = source?.original_display_name || fileName(asset.path || "");
     const startS = sourceTrimStartS(source);
     const endS = sourceTrimEndS(source);
     return `
       <article class="trim-source-card" data-source-id="${sourceId}">
         <div class="trim-source-card-header">
           <div class="trim-source-card-copy">
-            <strong>${fileName(asset.path || "")}</strong>
-            <small>${asset.is_still_image ? "Image" : "Video"}${trimActive ? "  •  Trim active" : ""}</small>
+            <strong>${activeDisplayName}</strong>
+            <small>${source.is_primary_source ? "Primary video" : (asset.is_still_image ? "Image" : "Video")}${trimActive ? "  •  Trim active" : ""}${trimActive ? `  •  ${originalDisplayName} original` : ""}</small>
           </div>
-          <span class="pane-summary-token">${formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</span>
+          <span class="pane-summary-token">${source.is_primary_source ? "Primary" : formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</span>
         </div>
         <div class="trim-source-card-body">
           <div class="trim-active-path-row">
@@ -294,7 +342,7 @@ export function createTrimSyncPane({
             <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}">Start at Beep</button>
             <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}">End after Last Shot</button>
           </div>
-          <div class="trim-card-row trim-card-row-sync">
+          ${source.is_primary_source ? "" : `<div class="trim-card-row trim-card-row-sync">
             <label class="merge-source-field trim-sync-offset-field">
               <span>Offset ms</span>
               <input type="number" class="trim-sync-offset-input" step="1" value="${currentSourceSyncOffsetMs(source)}" data-source-sync-offset="${sourceId}" />
@@ -311,7 +359,7 @@ export function createTrimSyncPane({
                 : ""}
             </div>
           </div>
-          <small class="merge-source-sync-hint">${source.supports_sync_analysis ? sourceSyncStatusLabel(source) : formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</small>
+          <small class="merge-source-sync-hint">${source.supports_sync_analysis ? sourceSyncStatusLabel(source) : formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</small>`}
         </div>
       </article>
     `;
@@ -404,7 +452,7 @@ export function createTrimSyncPane({
   function renderTrimSyncList() {
     const pane = documentObject.querySelector('[data-tool-pane="trim-sync"]');
     if (!pane) return;
-    const sources = mergeSources();
+    const sources = stageSources();
     const existingList = $("trim-sync-list");
     const primaryBeep = beepTimeMs();
     const primaryLastShot = lastShotTimeMs();

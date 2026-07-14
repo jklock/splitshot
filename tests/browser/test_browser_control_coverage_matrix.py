@@ -7,10 +7,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     matrix = Path("docs/project/browser-control-qa-matrix.md").read_text(encoding="utf-8")
 
     assert (
-        "It is not a claim that every button or field has its own direct behavior test." in matrix
-    )
-    assert (
-        "If a control is missing from this matrix, it does not have an explicit owner yet."
+        "Use `scripts/audits/browser/pane_function_audit.py` as the code-first companion audit."
         in matrix
     )
     assert (
@@ -18,15 +15,15 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, bottom `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add Media` |"
+        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, active-stage `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (
-        "| Compose | compose default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/layout controls |"
+        "| Compose | stage default layout/size/position controls, default restore, per-item card toggle, per-item size/opacity/position/layout/sync controls |"
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | marker authoring, review visibility selectors, overlay badge/text-box controls, imported summary preview formatting, popup editor, text-box drag |"
+        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, popup editor, text-box drag |"
         in matrix
     )
     assert (

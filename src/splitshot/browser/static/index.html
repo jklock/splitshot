@@ -271,11 +271,15 @@
                 <button id="expand-metrics" type="button">Expand</button>
               </div>
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
+              <div id="metrics-competition-summary" class="metrics-competition-summary" aria-label="Competition placement"></div>
               <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
                 <div class="section-header sub-section-header">
                   <h3>Shot Breakdown</h3>
                 </div>
-                <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
+                <details class="metrics-comparison-details">
+                  <summary>Detailed charts</summary>
+                  <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
+                </details>
                 <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
               </section>
               <section class="settings-section metrics-section" data-metrics-section="scoring-context">
@@ -476,6 +480,7 @@
               </div>
               <div class="control-grid">
                 <label class="check-row"><input id="show-overlay" type="checkbox" /> Show overlay</label>
+                <label class="check-row"><input id="show-shot-scores" type="checkbox" /> Show scores in split badges</label>
                 <label>Badge size
                   <select id="badge-size">
                     <option>XS</option>
@@ -849,7 +854,7 @@
                     <input id="settings-layout-rail-width" type="number" min="84" max="104" step="1" value="84" />
                   </label>
                   <label>Inspector width
-                    <input id="settings-layout-inspector-width" type="number" min="320" max="4096" step="1" value="440" />
+                    <input id="settings-layout-inspector-width" type="number" min="280" max="4096" step="1" value="440" />
                   </label>
                   <label>Waveform height
                     <input id="settings-layout-waveform-height" type="number" min="112" max="4096" step="1" value="206" />

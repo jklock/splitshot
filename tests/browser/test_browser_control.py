@@ -5,6 +5,7 @@ import inspect
 import json
 import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
@@ -158,6 +159,9 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
     "/api/export": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/primary/trim": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
 }
@@ -2238,6 +2242,14 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert len(saved["merge_sources"]) == 4
 
         _post_json(
+            f"{server.url}api/primary/trim",
+            {"start_s": 0.2, "end_s": 1.8, "apply": True},
+        )
+        saved = _read_project_json(project_path)
+        assert saved["primary_trim_derivative"]["derivative_path"]
+        assert saved["primary_trim_derivative"]["active_path_kind"] == "local_derivative"
+
+        _post_json(
             f"{server.url}api/merge",
             {
                 "enabled": True,
@@ -3135,7 +3147,8 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(
         assert state["status"] == "Primary analysis complete."
         assert len(ffprobe_calls) == 1
         assert len(ffmpeg_calls) == 1
-        assert ["-c:a", "aac"] == ffmpeg_calls[0][8:10]
+        assert "-an" in ffmpeg_calls[0]
+        assert "-c:a" not in ffmpeg_calls[0]
 
         with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
             assert response.read() == b"browser-preview"
@@ -3178,6 +3191,36 @@ def test_browser_media_endpoint_returns_404_when_preview_disappears(tmp_path: Pa
         assert "missing-browser-preview.mp4" in log_text
     finally:
         server.shutdown()
+
+
+def test_prewarm_active_media_prepares_paths_in_parallel(tmp_path: Path) -> None:
+    controller = ProjectController()
+    paths = (
+        tmp_path / "Stage1.MP4",
+        tmp_path / "Stage2.MP4",
+        tmp_path / "Stage3.MP4",
+    )
+    for path in paths:
+        path.write_bytes(b"video")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    started: dict[str, float] = {}
+    server._active_browser_media_paths = lambda: paths  # type: ignore[method-assign]
+
+    def fake_prepare(path: Path) -> tuple[Path, bool, None, None]:
+        started[path.name] = time.perf_counter()
+        time.sleep(0.2)
+        return path, False, None, None
+
+    server._prepare_browser_media = fake_prepare  # type: ignore[method-assign]
+
+    start = time.perf_counter()
+    server.prewarm_active_media()
+    elapsed = time.perf_counter() - start
+
+    assert set(started) == {path.name for path in paths}
+    assert elapsed < 0.45
+    assert max(started.values()) - min(started.values()) < 0.1
 
 
 def test_browser_preview_timeline_ignores_container_duration_drift_when_other_video_metadata_matches() -> (
@@ -3244,7 +3287,7 @@ def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_p
         "streams": [
             {
                 "codec_type": "video",
-                "codec_name": "h264",
+                "codec_name": "hevc",
                 "width": 1920,
                 "height": 1080,
                 "start_pts": 0,
@@ -3261,7 +3304,7 @@ def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_p
         "streams": [
             {
                 "codec_type": "video",
-                "codec_name": "h264",
+                "codec_name": "hevc",
                 "width": 1920,
                 "height": 1080,
                 "start_pts": 0,
@@ -3303,6 +3346,65 @@ def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_p
         )
     )
     assert timeline_valid is False
+
+
+def test_browser_preview_timeline_skips_packet_walk_for_copy_safe_video_codecs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source_path = tmp_path / "source.mp4"
+    preview_path = tmp_path / "preview.mp4"
+    source_path.write_bytes(b"source")
+    preview_path.write_bytes(b"preview")
+    source_metadata = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "start_pts": 0,
+                "start_time": "0.000000",
+                "time_base": "1/60000",
+                "duration_ts": 1887000,
+                "avg_frame_rate": "60/1",
+                "r_frame_rate": "60/1",
+                "nb_frames": 1902,
+            }
+        ]
+    }
+    preview_metadata = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "start_pts": 0,
+                "start_time": "0.000000",
+                "time_base": "1/60000",
+                "duration_ts": 1887000,
+                "avg_frame_rate": "60/1",
+                "r_frame_rate": "60/1",
+                "nb_frames": 1902,
+            }
+        ]
+    }
+
+    monkeypatch.setattr(browser_server_module, "run_ffprobe_json", lambda path: preview_metadata)
+    monkeypatch.setattr(
+        browser_server_module,
+        "_ffprobe_video_packet_csv",
+        lambda path: pytest.fail("copy-safe validation should not walk packet timelines"),
+    )
+
+    timeline_valid, _source_timeline, _preview_timeline = (
+        browser_server_module._validate_browser_preview_timeline(
+            source_path,
+            source_metadata,
+            preview_path,
+        )
+    )
+    assert timeline_valid is True
 
 
 def test_browser_media_endpoint_falls_back_to_source_when_preview_timeline_validation_fails(

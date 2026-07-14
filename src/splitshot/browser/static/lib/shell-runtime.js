@@ -359,6 +359,7 @@ export function createShellRuntime({
     syncControlChecked($("show-timer"), project.overlay.show_timer);
     syncControlChecked($("show-draw"), project.overlay.show_draw);
     syncControlChecked($("show-shots"), project.overlay.show_shots);
+    syncControlChecked($("show-shot-scores"), project.overlay.show_shot_scores ?? true);
     syncControlChecked($("show-score"), project.overlay.show_score);
     syncOverlayCoordinateControlState();
     syncOverlayBubbleLockControlState();
@@ -753,6 +754,7 @@ export function createShellRuntime({
       "show-timer",
       "show-draw",
       "show-shots",
+      "show-shot-scores",
       "show-score",
     ].forEach((id) => {
       const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";

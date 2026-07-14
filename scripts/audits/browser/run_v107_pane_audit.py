@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import json
+import os
+import shutil
+import subprocess
 from datetime import datetime, UTC
 from statistics import median
 from pathlib import Path
@@ -25,6 +27,9 @@ DEFAULT_PROJECT = ROOT / "05072026"
 DEFAULT_PRIMARY = ROOT / "05072026" / "Stage2.MP4"
 DEFAULT_ADDED = [ROOT / "05072026" / "Stage3.MP4", ROOT / "05072026" / "Stage4.MP4"]
 DEFAULT_ARTIFACT_ROOT = ROOT / "artifacts" / "v107-phase14-pane-audit"
+TMP_ROOT = ROOT / "tmp" / "codex"
+INSPECTOR_WIDTHS = (280, 340, 440, 560)
+EMPTY_STATE_TOOLS = ("media", "merge", "trim-sync", "overlay", "metrics")
 TOOLS = [
     "project",
     "media",
@@ -81,6 +86,48 @@ def _open_page(playwright: Playwright, base_url: str) -> tuple[Browser, Page]:
     return browser, page
 
 
+def _materialize_project_copy(source: Path, artifact_root: Path) -> Path:
+    target = TMP_ROOT / "pane-audit" / artifact_root.name / source.name
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+    for path in source.rglob("*"):
+        destination = target / path.relative_to(source)
+        if path.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv"}:
+            try:
+                os.link(path, destination)
+                continue
+            except OSError:
+                pass
+        shutil.copy2(path, destination)
+    return target
+
+
+def _wait_for_project_ready(page: Page, expected_added_count: int) -> None:
+    page.wait_for_function(
+        """
+        (expectedAddedCount) => {
+          const project = state?.project;
+          const active = (project?.stages || []).find((stage) => stage.id === project?.active_stage_id);
+          return Boolean(
+            project?.path
+            && project?.active_stage_id
+            && active
+            && project?.primary_video?.path
+            && (project?.merge_sources || []).length === expectedAddedCount
+          );
+        }
+        """,
+        arg=expected_added_count,
+        timeout=30_000,
+    )
+    _wait_for_processing_bar(page)
+
+
 def _refresh(page: Page) -> None:
     page.reload(wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
@@ -114,6 +161,111 @@ def _set_tool(page: Page, tool: str) -> None:
     page.wait_for_timeout(200)
 
 
+def _wait_for_visual_media_ready(page: Page, timeout_ms: int = 15_000) -> None:
+    page.evaluate(
+        """
+        async () => {
+          const isVisible = (element) =>
+            element instanceof HTMLElement &&
+            !element.hidden &&
+            element.offsetParent !== null &&
+            window.getComputedStyle(element).display !== 'none' &&
+            window.getComputedStyle(element).visibility !== 'hidden';
+          const waitForEvent = (target, name, fallbackMs = 500) =>
+            new Promise((resolve) => {
+              let settled = false;
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                resolve();
+              };
+              target.addEventListener(name, finish, { once: true });
+              window.setTimeout(finish, fallbackMs);
+            });
+          const videos = Array.from(
+            document.querySelectorAll('#primary-video, #secondary-video, #merge-preview-layer video')
+          ).filter((element) => element instanceof HTMLVideoElement && isVisible(element));
+          for (const video of videos) {
+            if (!video.currentSrc) continue;
+            if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+              await waitForEvent(video, 'loadedmetadata', 1_000);
+            }
+            const seekTarget = Number.isFinite(video.duration) && video.duration > 0.05 ? 0.05 : 0;
+            if (seekTarget > 0 && Math.abs((video.currentTime || 0) - seekTarget) > 0.02) {
+              try {
+                video.currentTime = seekTarget;
+                await waitForEvent(video, 'seeked', 1_000);
+              } catch (_error) {
+                // Ignore seek priming failures and rely on decode readiness below.
+              }
+            }
+            try {
+              video.muted = true;
+              const playAttempt = video.play();
+              if (playAttempt && typeof playAttempt.then === 'function') {
+                await Promise.race([playAttempt.catch(() => {}), new Promise((resolve) => window.setTimeout(resolve, 400))]);
+              } else {
+                await new Promise((resolve) => window.setTimeout(resolve, 150));
+              }
+            } catch (_error) {
+              // Ignore playback priming failures and rely on decode readiness below.
+            } finally {
+              try {
+                video.pause();
+              } catch (_error) {}
+            }
+            if (typeof video.requestVideoFrameCallback === 'function') {
+              await new Promise((resolve) => {
+                let settled = false;
+                const finish = () => {
+                  if (settled) return;
+                  settled = true;
+                  resolve();
+                };
+                video.requestVideoFrameCallback(() => finish());
+                window.setTimeout(finish, 500);
+              });
+            }
+          }
+        }
+        """
+    )
+    page.wait_for_function(
+        """
+        () => {
+          const isVisible = (element) =>
+            element instanceof HTMLElement &&
+            !element.hidden &&
+            element.offsetParent !== null &&
+            window.getComputedStyle(element).display !== 'none' &&
+            window.getComputedStyle(element).visibility !== 'hidden';
+          const mediaReady = (element) => {
+            if (!isVisible(element)) return true;
+            if (element instanceof HTMLImageElement) {
+              return !element.currentSrc || element.complete;
+            }
+            if (element instanceof HTMLVideoElement) {
+              return !element.currentSrc || (
+                element.readyState >= HTMLMediaElement.HAVE_METADATA &&
+                element.videoWidth > 0
+              );
+            }
+            return true;
+          };
+          const media = [
+            document.getElementById('primary-video'),
+            document.getElementById('secondary-video'),
+            document.getElementById('secondary-image'),
+            ...Array.from(document.querySelectorAll('#merge-preview-layer video, #merge-preview-layer img')),
+          ];
+          return media.every((element) => mediaReady(element));
+        }
+        """,
+        timeout=timeout_ms,
+    )
+    page.wait_for_timeout(250)
+
+
 def _reset_inspector_scroll(page: Page) -> None:
     page.evaluate(
         """
@@ -127,6 +279,7 @@ def _reset_inspector_scroll(page: Page) -> None:
 
 
 def _set_stage_expansion(page: Page, storage_key: str, expanded: bool, tool: str) -> None:
+    expected_added_count = page.evaluate("() => (state?.project?.merge_sources || []).length")
     page.evaluate(
         """
         ({ storageKey, expanded, tool }) => {
@@ -142,6 +295,7 @@ def _set_stage_expansion(page: Page, storage_key: str, expanded: bool, tool: str
     )
     page.reload(wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
+    _wait_for_project_ready(page, int(expected_added_count))
     page.locator(f'[data-tool="{tool}"]').click()
     _wait_for_processing_bar(page)
     _wait_for_active_tool(page, tool)
@@ -151,6 +305,7 @@ def _set_stage_expansion(page: Page, storage_key: str, expanded: bool, tool: str
 def _set_section_expansion(
     page: Page, storage_key: str, values: dict[str, bool], tool: str
 ) -> None:
+    expected_added_count = page.evaluate("() => (state?.project?.merge_sources || []).length")
     page.evaluate(
         """
         ({ storageKey, values, tool }) => {
@@ -162,6 +317,7 @@ def _set_section_expansion(
     )
     page.reload(wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
+    _wait_for_project_ready(page, int(expected_added_count))
     page.locator(f'[data-tool="{tool}"]').click()
     _wait_for_processing_bar(page)
     _wait_for_active_tool(page, tool)
@@ -195,15 +351,19 @@ def _prepare_capture_state(page: Page, tool: str) -> None:
         return
     if tool == "media":
         _set_section_expansion(page, "splitshot.media.sectionExpanded", {"stages": True}, tool)
+        _wait_for_visual_media_ready(page)
         _reset_inspector_scroll(page)
         return
     if tool == "queue":
         _set_stage_expansion(page, "splitshot.queue.stageExpanded", True, tool)
+        _wait_for_visual_media_ready(page)
         _reset_inspector_scroll(page)
         return
     if tool == "review":
         _prepare_review_capture(page)
+        _wait_for_visual_media_ready(page)
         return
+    _wait_for_visual_media_ready(page)
     _reset_inspector_scroll(page)
 
 
@@ -294,17 +454,103 @@ def _prepare_controller_state(
     }
 
 
-def _capture_panes(page: Page, artifact_root: Path) -> list[dict[str, object]]:
+def _responsive_pane_measurement(page: Page, tool: str, width: int) -> dict[str, object]:
+    return page.evaluate(
+        """
+        ({ tool, width }) => {
+          const pane = document.querySelector(`[data-tool-pane="${tool}"]`);
+          if (!(pane instanceof HTMLElement)) return { tool, width, missing: true, failures: ['pane missing'] };
+          const paneRect = pane.getBoundingClientRect();
+          const failures = [];
+          if (Math.abs(pane.clientWidth - width) > 1) failures.push(`requested ${width}px but measured ${pane.clientWidth}px`);
+          if (pane.scrollWidth > pane.clientWidth + 1) failures.push(`horizontal overflow ${pane.scrollWidth - pane.clientWidth}px`);
+          const selectors = 'button, input, select, textarea, article, .settings-section, .metric-card, .metrics-placement-card';
+          Array.from(pane.querySelectorAll(selectors)).forEach((element) => {
+            if (!(element instanceof HTMLElement) || element.offsetParent === null) return;
+            const rect = element.getBoundingClientRect();
+            if (rect.left < paneRect.left - 1 || rect.right > paneRect.right + 1) {
+              failures.push(`${element.id || element.className || element.tagName} outside pane bounds`);
+            }
+          });
+          return { tool, width, clientWidth: pane.clientWidth, scrollWidth: pane.scrollWidth, failures };
+        }
+        """,
+        {"tool": tool, "width": width},
+    )
+
+
+def _set_inspector_width(page: Page, width: int) -> None:
+    page.evaluate(
+        """
+        (value) => {
+          const handle = document.querySelector('#resize-sidebar');
+          const grid = document.querySelector('.review-grid');
+          if (!(handle instanceof HTMLElement) || !(grid instanceof HTMLElement)) throw new Error('Inspector resize controls unavailable');
+          const pointerId = 91;
+          const dispatchDown = () => handle.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, pointerId, clientX: handle.getBoundingClientRect().left,
+          }));
+          dispatchDown();
+          if (!document.body.classList.contains('resizing-layout')) dispatchDown();
+          const clientX = grid.getBoundingClientRect().right - value;
+          document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId, clientX }));
+          document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId, clientX }));
+        }
+        """,
+        width,
+    )
+    page.wait_for_function(
+        "value => Math.abs((document.querySelector('.inspector')?.clientWidth || 0) - value) <= 1",
+        arg=width,
+    )
+
+
+def _capture_panes(
+    page: Page, artifact_root: Path
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     artifact_root.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, object]] = []
+    responsive: list[dict[str, object]] = []
     for tool in TOOLS:
         _set_tool(page, tool)
         _prepare_capture_state(page, tool)
-        file_name = f"{tool}.png"
-        path = artifact_root / file_name
-        page.screenshot(path=str(path))
-        results.append({"tool": tool, "title": TOOL_TITLES[tool], "file": file_name})
+        for width in INSPECTOR_WIDTHS:
+            _set_inspector_width(page, width)
+            page.wait_for_timeout(120)
+            file_name = f"{tool}.png" if width == 440 else f"{tool}-{width}.png"
+            page.screenshot(path=str(artifact_root / file_name))
+            responsive.append(_responsive_pane_measurement(page, tool, width))
+            if width == 440:
+                results.append({"tool": tool, "title": TOOL_TITLES[tool], "file": file_name})
+    return results, responsive
+
+
+def _capture_empty_states(page: Page, artifact_root: Path) -> list[dict[str, object]]:
+    page.evaluate("() => callApi('/api/project/new', {})")
+    page.wait_for_function("() => !state?.project?.path && !(state?.project?.stages || []).length")
+    results: list[dict[str, object]] = []
+    for tool in EMPTY_STATE_TOOLS:
+        _set_tool(page, tool)
+        for width in INSPECTOR_WIDTHS:
+            _set_inspector_width(page, width)
+            page.wait_for_timeout(100)
+            file_name = f"{tool}-empty-{width}.png"
+            page.screenshot(path=str(artifact_root / file_name))
+            results.append({"tool": tool, "width": width, "file": file_name})
     return results
+
+
+def _warm_source_browser_media(server: BrowserControlServer, controller: ProjectController) -> None:
+    active_stage = controller.project.active_stage
+    if active_stage and active_stage.primary_media.path:
+        server._prepare_browser_media(Path(active_stage.primary_media.path))
+    secondary_path = controller.project.secondary_video.path
+    if secondary_path:
+        server._prepare_browser_media(Path(secondary_path))
+    for source in controller.project.merge_sources:
+        active_path = controller.effective_merge_source_media_path(source.id)
+        if active_path:
+            server._prepare_browser_media(Path(active_path))
 
 
 def _collect_dom_summary(page: Page) -> dict[str, object]:
@@ -554,8 +800,8 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
     }
     allowed_multi_column = {
         "media": set(),
-        "merge": {"merge-source-layout-row"},
-        "trim-sync": {"trim-sync-nudge-buttons"},
+        "merge": {"merge-source-layout-row", "merge-source-controls"},
+        "trim-sync": {"trim-sync-nudge-buttons", "trim-card-row-quick"},
         "queue": set(),
     }
     failures: list[dict[str, object]] = []
@@ -757,44 +1003,54 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     app = QApplication.instance() or QApplication([])
-    project_path = args.project_path.expanduser().resolve()
+    source_project_path = args.project_path.expanduser().resolve()
     primary_video = args.primary_video.expanduser().resolve()
     added_videos = [path.expanduser().resolve() for path in (args.added_videos or DEFAULT_ADDED)]
     artifact_root = args.artifact_root.expanduser().resolve()
+    project_path = _materialize_project_copy(source_project_path, artifact_root)
     controller = ProjectController()
     state_summary = _prepare_controller_state(controller, project_path, primary_video, added_videos)
     server = BrowserControlServer(controller=controller, port=0, log_level="off")
+    _warm_source_browser_media(server, controller)
     server.start_background(open_browser=False)
     browser: Browser | None = None
     try:
         with sync_playwright() as playwright:
             browser, page = _open_page(playwright, server.url)
             _refresh(page)
-            captures = _capture_panes(page, artifact_root)
+            _wait_for_project_ready(page, len(added_videos))
+            captures, responsive = _capture_panes(page, artifact_root)
             review_fallback_file = _capture_review_fallback(page, artifact_root)
             dom_summary = _collect_dom_summary(page)
             parity = _compute_visual_parity(dom_summary)
             _compose_sheet(artifact_root, captures)
+            empty_captures = _capture_empty_states(page, artifact_root)
             payload = {
                 "git_head_sha": _git_head_sha(),
                 "app_version": APP_VERSION,
                 "proof_source": args.proof_source,
                 "artifact_timestamp": datetime.now(UTC).isoformat(),
                 "project_path": str(project_path),
+                "source_project_path": str(source_project_path),
                 "primary_video": str(primary_video),
                 "added_videos": [str(path) for path in added_videos],
                 "captures": captures,
+                "empty_captures": empty_captures,
                 "focused_review_fallback": review_fallback_file,
                 "state": state_summary,
                 "dom": dom_summary,
                 "visual_parity": parity,
+                "responsive": responsive,
             }
             (artifact_root / "audit.json").write_text(
                 json.dumps(payload, indent=2), encoding="utf-8"
             )
             print(json.dumps(payload, indent=2))
-            if parity["failures"]:
-                raise RuntimeError(f"Pane visual parity audit failed: {parity['failures']}")
+            responsive_failures = [item for item in responsive if item.get("failures")]
+            if parity["failures"] or responsive_failures:
+                raise RuntimeError(
+                    f"Pane visual audit failed: parity={parity['failures']} responsive={responsive_failures}"
+                )
     finally:
         app.quit()
         server.shutdown()

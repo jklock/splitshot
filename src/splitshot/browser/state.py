@@ -16,6 +16,29 @@ from splitshot.scoring.logic import (
 from splitshot.timeline.model import compute_split_rows
 
 
+def _trim_payload_is_active(trim_payload: dict[str, Any] | None) -> bool:
+    return bool(
+        isinstance(trim_payload, dict)
+        and trim_payload.get("active_path_kind") == "local_derivative"
+        and trim_payload.get("derivative_path")
+    )
+
+
+def _active_asset_payload(
+    asset_payload: dict[str, Any] | None,
+    trim_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if _trim_payload_is_active(trim_payload):
+        derivative_asset = trim_payload.get("derivative_asset")
+        if isinstance(derivative_asset, dict) and derivative_asset.get("path"):
+            return derivative_asset
+        if isinstance(asset_payload, dict):
+            active_asset = dict(asset_payload)
+            active_asset["path"] = str(trim_payload.get("derivative_path") or "")
+            return active_asset
+    return dict(asset_payload or {})
+
+
 def _normalize_serialized_score(
     ruleset: str,
     score: dict[str, Any] | None,
@@ -167,6 +190,30 @@ def browser_state(
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
+    primary_asset_payload = project_payload.get("primary_video")
+    primary_trim_payload = project_payload.get("primary_trim_derivative")
+    primary_trim_active = _trim_payload_is_active(primary_trim_payload)
+    primary_active_asset = _active_asset_payload(primary_asset_payload, primary_trim_payload)
+    primary_effective_media_path = str(primary_active_asset.get("path") or "")
+    if isinstance(primary_asset_payload, dict):
+        primary_asset_payload["original_path"] = str(primary_asset_payload.get("path") or "")
+        primary_asset_payload["effective_media_path"] = primary_effective_media_path
+        primary_asset_payload["trim_active"] = primary_trim_active
+        primary_asset_payload["active_display_name"] = (
+            Path(primary_effective_media_path).name if primary_effective_media_path else ""
+        )
+        primary_asset_payload["original_display_name"] = (
+            Path(str(primary_asset_payload.get("path") or "")).name
+            if primary_asset_payload.get("path")
+            else ""
+        )
+        primary_asset_payload["active_duration_ms"] = primary_active_asset.get("duration_ms")
+        primary_asset_payload["active_width"] = primary_active_asset.get("width")
+        primary_asset_payload["active_height"] = primary_active_asset.get("height")
+        primary_asset_payload["active_media_kind"] = str(
+            primary_active_asset.get("media_kind")
+            or ("still_image" if primary_active_asset.get("is_still_image") else "video")
+        )
     merge_sources_payload = project_payload.get("merge_sources")
     analysis_payload = project_payload.get("analysis")
     if isinstance(merge_sources_payload, list) and isinstance(analysis_payload, dict):
@@ -189,16 +236,9 @@ def browser_state(
                 )
             source_id = item.get("id")
             trim_payload = item.get("trim_derivative")
-            trim_active = bool(
-                isinstance(trim_payload, dict)
-                and trim_payload.get("active_path_kind") == "local_derivative"
-                and trim_payload.get("derivative_path")
-            )
-            effective_media_path = (
-                str(trim_payload.get("derivative_path"))
-                if trim_active and isinstance(trim_payload, dict)
-                else str((asset_payload or {}).get("path") or "")
-            )
+            trim_active = _trim_payload_is_active(trim_payload)
+            active_asset_payload = _active_asset_payload(asset_payload, trim_payload)
+            effective_media_path = str(active_asset_payload.get("path") or "")
             supports_sync_analysis = bool(
                 source_id
                 and isinstance(asset_payload, dict)
@@ -208,7 +248,23 @@ def browser_state(
             is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
             sync_payload = secondary_source_payloads.get(str(source_id or ""), {})
             item["trim_active"] = trim_active
+            item["original_media_path"] = str((asset_payload or {}).get("path") or "")
             item["effective_media_path"] = effective_media_path
+            item["active_display_name"] = (
+                Path(effective_media_path).name if effective_media_path else ""
+            )
+            item["original_display_name"] = (
+                Path(str((asset_payload or {}).get("path") or "")).name
+                if (asset_payload or {}).get("path")
+                else ""
+            )
+            item["active_duration_ms"] = active_asset_payload.get("duration_ms")
+            item["active_width"] = active_asset_payload.get("width")
+            item["active_height"] = active_asset_payload.get("height")
+            item["active_media_kind"] = str(
+                active_asset_payload.get("media_kind")
+                or ("still_image" if active_asset_payload.get("is_still_image") else "video")
+            )
             item["is_analyzed_sync_source"] = is_analyzed_sync_source
             item["supports_sync_analysis"] = supports_sync_analysis
             item["can_rerun_sync_analysis"] = supports_sync_analysis
@@ -271,7 +327,7 @@ def browser_state(
         _normalize_scoring_row_payload(asdict(segment), ruleset)
         for segment in presentation.timing_segments
     ]
-    primary_path = Path(project.primary_video.path) if project.primary_video.path else None
+    primary_path = Path(primary_effective_media_path) if primary_effective_media_path else None
     secondary_path_value = active_secondary_path or (
         project.secondary_video.path
         if project.secondary_video is not None and project.secondary_video.path
@@ -310,6 +366,8 @@ def browser_state(
             "secondary_available": secondary_available,
             "primary_url": "/media/primary" if primary_available else None,
             "secondary_url": ("/media/secondary" if secondary_available else None),
+            "primary_active_path": primary_effective_media_path,
+            "primary_trimmed": primary_trim_active,
             "secondary_source_id": project.analysis.analyzed_secondary_source_id,
             "secondary_active_path": secondary_path_value,
             "secondary_trimmed": active_secondary_trimmed,

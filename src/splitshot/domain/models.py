@@ -385,6 +385,7 @@ class MergeSourcePlacement:
 class MergeSourceTrimDerivative:
     original_path: str = ""
     derivative_path: str | None = None
+    derivative_asset: VideoAsset = field(default_factory=VideoAsset)
     active_path_kind: MergeSourceAssetPathKind = MergeSourceAssetPathKind.ORIGINAL
     start_s: float | None = None
     end_s: float | None = None
@@ -704,6 +705,7 @@ class OverlaySettings:
     show_timer: bool = True
     show_draw: bool = True
     show_shots: bool = True
+    show_shot_scores: bool = True
     show_score: bool = True
     timer_lock_to_stack: bool = True
     draw_lock_to_stack: bool = True
@@ -925,6 +927,9 @@ class ProjectStage:
     imported_stage_number: int | None = None
     imported_stage_name: str = ""
     primary_media: VideoAsset = field(default_factory=VideoAsset)
+    primary_trim_derivative: MergeSourceTrimDerivative = field(
+        default_factory=MergeSourceTrimDerivative
+    )
     added_media: list[MergeSource] = field(default_factory=list)
     analysis: AnalysisState = field(default_factory=AnalysisState)
     scoring: ScoringState = field(default_factory=ScoringState)
@@ -960,6 +965,9 @@ class Project:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     primary_video: VideoAsset = field(default_factory=VideoAsset)
+    primary_trim_derivative: MergeSourceTrimDerivative = field(
+        default_factory=MergeSourceTrimDerivative
+    )
     secondary_video: VideoAsset | None = None
     merge_sources: list[MergeSource] = field(default_factory=list)
     analysis: AnalysisState = field(default_factory=AnalysisState)
@@ -1046,6 +1054,7 @@ def stage_to_dict(stage: ProjectStage) -> dict[str, Any]:
         "imported_stage_number": stage.imported_stage_number,
         "imported_stage_name": stage.imported_stage_name,
         "primary_media": _serialize(stage.primary_media),
+        "primary_trim_derivative": _serialize(stage.primary_trim_derivative),
         "added_media": _serialize(stage.added_media),
         "analysis": _serialize(stage.analysis),
         "scoring": _serialize(stage.scoring),
@@ -1084,6 +1093,10 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
         else int(data["imported_stage_number"]),
         imported_stage_name=str(data.get("imported_stage_name", "")),
         primary_media=primary_media,
+        primary_trim_derivative=_merge_source_trim_derivative_from_dict(
+            data.get("primary_trim_derivative"),
+            asset=primary_media,
+        ),
         added_media=added_media,
         analysis=_analysis_state_from_dict(analysis_data),
         scoring=_scoring_from_dict(data.get("scoring"))
@@ -1150,6 +1163,7 @@ def _overlay_from_dict(data: dict[str, Any]) -> OverlaySettings:
         show_timer=bool(data.get("show_timer", True)),
         show_draw=bool(data.get("show_draw", True)),
         show_shots=bool(data.get("show_shots", True)),
+        show_shot_scores=bool(data.get("show_shot_scores", True)),
         show_score=bool(data.get("show_score", True)),
     )
 
@@ -1242,6 +1256,26 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         overlay["scoring_colors"] = _normalize_scoring_color_map(overlay.get("scoring_colors", {}))
         overlay.pop("review_boxes_lock_to_stack", None)
     merge_sources = data.get("merge_sources")
+    primary_trim_derivative = data.get("primary_trim_derivative")
+    if isinstance(primary_trim_derivative, dict):
+        if not primary_trim_derivative.get("derivative_path"):
+            primary_trim_derivative.pop("derivative_path", None)
+            primary_trim_derivative.pop("derivative_asset", None)
+        elif not isinstance(
+            primary_trim_derivative.get("derivative_asset"), dict
+        ) or not primary_trim_derivative["derivative_asset"].get("path"):
+            primary_trim_derivative.pop("derivative_asset", None)
+        if project.primary_trim_derivative.start_s is None:
+            primary_trim_derivative.pop("start_s", None)
+        if project.primary_trim_derivative.end_s is None:
+            primary_trim_derivative.pop("end_s", None)
+        if project.primary_trim_derivative.active_path_kind == MergeSourceAssetPathKind.ORIGINAL:
+            primary_trim_derivative.pop("active_path_kind", None)
+        default_original_path = project.primary_video.path or ""
+        if project.primary_trim_derivative.original_path in {"", default_original_path}:
+            primary_trim_derivative.pop("original_path", None)
+        if not primary_trim_derivative:
+            data.pop("primary_trim_derivative", None)
     if isinstance(merge_sources, list):
         for index, (item, source) in enumerate(
             zip(merge_sources, project.merge_sources, strict=False)
@@ -1273,6 +1307,11 @@ def project_to_dict(project: Project) -> dict[str, Any]:
             if isinstance(trim_derivative, dict):
                 if source.trim_derivative.derivative_path in {None, ""}:
                     trim_derivative.pop("derivative_path", None)
+                    trim_derivative.pop("derivative_asset", None)
+                elif not isinstance(
+                    trim_derivative.get("derivative_asset"), dict
+                ) or not trim_derivative["derivative_asset"].get("path"):
+                    trim_derivative.pop("derivative_asset", None)
                 if source.trim_derivative.start_s is None:
                     trim_derivative.pop("start_s", None)
                 if source.trim_derivative.end_s is None:
@@ -1852,9 +1891,18 @@ def _merge_source_trim_derivative_from_dict(
         and (derivative_path is None or asset_path != derivative_path)
     ):
         original_path = asset_path
+    derivative_asset_payload = trim_data.get("derivative_asset")
+    derivative_asset = (
+        _video_from_dict(derivative_asset_payload)
+        if isinstance(derivative_asset_payload, dict)
+        else VideoAsset(path=str(derivative_path or ""))
+    )
+    if derivative_path and not derivative_asset.path:
+        derivative_asset.path = str(derivative_path)
     return MergeSourceTrimDerivative(
         original_path=original_path,
         derivative_path=derivative_path,
+        derivative_asset=derivative_asset,
         active_path_kind=_normalize_merge_source_active_path_kind(
             trim_data.get(
                 "active_path_kind",
@@ -1903,6 +1951,25 @@ def _finalize_merge_source_metadata(merge_sources: list[MergeSource]) -> None:
             )
         ):
             trim_derivative.original_path = source.asset.path
+        if trim_derivative.derivative_path and not trim_derivative.derivative_asset.path:
+            trim_derivative.derivative_asset.path = str(trim_derivative.derivative_path)
+
+
+def _finalize_primary_trim_derivative(
+    primary_asset: VideoAsset,
+    trim_derivative: MergeSourceTrimDerivative,
+) -> None:
+    if trim_derivative.derivative_path == "":
+        trim_derivative.derivative_path = None
+    if (
+        trim_derivative.active_path_kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+        and not trim_derivative.derivative_path
+    ):
+        trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
+    if not trim_derivative.original_path and primary_asset.path:
+        trim_derivative.original_path = primary_asset.path
+    if trim_derivative.derivative_path and not trim_derivative.derivative_asset.path:
+        trim_derivative.derivative_asset.path = str(trim_derivative.derivative_path)
 
 
 def _canonicalize_secondary_video_reference(project: Project) -> None:
@@ -1945,7 +2012,11 @@ def _apply_legacy_merge_defaults_to_source(
     )
 
     migrated_from_legacy_layout = False
-    if raw_source is not None and not has_explicit_mode and source.placement.mode == MergePlacementMode.AUTO:
+    if (
+        raw_source is not None
+        and not has_explicit_mode
+        and source.placement.mode == MergePlacementMode.AUTO
+    ):
         source.placement.mode = _merge_layout_to_placement_mode(merge_layout)
         migrated_from_legacy_layout = True
 
@@ -2304,6 +2375,10 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         created_at=datetime.fromisoformat(data.get("created_at", datetime.now(UTC).isoformat())),
         updated_at=datetime.fromisoformat(data.get("updated_at", datetime.now(UTC).isoformat())),
         primary_video=_video_from_dict(data.get("primary_video")),
+        primary_trim_derivative=_merge_source_trim_derivative_from_dict(
+            data.get("primary_trim_derivative"),
+            asset=_video_from_dict(data.get("primary_video")),
+        ),
         secondary_video=secondary_video,
         merge_sources=merge_sources,
         analysis=_analysis_state_from_dict(analysis_data),
@@ -2400,6 +2475,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             show_timer=bool(overlay_data.get("show_timer", True)),
             show_draw=bool(overlay_data.get("show_draw", True)),
             show_shots=bool(overlay_data.get("show_shots", True)),
+            show_shot_scores=bool(overlay_data.get("show_shot_scores", True)),
             show_score=bool(overlay_data.get("show_score", True)),
             timer_lock_to_stack=bool(
                 overlay_data.get(
@@ -2567,6 +2643,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             and bool(data["secondary_video"].get("path"))
         ),
     )
+    _finalize_primary_trim_derivative(project.primary_video, project.primary_trim_derivative)
     project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
     if project.merge_sources:
         project.secondary_video = project.merge_sources[0].asset
@@ -2618,6 +2695,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             label=imported_stage_name if imported_stage_name else "Stage 1",
             order_index=project.scoring.stage_number if project.scoring.stage_number else 1,
             primary_media=project.primary_video,
+            primary_trim_derivative=deepcopy(project.primary_trim_derivative),
             added_media=list(project.merge_sources),
             analysis=deepcopy(project.analysis),
             scoring=deepcopy(project.scoring),
@@ -2635,5 +2713,8 @@ def project_from_dict(data: dict[str, Any]) -> Project:
 
     if not project.active_stage_id and project.stages:
         project.active_stage_id = project.stages[0].id
+
+    for stage in project.stages:
+        _finalize_primary_trim_derivative(stage.primary_media, stage.primary_trim_derivative)
 
     return project

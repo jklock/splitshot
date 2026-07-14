@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import urllib.error
 
 from pathlib import Path
 
@@ -110,6 +111,13 @@ def test_prepare_project_copy_copies_mutable_files(monkeypatch, tmp_path: Path) 
     assert source_csv.stat().st_ino != copy_csv.stat().st_ino
 
 
+def test_build_parser_defaults_slice_to_full() -> None:
+    parser = MODULE.build_parser()
+    args = parser.parse_args([])
+    assert args.slice == "full"
+    assert args.fresh_project_copy is False
+
+
 def test_project_copy_mutation_does_not_change_source_project(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "05072026"
     artifact_root = tmp_path / "artifacts"
@@ -131,6 +139,33 @@ def test_project_copy_mutation_does_not_change_source_project(monkeypatch, tmp_p
 
     MODULE._assert_file_unchanged(source / "project.json", before)
     assert (source / "project.json").read_text(encoding="utf-8") == '{"name":"source"}'
+
+
+def test_prepare_project_copy_reuses_matching_cached_copy(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "05072026"
+    artifact_root = tmp_path / "artifacts"
+    (source / "CSV").mkdir(parents=True)
+    (source / "project.json").write_text('{"name":"source"}', encoding="utf-8")
+    (source / "CSV" / "IDPA.csv").write_text("stage,data\n", encoding="utf-8")
+    for name in ("Stage2.MP4", "Stage3.MP4", "Stage4.MP4"):
+        (source / name).write_bytes(b"video")
+
+    calls: list[Path] = []
+    monkeypatch.setattr(
+        MODULE,
+        "_normalize_project_for_audit",
+        lambda project_root: calls.append(project_root) or {"project_root": str(project_root)},
+    )
+
+    first_copy_root, _ = MODULE._prepare_project_copy(source, artifact_root)
+    first_project_path = first_copy_root / "project.json"
+    first_inode = first_project_path.stat().st_ino
+
+    second_copy_root, _ = MODULE._prepare_project_copy(source, artifact_root)
+
+    assert second_copy_root == first_copy_root
+    assert (second_copy_root / "project.json").stat().st_ino == first_inode
+    assert calls == [first_copy_root, second_copy_root]
 
 
 def test_api_post_raises_when_browser_runtime_reports_failure() -> None:
@@ -179,13 +214,88 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
         "_capture_export_log",
         lambda page, artifact_root, suffix: {"screenshot": "", "text_file": "", "line_count": 0},
     )
-    monkeypatch.setattr(MODULE, "_verify_video_file", lambda path: {"path": str(path), "exists": True})
+    monkeypatch.setattr(
+        MODULE, "_verify_video_file", lambda path: {"path": str(path), "exists": True}
+    )
 
     result = MODULE._run_combined_export(FakePage(), tmp_path, tmp_path)
 
     assert result["output_path"] == str(combined_path)
     assert result["verification"]["exists"] is True
     assert result["error"] is None
+
+
+def test_requeue_all_stages_clears_existing_queue_before_readding(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakePage:
+        def evaluate(self, script, payload=None):  # noqa: ANN001
+            if "state?.project?.queue" in script:
+                return ["stage-1", "stage-2"]
+            if "state?.project?.stages" in script:
+                return ["stage-1", "stage-2", "stage-3"]
+            raise AssertionError(script)
+
+        def wait_for_function(self, script, arg=None, timeout=None):  # noqa: ANN001
+            assert "state?.project?.queue" in script
+            return None
+
+    monkeypatch.setattr(
+        MODULE,
+        "_api_post",
+        lambda page, path, payload: calls.append((path, payload["stage_id"])),
+    )
+    monkeypatch.setattr(
+        MODULE,
+        "_wait_for_queue_statuses",
+        lambda page, statuses, expected_count, timeout_ms=300_000: [],
+    )
+
+    MODULE._requeue_all_stages(FakePage())
+
+    assert calls == [
+        ("/api/project/queue/remove", "stage-1"),
+        ("/api/project/queue/remove", "stage-2"),
+        ("/api/project/queue/add", "stage-1"),
+        ("/api/project/queue/add", "stage-2"),
+        ("/api/project/queue/add", "stage-3"),
+    ]
+
+
+def test_warm_installed_app_media_ignores_missing_urls(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):  # noqa: ANN001
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return None
+
+        def read(self, _size):  # noqa: ANN001
+            return b"x"
+
+    calls: list[str] = []
+
+    def fake_urlopen(url, timeout):  # noqa: ANN001
+        calls.append(url)
+        if url.endswith("/media/secondary"):
+            raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+        return FakeResponse()
+
+    monkeypatch.setattr(MODULE, "urlopen", fake_urlopen)
+
+    MODULE._warm_installed_app_media(
+        "http://127.0.0.1:9999",
+        {
+            "media": {"secondary_url": "/media/secondary"},
+            "project": {"merge_sources": [{"id": "merge-1"}]},
+        },
+    )
+
+    assert calls == [
+        "http://127.0.0.1:9999/media/primary",
+        "http://127.0.0.1:9999/media/secondary",
+        "http://127.0.0.1:9999/media/merge/merge-1",
+    ]
 
 
 def test_terminate_process_uses_process_group_on_posix(monkeypatch) -> None:
@@ -217,7 +327,9 @@ def test_terminate_process_uses_process_group_on_posix(monkeypatch) -> None:
     assert ("wait", 4321, 10) in calls
 
 
-def test_terminate_matching_processes_kills_matching_bundle_descendants(monkeypatch, tmp_path: Path) -> None:
+def test_terminate_matching_processes_kills_matching_bundle_descendants(
+    monkeypatch, tmp_path: Path
+) -> None:
     bundle = tmp_path / "SplitShot.app"
     ps_output = "\n".join(
         [

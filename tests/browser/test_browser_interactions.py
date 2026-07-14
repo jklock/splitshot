@@ -376,7 +376,9 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
                 page.locator("#import-practiscore").click()
                 page.wait_for_function("() => (state?.project?.stages || []).length > 0")
                 _open_tool(page, "media")
-                page.wait_for_function("() => document.querySelector('#media-active-stage-select') !== null")
+                page.wait_for_function(
+                    "() => document.querySelector('#media-active-stage-select') !== null"
+                )
             finally:
                 browser.close()
     finally:

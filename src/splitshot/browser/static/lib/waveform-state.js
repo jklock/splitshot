@@ -16,7 +16,12 @@ export function createWaveformState({
   }
 
   function durationMs() {
-    return Math.max(1, currentState()?.project?.primary_video?.duration_ms || 1);
+    return Math.max(
+      1,
+      currentState()?.project?.primary_video?.active_duration_ms
+        || currentState()?.project?.primary_video?.duration_ms
+        || 1,
+    );
   }
 
   function waveformWindow() {

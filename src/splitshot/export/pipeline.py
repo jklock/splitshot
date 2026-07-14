@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import threading
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,6 +28,7 @@ from splitshot.domain.models import (
     MergePlacementSlot,
     MergeSource,
     Project,
+    MergeSourceAssetPathKind,
 )
 from splitshot.media.ffmpeg import ffmpeg_command
 from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect
@@ -107,6 +109,29 @@ def _output_fps(project: Project) -> float:
     return source_fps
 
 
+def _trim_active(trim_derivative: object) -> bool:
+    return bool(
+        trim_derivative is not None
+        and getattr(trim_derivative, "active_path_kind", None)
+        == MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+        and getattr(trim_derivative, "derivative_path", None)
+    )
+
+
+def _active_export_project(project: Project) -> Project:
+    active_project = deepcopy(project)
+    if _trim_active(active_project.primary_trim_derivative):
+        derivative_asset = active_project.primary_trim_derivative.derivative_asset
+        if derivative_asset.path:
+            active_project.primary_video = derivative_asset
+    for source in active_project.merge_sources:
+        if _trim_active(source.trim_derivative) and source.trim_derivative.derivative_asset.path:
+            source.asset = source.trim_derivative.derivative_asset
+    if active_project.merge_sources:
+        active_project.secondary_video = active_project.merge_sources[0].asset
+    return active_project
+
+
 def _ratio_value(aspect_ratio: AspectRatio) -> tuple[int, int] | None:
     return {
         AspectRatio.ORIGINAL: None,
@@ -177,7 +202,7 @@ def _source_sync_offset_ms(source: MergeSource) -> int:
 
 def _source_active_path(source: MergeSource) -> str:
     trim = getattr(source, "trim_derivative", None)
-    if trim is not None and getattr(trim, "derivative_path", None):
+    if _trim_active(trim):
         return str(trim.derivative_path)
     return source.asset.path
 
@@ -931,6 +956,9 @@ def export_project(
     log_callback: Callable[[str], None] | None = None,
     frame_profile: str | None = None,
 ) -> Path:
+    original_project = project
+    project = _active_export_project(project)
+    project.export = original_project.export
     project.export.last_log = ""
     project.export.last_error = None
     if not project.primary_video.path:

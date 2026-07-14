@@ -31,7 +31,15 @@ export function createMediaPane({
   }
 
   function activeStage() {
-    return stages().find((stage) => stage.id === activeStageId()) || stages()[0] || null;
+    const stage = stages().find((item) => item.id === activeStageId()) || stages()[0] || null;
+    if (!stage) return null;
+    const activeId = activeStageId();
+    if (!activeId || stage.id !== activeId) return stage;
+    return {
+      ...stage,
+      primary_media: project().primary_video || stage.primary_media,
+      added_media: project().merge_sources || stage.added_media,
+    };
   }
 
   function hasOpenProject() {
@@ -78,6 +86,18 @@ export function createMediaPane({
     const dims = asset?.width && asset?.height ? `${asset.width}x${asset.height}` : "";
     if (dims) parts.push(dims);
     return parts.join(" • ");
+  }
+
+  function activeAssetMeta(sourceOrAsset) {
+    const asset = sourceOrAsset?.asset || sourceOrAsset || {};
+    const activeAsset = {
+      ...asset,
+      duration_ms: sourceOrAsset?.active_duration_ms ?? asset.duration_ms,
+      width: sourceOrAsset?.active_width ?? asset.width,
+      height: sourceOrAsset?.active_height ?? asset.height,
+      media_kind: sourceOrAsset?.active_media_kind ?? asset.media_kind,
+    };
+    return assetMeta(activeAsset);
   }
 
   function directoryOf(path) {
@@ -199,6 +219,10 @@ export function createMediaPane({
   async function openAddMoreForStage(stageId) {
     if (!stageId || !hasOpenProject()) return;
     const stage = stages().find((item) => item.id === stageId) || activeStage();
+    if (!stage?.primary_media?.path) {
+      setStatus("Add primary media before adding secondary media.");
+      return;
+    }
     selectStage(stageId);
     activity("media.import-added", { stageId });
     const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot(stage));
@@ -211,12 +235,16 @@ export function createMediaPane({
   function renderInventoryFileRow(stageId, source, isPrimary = false) {
     const asset = source.asset || source;
     const sourceId = isPrimary ? "primary" : (source.id || "");
+    const trimActive = Boolean(source?.trim_active);
+    const activeName = source?.active_display_name || fileName(asset.path || "");
+    const originalName = source?.original_display_name || fileName(asset.path || "");
     return `
       <article class="media-asset-row" data-stage-id="${stageId}" data-source-id="${sourceId}">
         <div class="media-asset-copy">
           <strong>${isPrimary ? "Primary" : "Added"}</strong>
-          <span>${htmlEscape(fileName(asset.path || ""))}</span>
-          <small>${htmlEscape(assetMeta(asset))}</small>
+          <span>${htmlEscape(activeName)}</span>
+          <small>${htmlEscape(activeAssetMeta(source))}${trimActive ? " • Trimmed media active" : ""}</small>
+          ${trimActive ? `<small class="media-active-path-note">${htmlEscape(originalName)} original</small>` : ""}
         </div>
         <div class="media-asset-actions">
           ${isPrimary
@@ -281,14 +309,14 @@ export function createMediaPane({
               ? renderInventoryFileRow(stage.id, stage.primary_media, true)
               : `<div class="empty-state">
                    <p>No primary asset for ${htmlEscape(stageLabel(stage))}.</p>
-                   <button class="btn-sm btn-secondary media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Add Primary</button>
+                   <button class="btn-sm btn-primary media-intake-btn media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Add Primary</button>
                  </div>`}
           </section>
           <section class="media-pane-inner-section">
             <div class="media-inner-section-header">
               <strong>Added Media</strong>
               <span class="pane-summary-token">${added.length} file${added.length === 1 ? "" : "s"}</span>
-              <button class="btn-sm btn-secondary media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>Add Media</button>
+              <button class="btn-sm btn-primary media-intake-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
             </div>
             <div class="media-asset-stack">
               ${added.length

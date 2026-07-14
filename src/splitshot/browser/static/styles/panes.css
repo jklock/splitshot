@@ -496,6 +496,27 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.media-intake-btn {
+  height: var(--pane-primary-button-height);
+  min-height: var(--pane-primary-button-height);
+  min-width: 7.5rem;
+  width: 7.5rem;
+}
+
+.media-intake-btn.btn-primary:not(:disabled) {
+  background: var(--green);
+  border-color: var(--green);
+  color: #08110b;
+}
+
+.media-intake-btn:disabled {
+  background: var(--panel-strong);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* ── Button system ───────────────────────────────── */
 
 .btn-primary {
@@ -842,12 +863,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.merge-source-layout-row {
-  display: grid;
-  gap: 0.55rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .trim-card-row-quick {
   display: grid;
   gap: 0.35rem;
@@ -890,12 +905,10 @@
   white-space: nowrap;
 }
 
-@container (max-width: 560px) {
+@container (max-width: 300px) {
   .media-asset-row,
   .trim-bulk-grid,
   .trim-card-row,
-  .merge-source-controls,
-  .merge-source-layout-row,
   .media-pane-actions-split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -916,6 +929,12 @@
   }
 
   .queue-pane-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 360px) {
+  .tool-pane[data-tool-pane="merge"] .merge-source-controls {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -969,6 +988,12 @@
 
 .merge-source-opacity-field .opacity-percent-input {
   min-width: 0;
+  width: 100%;
+}
+
+.merge-source-layout-field select,
+.merge-source-position-field input,
+.merge-source-sync-inline {
   width: 100%;
 }
 
@@ -2260,6 +2285,64 @@
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
+.metrics-competition-summary {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.5rem;
+}
+
+.metrics-placement-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  padding: var(--pane-card-padding);
+}
+
+.metrics-placement-card strong {
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.metrics-placement-card dl {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.metrics-placement-card dl div {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.metrics-placement-card dt,
+.metrics-placement-card dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.metrics-placement-card dd {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.metrics-placement-card dt {
+  color: var(--muted);
+}
+
+.metrics-comparison-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.inspector .queue-stage-copy small {
+  font-size: var(--pane-label-size);
+}
+
 .metrics-section {
   min-width: 0;
 }
@@ -2786,7 +2869,34 @@
   }
 }
 
-@container (max-width: 460px) {
+@container (max-width: 519px) {
+  .metrics-competition-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 399px) {
+  .metrics-competition-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metrics-placement-card {
+    padding: 0.48rem;
+  }
+}
+
+@container (max-width: 319px) {
+  .tool-pane,
+  .inspector-section {
+    padding-inline: 0.36rem;
+  }
+
+  .button-grid.two-up:not(.media-active-stage-actions) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 360px) {
   .popup-motion-density-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2795,7 +2905,6 @@
   .score-color-grid,
   .metrics-summary-grid,
   .project-action-grid,
-  .merge-source-controls,
   .score-option-grid,
   .penalty-grid {
     grid-template-columns: minmax(0, 1fr);

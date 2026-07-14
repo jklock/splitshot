@@ -103,6 +103,9 @@ def test_merge_preview_drag_repositions(synthetic_video_factory) -> None:
                 pip_item.wait_for(state="visible", timeout=5000)
                 box = pip_item.bounding_box()
                 assert box, "PIP item must have a bounding box"
+                video_box = page.locator("#primary-video").bounding_box()
+                assert video_box, "Primary video must have a bounding box"
+                assert box["y"] + box["height"] <= video_box["y"] + video_box["height"] - 40
                 start_x = box["x"] + box["width"] / 2
                 start_y = box["y"] + box["height"] / 2
                 page.mouse.move(start_x, start_y)
@@ -187,10 +190,12 @@ def test_merge_preview_drag_survives_pending_merge_auto_apply(
                     source_id,
                 )
 
-                assert (
-                    after["pip_x"] != before["pip_x"] or after["pip_y"] != before["pip_y"]
-                ), "Drag should change the source PiP position"
-                assert after_render == after, "A pending merge auto-apply must not reset PiP drag state"
+                assert after["pip_x"] != before["pip_x"] or after["pip_y"] != before["pip_y"], (
+                    "Drag should change the source PiP position"
+                )
+                assert after_render == after, (
+                    "A pending merge auto-apply must not reset PiP drag state"
+                )
             finally:
                 browser.close()
     finally:
@@ -210,8 +215,9 @@ def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
                 ensure_project_with_primary_and_merge(
                     page, primary_path, merge_path, "preview-trim.ssproj"
                 )
-                page.evaluate("() => { state.project.merge.enabled = true; }")
-                page.evaluate("() => { state.project.merge.layout = 'pip'; }")
+                navigate_to_tool(page, "merge")
+                page.locator("#merge-enabled").check()
+                page.locator("#merge-layout").select_option("pip")
                 navigate_to_tool(page, "trim-sync")
                 page.wait_for_timeout(300)
 
@@ -219,31 +225,49 @@ def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
                     "() => (state?.project?.merge_sources || [])[0]?.id || ''"
                 )
                 assert source_id
-
-                trim_applied = page.evaluate(
+                page.locator(f'[data-trim-start="{source_id}"]').fill("0.50")
+                page.locator(f'[data-trim-end="{source_id}"]').fill("3.00")
+                page.locator(f'button.trim-apply-btn[data-source-id="{source_id}"]').click()
+                page.wait_for_function(
                     """(sid) => {
-                        const source = (state?.project?.merge_sources || []).find(s => s.id === sid);
-                        if (!source) return false;
-                        if (!source.trim_derivative) {
-                            source.trim_derivative = { start_s: 0.0, end_s: null, active_path_kind: null, derivative_path: null };
-                        }
-                        source.trim_derivative.start_s = 0.5;
-                        source.trim_derivative.end_s = 3.0;
-                        renderVideo();
-                        return true;
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        const trim = source?.trim_derivative;
+                        return Boolean(trim?.derivative_path)
+                            && trim?.active_path_kind === 'local_derivative'
+                            && source?.effective_media_path === trim?.derivative_path;
+                    }""",
+                    arg=source_id,
+                    timeout=120000,
+                )
+                trimmed_name = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        const path = source?.effective_media_path || '';
+                        return path.split(/[\\\\/]/).pop();
                     }""",
                     source_id,
                 )
-                assert trim_applied, "Could not set trim values on merge source"
-                page.wait_for_timeout(500)
 
                 navigate_to_tool(page, "merge")
                 page.wait_for_timeout(500)
-                preview_videos = page.evaluate(
-                    '() => document.querySelectorAll("#merge-preview video, .merge-preview video, [data-merge-preview] video").length'
+                page.wait_for_function(
+                    """(sid) => {
+                        const media = document.querySelector(`#merge-preview-layer .merge-preview-item[data-source-id="${sid}"] video`);
+                        return Boolean(media?.dataset?.sourcePath)
+                            && media.dataset.sourcePath.includes('_trim');
+                    }""",
+                    arg=source_id,
+                    timeout=10000,
                 )
-                assert preview_videos >= 2, (
-                    f"Preview should still have >=2 videos after trim, found {preview_videos}"
+                bound_path = page.evaluate(
+                    """(sid) => {
+                        const media = document.querySelector(`#merge-preview-layer .merge-preview-item[data-source-id="${sid}"] video`);
+                        return media?.dataset?.sourcePath || '';
+                    }""",
+                    source_id,
+                )
+                assert trimmed_name in bound_path, (
+                    f"Preview media should bind to trimmed media path, got {bound_path!r}"
                 )
             finally:
                 browser.close()

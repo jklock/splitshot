@@ -21,6 +21,18 @@
   --resize-handle-size: 4px;
   --waveform-height: 206px;
   --app-height: 100vh;
+  --pane-padding: 0.48rem;
+  --pane-section-gap: 0.72rem;
+  --pane-card-padding: 0.58rem;
+  --pane-control-gap: 0.42rem;
+  --pane-label-size: 0.76rem;
+  --pane-helper-size: 0.68rem;
+  --pane-value-size: 0.78rem;
+  --pane-section-title-size: 0.82rem;
+  --pane-title-size: 0.84rem;
+  --pane-control-height: 30px;
+  --pane-button-height: 30px;
+  --pane-primary-button-height: 32px;
 }
 
 * {
@@ -63,7 +75,7 @@ select {
   border-radius: 0;
   color: var(--text);
   font: inherit;
-  min-height: 30px;
+  min-height: var(--pane-control-height);
   padding: 0.34rem 0.55rem;
 }
 
@@ -245,4 +257,3 @@ h3 {
   line-height: 1;
   text-transform: none;
 }
-

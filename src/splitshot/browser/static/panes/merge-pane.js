@@ -267,25 +267,37 @@ export function createMergePane({
       merge.pip_y = normalizedCoordinateValue($("pip-y").value) ?? 1;
     }
 
+  function mergePreviewSafeRect(frameRect) {
+    const video = $("primary-video");
+    if (!(video instanceof HTMLVideoElement) || !video.controls) return frameRect;
+    const controlReserve = Math.min(64, Math.max(42, frameRect.height * 0.1));
+    return {
+      ...frameRect,
+      height: Math.max(1, frameRect.height - controlReserve),
+      controlReserve,
+    };
+  }
+
   function mergeSourcePipRect(source, frameRect, pipSizeValue = null) {
+    const safeRect = mergePreviewSafeRect(frameRect);
     const asset = source.asset || source;
     const sourceWidth = Math.max(1, asset.width || 1);
     const sourceHeight = Math.max(1, asset.height || 1);
     const effectivePipSize = currentPipSizePercent(source, pipSizeValue ?? 35);
     let insetWidth = Math.max(1, Math.round(frameRect.width * (effectivePipSize / 100)));
     let insetHeight = Math.max(1, Math.round((sourceHeight / sourceWidth) * insetWidth));
-    if (insetHeight > frameRect.height) {
-      const fitScale = frameRect.height / insetHeight;
+    if (insetHeight > safeRect.height) {
+      const fitScale = safeRect.height / insetHeight;
       insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
       insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
     }
-    const travelX = Math.max(0, frameRect.width - insetWidth);
-    const travelY = Math.max(0, frameRect.height - insetHeight);
+    const travelX = Math.max(0, safeRect.width - insetWidth);
+    const travelY = Math.max(0, safeRect.height - insetHeight);
     const pipX = normalizedCoordinateValue(source.pip_x) ?? normalizedCoordinateValue(currentState().project.merge.pip_x) ?? 1;
     const pipY = normalizedCoordinateValue(source.pip_y) ?? normalizedCoordinateValue(currentState().project.merge.pip_y) ?? 1;
     return {
-      left: frameRect.left + (travelX * pipX),
-      top: frameRect.top + (travelY * pipY),
+      left: safeRect.left + (travelX * pipX),
+      top: safeRect.top + (travelY * pipY),
       width: insetWidth,
       height: insetHeight,
     };
@@ -343,6 +355,8 @@ export function createMergePane({
   function ensureMergePreviewItem(layer, source) {
     const asset = source.asset || source;
     const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
+    const activePath = source?.effective_media_path || asset.path || "";
+    const activeDisplayName = source?.active_display_name || fileName(activePath || asset.path || "");
     let item = layer.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
     if (!item) {
       item = documentObject.createElement("div");
@@ -373,15 +387,15 @@ export function createMergePane({
       }
       item.appendChild(media);
     }
-    const mediaPath = buildMediaUrl(`/media/merge/${sourceId}`, asset.path || "");
+    const mediaPath = buildMediaUrl(`/media/merge/${sourceId}`, activePath);
     if (media instanceof HTMLImageElement) {
-      if (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath) {
-        media.dataset.sourcePath = asset.path;
+      if (media.dataset.sourcePath !== activePath || media.dataset.mediaUrl !== mediaPath) {
+        media.dataset.sourcePath = activePath;
         media.dataset.mediaUrl = mediaPath;
         media.src = mediaPath;
       }
-    } else if (media instanceof HTMLVideoElement && (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath)) {
-      media.dataset.sourcePath = asset.path;
+    } else if (media instanceof HTMLVideoElement && (media.dataset.sourcePath !== activePath || media.dataset.mediaUrl !== mediaPath)) {
+      media.dataset.sourcePath = activePath;
       media.dataset.mediaUrl = mediaPath;
       media.src = mediaPath;
       media.load();
@@ -415,6 +429,7 @@ export function createMergePane({
     });
     mergeSources.forEach((source, index) => {
       const item = ensureMergePreviewItem(layer, source);
+      const activeDisplayName = source?.active_display_name || fileName(source?.effective_media_path || source?.asset?.path || "");
       const rect = mergeSourcePreviewRect(source, frameRect, pipSizeValue, index, mergeSources.length);
       item.style.left = `${rect.left}px`;
       item.style.top = `${rect.top}px`;
@@ -423,7 +438,7 @@ export function createMergePane({
       item.style.maxWidth = `${rect.width}px`;
       item.style.maxHeight = `${rect.height}px`;
       item.dataset.placementMode = resolvedSourcePlacementMode(source);
-      item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
+      item.title = `${index + 1}. ${activeDisplayName}`;
     });
   }
 
@@ -503,7 +518,7 @@ export function createMergePane({
         const copy = documentObject.createElement("div");
         copy.className = "merge-media-card-copy";
         const title = documentObject.createElement("strong");
-        title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
+        title.textContent = `${index + 1}. ${source?.active_display_name || fileName(source?.effective_media_path || asset.path || "")}`;
 
         const toggle = documentObject.createElement("button");
         toggle.type = "button";
@@ -680,13 +695,11 @@ export function createMergePane({
           scheduleMergeSourceCommit(readSourcePayload(), { immediate: true });
         });
         const placementModeLabelEl = documentObject.createElement("label");
-        placementModeLabelEl.className = "merge-source-field";
+        placementModeLabelEl.className = "merge-source-field merge-source-layout-field";
         placementModeLabelEl.append(documentObject.createElement("span"));
         placementModeLabelEl.querySelector("span").textContent = "Layout";
         placementModeLabelEl.append(placementModeSelect);
-        const opacityAndLayoutRow = documentObject.createElement("div");
-        opacityAndLayoutRow.className = "merge-source-layout-row";
-        opacityAndLayoutRow.append(buildSourceOpacityInput(), placementModeLabelEl);
+        const opacityField = buildSourceOpacityInput();
 
         const positionXField = buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.");
         positionXField.classList.add("merge-source-position-field");
@@ -695,7 +708,8 @@ export function createMergePane({
 
         controls.append(
           sizeField,
-          opacityAndLayoutRow,
+          opacityField,
+          placementModeLabelEl,
           positionXField,
           positionYField,
           syncField,

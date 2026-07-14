@@ -157,6 +157,27 @@ def get_merge_source_state(page, source_id: str | None = None, index: int = 0):
     )
 
 
+def get_primary_media_state(page):
+    return page.evaluate(
+        """() => {
+            const primary = state?.project?.primary_video || {};
+            const td = state?.project?.primary_trim_derivative || {};
+            return {
+                has_derivative: Boolean(td && Object.keys(td).length),
+                active_path_kind: td?.active_path_kind ?? null,
+                derivative_path: td?.derivative_path ?? null,
+                effective_media_path: primary?.effective_media_path ?? primary?.path ?? null,
+                trim_active: Boolean(primary?.trim_active),
+                start_s: td?.start_s ?? null,
+                end_s: td?.end_s ?? null,
+                active_display_name: primary?.active_display_name ?? "",
+                original_display_name: primary?.original_display_name ?? "",
+                active_duration_ms: primary?.active_duration_ms ?? primary?.duration_ms ?? null,
+            };
+        }"""
+    )
+
+
 def setup_server_and_browser(synthetic_video_factory, primary_kwargs=None, merge_kwargs=None):
     primary_kwargs = dict(primary_kwargs or {})
     merge_kwargs = dict(merge_kwargs or {})

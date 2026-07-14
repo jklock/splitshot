@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import ImportedStageScore
 from splitshot.scoring.practiscore_web_extract import (
     MISSING_REQUIRED_REMOTE_ARTIFACT_ERROR,
     PractiScoreSyncError,
@@ -18,6 +19,49 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
+
+
+def test_practiscore_identity_fields_can_clear_and_survive_stage_override_restore() -> None:
+    controller = ProjectController()
+    controller.create_stage()
+    controller.project.scoring.classification = "Master"
+    controller.project.scoring.division = "Carry Optics"
+    controller.set_practiscore_context(classification="", division="", competitor_place=0)
+    assert controller.project.scoring.classification == ""
+    assert controller.project.scoring.division == ""
+    assert controller.project.scoring.competitor_place is None
+
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        competitor_name="Shooter",
+        classification="A",
+        division="Limited",
+    )
+    controller.project.scoring.competitor_name = "Shooter"
+    controller.project.scoring.classification = "B"
+    controller.project.scoring.division = "Open"
+    overrides = controller._active_stage_practiscore_overrides()
+    controller.project.scoring.classification = "A"
+    controller.project.scoring.division = "Limited"
+    controller._restore_active_stage_practiscore_overrides(overrides)
+    assert controller.project.scoring.classification == "B"
+    assert controller.project.scoring.division == "Open"
+
+
+def test_open_project_rebuilds_practiscore_comparison_competitors(tmp_path: Path) -> None:
+    source = tmp_path / "IDPA.csv"
+    shutil.copyfile(EXAMPLES_DIR / "IDPA" / "IDPA.csv", source)
+    project_path = tmp_path / "comparison-restore.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.import_practiscore_file(str(source), source.name)
+    controller.save_project(str(project_path))
+    expected_count = len(controller.practiscore_browser_state()["comparison_competitors"])
+    assert expected_count > 1
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+    restored = reopened.practiscore_browser_state()["comparison_competitors"]
+    assert len(restored) == expected_count
 
 
 def _get_json(url: str) -> dict:

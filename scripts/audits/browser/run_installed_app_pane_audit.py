@@ -12,7 +12,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 
 from copy import deepcopy
@@ -21,11 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 from typing import Any
+from urllib.request import urlopen
 from uuid import uuid4
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
-from splitshot.domain.models import MergeLayout, MergeSource, Project, ProjectStage, QueueStatus
+from splitshot.domain.models import MergeLayout, MergeSource, ProjectStage, QueueStatus
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import load_project, save_project
 
@@ -36,6 +36,7 @@ DEFAULT_PROJECT = ROOT / "05072026"
 DEFAULT_ARTIFACT_PARENT = ROOT / "artifacts" / "installed-app-pane-audit"
 TIMEOUT = 180
 QUEUE_EXPORT_TIMEOUT_MS = 900_000
+SLICE_CHOICES = ("launch", "panes", "trim", "queue-individual", "queue-combined", "full")
 TOOLS = [
     "project",
     "media",
@@ -94,6 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--app", type=Path, default=DEFAULT_APP)
     parser.add_argument("--project-path", type=Path, default=DEFAULT_PROJECT)
     parser.add_argument("--artifact-root", type=Path, default=None)
+    parser.add_argument("--slice", choices=SLICE_CHOICES, default="full")
+    parser.add_argument("--fresh-project-copy", action="store_true")
     return parser
 
 
@@ -169,6 +172,33 @@ def _wait_for_backend(port: int, expected_project: Path, timeout: int = TIMEOUT)
             pass
         time.sleep(0.25)
     raise TimeoutError(f"Backend never loaded {expected_project}")
+
+
+def _warm_installed_app_media(base_url: str, state: dict[str, Any]) -> None:
+    import urllib.error
+
+    urls = [f"{base_url}/media/primary"]
+    secondary_url = str(
+        ((state.get("media") or {}).get("secondary_url")) or "/media/secondary"
+    ).strip()
+    if secondary_url:
+        urls.append(f"{base_url}{secondary_url}")
+    for source in list((state.get("project") or {}).get("merge_sources") or []):
+        source_id = str(source.get("id") or "").strip()
+        if source_id:
+            urls.append(f"{base_url}/media/merge/{source_id}")
+    seen: set[str] = set()
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            with urlopen(url, timeout=TIMEOUT) as response:
+                response.read(1)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                continue
+            raise
 
 
 def _wait_for_ready_file(
@@ -468,11 +498,35 @@ def _assert_file_unchanged(path: Path, before: dict[str, Any]) -> None:
         raise RuntimeError(f"Source file was mutated during audit: {path}")
 
 
-def _prepare_project_copy(project_path: Path, artifact_root: Path) -> tuple[Path, dict[str, Any]]:
+def _prepare_project_copy(
+    project_path: Path, artifact_root: Path, *, fresh: bool = False, normalize: bool = True
+) -> tuple[Path, dict[str, Any]]:
     project_root = project_path.expanduser().resolve()
     if not project_root.exists():
         raise FileNotFoundError(f"Project path does not exist: {project_root}")
     copy_root = _project_copy_root(project_root, artifact_root)
+    cache_meta_path = artifact_root / "project-copy" / "cache-meta.json"
+    source_project_json = project_root / "project.json"
+    source_fingerprint = (
+        _file_fingerprint(source_project_json) if source_project_json.exists() else None
+    )
+    cached_fingerprint: dict[str, Any] | None = None
+    if cache_meta_path.exists():
+        try:
+            cached_fingerprint = json.loads(cache_meta_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cached_fingerprint = None
+    can_reuse = (
+        not fresh
+        and copy_root.exists()
+        and source_fingerprint is not None
+        and cached_fingerprint is not None
+        and cached_fingerprint.get("sha256") == source_fingerprint.get("sha256")
+    )
+    if can_reuse:
+        if normalize:
+            return copy_root, _normalize_project_for_audit(copy_root)
+        return copy_root, {"project_root": str(copy_root)}
     if copy_root.exists():
         shutil.rmtree(copy_root)
     copy_root.parent.mkdir(parents=True, exist_ok=True)
@@ -497,7 +551,11 @@ def _prepare_project_copy(project_path: Path, artifact_root: Path) -> tuple[Path
                 destination.hardlink_to(source)
             except OSError:
                 shutil.copy2(source, destination)
-    return copy_root, _normalize_project_for_audit(copy_root)
+    if source_fingerprint is not None:
+        cache_meta_path.write_text(json.dumps(source_fingerprint, indent=2), encoding="utf-8")
+    if normalize:
+        return copy_root, _normalize_project_for_audit(copy_root)
+    return copy_root, {"project_root": str(copy_root)}
 
 
 def _open_page(playwright: Playwright, base_url: str) -> tuple[Browser, Page]:
@@ -563,6 +621,111 @@ def _set_tool(page: Page, tool: str) -> None:
     _wait_for_processing_bar(page)
     _wait_for_active_tool(page, tool)
     page.wait_for_timeout(200)
+
+
+def _wait_for_visual_media_ready(page: Page, timeout_ms: int = 15_000) -> None:
+    page.evaluate(
+        """
+        async () => {
+          const isVisible = (element) =>
+            element instanceof HTMLElement &&
+            !element.hidden &&
+            element.offsetParent !== null &&
+            window.getComputedStyle(element).display !== 'none' &&
+            window.getComputedStyle(element).visibility !== 'hidden';
+          const waitForEvent = (target, name, fallbackMs = 500) =>
+            new Promise((resolve) => {
+              let settled = false;
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                resolve();
+              };
+              target.addEventListener(name, finish, { once: true });
+              window.setTimeout(finish, fallbackMs);
+            });
+          const videos = Array.from(
+            document.querySelectorAll('#primary-video, #secondary-video, #merge-preview-layer video')
+          ).filter((element) => element instanceof HTMLVideoElement && isVisible(element));
+          for (const video of videos) {
+            if (!video.currentSrc) continue;
+            if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+              await waitForEvent(video, 'loadedmetadata', 1_000);
+            }
+            const seekTarget = Number.isFinite(video.duration) && video.duration > 0.05 ? 0.05 : 0;
+            if (seekTarget > 0 && Math.abs((video.currentTime || 0) - seekTarget) > 0.02) {
+              try {
+                video.currentTime = seekTarget;
+                await waitForEvent(video, 'seeked', 1_000);
+              } catch (_error) {
+                // Ignore seek priming failures and rely on decode readiness below.
+              }
+            }
+            try {
+              video.muted = true;
+              const playAttempt = video.play();
+              if (playAttempt && typeof playAttempt.then === 'function') {
+                await Promise.race([playAttempt.catch(() => {}), new Promise((resolve) => window.setTimeout(resolve, 400))]);
+              } else {
+                await new Promise((resolve) => window.setTimeout(resolve, 150));
+              }
+            } catch (_error) {
+              // Ignore playback priming failures and rely on decode readiness below.
+            } finally {
+              try {
+                video.pause();
+              } catch (_error) {}
+            }
+            if (typeof video.requestVideoFrameCallback === 'function') {
+              await new Promise((resolve) => {
+                let settled = false;
+                const finish = () => {
+                  if (settled) return;
+                  settled = true;
+                  resolve();
+                };
+                video.requestVideoFrameCallback(() => finish());
+                window.setTimeout(finish, 500);
+              });
+            }
+          }
+        }
+        """
+    )
+    page.wait_for_function(
+        """
+        () => {
+          const isVisible = (element) =>
+            element instanceof HTMLElement &&
+            !element.hidden &&
+            element.offsetParent !== null &&
+            window.getComputedStyle(element).display !== 'none' &&
+            window.getComputedStyle(element).visibility !== 'hidden';
+          const mediaReady = (element) => {
+            if (!isVisible(element)) return true;
+            if (element instanceof HTMLImageElement) {
+              return !element.currentSrc || element.complete;
+            }
+            if (element instanceof HTMLVideoElement) {
+              return !element.currentSrc || (
+                element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+                element.videoWidth > 0
+              );
+            }
+            return true;
+          };
+          const media = [
+            document.getElementById('primary-video'),
+            document.getElementById('secondary-video'),
+            document.getElementById('secondary-image'),
+            ...Array.from(document.querySelectorAll('#merge-preview-layer video, #merge-preview-layer img')),
+          ];
+          return media.every((element) => mediaReady(element));
+        }
+        """,
+        timeout=timeout_ms,
+    )
+    page.wait_for_timeout(250)
 
 
 def _expand_all_collapsed_controls(page: Page, tool: str) -> None:
@@ -659,7 +822,9 @@ def _prepare_markers_capture(page: Page) -> None:
         "() => document.getElementById('markers-enable')?.checked === true",
         timeout=15_000,
     )
-    shot_id = str(page.evaluate("() => state?.project?.analysis?.shots?.[0]?.id || ''") or "").strip()
+    shot_id = str(
+        page.evaluate("() => state?.project?.analysis?.shots?.[0]?.id || ''") or ""
+    ).strip()
     if shot_id:
         _api_post(page, "/api/shots/select", {"shot_id": shot_id})
     popup_count = int(page.evaluate("() => (state?.project?.popups || []).length || 0") or 0)
@@ -710,6 +875,7 @@ def _prepare_pane(page: Page, tool: str) -> None:
         _prepare_review_capture(page)
     else:
         _expand_all_collapsed_controls(page, tool)
+    _wait_for_visual_media_ready(page)
     _reset_inspector_scroll(page)
 
 
@@ -736,6 +902,18 @@ def _queue_stage_ids(page: Page) -> list[str]:
 
 
 def _requeue_all_stages(page: Page) -> None:
+    existing_queue_stage_ids = list(
+        page.evaluate(
+            "() => (state?.project?.queue || []).map((entry) => String(entry.stage_id || '')).filter(Boolean)"
+        )
+    )
+    for stage_id in existing_queue_stage_ids:
+        _api_post(page, "/api/project/queue/remove", {"stage_id": stage_id})
+    if existing_queue_stage_ids:
+        page.wait_for_function(
+            "() => (state?.project?.queue || []).length === 0",
+            timeout=30_000,
+        )
     for stage_id in _queue_stage_ids(page):
         _api_post(page, "/api/project/queue/add", {"stage_id": stage_id})
     _wait_for_queue_statuses(page, ("queued",), expected_count=len(_queue_stage_ids(page)))
@@ -1201,6 +1379,70 @@ def _compute_visual_findings(dom_summary: dict[str, Any]) -> list[dict[str, Any]
     return failures
 
 
+def _trim_state_summary(state: dict[str, Any]) -> dict[str, Any]:
+    project = dict(state.get("project") or {})
+    primary_video = dict(project.get("primary_video") or {})
+    primary_trim = dict(project.get("primary_trim_derivative") or {})
+    merge_sources = list(project.get("merge_sources") or [])
+    return {
+        "primary": {
+            "trim_active": bool(primary_video.get("trim_active")),
+            "effective_media_path": str(primary_video.get("effective_media_path") or ""),
+            "original_path": str(primary_video.get("original_path") or ""),
+            "active_display_name": str(primary_video.get("active_display_name") or ""),
+            "active_path_kind": str(primary_trim.get("active_path_kind") or ""),
+            "derivative_path": str(primary_trim.get("derivative_path") or ""),
+        },
+        "sources": [
+            {
+                "id": str(source.get("id") or ""),
+                "trim_active": bool(source.get("trim_active")),
+                "effective_media_path": str(source.get("effective_media_path") or ""),
+                "original_media_path": str(source.get("original_media_path") or ""),
+                "active_display_name": str(source.get("active_display_name") or ""),
+                "active_path_kind": str(
+                    (source.get("trim_derivative") or {}).get("active_path_kind") or ""
+                ),
+                "derivative_path": str(
+                    (source.get("trim_derivative") or {}).get("derivative_path") or ""
+                ),
+            }
+            for source in merge_sources
+        ],
+    }
+
+
+def _run_trim_slice(page: Page, artifact_root: Path) -> dict[str, Any]:
+    _set_tool(page, "trim-sync")
+    _api_post(page, "/api/primary/trim", {"clear": True})
+    cleared_state = _api_post(page, "/api/merge/source/trim-all", {"clear": True})
+    _wait_for_visual_media_ready(page)
+    applied_state = _api_post(
+        page,
+        "/api/merge/source/trim-all",
+        {
+            "keep_before_beep_s": 2,
+            "keep_after_last_shot_s": 2,
+            "clear": False,
+        },
+    )
+    _wait_for_visual_media_ready(page)
+    summary = {
+        "cleared": _trim_state_summary(cleared_state),
+        "applied": _trim_state_summary(applied_state),
+        "screenshot": _capture_pane(page, artifact_root, "trim-sync", "-slice"),
+    }
+    primary_cleared = summary["cleared"]["primary"]
+    primary_applied = summary["applied"]["primary"]
+    if primary_cleared["trim_active"]:
+        raise RuntimeError("Primary trim should clear before trim slice apply.")
+    if not primary_applied["trim_active"]:
+        raise RuntimeError("Primary trim did not become active after trim slice apply.")
+    if not all(source["trim_active"] for source in summary["applied"]["sources"]):
+        raise RuntimeError("Not all added media sources became trim-active after trim slice apply.")
+    return summary
+
+
 def _write_report(artifact_root: Path, payload: dict[str, Any]) -> None:
     (artifact_root / "audit.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     lines = []
@@ -1224,65 +1466,91 @@ def main() -> int:
     executable = _app_executable(args.app)
     source_project_json = args.project_path.expanduser().resolve() / "project.json"
     source_project_fingerprint = _file_fingerprint(source_project_json)
-    project_copy_root, project_prep = _prepare_project_copy(args.project_path, artifact_root)
+    project_copy_root, project_prep = _prepare_project_copy(
+        args.project_path,
+        artifact_root,
+        fresh=args.fresh_project_copy,
+        normalize=args.slice != "launch",
+    )
     app_session = _spawn_installed_app(executable, project_copy_root, artifact_root)
     try:
         ready_events = _wait_for_ready_file(app_session.process, app_session.ready_file)
         initial_state = _wait_for_backend(app_session.port, project_copy_root)
+        payload: dict[str, Any] = {
+            "artifact_root": str(artifact_root),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "slice": args.slice,
+            "app": {
+                "bundle": str(app_session.bundle),
+                "executable": str(app_session.executable),
+                "version": app_session.version,
+            },
+            "project": {
+                "source": str(args.project_path.expanduser().resolve()),
+                "copy": str(project_copy_root),
+                "prep": project_prep,
+                "source_project_json_guard": {
+                    "path": str(source_project_json),
+                    "sha256": source_project_fingerprint["sha256"],
+                },
+                "loaded_state_path": initial_state.get("project", {}).get("path"),
+            },
+            "launch": {
+                "port": app_session.port,
+                "ready_events": ready_events,
+            },
+            "findings": [],
+        }
+        if args.slice == "launch":
+            _assert_file_unchanged(source_project_json, source_project_fingerprint)
+            _write_report(artifact_root, payload)
+            print(json.dumps(payload, indent=2))
+            return 0
+
+        _warm_installed_app_media(app_session.base_url, initial_state)
         with sync_playwright() as playwright:
             browser, page = _open_page(playwright, app_session.base_url)
             page.wait_for_function(
                 "() => (state?.project?.stages || []).length === 3",
                 timeout=120_000,
             )
-            stage_ids = _queue_output = _queue_stage_ids(page)
+            stage_ids = _queue_stage_ids(page)
             if len(stage_ids) != 3:
                 raise RuntimeError(
                     f"Expected 3 stages in normalized project, found {len(stage_ids)}"
                 )
             _set_active_stage(page, stage_ids[0])
-            _requeue_all_stages(page)
-            captures = _screenshot_suite(page, artifact_root)
-            individual_exports = _run_individual_exports(page, artifact_root, project_copy_root)
-            combined_export = _run_combined_export(page, artifact_root, project_copy_root)
-            dom_summary = _collect_dom_summary(page)
-            findings = _compute_visual_findings(dom_summary)
-            exports = {
-                "individual": individual_exports,
-                "combined": combined_export,
-            }
-            findings = _compute_visual_findings(dom_summary) + _export_findings(exports)
-            payload = {
-                "artifact_root": str(artifact_root),
-                "timestamp": datetime.now(UTC).isoformat(),
-                "app": {
-                    "bundle": str(app_session.bundle),
-                    "executable": str(app_session.executable),
-                    "version": app_session.version,
-                },
-                "project": {
-                    "source": str(args.project_path.expanduser().resolve()),
-                    "copy": str(project_copy_root),
-                    "prep": project_prep,
-                    "source_project_json_guard": {
-                        "path": str(source_project_json),
-                        "sha256": source_project_fingerprint["sha256"],
-                    },
-                    "loaded_state_path": initial_state.get("project", {}).get("path"),
-                    "queue_card_labels": dom_summary.get("queue_cards") or [],
-                },
-                "launch": {
-                    "port": app_session.port,
-                    "ready_events": ready_events,
-                },
-                "screenshots": captures,
-                "exports": exports,
-                "dom": dom_summary,
-                "findings": findings,
-            }
+
+            if args.slice in {"panes", "full"}:
+                payload["screenshots"] = _screenshot_suite(page, artifact_root)
+                payload["dom"] = _collect_dom_summary(page)
+                payload["project"]["queue_card_labels"] = payload["dom"].get("queue_cards") or []
+
+            if args.slice in {"trim", "full"}:
+                payload["trim"] = _run_trim_slice(page, artifact_root)
+
+            if args.slice in {"queue-individual", "queue-combined", "full"}:
+                _requeue_all_stages(page)
+            if args.slice in {"queue-individual", "full"}:
+                payload.setdefault("exports", {})["individual"] = _run_individual_exports(
+                    page, artifact_root, project_copy_root
+                )
+            if args.slice in {"queue-combined", "full"}:
+                payload.setdefault("exports", {})["combined"] = _run_combined_export(
+                    page, artifact_root, project_copy_root
+                )
+
+            findings: list[dict[str, Any]] = []
+            if args.slice in {"panes", "full"}:
+                findings.extend(_compute_visual_findings(payload.get("dom") or {}))
+            if "exports" in payload:
+                findings.extend(_export_findings(payload["exports"]))
+            payload["findings"] = findings
+
             _assert_file_unchanged(source_project_json, source_project_fingerprint)
             _write_report(artifact_root, payload)
             print(json.dumps(payload, indent=2))
+            browser.close()
     except Exception as exc:  # noqa: BLE001
         (artifact_root / "failure.txt").write_text(
             f"{exc}\n\n{_tail_logs(app_session.stdout_log, app_session.stderr_log)}\n",

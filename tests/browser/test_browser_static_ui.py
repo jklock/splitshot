@@ -1179,10 +1179,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function defaultScoreLetter(ruleset = activeScoringRuleset()) {" in js
     assert 'function shotBadgeBaseText(shotNumber, splitText, intervalLabel = "") {' in js
     assert 'function scoreBadgeContent(shot, shotNumber, splitText, intervalLabel = "") {' in js
-    assert (
-        "scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))"
-        in js
-    )
+    assert "currentState().project.overlay.show_shot_scores" in js
     assert 'const firstTokenGap = "  ";' in js
     assert 'fragment.style.whiteSpace = "pre";' in js
     assert 'const unsetOption = document.createElement("option");' not in js
@@ -1861,10 +1858,7 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
         'badgeElement(`Timer ${seconds(elapsed)}`, currentState().project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);'
         in overlay_pane
     )
-    assert (
-        "scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))"
-        in js
-    )
+    assert "currentState().project.overlay.show_shot_scores" in overlay_pane
     assert (
         'badgeElement(`${summary.display_label} ${summary.display_value}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);'
         in overlay_pane

@@ -66,6 +66,8 @@ def run_browser(
     if project_path is not None:
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    if project_path is not None:
+        server.prewarm_primary_media()
     desktop_runtime = SplitShotDesktopRuntime()
     if not open_browser:
         print(f"Open SplitShot at {server.url}")
@@ -151,6 +153,8 @@ def run_headless(
     if project_path is not None:
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    if project_path is not None:
+        server.prewarm_primary_media()
 
     shutdown = threading.Event()
 
@@ -171,6 +175,8 @@ def run_headless(
         server = BrowserControlServer(
             controller=controller, host=host, port=actual_port, log_level=log_level
         )
+        if project_path is not None:
+            server.prewarm_primary_media()
 
     server.start_background(open_browser=False)
 

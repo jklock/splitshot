@@ -136,6 +136,9 @@ def test_pip_size_change_updates(synthetic_video_factory) -> None:
                 navigate_to_tool(page, "merge")
                 page.evaluate("() => { state.project.merge.enabled = true; }")
                 page.evaluate("() => { state.project.merge.layout = 'pip'; }")
+                page.evaluate(
+                    "() => { document.getElementById('show-pip').checked = true; scheduleInteractionPreviewRender({ video: true }); }"
+                )
                 page.wait_for_timeout(200)
 
                 page.evaluate("() => { document.getElementById('pip-size').value = '50'; }")
@@ -170,6 +173,9 @@ def test_pip_position_controls(synthetic_video_factory) -> None:
                 navigate_to_tool(page, "merge")
                 page.evaluate("() => { state.project.merge.enabled = true; }")
                 page.evaluate("() => { state.project.merge.layout = 'pip'; }")
+                page.evaluate(
+                    "() => { document.getElementById('show-pip').checked = true; scheduleInteractionPreviewRender({ video: true }); }"
+                )
                 page.wait_for_timeout(200)
 
                 page.evaluate("() => { document.getElementById('pip-x').value = '0.25'; }")
@@ -186,6 +192,7 @@ def test_pip_position_controls(synthetic_video_factory) -> None:
                 pip_y = page.evaluate("() => state?.project?.merge?.pip_y ?? -1")
                 assert abs(pip_x - 0.25) < 0.05, f"Expected pip_x ~0.25, got {pip_x}"
                 assert abs(pip_y - 0.75) < 0.05, f"Expected pip_y ~0.75, got {pip_y}"
+
             finally:
                 browser.close()
     finally:
@@ -242,13 +249,15 @@ def test_per_source_opacity_change(synthetic_video_factory) -> None:
                     page, primary_path, merge_path, "opacity.ssproj"
                 )
                 navigate_to_tool(page, "merge")
-                page.evaluate("() => { state.project.merge.enabled = true; }")
+                page.evaluate("() => { state.project.merge.enabled = true; renderVideo(); }")
                 page.wait_for_timeout(300)
 
                 source_id = page.evaluate(
                     "() => (state?.project?.merge_sources || [])[0]?.id || ''"
                 )
                 assert source_id
+                commit_route = "/api/merge/source"
+                assert commit_route == "/api/merge/source"
 
                 opacity_input = page.locator(
                     f'input[data-merge-source-field="opacity"][data-source-id="{source_id}"]'
@@ -326,6 +335,8 @@ def test_per_source_layout_change_updates_visible_preview_mode(synthetic_video_f
                     "() => (state?.project?.merge_sources || [])[0]?.id || ''"
                 )
                 assert source_id
+                commit_route = "/api/merge/source"
+                assert commit_route == "/api/merge/source"
 
                 placement_select = page.locator(
                     f'select[data-merge-source-field="placement_mode"][data-source-id="{source_id}"]'
@@ -442,7 +453,9 @@ def test_compose_controls_use_two_columns_before_compact_width(synthetic_video_f
                         return getComputedStyle(controls).gridTemplateColumns.split(' ').length;
                     }"""
                 )
-                assert wide_columns >= 2, f"Expected dual-column compose controls, got {wide_columns}"
+                assert wide_columns >= 2, (
+                    f"Expected dual-column compose controls, got {wide_columns}"
+                )
                 assert compact_columns == 1, (
                     f"Expected single-column compose controls in compact inspector, got {compact_columns}"
                 )

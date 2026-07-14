@@ -288,6 +288,7 @@ id:show-markers
 id:show-overlay
 id:show-pip
 id:show-score
+id:show-shot-scores
 id:show-shots
 id:show-timer
 id:target-height

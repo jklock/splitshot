@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, UTC
@@ -99,6 +100,7 @@ from splitshot.scoring.logic import (
     ensure_default_shot_scores,
 )
 from splitshot.scoring.practiscore import (
+    PractiScoreCompetitorOption,
     PractiScoreOptions,
     _normalize_name,
     describe_practiscore_file,
@@ -287,7 +289,9 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
     }[size]
 
 
-def _float_matches(left: float | int | None, right: float | int | None, *, tolerance: float = 1e-6) -> bool:
+def _float_matches(
+    left: float | int | None, right: float | int | None, *, tolerance: float = 1e-6
+) -> bool:
     if left is None or right is None:
         return left == right
     return abs(float(left) - float(right)) <= tolerance
@@ -535,6 +539,34 @@ def _merge_source_trim_derivative_is_active(source: MergeSource | None) -> bool:
     )
 
 
+def _primary_trim_derivative_is_active(project: Project | None) -> bool:
+    trim_derivative = getattr(project, "primary_trim_derivative", None)
+    return bool(
+        project is not None
+        and trim_derivative is not None
+        and trim_derivative.active_path_kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+        and trim_derivative.derivative_path
+    )
+
+
+def _effective_primary_media_path(project: Project | None) -> str:
+    if project is None:
+        return ""
+    if _primary_trim_derivative_is_active(project):
+        return str(project.primary_trim_derivative.derivative_path or "")
+    return str(project.primary_video.path or "")
+
+
+def _effective_primary_asset(project: Project | None) -> VideoAsset:
+    if project is None:
+        return VideoAsset()
+    if _primary_trim_derivative_is_active(project):
+        derivative_asset = project.primary_trim_derivative.derivative_asset
+        if derivative_asset.path:
+            return derivative_asset
+    return project.primary_video
+
+
 def _effective_merge_source_media_path(source: MergeSource | None) -> str:
     if source is None:
         return ""
@@ -551,6 +583,9 @@ def _effective_merge_source_asset(source: MergeSource | None) -> VideoAsset | No
         return None
     if active_path == source.asset.path:
         return source.asset
+    derivative_asset = source.trim_derivative.derivative_asset
+    if derivative_asset.path == active_path:
+        return derivative_asset
     return replace(source.asset, path=active_path)
 
 
@@ -658,6 +693,7 @@ def _clear_secondary_analysis_state(
 
 
 def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
+    project.primary_trim_derivative = MergeSourceTrimDerivative()
     project.analysis.beep_time_ms_primary = None
     _clear_secondary_analysis_state(project)
     project.analysis.waveform_primary = []
@@ -962,7 +998,8 @@ class ProjectController(QObject):
         self.add_merge_source(path)
 
     def analyze_primary(self) -> None:
-        if not self.project.primary_video.path:
+        active_primary_path = _effective_primary_media_path(self.project)
+        if not active_primary_path:
             return
         selection_context = _shot_selection_context(
             self.project,
@@ -973,7 +1010,7 @@ class ProjectController(QObject):
         previous_events = [deepcopy(event) for event in self.project.analysis.events]
         self._set_status("Analyzing primary video for beep and shot detections...")
         result = _run_analyze_video_audio(
-            self.project.primary_video.path,
+            active_primary_path,
             self.project.analysis.shotml_settings.detection_threshold,
             self.project.analysis.shotml_settings,
         )
@@ -997,7 +1034,7 @@ class ProjectController(QObject):
         )
         self.project.analysis.timing_change_proposals = []
         self.project.analysis.last_shotml_run_summary = {
-            "video_path": self.project.primary_video.path,
+            "video_path": active_primary_path,
             "threshold": self.project.analysis.shotml_settings.detection_threshold,
             "sample_rate": result.sample_rate,
             "beep_time_ms": result.beep_time_ms,
@@ -1098,6 +1135,9 @@ class ProjectController(QObject):
         )
         return _effective_merge_source_media_path(source)
 
+    def effective_primary_media_path(self) -> str:
+        return _effective_primary_media_path(self.project)
+
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
         self.load_primary_video(path)
@@ -1160,7 +1200,7 @@ class ProjectController(QObject):
                     changed = True
                 apply_scoring_preset(self.project, target_ruleset)
         if stage_number is not None:
-            next_stage_number = None if stage_number is None else max(1, int(stage_number))
+            next_stage_number = None if int(stage_number) <= 0 else max(1, int(stage_number))
             if scoring.stage_number != next_stage_number:
                 scoring.stage_number = next_stage_number
                 changed = True
@@ -1170,17 +1210,18 @@ class ProjectController(QObject):
                 scoring.competitor_name = next_competitor_name
                 changed = True
         if competitor_place is not None:
-            if scoring.competitor_place != competitor_place:
-                scoring.competitor_place = competitor_place
+            next_competitor_place = None if int(competitor_place) <= 0 else int(competitor_place)
+            if scoring.competitor_place != next_competitor_place:
+                scoring.competitor_place = next_competitor_place
                 changed = True
         if classification is not None:
             next_classification = str(classification).strip()
-            if next_classification and scoring.classification != next_classification:
+            if scoring.classification != next_classification:
                 scoring.classification = next_classification
                 changed = True
         if division is not None:
             next_division = str(division).strip()
-            if next_division and scoring.division != next_division:
+            if scoring.division != next_division:
                 scoring.division = next_division
                 changed = True
         if changed:
@@ -1953,6 +1994,17 @@ class ProjectController(QObject):
                 return True
             except ValueError:
                 return changed or recovered_from_folder
+        try:
+            normalized = normalize_downloaded_practiscore_artifact(
+                resolved_path,
+                source_name=display_name,
+                **self._practiscore_import_context_kwargs(),
+            )
+            self._set_practiscore_comparison_competitors(
+                normalized.stage_import.comparison_competitors
+            )
+        except ValueError:
+            self._practiscore_comparison_competitors = []
         return changed or recovered_from_folder
 
     def _project_input_candidates(self) -> list[tuple[Path, VideoAsset]]:
@@ -2110,6 +2162,10 @@ class ProjectController(QObject):
             and scoring.competitor_place != imported.competitor_place
         ):
             overrides["competitor_place"] = scoring.competitor_place
+        if scoring.classification != imported.classification:
+            overrides["classification"] = scoring.classification
+        if scoring.division != imported.division:
+            overrides["division"] = scoring.division
         if (
             stage.label
             and stage.label
@@ -2139,7 +2195,32 @@ class ProjectController(QObject):
             scoring.competitor_name = str(overrides["competitor_name"] or "").strip()
         if "competitor_place" in overrides:
             scoring.competitor_place = int(overrides["competitor_place"])
+        if "classification" in overrides:
+            scoring.classification = str(overrides["classification"] or "").strip()
+        if "division" in overrides:
+            scoring.division = str(overrides["division"] or "").strip()
         self._sync_project_to_active_stage()
+
+    def _set_practiscore_comparison_competitors(
+        self, competitors: Iterable[PractiScoreCompetitorOption]
+    ) -> None:
+        self._practiscore_comparison_competitors = [
+            {
+                "name": c.name,
+                "place": c.place,
+                "division": c.division,
+                "classification": c.classification,
+                "power_factor": c.power_factor,
+                "raw_seconds": c.raw_seconds,
+                "hit_factor": c.hit_factor,
+                "final_time": c.final_time,
+                "stage_points": c.stage_points,
+                "stage_place": c.stage_place,
+                "total_points": c.total_points,
+                "class_place": c.class_place,
+            }
+            for c in competitors
+        ]
 
     def _import_practiscore_source(
         self,
@@ -2156,23 +2237,7 @@ class ProjectController(QObject):
         )
         self._practiscore_options = normalized.options
         imported = normalized.stage_import
-        self._practiscore_comparison_competitors = [
-            {
-                "name": c.name,
-                "place": c.place,
-                "division": c.division,
-                "classification": c.classification,
-                "power_factor": c.power_factor,
-                "raw_seconds": c.raw_seconds,
-                "hit_factor": c.hit_factor,
-                "final_time": c.final_time,
-                "stage_points": c.stage_points,
-                "stage_place": c.stage_place,
-                "total_points": c.total_points,
-                "class_place": c.class_place,
-            }
-            for c in imported.comparison_competitors
-        ]
+        self._set_practiscore_comparison_competitors(imported.comparison_competitors)
         apply_scoring_preset(self.project, imported.ruleset)
         self.project.scoring.enabled = True
         self.project.scoring.penalties = max(0.0, float(imported.manual_penalties))
@@ -2313,6 +2378,7 @@ class ProjectController(QObject):
         )
         if seed_from_project:
             stage.primary_media = deepcopy(self.project.primary_video)
+            stage.primary_trim_derivative = deepcopy(self.project.primary_trim_derivative)
             stage.added_media = list(self.project.merge_sources)
             stage.analysis = deepcopy(self.project.analysis)
             stage.scoring = deepcopy(self.project.scoring)
@@ -2350,6 +2416,7 @@ class ProjectController(QObject):
         if stage is None:
             return
         self.project.primary_video = deepcopy(stage.primary_media)
+        self.project.primary_trim_derivative = deepcopy(stage.primary_trim_derivative)
         self.project.merge_sources = deepcopy(stage.added_media)
         self.project.analysis = deepcopy(stage.analysis)
         self.project.scoring = deepcopy(stage.scoring)
@@ -2367,6 +2434,7 @@ class ProjectController(QObject):
         if stage is None:
             return
         stage.primary_media = deepcopy(self.project.primary_video)
+        stage.primary_trim_derivative = deepcopy(self.project.primary_trim_derivative)
         stage.added_media = deepcopy(self.project.merge_sources)
         stage.analysis = deepcopy(self.project.analysis)
         stage.scoring = deepcopy(self.project.scoring)
@@ -2451,6 +2519,9 @@ class ProjectController(QObject):
             self._sync_project_to_active_stage()
         else:
             stage.primary_media = probe_video(str(path))
+            stage.primary_trim_derivative = MergeSourceTrimDerivative(
+                original_path=stage.primary_media.path
+            )
         stage.label = stage.label or f"Stage {stage.order_index}"
         self._mark_stage_queue_stale(stage_id)
         self.project.touch()
@@ -2461,6 +2532,8 @@ class ProjectController(QObject):
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
+        if not stage.primary_media.path:
+            raise ValueError("Add primary media before adding secondary media")
         self._set_status(f"Importing added media for stage {stage.label}...")
         if stage_id == self.project.active_stage_id:
             self.add_merge_source(str(path))
@@ -2486,13 +2559,16 @@ class ProjectController(QObject):
             raise ValueError(f"Stage {stage_id} not found")
 
         def promote(
-            primary_asset: VideoAsset, sources: list[MergeSource]
-        ) -> tuple[VideoAsset, list[MergeSource]]:
+            primary_asset: VideoAsset,
+            primary_trim_derivative: MergeSourceTrimDerivative,
+            sources: list[MergeSource],
+        ) -> tuple[VideoAsset, MergeSourceTrimDerivative, list[MergeSource]]:
             match = next((source for source in sources if source.id == source_id), None)
             if match is None:
                 raise ValueError(f"Merge source {source_id} not found")
             remaining = [source for source in sources if source.id != source_id]
             next_primary = match.asset
+            next_primary_trim_derivative = deepcopy(match.trim_derivative)
             if primary_asset.path:
                 remaining.append(
                     MergeSource(
@@ -2501,22 +2577,31 @@ class ProjectController(QObject):
                         pip_x=stage.merge.pip_x,
                         pip_y=stage.merge.pip_y,
                         sync_offset_ms=0,
+                        trim_derivative=deepcopy(primary_trim_derivative),
                     )
                 )
-            return next_primary, remaining
+            return next_primary, next_primary_trim_derivative, remaining
 
         if stage_id == self.project.active_stage_id:
-            next_primary, next_sources = promote(
-                self.project.primary_video, list(self.project.merge_sources)
+            next_primary, next_primary_trim_derivative, next_sources = promote(
+                self.project.primary_video,
+                self.project.primary_trim_derivative,
+                list(self.project.merge_sources),
             )
             self.project.primary_video = next_primary
+            self.project.primary_trim_derivative = next_primary_trim_derivative
             self.project.merge_sources = next_sources
             self._remember_original_shots()
             _refresh_secondary_analysis_projection(self.project)
             self._sync_project_to_active_stage()
         else:
-            next_primary, next_sources = promote(stage.primary_media, list(stage.added_media))
+            next_primary, next_primary_trim_derivative, next_sources = promote(
+                stage.primary_media,
+                stage.primary_trim_derivative,
+                list(stage.added_media),
+            )
             stage.primary_media = next_primary
+            stage.primary_trim_derivative = next_primary_trim_derivative
             stage.added_media = next_sources
             valid_source_ids = {
                 source.id
@@ -2568,6 +2653,7 @@ class ProjectController(QObject):
             self._sync_project_to_active_stage()
         else:
             stage.primary_media = VideoAsset()
+            stage.primary_trim_derivative = MergeSourceTrimDerivative()
         self._mark_stage_queue_stale(stage_id)
         self._set_status(f"Cleared primary media for stage {stage.label}.")
         self.project.touch()
@@ -2986,6 +3072,57 @@ class ProjectController(QObject):
             raise ValueError("Selected merge source does not support sync analysis")
         self.analyze_secondary(source_id)
 
+    def _trimmed_media_dir(self) -> Path | None:
+        if self.project_path is None:
+            return None
+        derivative_dir = self.project_path / INPUT_DIRNAME / "trimmed"
+        derivative_dir.mkdir(parents=True, exist_ok=True)
+        return derivative_dir
+
+    def _apply_primary_trim(
+        self,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
+        if clear:
+            self.project.primary_trim_derivative = MergeSourceTrimDerivative(
+                original_path=self.project.primary_video.path,
+            )
+            return
+        if start_s is None and end_s is None:
+            return
+        source_path = self.project.primary_video.path
+        if not source_path:
+            raise ValueError("Primary video has no asset path")
+        if start_s is not None and end_s is not None and start_s >= end_s:
+            raise ValueError("start_s must be less than end_s")
+        source_file = Path(source_path)
+        derivative_dir = self._trimmed_media_dir()
+        derivative_path = (
+            str(derivative_dir / f"primary_trim{source_file.suffix or '.mp4'}")
+            if derivative_dir is not None
+            else str(
+                source_file.with_name(
+                    f"{source_file.stem}_primary_trim{source_file.suffix or '.mp4'}"
+                )
+            )
+        )
+        try:
+            trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+            derivative_asset = probe_video(derivative_path)
+        except Exception as exc:
+            raise ValueError(f"Trim failed for {source_path} -> {derivative_path}: {exc}") from exc
+        self.project.primary_trim_derivative = MergeSourceTrimDerivative(
+            original_path=source_path,
+            derivative_path=derivative_path,
+            derivative_asset=derivative_asset,
+            active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+            start_s=start_s,
+            end_s=end_s,
+        )
+
     def _apply_merge_source_trim(
         self,
         source: MergeSource,
@@ -3005,25 +3142,25 @@ class ProjectController(QObject):
         if start_s is not None and end_s is not None and start_s >= end_s:
             raise ValueError("start_s must be less than end_s")
         source_file = Path(source_path)
-        if self.project_path is not None:
-            derivative_dir = self.project_path / INPUT_DIRNAME / "trimmed"
-            derivative_dir.mkdir(parents=True, exist_ok=True)
-            derivative_path = str(
-                derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}"
-            )
-        else:
-            derivative_path = str(
+        derivative_dir = self._trimmed_media_dir()
+        derivative_path = (
+            str(derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}")
+            if derivative_dir is not None
+            else str(
                 source_file.with_name(
                     f"{source_file.stem}_{source.id}_trim{source_file.suffix or '.mp4'}"
                 )
             )
+        )
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+            derivative_asset = probe_video(derivative_path)
         except Exception as exc:
             raise ValueError(f"Trim failed for {source_path} -> {derivative_path}: {exc}") from exc
         source.trim_derivative = MergeSourceTrimDerivative(
             original_path=source_path,
             derivative_path=derivative_path,
+            derivative_asset=derivative_asset,
             active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
             start_s=start_s,
             end_s=end_s,
@@ -3040,12 +3177,35 @@ class ProjectController(QObject):
         end_s = None
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
-            start_s = max(0.0, ((int(primary_beep_ms) + int(source.sync_offset_ms)) / 1000) - keep_before_beep_s)
+            start_s = max(
+                0.0,
+                ((int(primary_beep_ms) + int(source.sync_offset_ms)) / 1000) - keep_before_beep_s,
+            )
         shots = self.project.analysis.shots or []
         if shots and keep_after_last_shot_s is not None:
             last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
             end_s = ((last_shot_ms + int(source.sync_offset_ms)) / 1000) + keep_after_last_shot_s
             duration_ms = int(source.asset.duration_ms or 0)
+            if duration_ms > 0:
+                end_s = min(end_s, duration_ms / 1000)
+        return start_s, end_s
+
+    def _primary_trim_window_from_buffers(
+        self,
+        *,
+        keep_before_beep_s: float | None = None,
+        keep_after_last_shot_s: float | None = None,
+    ) -> tuple[float | None, float | None]:
+        start_s = None
+        end_s = None
+        primary_beep_ms = self.project.analysis.beep_time_ms_primary
+        if primary_beep_ms is not None and keep_before_beep_s is not None:
+            start_s = max(0.0, (int(primary_beep_ms) / 1000) - keep_before_beep_s)
+        shots = self.project.analysis.shots or []
+        if shots and keep_after_last_shot_s is not None:
+            last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
+            end_s = (last_shot_ms / 1000) + keep_after_last_shot_s
+            duration_ms = int(_effective_primary_asset(self.project).duration_ms or 0)
             if duration_ms > 0:
                 end_s = min(end_s, duration_ms / 1000)
         return start_s, end_s
@@ -3079,6 +3239,31 @@ class ProjectController(QObject):
             self.project.touch()
             self.project_changed.emit()
 
+    def trim_primary_video(
+        self,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
+        if not self.project.primary_video.path:
+            raise ValueError("Primary video not found")
+        self._apply_primary_trim(start_s=start_s, end_s=end_s, clear=clear)
+        active_stage_id = self.project.active_stage_id
+        self._mark_stage_queue_stale(active_stage_id)
+        self.analyze_primary()
+        for source in self.project.merge_sources:
+            if _source_supports_secondary_analysis(source):
+                self.analyze_secondary(source.id)
+        self._sync_project_to_active_stage()
+        self._set_status(
+            "Cleared primary trim."
+            if clear
+            else f"Trimmed {self.project.primary_video.path} (start={start_s}, end={end_s})."
+        )
+        self.project.touch()
+        self.project_changed.emit()
+
     def trim_all_merge_sources(
         self,
         *,
@@ -3088,13 +3273,28 @@ class ProjectController(QObject):
         keep_after_last_shot_s: float | None = None,
         clear: bool = False,
     ) -> None:
-        if not self.project.merge_sources:
+        primary_source_count = 1 if self.project.primary_video.path else 0
+        total_source_count = primary_source_count + len(self.project.merge_sources)
+        if total_source_count == 0:
             return
         self._set_status(
             "Clearing trim derivatives..."
             if clear
-            else f"Trimming {len(self.project.merge_sources)} added media file{'s' if len(self.project.merge_sources) != 1 else ''}."
+            else f"Trimming {total_source_count} stage media file{'s' if total_source_count != 1 else ''}."
         )
+        primary_start_s = start_s
+        primary_end_s = end_s
+        if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):
+            primary_start_s, primary_end_s = self._primary_trim_window_from_buffers(
+                keep_before_beep_s=keep_before_beep_s,
+                keep_after_last_shot_s=keep_after_last_shot_s,
+            )
+        if self.project.primary_video.path:
+            self._apply_primary_trim(
+                start_s=primary_start_s,
+                end_s=primary_end_s,
+                clear=clear,
+            )
         for source in self.project.merge_sources:
             next_start_s = start_s
             next_end_s = end_s
@@ -3112,12 +3312,14 @@ class ProjectController(QObject):
             )
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
+        if self.project.primary_video.path:
+            self.analyze_primary()
         for source in self.project.merge_sources:
             if _source_supports_secondary_analysis(source):
                 self.analyze_secondary(source.id)
         self._sync_project_to_active_stage()
         self._set_status(
-            "Cleared trim for all added media." if clear else "Applied trim to all added media."
+            "Cleared trim for all stage media." if clear else "Applied trim to all stage media."
         )
         self.project.touch()
         self.project_changed.emit()
@@ -3563,7 +3765,7 @@ class ProjectController(QObject):
                 changed = True
         for field_name, minimum, maximum in (
             ("rail_width", 84, 104),
-            ("inspector_width", 320, 4096),
+            ("inspector_width", 280, 4096),
             ("waveform_height", 112, 4096),
         ):
             if field_name not in payload:
@@ -3943,6 +4145,7 @@ class ProjectController(QObject):
             "show_timer",
             "show_draw",
             "show_shots",
+            "show_shot_scores",
             "show_score",
             "timer_lock_to_stack",
             "draw_lock_to_stack",
@@ -4364,8 +4567,13 @@ class ProjectController(QObject):
     def swap_videos(self) -> None:
         if self.project.merge_sources:
             first_source = self.project.merge_sources[0].asset
+            first_trim_derivative = deepcopy(self.project.merge_sources[0].trim_derivative)
             self.project.merge_sources[0].asset = self.project.primary_video
+            self.project.merge_sources[0].trim_derivative = deepcopy(
+                self.project.primary_trim_derivative
+            )
             self.project.primary_video = first_source
+            self.project.primary_trim_derivative = first_trim_derivative
             _sync_secondary_video_from_merge_sources(self.project)
         elif self.project.secondary_video is None:
             return
@@ -4637,7 +4845,7 @@ class ProjectController(QObject):
                 )
             if "layout_inspector_width" in payload:
                 target.layout_inspector_width = _optional_layout_dimension(
-                    payload.get("layout_inspector_width"), 320, 4096
+                    payload.get("layout_inspector_width"), 280, 4096
                 )
             if "layout_waveform_height" in payload:
                 target.layout_waveform_height = _optional_layout_dimension(

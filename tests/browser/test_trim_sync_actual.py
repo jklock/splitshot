@@ -9,6 +9,7 @@ from tests.browser.helpers.video_test_helpers import (
     open_page,
     ensure_project_with_primary_and_merge,
     navigate_to_tool,
+    get_primary_media_state,
     get_merge_source_state,
     setup_server_and_browser,
 )
@@ -36,7 +37,7 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
                     try:
                         assert_status(page, "analysis")
                     except AssertionError:
-                        assert_status(page, "Trimming added media")
+                        assert_status(page, "Trimming stage media")
             finally:
                 browser.close()
     finally:
@@ -183,7 +184,12 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
                 assert trimmed["effective_media_path"] == trimmed["derivative_path"]
                 assert Path(trimmed["derivative_path"]).exists()
                 assert trimmed["waveform_sample_count"] not in {None, 0}
-                assert page.locator(".trim-active-path-badge").first.inner_text() == "Trimmed media active"
+                assert (
+                    page.locator(
+                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-badge'
+                    ).inner_text()
+                    == "Trimmed media active"
+                )
 
                 page.locator(f'button.trim-clear-btn[data-source-id="{source_id}"]').click()
                 page.wait_for_function(
@@ -204,7 +210,131 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
                 assert cleared["trim_active"] is False
                 assert cleared["effective_media_path"] == original_path
                 assert cleared["waveform_sample_count"] not in {None, 0}
-                assert page.locator(".trim-active-path-badge").first.inner_text() == "Original media active"
+                assert (
+                    page.locator(
+                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-badge'
+                    ).inner_text()
+                    == "Original media active"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_factory) -> None:
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "trim-primary-added-p", "duration_ms": 4200, "beep_ms": 500},
+        merge_kwargs={"name": "trim-primary-added-m", "duration_ms": 4200, "beep_ms": 430},
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-primary-added.ssproj"
+                )
+                page.evaluate("() => callApi('/api/project/stage/create', {})")
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.active_stage_id) && (state?.project?.stages || []).length >= 1"
+                )
+                navigate_to_tool(page, "merge")
+                page.locator("#merge-enabled").check()
+                page.locator("#merge-layout").select_option("pip")
+                navigate_to_tool(page, "trim-sync")
+                page.wait_for_timeout(500)
+
+                source_id = page.evaluate(
+                    "() => (state?.project?.merge_sources || [])[0]?.id || ''"
+                )
+                assert source_id, "No merge source found"
+
+                original_primary_path = page.evaluate(
+                    "() => state?.project?.primary_video?.path || ''"
+                )
+                original_added_path = page.evaluate(
+                    """(sid) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        return source?.asset?.path || '';
+                    }""",
+                    source_id,
+                )
+
+                page.fill("#trim-global-start", "2.00")
+                page.fill("#trim-global-end", "2.00")
+                page.click("#trim-global-apply")
+                page.wait_for_function(
+                    """(sid) => {
+                        const primary = state?.project?.primary_video || {};
+                        const primaryTrim = state?.project?.primary_trim_derivative || {};
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sid);
+                        const trim = source?.trim_derivative || {};
+                        return Boolean(primaryTrim?.derivative_path)
+                            && primaryTrim?.active_path_kind === 'local_derivative'
+                            && Boolean(trim?.derivative_path)
+                            && trim?.active_path_kind === 'local_derivative'
+                            && primary?.effective_media_path === primaryTrim?.derivative_path
+                            && source?.effective_media_path === trim?.derivative_path;
+                    }""",
+                    arg=source_id,
+                    timeout=120_000,
+                )
+
+                primary_state = get_primary_media_state(page)
+                added_state = get_merge_source_state(page, source_id)
+                assert primary_state["trim_active"] is True
+                assert added_state["trim_active"] is True
+                assert primary_state["effective_media_path"] != original_primary_path
+                assert added_state["effective_media_path"] != original_added_path
+                assert Path(primary_state["derivative_path"]).exists()
+                assert Path(added_state["derivative_path"]).exists()
+
+                navigate_to_tool(page, "media")
+                media_text = page.locator("#media-pane").inner_text()
+                assert media_text.count("Trimmed media active") >= 2
+                assert primary_state["active_display_name"] in media_text
+                assert Path(added_state["effective_media_path"]).name in media_text
+
+                navigate_to_tool(page, "merge")
+                page.wait_for_function(
+                    """(sid) => {
+                        const media = document.querySelector(`#merge-preview-layer .merge-preview-item[data-source-id="${sid}"] video`);
+                        return Boolean(media?.dataset?.sourcePath)
+                            && media.dataset.sourcePath.includes('_trim');
+                    }""",
+                    arg=source_id,
+                    timeout=10000,
+                )
+
+                navigate_to_tool(page, "trim-sync")
+                page.click("#trim-global-clear")
+                page.wait_for_function(
+                    """(payload) => {
+                        const primary = state?.project?.primary_video || {};
+                        const primaryTrim = state?.project?.primary_trim_derivative || {};
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        const trim = source?.trim_derivative || {};
+                        return !primaryTrim?.derivative_path
+                            && primaryTrim?.active_path_kind == null
+                            && primary?.effective_media_path === payload.primaryPath
+                            && !trim?.derivative_path
+                            && trim?.active_path_kind == null
+                            && source?.effective_media_path === payload.addedPath;
+                    }""",
+                    arg={
+                        "sourceId": source_id,
+                        "primaryPath": original_primary_path,
+                        "addedPath": original_added_path,
+                    },
+                    timeout=120_000,
+                )
+                cleared_primary = get_primary_media_state(page)
+                cleared_added = get_merge_source_state(page, source_id)
+                assert cleared_primary["trim_active"] is False
+                assert cleared_added["trim_active"] is False
+                assert cleared_primary["effective_media_path"] == original_primary_path
+                assert cleared_added["effective_media_path"] == original_added_path
             finally:
                 browser.close()
     finally:

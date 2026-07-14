@@ -31,6 +31,7 @@ FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
 DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
 DEFAULT_MERGE_VIDEO = FIXTURE_VIDEO_DIR / "stage-merge.mp4"
 DEFAULT_PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
+AUDIT_TMP_ROOT = ROOT / "tmp" / "codex" / "browser-interaction-audit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +264,8 @@ def show_project_tool(page: Page) -> None:
 
 
 def _audit_project_path(primary_video: Path) -> str:
-    return str(primary_video.parent / f"browser-audit-{uuid.uuid4().hex}.ssproj")
+    AUDIT_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+    return str(AUDIT_TMP_ROOT / f"browser-audit-{uuid.uuid4().hex}.ssproj")
 
 
 def _multipart_upload(
@@ -548,7 +550,7 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
           const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary || 0);
           media.currentTime = Math.max(0.05, (beepMs + 750) / 1000);
           renderLiveOverlay();
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
           const badge = document.querySelector('#score-layer [data-overlay-drag="timer"], #live-overlay [data-overlay-drag="timer"]');
                     const stageRect = stage.getBoundingClientRect();
           const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
@@ -583,12 +585,22 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
     page.mouse.down()
     page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
     page.mouse.up()
-    page.wait_for_timeout(120)
+    page.wait_for_function(
+        """({ x, y }) => {
+          const overlay = state?.project?.overlay;
+          return Number.isFinite(Number(overlay?.timer_x))
+            && Number.isFinite(Number(overlay?.timer_y))
+            && Math.abs(Number(overlay.timer_x) - x) <= 0.04
+            && Math.abs(Number(overlay.timer_y) - y) <= 0.06;
+        }""",
+        arg={"x": drag_target["target_x"], "y": drag_target["target_y"]},
+        timeout=10_000,
+    )
     entries = wait_for_activity(
         activity_source,
         after_cursor,
         lambda items: has_api_success(items, "/api/overlay"),
-        timeout_s=5,
+        timeout_s=20,
     )
     result = page.evaluate(
         """
@@ -1450,15 +1462,24 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
     page.wait_for_function(
         "() => document.getElementById('trim-sync-list')?.children.length > 0", timeout=30_000
     )
+    source_id = page.evaluate("() => state?.project?.merge_sources?.[0]?.id || ''")
+    if not source_id:
+        return expect(
+            False,
+            "trim_sync_nudge_commit",
+            "Trim sync nudge requires at least one added media source.",
+            {"source_id": source_id},
+        )
     before = page.evaluate(
-        """
-        () => ({
-          sync_offset_ms: Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0),
-        })
-        """
+        """(sourceId) => ({
+          sync_offset_ms: Number((state?.project?.merge_sources || []).find((item) => item.id === sourceId)?.sync_offset_ms || 0),
+        })""",
+        source_id,
     )
     after_cursor = activity_cursor(activity_source)
-    page.locator(".trim-source-card").first.get_by_role("button", name="+10", exact=True).click()
+    page.locator(f'.trim-source-card[data-source-id="{source_id}"]').get_by_role(
+        "button", name="+10", exact=True
+    ).click()
     entries = wait_for_activity(
         activity_source,
         after_cursor,
@@ -1469,18 +1490,19 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
     try:
         page.wait_for_function(
             """
-            (expected) => Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0) === expected
+            (payload) => Number((state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId)?.sync_offset_ms || 0) === payload.expected
             """,
-            arg=expected_offset,
+            arg={"sourceId": source_id, "expected": expected_offset},
             timeout=5_000,
         )
         page.wait_for_function(
             """
-            () => {
-              const label = document.querySelector('.trim-source-card .merge-source-sync-hint')?.textContent?.trim() || '';
+            (sourceId) => {
+              const label = document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] .merge-source-sync-hint')?.textContent?.trim() || '';
               return label.length > 0 && (label.toLowerCase().includes('manual sync') || label.toLowerCase().includes('beep'));
             }
             """,
+            arg=source_id,
             timeout=5_000,
         )
     except PlaywrightTimeoutError:

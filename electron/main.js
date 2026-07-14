@@ -185,7 +185,7 @@ function startPythonBackend(initialProjectPath = null) {
   });
 }
 
-function waitForServer(retries = 30) {
+function waitForServer(retries = 240) {
   return new Promise((resolve, reject) => {
     const tryConnect = (attempt) => {
       if (attempt >= retries) {

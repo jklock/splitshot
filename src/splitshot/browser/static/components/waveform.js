@@ -386,7 +386,9 @@ export function createWaveformComponent({
         const source = mergeSources.find((item) => item.id === entry.source_id) || null;
         return {
           sourceId: String(entry.source_id || ""),
-          label: source?.asset?.path
+          label: source?.active_display_name
+            ? String(source.active_display_name)
+            : source?.asset?.path
             ? String(source.asset.path).split(/[\\/]/).pop()
             : `Added ${Math.max(1, mergeSources.findIndex((item) => item.id === entry.source_id) + 1)}`,
           syncOffsetMs: Math.round(Number(entry.sync_offset_ms) || 0),
