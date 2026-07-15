@@ -63,7 +63,7 @@
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--space-1);
   justify-content: center;
   padding: 0.2rem 0.1rem 0.34rem;
 }
@@ -112,9 +112,9 @@
   color: #101112;
 }
 
-.tool-item b {
-  font-size: 0.7rem;
-  font-weight: 950;
+.tool-item {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -137,8 +137,8 @@
 
 .cockpit-shell.rail-collapsed .tool-item::after {
   content: attr(data-short);
-  font-size: 0.64rem;
-  font-weight: 950;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -170,7 +170,7 @@
   border-bottom: 1px solid #3f6a28;
   color: var(--text);
   display: grid;
-  gap: 0.65rem;
+  gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) minmax(120px, 220px) auto;
   min-height: var(--topbar-height);
   height: var(--topbar-height);
@@ -187,7 +187,7 @@
 }
 
 .processing-bar strong {
-  font-weight: 950;
+  font-weight: var(--weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -195,13 +195,13 @@
 
 .processing-bar span {
   color: #b7d7aa;
-  font-weight: 850;
+  font-weight: var(--weight-bold);
 }
 
 .processing-copy {
   align-items: center;
   display: flex;
-  gap: 0.65rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -234,8 +234,8 @@ small,
 
 .eyebrow {
   color: var(--accent);
-  font-size: 0.66rem;
-  font-weight: 950;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -245,7 +245,7 @@ small,
   background: rgba(18, 20, 23, 0.98);
   border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-3);
   height: var(--topbar-height);
   justify-content: space-between;
   min-width: 0;
@@ -255,7 +255,7 @@ small,
 .status-bar-copy {
   display: grid;
   flex: 1 1 auto;
-  gap: 0.12rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -263,13 +263,13 @@ small,
   align-items: center;
   display: flex;
   flex: 0 0 auto;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .status-bar strong {
   color: var(--text);
   display: block;
-  font-weight: 950;
+  font-weight: var(--weight-black);
   letter-spacing: 0.01em;
   min-width: 0;
   overflow: hidden;
@@ -280,7 +280,7 @@ small,
 .status-bar span {
   color: var(--muted);
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--text-sm);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -408,12 +408,12 @@ small,
   border-bottom: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem;
+  gap: var(--space-3);
   justify-content: space-between;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  padding: 0.35rem 0.65rem;
+  padding: var(--space-1) var(--space-3);
 }
 
 .section-header > * {
@@ -424,7 +424,7 @@ small,
   align-items: center;
   display: flex;
   flex: 0 0 auto;
-  gap: 0.35rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -447,7 +447,7 @@ small,
 .waveform-actions {
   align-items: center;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 

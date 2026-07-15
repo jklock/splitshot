@@ -21,15 +21,40 @@
   --resize-handle-size: 4px;
   --waveform-height: 206px;
   --app-height: 100vh;
-  --pane-padding: 0.48rem;
-  --pane-section-gap: 0.72rem;
-  --pane-card-padding: 0.58rem;
-  --pane-control-gap: 0.42rem;
-  --pane-label-size: 0.76rem;
-  --pane-helper-size: 0.68rem;
-  --pane-value-size: 0.78rem;
-  --pane-section-title-size: 0.82rem;
-  --pane-title-size: 0.84rem;
+  /* === Design Tokens === */
+  /* Typography scale */
+  --text-xs:   0.62rem;   /* micro labels, chips */
+  --text-sm:   0.72rem;   /* helper text, hints */
+  --text-base: 0.76rem;   /* form labels, metadata */
+  --text-md:   0.84rem;   /* card titles, section headers */
+  --text-lg:   0.96rem;   /* pane titles, modal headers */
+  --text-xl:   1.12rem;   /* major headings */
+
+  /* Weight scale */
+  --weight-normal:   400;
+  --weight-medium:   600;   /* labels */
+  --weight-semibold: 700;   /* emphasis, values */
+  --weight-bold:     800;   /* buttons, badges */
+  --weight-black:    900;   /* pane titles, table headers */
+
+  /* Spacing scale */
+  --space-1: 0.28rem;   /* 4px  – tight internal gaps */
+  --space-2: 0.42rem;   /* 6px  – control gaps */
+  --space-3: 0.55rem;   /* 7px  – card gaps */
+  --space-4: 0.65rem;   /* 8px  – card padding, section padding */
+  --space-5: 0.75rem;   /* 10px – pane section gaps */
+  --space-6: 0.95rem;   /* 12px – major section breaks */
+
+  /* Legacy pane aliases (mapped to tokens for consistency) */
+  --pane-padding: var(--space-4);
+  --pane-section-gap: var(--space-5);
+  --pane-card-padding: var(--space-4);
+  --pane-control-gap: var(--space-2);
+  --pane-label-size: var(--text-base);
+  --pane-helper-size: var(--text-sm);
+  --pane-value-size: var(--text-base);
+  --pane-section-title-size: var(--text-md);
+  --pane-title-size: var(--text-md);
   --pane-control-height: 30px;
   --pane-button-height: 30px;
   --pane-primary-button-height: 32px;
@@ -83,7 +108,7 @@ button {
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   letter-spacing: 0;
   touch-action: manipulation;
   text-transform: none;
@@ -226,9 +251,9 @@ textarea:disabled {
 label {
   color: var(--muted);
   display: grid;
-  font-size: 0.76rem;
-  font-weight: 600;
-  gap: 0.28rem;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  gap: var(--space-1);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -242,18 +267,18 @@ p {
 }
 
 h1 {
-  font-size: 1.12rem;
+  font-size: var(--text-xl);
   line-height: 1.1;
   text-transform: none;
 }
 
 h2 {
-  font-size: 0.96rem;
+  font-size: var(--text-lg);
   line-height: 1.15;
 }
 
 h3 {
-  font-size: 0.84rem;
+  font-size: var(--text-md);
   line-height: 1;
   text-transform: none;
 }

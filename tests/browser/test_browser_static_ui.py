@@ -70,7 +70,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     css = _read_split_css()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260501f"' in html
+    assert 'href="/static/styles.css?v=20260714a"' in html
     assert 'src="/static/app.js?v=20260501f"' in html
     assert '<script type="module" src="/static/app.js?v=20260501f"></script>' in html
     assert '<script src="/static/app.js?v=20260501f"></script>' not in html
@@ -111,13 +111,13 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
-    assert "<b>Compose</b>" in html
-    assert "<b>Metrics</b>" in html
-    assert "<b>Review</b>" in html
-    assert "<b>Splits</b>" in html
-    assert "<b>ShotML</b>" in html
-    assert "<b>Score</b>" in html
-    assert "<b>Markers</b>" in html
+    assert "Compose</button>" in html
+    assert "Metrics</button>" in html
+    assert "Review</button>" in html
+    assert "Splits</button>" in html
+    assert "ShotML</button>" in html
+    assert "Score</button>" in html
+    assert "Markers</button>" in html
     assert "⚙" in html
     for short in ["Pro", "Com", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
         assert f'data-short="{short}"' in html

@@ -11,8 +11,8 @@ def test_media_and_queue_nav_buttons_in_html():
     html = (STATIC_ROOT / "index.html").read_text()
     assert 'data-tool="media"' in html
     assert 'data-tool="queue"' in html
-    assert "<b>Media</b>" in html
-    assert "<b>Queue</b>" in html
+    assert "Media</button>" in html
+    assert "Queue</button>" in html
 
 
 def test_media_and_queue_pane_containers_in_html():
