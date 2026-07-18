@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
-import json
 from pathlib import Path
+
+from splitshot.analysis.auto_labeling import load_manifest as load_review_manifest
 
 
 STATUS_BASE_SCORES = {
@@ -92,12 +93,6 @@ class ReviewQueueSummary:
         }
 
 
-def load_review_manifest(manifest_path: str | Path) -> dict[str, object]:
-    path = Path(manifest_path).expanduser().resolve()
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Manifest must contain a JSON object: {path}")
-    return payload
 
 
 def _safe_int(value: object, default: int = 0) -> int:

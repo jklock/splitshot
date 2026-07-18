@@ -995,33 +995,6 @@ class Project:
                 return stage
         return self.stages[0] if self.stages else None
 
-    def _active_analysis(self) -> AnalysisState:
-        stage = self.active_stage
-        return stage.analysis if stage else self.analysis
-
-    def _active_scoring(self) -> ScoringState:
-        stage = self.active_stage
-        return stage.scoring if stage else self.scoring
-
-    def _active_overlay(self) -> OverlaySettings:
-        stage = self.active_stage
-        return stage.overlay if stage else self.overlay
-
-    def _active_popups(self) -> list[PopupBubble]:
-        stage = self.active_stage
-        return stage.popups if stage else self.popups
-
-    def _active_popup_template(self) -> PopupTemplate:
-        stage = self.active_stage
-        return stage.popup_template if stage else self.popup_template
-
-    def _active_merge(self) -> MergeSettings:
-        stage = self.active_stage
-        return stage.merge if stage else self.merge
-
-    def _active_export(self) -> ExportSettings:
-        stage = self.active_stage
-        return stage.export if stage else self.export
 
     def sort_shots(self) -> None:
         self.analysis.shots.sort(key=lambda shot: shot.time_ms)
@@ -1377,12 +1350,13 @@ def _parse_enum(enum_type: type[StrEnum], value: str | None, default: StrEnum) -
     return enum_type(value)
 
 
-def _badge_style_from_dict(data: dict[str, Any] | None) -> BadgeStyle:
+def _badge_style_from_dict(data: dict[str, Any] | None, fallback: BadgeStyle | None = None) -> BadgeStyle:
+    default = fallback or BadgeStyle()
     payload = data or {}
     return BadgeStyle(
-        background_color=payload.get("background_color", BadgeStyle().background_color),
-        text_color=payload.get("text_color", BadgeStyle().text_color),
-        opacity=float(payload.get("opacity", BadgeStyle().opacity)),
+        background_color=str(payload.get("background_color", default.background_color) or default.background_color),
+        text_color=str(payload.get("text_color", default.text_color) or default.text_color),
+        opacity=max(0.0, min(1.0, float(payload.get("opacity", default.opacity)))),
     )
 
 

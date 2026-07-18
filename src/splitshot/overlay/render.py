@@ -34,6 +34,7 @@ from splitshot.scoring.logic import (
     calculate_scoring_summary,
     current_shot_index,
     format_imported_stage_overlay_text,
+    penalty_field_short_label,
     shot_display_time_ms,
 )
 from splitshot.timeline.model import compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
@@ -65,19 +66,6 @@ _FONT_SIZE = {
 _BADGE_PADDING_X_PX = 10
 _BADGE_PADDING_Y_PX = 5
 _FIRST_SCORE_TOKEN_GAP = "  "
-
-_PENALTY_LABELS = {
-    "procedural_errors": "PE",
-    "manual_no_shoots": "NS",
-    "manual_misses": "M",
-    "non_threats": "NT",
-    "flagrant_penalties": "FP",
-    "failures_to_do_right": "FTDR",
-    "finger_pe": "FPE",
-    "steel_misses": "PM",
-    "stop_plate_failures": "SPF",
-    "steel_not_down": "SND",
-}
 
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
@@ -217,7 +205,7 @@ def _shot_score_badge_content(
         numeric = max(0.0, float(value))
         if numeric <= 0:
             continue
-        label = _PENALTY_LABELS.get(field_id, field_id.replace("_", " "))
+        label = penalty_field_short_label(field_id, field_id.replace("_", " "))
         count_text = f" x{_format_penalty_count(numeric)}"
         plain_text = f"{plain_text} {label}{count_text}"
         text_parts.extend(
@@ -251,7 +239,7 @@ def _format_penalty_counts(penalty_counts: dict[str, float]) -> str:
         numeric = float(value)
         if numeric <= 0:
             continue
-        label = _PENALTY_LABELS.get(field_id, field_id.replace("_", " "))
+        label = penalty_field_short_label(field_id, field_id.replace("_", " "))
         parts.append(f"{label} x{_format_penalty_count(numeric)}")
     return ", ".join(parts)
 

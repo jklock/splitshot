@@ -20,6 +20,8 @@ from splitshot.domain.models import (
     PipSize,
     PopupTemplate,
     ShotMLSettings,
+    _badge_style_from_dict,
+    _popup_template_from_dict,
 )
 
 APP_DIR = Path.home() / ".splitshot"
@@ -59,26 +61,7 @@ def _normalize_popup_motion_mode(value: object, *, follow_motion: bool = False) 
     return "manual" if follow_motion else "fixed"
 
 
-def _popup_template_from_dict(data: object) -> PopupTemplate:
-    payload = data if isinstance(data, dict) else {}
-    follow_motion = bool(payload.get("follow_motion", False))
-    return PopupTemplate(
-        enabled=bool(payload.get("enabled", True)),
-        content_type=str(payload.get("content_type", "text") or "text"),
-        text_source=str(payload.get("text_source", "score") or "score"),
-        duration_ms=max(1, int(payload.get("duration_ms", 1000) or 1000)),
-        use_shot_split_duration=bool(payload.get("use_shot_split_duration", False)),
-        quadrant=str(payload.get("quadrant", "middle_middle") or "middle_middle"),
-        width=max(0, int(payload.get("width", 0) or 0)),
-        height=max(0, int(payload.get("height", 0) or 0)),
-        motion_mode=_normalize_popup_motion_mode(
-            payload.get("motion_mode"), follow_motion=follow_motion
-        ),
-        follow_motion=follow_motion,
-        background_color=str(payload.get("background_color", "#000000") or "#000000"),
-        text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
-        opacity=max(0.0, min(1.0, _float_or_default(payload.get("opacity"), 0.9))),
-    )
+# (imported from splitshot.domain.models)
 
 
 def _serialize_badge_style(style: BadgeStyle) -> dict[str, object]:
@@ -89,16 +72,7 @@ def _serialize_badge_style(style: BadgeStyle) -> dict[str, object]:
     }
 
 
-def _badge_style_from_dict(data: object, fallback: BadgeStyle | None = None) -> BadgeStyle:
-    default = fallback or BadgeStyle()
-    payload = data if isinstance(data, dict) else {}
-    return BadgeStyle(
-        background_color=str(
-            payload.get("background_color", default.background_color) or default.background_color
-        ),
-        text_color=str(payload.get("text_color", default.text_color) or default.text_color),
-        opacity=max(0.0, min(1.0, _float_or_default(payload.get("opacity"), default.opacity))),
-    )
+# (imported from splitshot.domain.models)
 
 
 def _review_text_boxes_from_dict(data: object) -> list[dict[str, object]]:

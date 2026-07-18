@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 
 import numpy as np
 
 from splitshot.analysis.audio_features import extract_window_features
+from splitshot.analysis.auto_labeling import load_manifest
 from splitshot.analysis.corpus import _load_aligned_audio
 from splitshot.analysis.model_bundle import WINDOW_SIZE
 
@@ -89,12 +89,6 @@ class DatasetSummary:
         }
 
 
-def load_manifest(manifest_path: str | Path) -> dict[str, object]:
-    path = Path(manifest_path).expanduser().resolve()
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Manifest must contain a JSON object: {path}")
-    return payload
 
 
 def _extract_window(samples: np.ndarray, sample_rate: int, center_ms: int) -> np.ndarray:
