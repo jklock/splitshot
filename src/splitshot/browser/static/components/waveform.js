@@ -25,6 +25,7 @@ export function createWaveformComponent({
   releasePointer = () => {},
   withPreservedScrollState = (_targets, render) => render(),
   seconds = (value) => String(value),
+  formatTimelineTime = (timeMs) => `${(timeMs / 1000).toFixed(3)}s`,
   formatConfidenceValue = (value) => String(value),
   isLowConfidence = () => false,
   activity = () => {},
@@ -202,7 +203,7 @@ export function createWaveformComponent({
       ctx.stroke();
       drawOutlinedText(
         ctx,
-        `${(timeMs / 1000).toFixed(3)}s`,
+        formatTimelineTime(timeMs),
         x + 4,
         height - 17,
         "rgba(226, 232, 240, 0.88)",
@@ -364,8 +365,8 @@ export function createWaveformComponent({
     handle.classList.toggle("interactive", canPan);
     handle.style.width = `${metrics.handleWidth}px`;
     handle.style.transform = `translateX(${metrics.left}px)`;
-    const startLabel = `${(metrics.visible.start / 1000).toFixed(2)}s`;
-    const endLabel = `${(metrics.visible.end / 1000).toFixed(2)}s`;
+    const startLabel = formatTimelineTime(metrics.visible.start);
+    const endLabel = formatTimelineTime(metrics.visible.end);
     track.title = canPan
       ? `Drag to pan the zoomed waveform window (${startLabel} to ${endLabel}).`
       : `Zoom in to pan the waveform window (${startLabel} to ${endLabel}).`;
@@ -378,7 +379,7 @@ export function createWaveformComponent({
     const waveform = currentState()?.project?.analysis?.waveform_primary || [];
     const totalMs = durationMs();
     const totalLabel = $("waveform-total-time");
-    if (totalLabel) totalLabel.textContent = `${(totalMs / 1000).toFixed(2)}s`;
+    if (totalLabel) totalLabel.textContent = formatTimelineTime(totalMs);
     const mergeSources = currentState()?.project?.merge_sources || [];
     const secondaryLanePayloads = (currentState()?.project?.analysis?.secondary_sources || [])
       .filter((entry) => entry && Array.isArray(entry.waveform) && entry.waveform.length > 0)

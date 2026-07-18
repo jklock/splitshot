@@ -530,6 +530,30 @@ def _source_supports_secondary_analysis(source: MergeSource | None) -> bool:
     return bool(asset.path) and not asset.is_still_image and asset.media_kind != "animated_gif"
 
 
+def _format_trim_boundary(value: float | None) -> str:
+    return "--.--" if value is None else f"{float(value):.2f}"
+
+
+def _normalized_trim_window(
+    asset: VideoAsset, start_s: float | None, end_s: float | None
+) -> tuple[float | None, float | None]:
+    normalized_start = None if start_s is None else max(0.0, float(start_s))
+    normalized_end = None if end_s is None else max(0.0, float(end_s))
+    duration_s = float(asset.duration_ms or 0) / 1000
+    if duration_s > 0:
+        if normalized_start is not None:
+            normalized_start = min(normalized_start, duration_s)
+        if normalized_end is not None:
+            normalized_end = min(normalized_end, duration_s)
+    if (
+        normalized_start is not None
+        and normalized_end is not None
+        and normalized_start >= normalized_end
+    ):
+        raise ValueError("Trim start must be earlier than trim end")
+    return normalized_start, normalized_end
+
+
 def _merge_source_trim_derivative_is_active(source: MergeSource | None) -> bool:
     trim_derivative = getattr(source, "trim_derivative", None)
     return bool(
@@ -3091,28 +3115,29 @@ class ProjectController(QObject):
                 original_path=self.project.primary_video.path,
             )
             return
+        if (
+            self.project.primary_video.is_still_image
+            or self.project.primary_video.media_kind == "animated_gif"
+        ):
+            raise ValueError("Still images and animated images cannot be trimmed")
         if start_s is None and end_s is None:
             return
+        start_s, end_s = _normalized_trim_window(self.project.primary_video, start_s, end_s)
         source_path = self.project.primary_video.path
         if not source_path:
             raise ValueError("Primary video has no asset path")
-        if start_s is not None and end_s is not None and start_s >= end_s:
-            raise ValueError("start_s must be less than end_s")
         source_file = Path(source_path)
         derivative_dir = self._trimmed_media_dir()
         derivative_path = (
-            str(derivative_dir / f"primary_trim{source_file.suffix or '.mp4'}")
+            str(derivative_dir / f"primary_trim_{uuid4().hex}.mp4")
             if derivative_dir is not None
-            else str(
-                source_file.with_name(
-                    f"{source_file.stem}_primary_trim{source_file.suffix or '.mp4'}"
-                )
-            )
+            else str(source_file.with_name(f"{source_file.stem}_primary_trim_{uuid4().hex}.mp4"))
         )
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
             derivative_asset = probe_video(derivative_path)
         except Exception as exc:
+            Path(derivative_path).unlink(missing_ok=True)
             raise ValueError(f"Trim failed for {source_path} -> {derivative_path}: {exc}") from exc
         self.project.primary_trim_derivative = MergeSourceTrimDerivative(
             original_path=source_path,
@@ -3134,28 +3159,28 @@ class ProjectController(QObject):
         if clear:
             source.trim_derivative = MergeSourceTrimDerivative(original_path=source.asset.path)
             return
+        if not _source_supports_secondary_analysis(source):
+            raise ValueError("Still images and animated images cannot be trimmed")
         if start_s is None and end_s is None:
             return
+        start_s, end_s = _normalized_trim_window(source.asset, start_s, end_s)
         source_path = source.asset.path
         if not source_path:
             raise ValueError("Merge source has no asset path")
-        if start_s is not None and end_s is not None and start_s >= end_s:
-            raise ValueError("start_s must be less than end_s")
         source_file = Path(source_path)
         derivative_dir = self._trimmed_media_dir()
         derivative_path = (
-            str(derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}")
+            str(derivative_dir / f"{source.id}_trim_{uuid4().hex}.mp4")
             if derivative_dir is not None
             else str(
-                source_file.with_name(
-                    f"{source_file.stem}_{source.id}_trim{source_file.suffix or '.mp4'}"
-                )
+                source_file.with_name(f"{source_file.stem}_{source.id}_trim_{uuid4().hex}.mp4")
             )
         )
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
             derivative_asset = probe_video(derivative_path)
         except Exception as exc:
+            Path(derivative_path).unlink(missing_ok=True)
             raise ValueError(f"Trim failed for {source_path} -> {derivative_path}: {exc}") from exc
         source.trim_derivative = MergeSourceTrimDerivative(
             original_path=source_path,
@@ -3175,16 +3200,25 @@ class ProjectController(QObject):
     ) -> tuple[float | None, float | None]:
         start_s = None
         end_s = None
+        primary_timeline_offset_ms = int(
+            round(float(self.project.primary_trim_derivative.start_s or 0.0) * 1000)
+        )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
             start_s = max(
                 0.0,
-                ((int(primary_beep_ms) + int(source.sync_offset_ms)) / 1000) - keep_before_beep_s,
+                (
+                    (int(primary_beep_ms) + primary_timeline_offset_ms + int(source.sync_offset_ms))
+                    / 1000
+                )
+                - keep_before_beep_s,
             )
         shots = self.project.analysis.shots or []
         if shots and keep_after_last_shot_s is not None:
             last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
-            end_s = ((last_shot_ms + int(source.sync_offset_ms)) / 1000) + keep_after_last_shot_s
+            end_s = (
+                (last_shot_ms + primary_timeline_offset_ms + int(source.sync_offset_ms)) / 1000
+            ) + keep_after_last_shot_s
             duration_ms = int(source.asset.duration_ms or 0)
             if duration_ms > 0:
                 end_s = min(end_s, duration_ms / 1000)
@@ -3198,14 +3232,20 @@ class ProjectController(QObject):
     ) -> tuple[float | None, float | None]:
         start_s = None
         end_s = None
+        primary_timeline_offset_ms = int(
+            round(float(self.project.primary_trim_derivative.start_s or 0.0) * 1000)
+        )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
-            start_s = max(0.0, (int(primary_beep_ms) / 1000) - keep_before_beep_s)
+            start_s = max(
+                0.0,
+                ((int(primary_beep_ms) + primary_timeline_offset_ms) / 1000) - keep_before_beep_s,
+            )
         shots = self.project.analysis.shots or []
         if shots and keep_after_last_shot_s is not None:
             last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
-            end_s = (last_shot_ms / 1000) + keep_after_last_shot_s
-            duration_ms = int(_effective_primary_asset(self.project).duration_ms or 0)
+            end_s = ((last_shot_ms + primary_timeline_offset_ms) / 1000) + keep_after_last_shot_s
+            duration_ms = int(self.project.primary_video.duration_ms or 0)
             if duration_ms > 0:
                 end_s = min(end_s, duration_ms / 1000)
         return start_s, end_s
@@ -3227,7 +3267,7 @@ class ProjectController(QObject):
         self._set_status(
             "Cleared trim."
             if clear
-            else f"Trimmed {source.asset.path} (start={start_s}, end={end_s})."
+            else f"Trimmed {source.asset.path} (start={_format_trim_boundary(start_s)}s, end={_format_trim_boundary(end_s)}s)."
         )
         if _source_supports_secondary_analysis(source):
             self.analyze_secondary(source_id)
@@ -3259,7 +3299,7 @@ class ProjectController(QObject):
         self._set_status(
             "Cleared primary trim."
             if clear
-            else f"Trimmed {self.project.primary_video.path} (start={start_s}, end={end_s})."
+            else f"Trimmed {self.project.primary_video.path} (start={_format_trim_boundary(start_s)}s, end={_format_trim_boundary(end_s)}s)."
         )
         self.project.touch()
         self.project_changed.emit()
@@ -3289,13 +3329,20 @@ class ProjectController(QObject):
                 keep_before_beep_s=keep_before_beep_s,
                 keep_after_last_shot_s=keep_after_last_shot_s,
             )
-        if self.project.primary_video.path:
+        primary_is_trimmable = bool(
+            self.project.primary_video.path
+            and not self.project.primary_video.is_still_image
+            and self.project.primary_video.media_kind != "animated_gif"
+        )
+        if primary_is_trimmable:
             self._apply_primary_trim(
                 start_s=primary_start_s,
                 end_s=primary_end_s,
                 clear=clear,
             )
         for source in self.project.merge_sources:
+            if not _source_supports_secondary_analysis(source) and not clear:
+                continue
             next_start_s = start_s
             next_end_s = end_s
             if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):

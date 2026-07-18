@@ -1,4 +1,4 @@
-import { buildCompetitionComparison } from "../lib/competition-comparison.js";
+import { buildFinalStandingsComparison } from "../lib/competition-comparison.js";
 
 export function createReviewPane({
   $ = (id) => document.getElementById(id),
@@ -44,6 +44,15 @@ export function createReviewPane({
   scheduleSecondaryPreviewSync = () => {},
   restoreVideoElementFrame = () => {},
 } = {}) {
+  const DEFAULT_SUMMARY_METRIC_IDS = Object.freeze([
+    "score_time",
+    "raw_time",
+    "points_down",
+    "penalties",
+    "division_placement",
+    "class_placement",
+    "division_class_placement",
+  ]);
   function currentState() {
     return getState() || {};
   }
@@ -90,7 +99,7 @@ export function createReviewPane({
     const comparisonData = Array.isArray(currentState()?.practiscore_options?.comparison_competitors)
       ? currentState().practiscore_options.comparison_competitors
       : [];
-    const comparison = buildCompetitionComparison({
+    const comparison = buildFinalStandingsComparison({
       scoring: currentState()?.project?.scoring || summary || {},
       importedStage: imported || summary?.imported_stage || {},
       competitors: comparisonData,
@@ -121,7 +130,8 @@ export function createReviewPane({
     if (availableIds.length === 0) return [];
     const requested = normalizedSummaryMetricIds(box?.summary_metric_ids);
     const filtered = requested.filter((metricId) => availableIds.includes(metricId));
-    return filtered.length > 0 ? filtered : availableIds;
+    if (Array.isArray(box?.summary_metric_ids) && box.summary_metric_ids.length > 0) return filtered;
+    return DEFAULT_SUMMARY_METRIC_IDS.filter((metricId) => availableIds.includes(metricId));
   }
 
   function summaryTextForBox(box, summary, imported) {
@@ -304,7 +314,7 @@ export function createReviewPane({
       opacity: 0.9,
       width: 0,
       height: 0,
-      summary_metric_ids: source === "imported_summary" ? [] : [],
+      summary_metric_ids: source === "imported_summary" ? [...DEFAULT_SUMMARY_METRIC_IDS] : [],
     });
   }
 
@@ -738,8 +748,7 @@ export function createReviewPane({
         return summary.total_penalties !== null && summary.total_penalties !== undefined
           ? String(summary.total_penalties) : "";
       case "overall_placement":
-        return imported.competitor_place !== null && imported.competitor_place !== undefined
-          ? formatPlacement(imported.competitor_place, groups.overall.items.length) : "";
+        return formatPlacement(groups.overall.place, groups.overall.items.length);
       case "division_placement":
         return formatPlacement(groups.division.place, groups.division.items.length);
       case "class_placement":
@@ -769,7 +778,7 @@ export function createReviewPane({
         ? imported.score_counts?.["Points Down"] !== null && imported.score_counts?.["Points Down"] !== undefined
         : summary.shot_penalties !== null && summary.shot_penalties !== undefined;
       case "penalties": return summary.total_penalties !== null && summary.total_penalties !== undefined;
-      case "overall_placement": return imported.competitor_place !== null && imported.competitor_place !== undefined;
+      case "overall_placement": return groups.overall.place !== null;
       case "division_placement": return groups.division.place !== null;
       case "class_placement": return groups.class.place !== null;
       case "division_class_placement": return groups.divisionClass.place !== null;

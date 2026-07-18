@@ -316,12 +316,21 @@ def test_review_metric_value_wires_placement_dimensions():
 def test_review_passes_denominator_to_all_placement_fields():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     within = source[source.index("reviewMetricValue") :]
-    assert "formatPlacement(imported.competitor_place, groups.overall.items.length)" in within
+    assert "formatPlacement(groups.overall.place, groups.overall.items.length)" in within
     assert "formatPlacement(groups.division.place, groups.division.items.length)" in within
     assert "formatPlacement(groups.class.place, groups.class.items.length)" in within
     assert (
         "formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length)" in within
     )
+
+
+def test_review_uses_final_standings_and_does_not_default_overall():
+    source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
+    assert "buildFinalStandingsComparison" in source
+    assert "DEFAULT_SUMMARY_METRIC_IDS" in source
+    default_block = source[source.index("DEFAULT_SUMMARY_METRIC_IDS") : source.index("DEFAULT_SUMMARY_METRIC_IDS") + 300]
+    assert '"overall_placement"' not in default_block
+    assert "buildCompetitionComparison" not in source
 
 
 def test_queue_uses_compact_stage_cards():

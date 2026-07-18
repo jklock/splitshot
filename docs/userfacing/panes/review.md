@@ -54,14 +54,10 @@ Available metrics render in this fixed order:
 6. `Division Placement`
 7. `Class Placement`
 8. `Division + Class Placement`
-9. `Overall Percent`
-10. `Division Percent`
-11. `Class Percent`
-12. `Division + Class Percent`
-13. `Overall Gap`
-14. `Division Gap`
-15. `Class Gap`
-16. `Division + Class Gap`
+
+Placement values use the imported final match standings. The numerator and denominator always come from the same valid standings field; rows without a positive final match place are excluded. Division, class, and division-plus-class are separate cohorts.
+
+`Overall Placement` is not selected in a new Summary box. Select it explicitly when wanted. Percent and Gap metrics remain disabled and do not render.
 
 Unchecked metrics do not render. Metrics that are unavailable from the imported data stay hidden or blank.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.activity_tracker import assert_status
@@ -44,6 +45,76 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
         server.shutdown()
 
 
+def test_bulk_trim_duration_matches_displayed_original_boundaries(
+    synthetic_video_factory,
+) -> None:
+    server, _, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={
+            "name": "trim-wysiwyg-primary",
+            "duration_ms": 10_000,
+            "beep_ms": 3_000,
+            "shot_times_ms": [4_000, 5_500, 7_000],
+        },
+        merge_kwargs={
+            "name": "trim-wysiwyg-merge",
+            "duration_ms": 10_000,
+            "beep_ms": 3_200,
+            "shot_times_ms": [4_200, 5_700, 7_200],
+        },
+    )
+    try:
+        with sync_playwright() as playwright:
+            browser, page = open_page(playwright, server)
+            try:
+                ensure_project_with_primary_and_merge(
+                    page, primary_path, merge_path, "trim-wysiwyg.ssproj"
+                )
+                navigate_to_tool(page, "trim-sync")
+                page.fill("#trim-global-start", "2.00")
+                page.fill("#trim-global-end", "2.00")
+                page.screenshot(path="artifacts/trim-visual-original.png", full_page=True)
+                page.click("#trim-global-apply")
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)",
+                    timeout=120_000,
+                )
+
+                first = get_primary_media_state(page)
+                expected_duration_ms = round((first["end_s"] - first["start_s"]) * 1000)
+                assert first["active_duration_ms"] == pytest.approx(expected_duration_ms, abs=40)
+                assert page.locator("#trim-global-start").input_value() == "2.00"
+                assert page.locator("#trim-global-end").input_value() == "2.00"
+                assert page.locator("#trim-video-time").inner_text().endswith(
+                    f"/ {first['active_duration_ms'] / 1000:.2f}s"
+                )
+                page.screenshot(path="artifacts/trim-visual-applied.png", full_page=True)
+
+                page.click("#trim-global-apply")
+                page.wait_for_function(
+                    "(path) => state?.project?.primary_trim_derivative?.derivative_path !== path",
+                    arg=first["derivative_path"],
+                    timeout=120_000,
+                )
+                repeated = get_primary_media_state(page)
+                assert repeated["start_s"] == pytest.approx(first["start_s"], abs=0.08)
+                assert repeated["end_s"] == pytest.approx(first["end_s"], abs=0.08)
+                assert repeated["active_duration_ms"] == pytest.approx(
+                    round((repeated["end_s"] - repeated["start_s"]) * 1000), abs=40
+                )
+                page.screenshot(path="artifacts/trim-visual-reapplied.png", full_page=True)
+                page.click("#trim-global-clear")
+                page.wait_for_function(
+                    "() => !state?.project?.primary_trim_derivative?.derivative_path",
+                    timeout=120_000,
+                )
+                page.screenshot(path="artifacts/trim-visual-cleared.png", full_page=True)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
     server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
@@ -57,9 +128,15 @@ def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
                 page.fill("#trim-global-start", "0.5")
                 page.fill("#trim-global-end", "3.0")
                 page.click("#trim-global-apply")
-                page.wait_for_timeout(500)
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)",
+                    timeout=120_000,
+                )
                 page.click("#trim-global-clear")
-                page.wait_for_timeout(500)
+                page.wait_for_function(
+                    "() => !state?.project?.primary_trim_derivative?.derivative_path",
+                    timeout=120_000,
+                )
                 tracker.assert_activity("trim.clear-all")
                 try:
                     assert_status(page, "Cleared all trims")
@@ -109,7 +186,11 @@ def test_per_source_apply_creates_derivative_file(synthetic_video_factory) -> No
                         }""",
                         source_id,
                     )
-                page.wait_for_timeout(1000)
+                page.wait_for_function(
+                    "(sid) => Boolean((state?.project?.merge_sources || []).find((source) => source.id === sid)?.trim_derivative?.derivative_path)",
+                    arg=source_id,
+                    timeout=120_000,
+                )
 
                 tracker.assert_activity("trim.apply")
                 try:
@@ -118,7 +199,10 @@ def test_per_source_apply_creates_derivative_file(synthetic_video_factory) -> No
                     try:
                         assert_status(page, "analysis")
                     except AssertionError:
-                        assert_status(page, "Trimming source")
+                        try:
+                            assert_status(page, "Trimming source")
+                        except AssertionError:
+                            assert_status(page, "Trimmed source")
 
                 state = get_merge_source_state(page, source_id)
                 assert state, "Merge source not found"

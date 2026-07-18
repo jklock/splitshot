@@ -857,7 +857,7 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                         return checkboxes.length > 0
                             && preview.includes('Score / Time')
                             && preview.includes('Points Down')
-                            && preview.includes('Overall Placement');
+                            && !preview.includes('Overall Placement');
                     }"""
                 )
                 review_card = page.locator("#review-text-box-list .text-box-card").last
@@ -865,6 +865,17 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                 preview_text = review_card.locator("[data-text-box-preview]").input_value()
                 assert "Score / Time" in preview_text
                 assert "Points Down" in preview_text
+                overall_checkbox = review_card.locator(
+                    'input[data-summary-metric="overall_placement"]'
+                )
+                assert overall_checkbox.is_checked() is False
+                page.screenshot(path="artifacts/review-visual-default.png", full_page=True)
+                overall_checkbox.check()
+                page.wait_for_function(
+                    """() => document.querySelector('#review-text-box-list .text-box-card:last-child [data-text-box-preview]')?.value.includes('Overall Placement')"""
+                )
+                preview_text = review_card.locator("[data-text-box-preview]").input_value()
+                page.screenshot(path="artifacts/review-visual-overall-selected.png", full_page=True)
                 assert "Overall Placement 1/26" in preview_text
                 assert "Division Placement 1/4" in preview_text
                 assert "Class Placement 1/4" in preview_text

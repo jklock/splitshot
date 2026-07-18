@@ -590,27 +590,24 @@ def _import_hit_factor_report(
     )
     penalty_counts = {"procedural_errors": procedural_errors} if procedural_errors else {}
     comparison_competitors = []
-    competitor_id_to_name = {
-        str(r.get("Comp", "")).strip(): _row_name(r, "FirstName", "LastName")
-        for r in competitor_rows
+    selected_stage_results = {
+        str(result.get("Comp", "")).strip(): result
+        for result in stage_results
+        if str(result.get("Stage", "")).strip() == stage_key
     }
-    for sr in stage_results:
-        if str(sr.get("Stage", "")).strip() != stage_key:
-            continue
-        sr_comp_id = str(sr.get("Comp", "")).strip()
-        sr_name = competitor_id_to_name.get(sr_comp_id)
+    for sr_row in competitor_rows:
+        sr_comp_id = str(sr_row.get("Comp", "")).strip()
+        sr_name = _row_name(sr_row, "FirstName", "LastName")
         if not sr_name or sr_name == imported_stage.competitor_name:
             continue
-        sr_row = next(
-            (r for r in competitor_rows if str(r.get("Comp", "")).strip() == sr_comp_id), None
-        )
+        sr = selected_stage_results.get(sr_comp_id, {})
         comparison_competitors.append(
             PractiScoreCompetitorOption(
                 name=sr_name,
-                place=_int_or_none(sr_row.get("Place Overall")) if sr_row else None,
-                division=str(sr_row.get("Division", "")).strip() if sr_row else "",
-                classification=str(sr_row.get("Class", "")).strip() if sr_row else "",
-                power_factor=str(sr_row.get("Power Factor", "")).strip() if sr_row else "",
+                place=_int_or_none(sr_row.get("Place Overall")),
+                division=str(sr_row.get("Division", "")).strip(),
+                classification=str(sr_row.get("Class", "")).strip(),
+                power_factor=str(sr_row.get("Power Factor", "")).strip(),
                 raw_seconds=_float_or_none(sr.get("Time")),
                 hit_factor=_float_or_none(sr.get("Hit Factor")),
                 stage_points=_float_or_none(sr.get("Stage Points")),

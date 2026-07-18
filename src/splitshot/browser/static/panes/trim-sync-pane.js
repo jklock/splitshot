@@ -19,6 +19,10 @@ export function createTrimSyncPane({
   ]);
   const trimUndoHistory = [];
   let restoringUndo = false;
+  let keepBeforeBeepS = 2;
+  let keepAfterLastShotS = 2;
+  let transportActive = false;
+  let transportVideo = null;
 
   function currentState() {
     return getState() || {};
@@ -36,10 +40,27 @@ export function createTrimSyncPane({
     return currentState()?.project?.analysis?.beep_time_ms_primary ?? null;
   }
 
+  function primaryTrimOffsetMs() {
+    const trim = currentState()?.project?.primary_trim_derivative || {};
+    return trim?.active_path_kind === "local_derivative" && trim?.derivative_path
+      ? Math.round((Number(trim.start_s) || 0) * 1000)
+      : 0;
+  }
+
+  function originalBeepTimeMs() {
+    const beep = beepTimeMs();
+    return beep === null ? null : beep + primaryTrimOffsetMs();
+  }
+
   function lastShotTimeMs() {
     const shots = currentState()?.project?.analysis?.shots || [];
     if (!shots.length) return null;
     return Math.max(...shots.map((shot) => shot.time_ms ?? 0));
+  }
+
+  function originalLastShotTimeMs() {
+    const lastShot = lastShotTimeMs();
+    return lastShot === null ? null : lastShot + primaryTrimOffsetMs();
   }
 
   function mergeSources() {
@@ -80,18 +101,58 @@ export function createTrimSyncPane({
     return Number(value).toFixed(2);
   }
 
+  function formatTime(value) {
+    const numeric = Number(value);
+    return `${(Number.isFinite(numeric) ? numeric : 0).toFixed(2)}s`;
+  }
+
+  function syncTransport() {
+    const video = $("primary-video");
+    if (!video) return;
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const stateDuration = Number(primaryVideo()?.active_duration_ms ?? primaryVideo()?.duration_ms) / 1000;
+    const displayDuration = Number.isFinite(stateDuration) && stateDuration > 0 ? stateDuration : duration;
+    const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const scrubber = $("trim-video-scrubber");
+    if (scrubber) {
+      scrubber.max = String(duration);
+      scrubber.value = String(Math.min(current, duration || current));
+    }
+    const readout = $("trim-video-time");
+    if (readout) readout.textContent = `${formatTime(current)} / ${formatTime(displayDuration)}`;
+    const toggle = $("trim-video-toggle");
+    if (toggle) toggle.textContent = video.paused ? "Play" : "Pause";
+  }
+
+  function bindTransportVideo() {
+    const video = $("primary-video");
+    if (!video || transportVideo === video) return;
+    transportVideo = video;
+    ["timeupdate", "durationchange", "loadedmetadata", "play", "pause", "ended"].forEach((eventName) => {
+      video.addEventListener(eventName, syncTransport);
+    });
+  }
+
+  function setActive(active) {
+    transportActive = Boolean(active);
+    const video = $("primary-video");
+    if (video) video.controls = !transportActive;
+    if (transportActive) bindTransportVideo();
+    syncTransport();
+  }
+
   function sourceDurationMs(source) {
-    return source?.active_duration_ms ?? source?.asset?.duration_ms ?? primaryVideo()?.active_duration_ms ?? primaryVideo()?.duration_ms ?? 0;
+    return source?.asset?.duration_ms ?? primaryVideo()?.duration_ms ?? 0;
   }
 
   function sourceBeepTimeMs(source) {
-    const primaryBeep = beepTimeMs();
+    const primaryBeep = originalBeepTimeMs();
     if (primaryBeep === null) return null;
     return primaryBeep + currentSourceSyncOffsetMs(source);
   }
 
   function sourceLastShotTimeMs(source) {
-    const primaryLastShot = lastShotTimeMs();
+    const primaryLastShot = originalLastShotTimeMs();
     if (primaryLastShot === null) return null;
     return primaryLastShot + currentSourceSyncOffsetMs(source);
   }
@@ -100,7 +161,7 @@ export function createTrimSyncPane({
     const td = source?.trim_derivative;
     if (td?.start_s !== null && td?.start_s !== undefined) return td.start_s;
     const beep = sourceBeepTimeMs(source);
-    if (beep !== null) return (beep / 1000) - 2;
+    if (beep !== null) return Math.max(0, (beep / 1000) - 2);
     return 0;
   }
 
@@ -109,7 +170,10 @@ export function createTrimSyncPane({
     if (td?.end_s !== null && td?.end_s !== undefined) return td.end_s;
     const lastShot = sourceLastShotTimeMs(source);
     const durMs = sourceDurationMs(source);
-    if (lastShot !== null) return (lastShot / 1000) + 2;
+    if (lastShot !== null) {
+      const bufferedEnd = (lastShot / 1000) + 2;
+      return durMs ? Math.min(bufferedEnd, durMs / 1000) : bufferedEnd;
+    }
     return durMs ? (durMs / 1000) : 0;
   }
 
@@ -120,8 +184,12 @@ export function createTrimSyncPane({
     const end = sourceTrimEndS(source);
     const before = Math.max(0, start);
     const after = Math.max(0, durS - end);
-    const kept = Math.max(0, end - start);
-    return `Before trim: ${formatSeconds(before)}s  |  After trim: ${formatSeconds(after)}s  |  Kept: ${formatSeconds(kept)}s  |  Total: ${formatSeconds(durS)}s`;
+    const trimActive = source?.trim_derivative?.active_path_kind === "local_derivative"
+      && source?.trim_derivative?.derivative_path;
+    const kept = trimActive && Number(source?.active_duration_ms) > 0
+      ? Number(source.active_duration_ms) / 1000
+      : Math.max(0, end - start);
+    return `Removed from start: ${formatSeconds(before)}s  |  Removed from end: ${formatSeconds(after)}s  |  Retained duration: ${formatSeconds(kept)}s  |  Original duration: ${formatSeconds(durS)}s`;
   }
 
   function sourceSyncStatusLabel(source = null) {
@@ -196,6 +264,10 @@ export function createTrimSyncPane({
       }
       if ($("trim-global-start")) $("trim-global-start").value = snapshot.global_start || "";
       if ($("trim-global-end")) $("trim-global-end").value = snapshot.global_end || "";
+      const restoredBefore = parseFloat(snapshot.global_start || "");
+      const restoredAfter = parseFloat(snapshot.global_end || "");
+      if (Number.isFinite(restoredBefore) && restoredBefore >= 0) keepBeforeBeepS = restoredBefore;
+      if (Number.isFinite(restoredAfter) && restoredAfter >= 0) keepAfterLastShotS = restoredAfter;
       refreshTrimPreview();
       setStatus("Restored trim changes.");
     } finally {
@@ -220,6 +292,8 @@ export function createTrimSyncPane({
     const endInput = $("trim-global-end");
     const startValue = parseFloat(startInput?.value || "");
     const endValue = parseFloat(endInput?.value || "");
+    if (!clear && Number.isFinite(startValue) && startValue >= 0) keepBeforeBeepS = startValue;
+    if (!clear && Number.isFinite(endValue) && endValue >= 0) keepAfterLastShotS = endValue;
     if (recordUndo) queueUndoSnapshot("bulk");
     activity(clear ? "trim.clear-all" : "trim.apply-all", {
       keep_before_beep_s: startValue,
@@ -288,13 +362,13 @@ export function createTrimSyncPane({
   }
 
   function applyGlobalDefaults() {
-    const primaryBeep = beepTimeMs();
-    const primaryLastShot = lastShotTimeMs();
     const startInput = $("trim-global-start");
     const endInput = $("trim-global-end");
-    if (primaryBeep !== null && startInput) startInput.value = Math.max(0, (primaryBeep / 1000) - 2).toFixed(2);
-    if (primaryLastShot !== null && endInput) endInput.value = (primaryLastShot / 1000) + 2;
-    activity("trim.global-defaults", { beep_ms: primaryBeep, last_shot_ms: primaryLastShot });
+    if (startInput) startInput.value = "2.00";
+    if (endInput) endInput.value = "2.00";
+    keepBeforeBeepS = 2;
+    keepAfterLastShotS = 2;
+    activity("trim.global-defaults", { keep_before_beep_s: 2, keep_after_last_shot_s: 2 });
     setStatus("Reset trim defaults to 2-second buffers.");
   }
 
@@ -303,6 +377,7 @@ export function createTrimSyncPane({
     const sourceId = sourceIdentifier(source, String(index));
     const trimDerivative = source.trim_derivative;
     const trimActive = trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path;
+    const isTrimmable = !asset.is_still_image && asset.media_kind !== "animated_gif";
     const activePath = source?.effective_media_path || trimDerivative?.derivative_path || asset.path || "";
     const activeDisplayName = source?.active_display_name || fileName(activePath || asset.path || "");
     const originalDisplayName = source?.original_display_name || fileName(asset.path || "");
@@ -322,25 +397,25 @@ export function createTrimSyncPane({
             <span class="trim-active-path-badge">${trimActive ? "Trimmed media active" : "Original media active"}</span>
             <small class="trim-active-path-value">${fileName(activePath)}</small>
           </div>
-          <small class="trim-computed-label">${computedTrimLabel(source)}</small>
+          <small class="trim-computed-label">${isTrimmable ? computedTrimLabel(source) : "Still image • Trim not applicable"}</small>
           <div class="trim-card-row">
             <label class="merge-source-field">
-              <span>Start (s)</span>
-              <input type="number" min="0" step="0.01" value="${formatSeconds(startS)}" data-trim-start="${sourceId}" />
+              <span>Start on original (s)</span>
+              <input type="number" min="0" step="0.01" value="${formatSeconds(startS)}" data-trim-start="${sourceId}" ${isTrimmable ? "" : "disabled"} />
             </label>
             <label class="merge-source-field">
-              <span>End (s)</span>
-              <input type="number" min="0" step="0.01" value="${formatSeconds(endS)}" data-trim-end="${sourceId}" />
+              <span>End on original (s)</span>
+              <input type="number" min="0" step="0.01" value="${formatSeconds(endS)}" data-trim-end="${sourceId}" ${isTrimmable ? "" : "disabled"} />
             </label>
             <div class="trim-card-actions">
-              <button type="button" class="btn-sm btn-primary trim-apply-btn" data-source-id="${sourceId}">Apply</button>
+              <button type="button" class="btn-sm btn-primary trim-apply-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Apply</button>
               <button type="button" class="btn-sm btn-secondary trim-clear-btn" data-source-id="${sourceId}">Clear</button>
               <button type="button" class="btn-sm btn-secondary trim-undo-btn" data-source-id="${sourceId}">Undo</button>
             </div>
           </div>
           <div class="trim-card-row trim-card-row-quick">
-            <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}">Start at Beep</button>
-            <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}">End after Last Shot</button>
+            <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Trim Start to Beep</button>
+            <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Trim End to Last Shot</button>
           </div>
           ${source.is_primary_source ? "" : `<div class="trim-card-row trim-card-row-sync">
             <label class="merge-source-field trim-sync-offset-field">
@@ -379,6 +454,19 @@ export function createTrimSyncPane({
   }
 
   function bindEvents() {
+    $("trim-video-toggle")?.addEventListener("click", async () => {
+      const video = $("primary-video");
+      if (!video) return;
+      if (video.paused) await video.play();
+      else video.pause();
+      syncTransport();
+    });
+    $("trim-video-scrubber")?.addEventListener("input", (event) => {
+      const video = $("primary-video");
+      if (!video) return;
+      video.currentTime = Number(event.currentTarget.value) || 0;
+      syncTransport();
+    });
     documentObject.querySelectorAll("[data-trim-toggle]").forEach((button) => {
       button.addEventListener("click", () => {
         const sectionId = button.dataset.trimToggle || "";
@@ -454,8 +542,8 @@ export function createTrimSyncPane({
     if (!pane) return;
     const sources = stageSources();
     const existingList = $("trim-sync-list");
-    const primaryBeep = beepTimeMs();
-    const primaryLastShot = lastShotTimeMs();
+    const primaryBeep = originalBeepTimeMs();
+    const primaryLastShot = originalLastShotTimeMs();
     const primaryDurMs = primaryVideo()?.duration_ms ?? 0;
     const beepS = primaryBeep !== null ? (primaryBeep / 1000).toFixed(2) : "--.--";
     const lastShotS = primaryLastShot !== null ? (primaryLastShot / 1000).toFixed(2) : "--.--";
@@ -475,14 +563,19 @@ export function createTrimSyncPane({
                 <span>Last Shot: ${lastShotS}s</span>
                 <span>Total: ${durS}s</span>
               </div>
+              <div class="trim-transport" aria-label="Trim video transport">
+                <button id="trim-video-toggle" type="button" class="btn-sm btn-secondary">Play</button>
+                <input id="trim-video-scrubber" type="range" min="0" max="0" step="0.01" value="0" aria-label="Trim video position" />
+                <output id="trim-video-time">0.00s / 0.00s</output>
+              </div>
               <div class="trim-global-row">
               <label class="merge-source-field">
                 <span>Keep before beep (s)</span>
-                <input id="trim-global-start" type="number" min="0" step="0.01" value="2.00" placeholder="2.00" />
+                <input id="trim-global-start" type="number" min="0" step="0.01" value="${formatSeconds(keepBeforeBeepS)}" placeholder="2.00" />
               </label>
               <label class="merge-source-field">
                 <span>Keep after last shot (s)</span>
-                <input id="trim-global-end" type="number" min="0" step="0.01" value="2.00" placeholder="2.00" />
+                <input id="trim-global-end" type="number" min="0" step="0.01" value="${formatSeconds(keepAfterLastShotS)}" placeholder="2.00" />
               </label>
               <div class="trim-global-actions">
                 <button id="trim-global-defaults-btn" type="button" class="btn-sm btn-secondary">Reset to 2/2</button>
@@ -503,10 +596,12 @@ export function createTrimSyncPane({
       `;
     });
     bindEvents();
+    setActive(transportActive);
   }
 
   return Object.freeze({
     renderTrimSyncList,
     trimAll,
+    setActive,
   });
 }

@@ -82,3 +82,56 @@ export function buildCompetitionComparison({ scoring = {}, importedStage = {}, c
       : build([]),
   };
 }
+
+function positivePlace(value) {
+  const numeric = finiteResult(value);
+  return numeric !== null && numeric > 0 ? numeric : null;
+}
+
+function buildStandingsCohort(items, selectedNameKey) {
+  const sorted = items
+    .filter((item) => positivePlace(item.place) !== null)
+    .map((item) => ({ ...item, place: positivePlace(item.place) }))
+    .sort((left, right) => left.place - right.place);
+  const selectedIndex = sorted.findIndex((item) => normalizedKey(item.name) === selectedNameKey);
+  if (selectedIndex < 0) return { items: sorted, current: null, rank: null, place: null, count: sorted.length };
+  const selectedPlace = sorted[selectedIndex].place;
+  const rank = sorted.findIndex((item) => item.place === selectedPlace) + 1;
+  return { items: sorted, current: sorted[selectedIndex], rank, place: rank, count: sorted.length };
+}
+
+export function buildFinalStandingsComparison({ scoring = {}, importedStage = {}, competitors = [] } = {}) {
+  const identity = {
+    name: String(scoring.competitor_name || importedStage.competitor_name || "").trim(),
+    division: String(scoring.division || importedStage.division || "").trim(),
+    classification: String(scoring.classification || importedStage.classification || "").trim(),
+  };
+  const selectedNameKey = normalizedKey(identity.name);
+  const selected = { ...importedStage, ...identity, place: importedStage.competitor_place ?? importedStage.place };
+  const deduplicated = new Map();
+  [selected, ...competitors].forEach((item) => {
+    const name = String(item?.name || item?.competitor_name || "").trim();
+    const key = normalizedKey(name);
+    if (!key || deduplicated.has(key)) return;
+    deduplicated.set(key, {
+      ...item,
+      name,
+      division: String(item.division || "").trim(),
+      classification: String(item.classification || "").trim(),
+      place: item.place ?? item.competitor_place,
+    });
+  });
+  const all = [...deduplicated.values()];
+  const divisionKey = normalizedKey(identity.division);
+  const classificationKey = normalizedKey(identity.classification);
+  const build = (items) => buildStandingsCohort(items, selectedNameKey);
+  return {
+    identity,
+    overall: build(all),
+    division: divisionKey ? build(all.filter((item) => normalizedKey(item.division) === divisionKey)) : build([]),
+    classification: classificationKey ? build(all.filter((item) => normalizedKey(item.classification) === classificationKey)) : build([]),
+    divisionClassification: divisionKey && classificationKey
+      ? build(all.filter((item) => normalizedKey(item.division) === divisionKey && normalizedKey(item.classification) === classificationKey))
+      : build([]),
+  };
+}

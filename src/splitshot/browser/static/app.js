@@ -4826,6 +4826,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     || root?.classList.contains("scoring-expanded")
     || root?.classList.contains("markers-expanded");
   setActiveToolValue(tool);
+  trimSyncPane?.setActive(tool === "trim-sync");
   if (!initialProjectUiStateApplied && persistUiState) {
     pendingBootstrapProjectUiStateOverride = true;
   }
@@ -9463,6 +9464,9 @@ waveformComponent = createWaveformComponent({
   releasePointer,
   withPreservedScrollState,
   seconds,
+  formatTimelineTime: (timeMs) => activeTool === "trim-sync"
+    ? `${(Number(timeMs) / 1000).toFixed(2)}s`
+    : `${(Number(timeMs) / 1000).toFixed(3)}s`,
   formatConfidenceValue,
   isLowConfidence,
   activity,
@@ -10024,6 +10028,7 @@ trimSyncPane = createTrimSyncPane({
   sourceIdentifier: (source, fallback) => mergePane?.sourceIdentifier(source, fallback) ?? fallback,
   currentSourceSyncOffsetMs: (source) => mergePane?.currentSourceSyncOffsetMs(source) ?? 0,
 });
+trimSyncPane.setActive(activeTool === "trim-sync");
 
 shellRuntime = createShellRuntime({
   $,

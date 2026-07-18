@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
+import subprocess
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -111,6 +113,22 @@ def test_trim_pane_renders_global_and_source_sections(synthetic_video_factory) -
                 assert page.locator(".trim-computed-label").count() >= 1
                 assert page.locator(".trim-beep-btn").count() >= 1
                 assert page.locator(".trim-last-shot-btn").count() >= 1
+                assert page.locator("#trim-video-toggle").count() == 1
+                assert page.locator("#trim-video-scrubber").count() == 1
+                assert page.evaluate("document.querySelector('#primary-video').controls") is False
+                page.evaluate(
+                    """() => {
+                        const video = document.querySelector('#primary-video');
+                        video.currentTime = 0.25;
+                        video.dispatchEvent(new Event('timeupdate'));
+                    }"""
+                )
+                assert re.fullmatch(
+                    r"\d+\.\d{2}s / \d+\.\d{2}s",
+                    page.locator("#trim-video-time").inner_text(),
+                )
+                page.locator("button[data-tool='media']").click(force=True)
+                assert page.evaluate("document.querySelector('#primary-video').controls") is True
             finally:
                 browser.close()
     finally:
@@ -230,10 +248,11 @@ def test_trim_pane_computed_label_format(synthetic_video_factory) -> None:
                 page.wait_for_timeout(500)
 
                 label = page.locator(".trim-computed-label").first.inner_text()
-                assert "Before trim:" in label
-                assert "After trim:" in label
-                assert "Kept:" in label
-                assert "Total:" in label
+                assert "Removed from start:" in label
+                assert "Removed from end:" in label
+                assert "Retained duration:" in label
+                assert "Original duration:" in label
+                assert len(re.findall(r"\d+\.\d{2}s", label)) == 4
             finally:
                 browser.close()
     finally:
@@ -455,6 +474,7 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
 
                 after_first = _get_first_merge_source_state(page)
                 assert after_first["has_derivative"] is True
+                first_derivative_path = after_first["derivative_path"]
 
                 expected_second = page.evaluate(
                     """() => {
@@ -462,11 +482,12 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                         const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary ?? 0);
                         const shots = state?.project?.analysis?.shots || [];
                         const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
+                        const originalOffsetMs = Math.round(Number(state?.project?.primary_trim_derivative?.start_s || 0) * 1000);
                         const syncOffsetMs = Number(source?.sync_offset_ms || 0);
                         const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
                         return {
-                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 1.5),
-                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 1.8),
+                            start_s: Math.max(0, ((beepMs + originalOffsetMs + syncOffsetMs) / 1000) - 1.5),
+                            end_s: Math.min(durationS, ((lastShotMs + originalOffsetMs + syncOffsetMs) / 1000) + 1.8),
                         };
                     }"""
                 )
@@ -474,14 +495,23 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                 page.locator("#trim-global-end").fill("1.80")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
-                _wait_for_first_merge_derivative(page, True)
+                page.wait_for_function(
+                    "(path) => (state?.project?.merge_sources || [])[0]?.trim_derivative?.derivative_path !== path",
+                    arg=first_derivative_path,
+                    timeout=120_000,
+                )
 
                 after_second = _get_first_merge_source_state(page)
                 assert after_second["start_s"] == pytest.approx(expected_second["start_s"], abs=0.2)
                 assert after_second["end_s"] == pytest.approx(expected_second["end_s"], abs=0.2)
+                second_derivative_path = after_second["derivative_path"]
 
                 page.locator("#trim-global-undo").click()
-                _wait_for_first_merge_derivative(page, True)
+                page.wait_for_function(
+                    "(path) => (state?.project?.merge_sources || [])[0]?.trim_derivative?.derivative_path !== path",
+                    arg=second_derivative_path,
+                    timeout=120_000,
+                )
 
                 restored = _get_first_merge_source_state(page)
                 assert restored["start_s"] == pytest.approx(expected_first["start_s"], abs=0.2)
@@ -697,9 +727,61 @@ def test_trim_computed_label_updates_after_source_apply(synthetic_video_factory)
 
                 after_label = page.locator(".trim-computed-label").first.inner_text()
                 assert after_label != before_label
-                assert "Before trim:" in after_label
-                assert "After trim:" in after_label
-                assert "Kept:" in after_label
+                assert "Removed from start:" in after_label
+                assert "Removed from end:" in after_label
+                assert "Retained duration:" in after_label
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_trim_disables_video_controls_for_still_images(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name="trim-qa-still-primary",
+            duration_ms=4000,
+            beep_ms=500,
+            shot_times_ms=[600, 1000, 1400],
+        )
+    )
+    image_path = tmp_path / "trim-reference.png"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=green:s=320x180",
+            "-frames:v",
+            "1",
+            str(image_path),
+        ],
+        check=True,
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _ensure_project_with_primary_and_merge(
+                    page, primary_path, image_path, "trim-qa-still.ssproj"
+                )
+                _navigate_to_trim_pane(page)
+                still_card = page.locator(".trim-source-card").filter(has_text="trim-reference.png")
+
+                assert "Trim not applicable" in still_card.inner_text()
+                assert still_card.locator("[data-trim-start]").is_disabled()
+                assert still_card.locator("[data-trim-end]").is_disabled()
+                assert still_card.locator(".trim-apply-btn").is_disabled()
+                assert still_card.locator(".trim-beep-btn").is_disabled()
+                assert still_card.locator(".trim-last-shot-btn").is_disabled()
             finally:
                 browser.close()
     finally:

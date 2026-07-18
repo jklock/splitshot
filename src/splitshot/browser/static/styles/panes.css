@@ -851,6 +851,20 @@
   white-space: nowrap;
 }
 
+.trim-transport {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.trim-transport output {
+  min-width: 110px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .trim-global-row {
   display: grid;
   gap: var(--space-3);

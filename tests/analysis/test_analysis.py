@@ -22,6 +22,8 @@ from splitshot.domain.models import (
     BadgeSize,
     MergeLayout,
     MergeSource,
+    MergeSourceAssetPathKind,
+    MergeSourceTrimDerivative,
     OverlayPosition,
     ScoreLetter,
     ShotEvent,
@@ -1188,3 +1190,60 @@ def test_probe_reads_common_video_container_metadata(
     assert asset.width == 320
     assert asset.height == 180
     assert asset.duration_ms > 0
+
+
+def test_bulk_trim_reuses_original_timeline_after_analyzing_a_derivative() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4", duration_ms=10_000)
+    controller.project.primary_trim_derivative = MergeSourceTrimDerivative(
+        original_path="primary.mp4",
+        derivative_path="primary-trim.mp4",
+        active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+        start_s=1.0,
+        end_s=9.0,
+    )
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=6_000)]
+
+    start_s, end_s = controller._primary_trim_window_from_buffers(
+        keep_before_beep_s=2.0,
+        keep_after_last_shot_s=2.0,
+    )
+
+    assert start_s == 1.0
+    assert end_s == 9.0
+
+
+def test_bulk_trim_applies_sync_offset_on_original_timeline() -> None:
+    controller = ProjectController()
+    controller.project.primary_trim_derivative.start_s = 1.0
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=6_000)]
+    source = MergeSource(
+        asset=VideoAsset(path="secondary.mp4", duration_ms=10_000),
+        sync_offset_ms=500,
+    )
+
+    start_s, end_s = controller._source_trim_window_from_buffers(
+        source,
+        keep_before_beep_s=2.0,
+        keep_after_last_shot_s=2.0,
+    )
+
+    assert start_s == 1.5
+    assert end_s == 9.5
+
+
+def test_per_source_trim_rejects_still_images() -> None:
+    controller = ProjectController()
+    source = MergeSource(
+        asset=VideoAsset(
+            path="reference.png",
+            is_still_image=True,
+            media_kind="still_image",
+        )
+    )
+    controller.project.merge_sources = [source]
+
+    with pytest.raises(ValueError, match="cannot be trimmed"):
+        controller.trim_merge_source(source.id, start_s=0.5, end_s=1.0)
