@@ -22,6 +22,7 @@ logs/
 .training/
 Stage*.MP4
 Stage*.mp4
+05072026/
 !tests/fixtures/media/stage.mp4
 !tests/fixtures/media/stage-merge.mp4
 artifacts/*.png
