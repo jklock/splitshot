@@ -293,7 +293,8 @@ def _terminate_matching_processes(path: Path) -> None:
     pids = _processes_matching_path(path)
     if not pids:
         return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
+    force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
+    for sig in (signal.SIGTERM, force_signal):
         remaining: list[int] = []
         for pid in pids:
             try:

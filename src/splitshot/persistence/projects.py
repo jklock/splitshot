@@ -139,9 +139,9 @@ def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, obj
             return path_value
         path_obj = Path(str(path_value)).expanduser()
         if not path_obj.is_absolute():
-            return str(path_obj)
+            return path_obj.as_posix()
         try:
-            return str(path_obj.resolve().relative_to(project_path.resolve()))
+            return path_obj.resolve().relative_to(project_path.resolve()).as_posix()
         except ValueError:
             return str(path_obj)
 

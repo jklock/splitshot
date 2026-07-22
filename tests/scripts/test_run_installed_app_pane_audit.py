@@ -318,8 +318,13 @@ def test_terminate_process_uses_process_group_on_posix(monkeypatch) -> None:
             calls.append(("kill", self.pid, None))
 
     monkeypatch.setattr(MODULE.os, "name", "posix")
-    monkeypatch.setattr(MODULE.os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(MODULE.os, "killpg", lambda pgid, sig: calls.append(("killpg", pgid, sig)))
+    monkeypatch.setattr(MODULE.os, "getpgid", lambda pid: pid, raising=False)
+    monkeypatch.setattr(
+        MODULE.os,
+        "killpg",
+        lambda pgid, sig: calls.append(("killpg", pgid, sig)),
+        raising=False,
+    )
 
     MODULE._terminate_process(FakeProc())
 
@@ -355,7 +360,8 @@ def test_terminate_matching_processes_kills_matching_bundle_descendants(
         return FakeCompleted()
 
     def fake_kill(pid, sig):  # noqa: ANN001
-        if sig in (MODULE.signal.SIGTERM, MODULE.signal.SIGKILL):
+        force_signal = getattr(MODULE.signal, "SIGKILL", MODULE.signal.SIGTERM)
+        if sig in (MODULE.signal.SIGTERM, force_signal):
             signals.append((pid, sig))
             alive.discard(pid)
             return
