@@ -660,7 +660,7 @@ def test_open_project_reimports_practiscore_when_saved_context_exists_but_import
     assert reopened.project.scoring.imported_stage.final_time == 10.15
 
 
-def test_open_project_recovers_renamed_media_from_project_input_folder(
+def test_open_project_does_not_guess_renamed_external_media(
     synthetic_video_factory, tmp_path: Path
 ) -> None:
     controller = ProjectController()
@@ -684,12 +684,12 @@ def test_open_project_recovers_renamed_media_from_project_input_folder(
     reopened = ProjectController()
     reopened.open_project(str(project_path))
 
-    assert Path(reopened.project.primary_video.path) == renamed_primary.resolve()
+    assert Path(reopened.project.primary_video.path) == saved_primary.resolve()
     assert reopened.project.secondary_video is not None
-    assert Path(reopened.project.secondary_video.path) == renamed_secondary.resolve()
+    assert Path(reopened.project.secondary_video.path) == saved_secondary.resolve()
     assert reopened.project.merge_sources
-    assert Path(reopened.project.merge_sources[0].asset.path) == renamed_secondary.resolve()
-    assert "restored renamed project media" in reopened.status_message.lower()
+    assert Path(reopened.project.merge_sources[0].asset.path) == saved_secondary.resolve()
+    assert "restored renamed project media" not in reopened.status_message.lower()
 
 
 def test_open_project_recovers_renamed_media_from_project_root_folder(
