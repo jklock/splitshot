@@ -1,4 +1,7 @@
-import { buildFinalStandingsComparison } from "../lib/competition-comparison.js";
+import {
+  buildFinalStandingsComparison,
+  competitionIdentityLabels,
+} from "../lib/competition-comparison.js";
 
 export function createReviewPane({
   $ = (id) => document.getElementById(id),
@@ -51,7 +54,7 @@ export function createReviewPane({
     "penalties",
     "division_placement",
     "class_placement",
-    "division_class_placement",
+    "overall_placement",
   ]);
   function currentState() {
     return getState() || {};
@@ -69,29 +72,41 @@ export function createReviewPane({
 
   function normalizedSummaryMetricIds(value) {
     if (!Array.isArray(value)) return [];
-    return value
-      .map((item) => String(item || "").trim())
-      .filter(Boolean);
+    return [
+      ...new Set(value
+        .map((item) => String(item || "").trim())
+        .map((item) => item === "division_class_placement" ? "overall_placement" : item)
+        .filter(Boolean)),
+    ];
   }
 
-  function reviewMetricDefinitions() {
+  function reviewMetricDefinitions(summary = {}, imported = {}) {
+    const identity = competitionIdentityLabels({
+      scoring: currentState()?.project?.scoring || summary,
+      importedStage: imported || summary?.imported_stage || {},
+    });
     return [
       { id: "score_time", label: "Score / Time" },
       { id: "raw_time", label: "Raw Time" },
       { id: "points_down", label: "Points Down" },
       { id: "penalties", label: "Penalties" },
-      { id: "overall_placement", label: "Overall Placement" },
-      { id: "division_placement", label: "Division Placement" },
-      { id: "class_placement", label: "Class Placement" },
-      { id: "division_class_placement", label: "Division + Class Placement" },
+      {
+        id: "division_placement",
+        label: identity.division || "Division",
+        separator: " - ",
+      },
+      {
+        id: "class_placement",
+        label: identity.classification || "Class",
+        separator: " - ",
+      },
+      { id: "overall_placement", label: "Overall", separator: " - " },
       { id: "overall_percent", label: "Overall Percent" },
       { id: "division_percent", label: "Division Percent" },
       { id: "class_percent", label: "Class Percent" },
-      { id: "division_class_percent", label: "Division + Class Percent" },
       { id: "overall_gap", label: "Overall Gap" },
       { id: "division_gap", label: "Division Gap" },
       { id: "class_gap", label: "Class Gap" },
-      { id: "division_class_gap", label: "Division + Class Gap" },
     ];
   }
 
@@ -108,7 +123,6 @@ export function createReviewPane({
       overall: comparison.overall,
       division: comparison.division,
       class: comparison.classification,
-      divisionClass: comparison.divisionClassification,
     };
   }
 
@@ -124,7 +138,7 @@ export function createReviewPane({
   }
 
   function summaryMetricIdsForBox(box, summary, imported) {
-    const availableIds = reviewMetricDefinitions()
+    const availableIds = reviewMetricDefinitions(summary, imported)
       .filter((def) => reviewMetricAvailable(def.id, summary, imported))
       .map((def) => def.id);
     if (availableIds.length === 0) return [];
@@ -138,11 +152,11 @@ export function createReviewPane({
     if (box?.source !== "imported_summary") return String(box?.text || "").trim();
     const selectedIds = summaryMetricIdsForBox(box, summary, imported);
     if (selectedIds.length === 0) return "";
-    return reviewMetricDefinitions()
+    return reviewMetricDefinitions(summary, imported)
       .filter((def) => selectedIds.includes(def.id))
       .map((def) => {
         const value = reviewMetricValue(def.id, summary, imported);
-        return value ? `${def.label} ${value}` : "";
+        return value ? `${def.label}${def.separator || " "}${value}` : "";
       })
       .filter(Boolean)
       .join("\n")
@@ -514,7 +528,7 @@ export function createReviewPane({
         <div class="summary-metric-editor">
           <span class="style-card-label">Summary Metrics</span>
           <div class="review-metrics-checklist text-box-summary-metrics">
-            ${reviewMetricDefinitions()
+            ${reviewMetricDefinitions(summary, imported)
               .filter((def) => reviewMetricAvailable(def.id, summary, imported))
               .map((def) => `
                 <label class="check-row">
@@ -753,16 +767,12 @@ export function createReviewPane({
         return formatPlacement(groups.division.place, groups.division.items.length);
       case "class_placement":
         return formatPlacement(groups.class.place, groups.class.items.length);
-      case "division_class_placement":
-        return formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length);
       case "overall_percent": return "";
       case "division_percent": return "";
       case "class_percent": return "";
-      case "division_class_percent": return "";
       case "overall_gap": return "";
       case "division_gap": return "";
       case "class_gap": return "";
-      case "division_class_gap": return "";
       default: return "";
     }
   }
@@ -781,9 +791,8 @@ export function createReviewPane({
       case "overall_placement": return groups.overall.place !== null;
       case "division_placement": return groups.division.place !== null;
       case "class_placement": return groups.class.place !== null;
-      case "division_class_placement": return groups.divisionClass.place !== null;
-      case "overall_percent": case "division_percent": case "class_percent": case "division_class_percent":
-      case "overall_gap": case "division_gap": case "class_gap": case "division_class_gap":
+      case "overall_percent": case "division_percent": case "class_percent":
+      case "overall_gap": case "division_gap": case "class_gap":
         return false;
       default: return false;
     }

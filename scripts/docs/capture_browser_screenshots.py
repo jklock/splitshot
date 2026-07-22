@@ -1,7 +1,10 @@
-"""Launch SplitShot, seed deterministic demo state, and refresh the user-doc screenshot set."""
+"""Launch SplitShot and refresh the canonical v1.0.7 documentation screenshots."""
 
 from __future__ import annotations
 
+import argparse
+import base64
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -13,10 +16,49 @@ from splitshot.ui.controller import ProjectController
 
 ROOT = Path(__file__).resolve().parents[2]
 SCREENSHOT_DIR = ROOT / "docs" / "screenshots"
-PRIMARY_VIDEO = ROOT / "Stage0_Warmup.mp4"
-MERGE_VIDEO = ROOT / "tests" / "artifacts" / "test_video" / "TestVideo2.MP4"
+PRIMARY_VIDEO = ROOT / "tests" / "fixtures" / "media" / "stage.mp4"
+MERGE_VIDEO = ROOT / "tests" / "fixtures" / "media" / "stage-merge.mp4"
 PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
+WORK_ROOT = ROOT / "tmp" / "codex" / "doc-screenshots"
 VIEWPORT = {"width": 1440, "height": 1024}
+
+
+@dataclass(frozen=True, slots=True)
+class ScreenshotSpec:
+    filename: str
+    tool: str
+    state: str = "default"
+
+
+SCREENSHOT_MANIFEST = (
+    ScreenshotSpec("ProjectPane.png", "project"),
+    ScreenshotSpec("MediaPane.png", "media"),
+    ScreenshotSpec("ComposePane.png", "merge"),
+    ScreenshotSpec("TrimPane.png", "trim-sync"),
+    ScreenshotSpec("ScorePane.png", "scoring"),
+    ScreenshotSpec("ScorePane2.png", "scoring", "scrolled"),
+    ScreenshotSpec("SplitsPane.png", "timing"),
+    ScreenshotSpec("SplitsExpanded.png", "timing", "timing-expanded"),
+    ScreenshotSpec("WaveformExpanded.png", "timing", "waveform-expanded"),
+    ScreenshotSpec("MarkersPane.png", "markers"),
+    ScreenshotSpec("MarkersPane2.png", "markers", "scrolled"),
+    ScreenshotSpec("OverlayPane.png", "overlay"),
+    ScreenshotSpec("OverlayPane2.png", "overlay", "scrolled"),
+    ScreenshotSpec("ColorPickerModal.png", "overlay", "color-picker"),
+    ScreenshotSpec("ReviewPane.png", "review"),
+    ScreenshotSpec("ReviewPane2.png", "review", "scrolled"),
+    ScreenshotSpec("ExportPane.png", "export"),
+    ScreenshotSpec("ExportPane2.png", "export", "scrolled"),
+    ScreenshotSpec("ExportLogModal.png", "export", "export-log"),
+    ScreenshotSpec("QueuePane.png", "queue"),
+    ScreenshotSpec("MetricsPane.png", "metrics"),
+    ScreenshotSpec("MetricsExpanded.png", "metrics", "expanded"),
+    ScreenshotSpec("ShotMLPane.png", "shotml"),
+    ScreenshotSpec("ShotMLPane2.png", "shotml", "scrolled"),
+    ScreenshotSpec("SettingsPane.png", "settings"),
+    ScreenshotSpec("SettingsPane2.png", "settings", "scrolled"),
+)
+SCREENSHOT_FILENAMES = tuple(spec.filename for spec in SCREENSHOT_MANIFEST)
 
 
 def create_project(page: Page, project_dir: Path) -> None:
@@ -29,12 +71,7 @@ def create_project(page: Page, project_dir: Path) -> None:
         str(project_dir),
     )
     page.wait_for_function(
-        """
-        () => {
-          const input = document.getElementById('primary-file-path');
-          return Boolean(input && !input.disabled);
-        }
-        """,
+        "() => Boolean(state?.project?.path)",
         timeout=30_000,
     )
     wait_for_app_idle(page)
@@ -76,9 +113,14 @@ def set_inspector_scroll(page: Page, scroll_top: int = 0) -> None:
     page.wait_for_timeout(250)
 
 
-def screenshot(page: Page, filename: str, scroll_top: int = 0) -> None:
+def screenshot(
+    page: Page,
+    filename: str,
+    scroll_top: int = 0,
+    screenshot_dir: Path = SCREENSHOT_DIR,
+) -> None:
     set_inspector_scroll(page, scroll_top)
-    page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=False)
+    page.screenshot(path=str(screenshot_dir / filename), full_page=False)
 
 
 def open_color_picker(page: Page) -> None:
@@ -121,7 +163,7 @@ def import_primary_video(page: Page) -> None:
         "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
     )
     page.wait_for_function(
-        """
+        r"""
         () => {
           const video = document.getElementById('primary-video');
           return Boolean(video && Number.isFinite(video.duration) && video.duration > 0);
@@ -151,6 +193,25 @@ def import_merge_media(page: Page) -> None:
     wait_for_app_idle(page)
 
 
+def add_second_stage(page: Page) -> None:
+    """Populate the Media and Queue panes without changing the configured active stage."""
+    page.evaluate(
+        """
+        async (path) => {
+          const originalStageId = state?.project?.active_stage_id;
+          await callApi('/api/project/stage/create', { label: 'Stage 2' });
+          const secondStageId = state?.project?.active_stage_id;
+          await callApi('/api/project/stage/import-primary', { stage_id: secondStageId, path });
+          await callApi('/api/project/queue/add', { stage_id: secondStageId });
+          await callApi('/api/project/select-stage', { active_stage_id: originalStageId });
+        }
+        """,
+        str(MERGE_VIDEO),
+    )
+    page.wait_for_function("() => (state?.project?.stages || []).length >= 2", timeout=120_000)
+    wait_for_app_idle(page)
+
+
 def prepare_demo_state(page: Page) -> None:
     page.evaluate(
         """
@@ -162,7 +223,7 @@ def prepare_demo_state(page: Page) -> None:
 
           if (state?.project) {
             state.project.name = 'Stage 1 Review';
-            state.project.description = 'Documentation capture with scoring, overlays, PiP, markers, and review text boxes configured.';
+            state.project.description = 'Documentation capture with scoring, overlays, composition, markers, and review text boxes configured.';
           }
 
           if (state?.project?.scoring) {
@@ -170,14 +231,14 @@ def prepare_demo_state(page: Page) -> None:
           }
 
           if (state?.project?.export) {
-            state.project.export.output_path = '/Users/klock/splitshot/output.mp4';
+            state.project.export.output_path = 'ScreenshotProject/Output/final.mp4';
             state.project.export.last_error = '';
             state.project.export.last_log = [
               'SplitShot export preview log',
-              'Input: TestVideo1.MP4',
+              'Input: stage.mp4',
               'Overlay: timer, draw, shots, score, markers, and review boxes enabled',
-              'PiP: 1 added media item, sync -2555 ms',
-              'Output: /Users/klock/splitshot/output.mp4',
+              'Compose: 1 added media item, sync -2555 ms',
+              'Output: ScreenshotProject/Output/final.mp4',
               'Status: ready to render'
             ].join('\\n');
           }
@@ -239,6 +300,11 @@ def prepare_demo_state(page: Page) -> None:
               ...box,
               enabled: true,
               source: 'imported_summary',
+              summary_metric_ids: [
+                'division_placement',
+                'class_placement',
+                'overall_placement',
+              ],
               quadrant: window.aboveFinalTextBoxValue,
               background_color: '#064e3b',
               text_color: '#ecfdf5',
@@ -321,94 +387,170 @@ def seek_near_final_shot(page: Page) -> None:
     )
 
 
-def capture_all(page: Page) -> None:
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-
-    click_tool(page, "project")
+def validate_dynamic_standings(page: Page) -> None:
+    """Fail capture if the imported summary regresses to generic placement labels."""
+    click_tool(page, "review")
     prepare_demo_state(page)
-    screenshot(page, "ProjectPane.png")
-
-    click_tool(page, "scoring")
-    prepare_demo_state(page)
-    screenshot(page, "ScoringPane.png", 0)
-    screenshot(page, "ScoringPane2.png", 760)
-
-    click_tool(page, "timing")
-    prepare_demo_state(page)
-    screenshot(page, "SplitsPane.png", 0)
-    page.locator("#expand-timing").click()
-    page.wait_for_selector("#cockpit-root.timing-expanded", timeout=30_000)
-    page.wait_for_timeout(350)
-    screenshot(page, "SplitsExpanded.png", 0)
-    page.locator("#collapse-timing").click()
-    page.wait_for_timeout(250)
-    page.locator("#expand-waveform").click()
-    page.wait_for_selector("#cockpit-root.waveform-expanded", timeout=30_000)
-    page.wait_for_timeout(350)
-    screenshot(page, "WaveFormExpanded.png", 0)
-    page.locator("#expand-waveform").click()
-    page.wait_for_timeout(250)
-
-    click_tool(page, "shotml")
-    prepare_demo_state(page)
-    screenshot(page, "ShotMLPane.png", 0)
-    screenshot(page, "ShotMLPane2.png", 1180)
-
-    click_tool(page, "merge")
-    prepare_demo_state(page)
-    stabilize_pip_controls(page)
-    screenshot(page, "PiPPane.png", 0)
-
+    page.wait_for_function(
+        r"""
+        () => {
+          const text = [...document.querySelectorAll('[data-text-box-preview]')]
+            .map((control) => control.value || control.textContent || '')
+            .join('\n');
+          const rows = text.split(/\n/).map((row) => row.trim()).filter(Boolean);
+          return rows.some((row) => /^Overall - \d+\/\d+$/.test(row))
+            && rows.filter((row) => / - \d+\/\d+$/.test(row)).length >= 3;
+        }
+        """,
+        timeout=30_000,
+    )
+    text = page.locator("[data-text-box-preview]").evaluate_all(
+        "controls => controls.map((control) => control.value || control.textContent || '').join('\\n')"
+    )
+    obsolete = (
+        "Division Placement",
+        "Class Placement",
+        "Division + Class Placement",
+    )
+    if any(label in text for label in obsolete):
+        raise RuntimeError("Imported standings contain obsolete generic placement labels")
     click_tool(page, "overlay")
     prepare_demo_state(page)
     seek_near_final_shot(page)
-    screenshot(page, "OverlayPane.png", 0)
-    screenshot(page, "OverlayPane2.png", 760)
-    open_color_picker(page)
-    screenshot(page, "ColorPickerModal.png", 760)
-    page.locator("#close-color-picker").click()
-    page.wait_for_function("() => document.getElementById('color-picker-modal')?.hidden === true")
 
-    click_tool(page, "markers")
-    prepare_demo_state(page)
-    screenshot(page, "PopUpPane.png", 0)
-    screenshot(page, "PopUpPane2.png", 680)
 
-    click_tool(page, "settings")
-    prepare_demo_state(page)
-    screenshot(page, "SettingsPane.png", 0)
-    screenshot(page, "SettingsPane2.png", 760)
+def capture_all(page: Page, screenshot_dir: Path = SCREENSHOT_DIR) -> None:
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    captured: list[str] = []
 
-    click_tool(page, "review")
-    prepare_demo_state(page)
-    seek_near_final_shot(page)
-    screenshot(page, "ReviewPane.png", 0)
-    screenshot(page, "ReviewPane2.png", 760)
+    def take(filename: str, scroll_top: int = 0) -> None:
+        screenshot(page, filename, scroll_top, screenshot_dir)
+        captured.append(filename)
 
-    click_tool(page, "export")
-    prepare_demo_state(page)
-    screenshot(page, "ExportPane.png", 0)
-    screenshot(page, "ExportPane2.png", 760)
-    open_export_log(page)
-    screenshot(page, "ExportLogModal.png", 760)
-    page.locator("#close-export-log").click()
-    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
+    try:
+        for tool, filename in (
+            ("project", "ProjectPane.png"),
+            ("media", "MediaPane.png"),
+            ("merge", "ComposePane.png"),
+            ("trim-sync", "TrimPane.png"),
+        ):
+            click_tool(page, tool)
+            prepare_demo_state(page)
+            if tool == "merge":
+                stabilize_pip_controls(page)
+            take(filename)
 
-    click_tool(page, "metrics")
-    prepare_demo_state(page)
-    screenshot(page, "MetricsPane.png", 0)
-    page.locator("#expand-metrics").click()
-    page.wait_for_selector("#cockpit-root.metrics-expanded", timeout=30_000)
-    page.wait_for_timeout(350)
-    screenshot(page, "MetricsPane2.png", 0)
+        click_tool(page, "scoring")
+        prepare_demo_state(page)
+        take("ScorePane.png")
+        take("ScorePane2.png", 760)
+
+        click_tool(page, "timing")
+        prepare_demo_state(page)
+        take("SplitsPane.png")
+        page.locator("#expand-timing").click()
+        page.wait_for_selector("#cockpit-root.timing-expanded", timeout=30_000)
+        take("SplitsExpanded.png")
+        page.locator("#collapse-timing").click()
+        page.locator("#expand-waveform").click()
+        page.wait_for_selector("#cockpit-root.waveform-expanded", timeout=30_000)
+        take("WaveformExpanded.png")
+        page.locator("#expand-waveform").click()
+
+        click_tool(page, "markers")
+        prepare_demo_state(page)
+        take("MarkersPane.png")
+        take("MarkersPane2.png", 680)
+
+        click_tool(page, "overlay")
+        prepare_demo_state(page)
+        validate_dynamic_standings(page)
+        take("OverlayPane.png")
+        take("OverlayPane2.png", 760)
+        open_color_picker(page)
+        take("ColorPickerModal.png", 760)
+        page.locator("#close-color-picker").click()
+
+        click_tool(page, "review")
+        prepare_demo_state(page)
+        seek_near_final_shot(page)
+        take("ReviewPane.png")
+        take("ReviewPane2.png", 760)
+
+        click_tool(page, "export")
+        prepare_demo_state(page)
+        take("ExportPane.png")
+        take("ExportPane2.png", 760)
+        open_export_log(page)
+        take("ExportLogModal.png", 760)
+        page.locator("#close-export-log").click()
+
+        click_tool(page, "queue")
+        prepare_demo_state(page)
+        take("QueuePane.png")
+
+        click_tool(page, "metrics")
+        prepare_demo_state(page)
+        take("MetricsPane.png")
+        page.locator("#expand-metrics").click()
+        page.wait_for_selector("#cockpit-root.metrics-expanded", timeout=30_000)
+        take("MetricsExpanded.png")
+        page.locator("#collapse-metrics").click()
+
+        click_tool(page, "shotml")
+        prepare_demo_state(page)
+        take("ShotMLPane.png")
+        take("ShotMLPane2.png", 1180)
+
+        click_tool(page, "settings")
+        prepare_demo_state(page)
+        take("SettingsPane.png")
+        take("SettingsPane2.png", 760)
+
+        if tuple(captured) != SCREENSHOT_FILENAMES:
+            raise RuntimeError(f"Capture sequence does not match manifest: {captured}")
+    finally:
+        set_inspector_scroll(page, 0)
+
+
+def create_contact_sheet(browser, screenshot_dir: Path, output_path: Path) -> None:
+    """Render an ignored review sheet without adding an image-processing dependency."""
+    cards = []
+    for filename in SCREENSHOT_FILENAMES:
+        data = base64.b64encode((screenshot_dir / filename).read_bytes()).decode("ascii")
+        cards.append(
+            f'<figure><img src="data:image/png;base64,{data}"><figcaption>{filename}</figcaption></figure>'
+        )
+    page = browser.new_page(viewport={"width": 1500, "height": 1000}, device_scale_factor=1)
+    try:
+        page.set_content(
+            "<style>body{margin:16px;background:#111;color:#fff;font:14px sans-serif}"
+            ".grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}"
+            "figure{margin:0}img{display:block;width:100%;aspect-ratio:45/32;object-fit:cover;object-position:top}"
+            "figcaption{padding:6px 0}</style><div class=grid>" + "".join(cards) + "</div>"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(output_path), full_page=True)
+    finally:
+        page.close()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=SCREENSHOT_DIR)
+    parser.add_argument("--work-root", type=Path, default=WORK_ROOT)
+    return parser
 
 
 def main() -> int:
+    args = build_parser().parse_args()
+    work_root = args.work_root.expanduser().resolve()
+    work_root.mkdir(parents=True, exist_ok=True)
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0, log_level="off")
     server.start_background(open_browser=False)
     try:
-        with TemporaryDirectory(prefix="splitshot-doc-screenshots-") as temp_dir:
+        with TemporaryDirectory(prefix="run-", dir=work_root) as temp_dir:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 try:
@@ -419,9 +561,15 @@ def main() -> int:
                     import_primary_video(page)
                     import_practiscore(page)
                     import_merge_media(page)
+                    add_second_stage(page)
                     page.wait_for_timeout(2000)
                     prepare_demo_state(page)
-                    capture_all(page)
+                    capture_all(page, args.output_dir.expanduser().resolve())
+                    create_contact_sheet(
+                        browser,
+                        args.output_dir.expanduser().resolve(),
+                        work_root / "contact-sheet.png",
+                    )
                 finally:
                     browser.close()
     finally:

@@ -2,6 +2,23 @@
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
+## v1.0.7
+
+SplitShot 1.0.7 completes the current editing and release workflow. This release is feature-frozen: further work on the 1.0.7 line is limited to validation, documentation, packaging, and defect fixes.
+
+### What Changed
+
+- **Completed the multi-stage workflow.** Project and Media now separate project/competitor setup from stage creation and media intake. Compose, Trim, scoring, review, Export settings, and Queue processing all follow the active stage.
+- **Made project files predictable.** Selecting or creating a project initializes its managed folders. Project content pickers start at the active project, and selected media, PractiScore data, and marker assets are copied into their matching project folders with portable project-relative paths.
+- **Aligned the 14-pane rail with the shipped workflow.** The current rail is Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, Queue, Metrics, ShotML, and Settings. Pane layout, labels, controls, preview behavior, and exported output were cleaned up for closer WYSIWYG parity.
+- **Corrected competition standings.** Imported PractiScore results now display independent sport-specific division and class cohorts plus Overall: `<division acronym> - <place>/<division total>`, `<class acronym> - <place>/<class total>`, and `Overall - <place>/<total competitors>`. There is no combined division-and-class standing.
+- **Hardened release proof.** Source and packaged proof use the compact tracked `tests/fixtures/media/e2e-stage.mp4` fixture, write review output under `artifacts/v107-release-proof/`, and validate the macOS DMG, Windows NSIS installer, and Linux AppImage on their native CI runners.
+- **Cleaned developer and release tooling.** Obsolete release-specific scripts, generated audit projects, logs, duplicate test data, and stale documentation were removed or redirected to ignored artifact locations.
+
+### Release Proof
+
+Release readiness is established by the source proof bundle, the local Electron preflight, and clean-runner packaged validation through the Test macOS, Test Windows, and Test Linux workflows. The Release workflow is the sole publisher for the three platform artifacts.
+
 ## v1.0.6
 
 SplitShot 1.0.6 is a Stage-only backport release. It ships trim video derivatives, camera role seeding, output profiles, review source controls, overlay export badges, and full compatibility with the Stage PiP rail — all without Match, Performance Library, Landing, workspace persistence, or shared-shell routing.

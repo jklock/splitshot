@@ -1,6 +1,8 @@
 # Compose Pane
 
-The Compose pane controls the active stage composition. It uses the media already paired in the Media pane and is limited to composition of already-attached merge sources. Media intake for new stage files belongs in Media.
+The Compose pane controls the active stage composition. It uses media already paired in Media and does not import new stage files.
+
+<img src="../../screenshots/ComposePane.png" alt="Compose pane with added-media export, stage defaults, and expanded per-source composition controls" width="960">
 
 ## Use This Pane For
 
@@ -31,7 +33,7 @@ The Compose pane controls the active stage composition. It uses the media alread
 3. Enable added-media export if the extra media should render.
 4. Choose the stage defaults for newly attached added media.
 5. Expand each source card and tune its per-source layout, size, opacity, position, and sync while watching the preview.
-6. Open Trim when the active stage still needs sync or trim changes.
+6. Open [trim.md](trim.md) when the active stage still needs sync or trim changes.
 
 ## Notes
 
@@ -39,9 +41,9 @@ The Compose pane controls the active stage composition. It uses the media alread
 - Switching stages changes the entire composition context.
 - Stage defaults live here for the active stage composition. Global defaults remain in Settings.
 - Per-source overrides stay on that source. Changing stage defaults does not erase them.
-- To add new stage media files, use the Media pane. Compose is for composition of already-attached sources.
+- Add or replace stage files in Media. Compose works only with already attached sources.
 
 ## Related Guides
 
 Previous: [media.md](media.md)
-Next: [overlay.md](overlay.md)
+Next: [trim.md](trim.md)

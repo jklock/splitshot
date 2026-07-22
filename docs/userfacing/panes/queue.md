@@ -2,6 +2,8 @@
 
 The Queue pane is the multi-stage export surface. It shows queue status, selects which stage Queue is acting on, applies settings across stages, and processes one or many outputs.
 
+<img src="../../screenshots/QueuePane.png" alt="Queue pane with active-stage selection, queue status rows, settings propagation, and processing actions" width="960">
+
 ## Use This Pane For
 
 - Reviewing queue status across stages.
@@ -43,6 +45,7 @@ The Queue pane is the multi-stage export surface. It shows queue status, selects
 ## Notes
 
 - Queue does not replace Media. If stage media needs to change, go back to Media after selecting the right stage.
+- Queue executes the ffmpeg settings saved in Export; changing settings in Export does not render a file until Queue processing starts.
 - `Apply Active Stage Settings to Queued` copies stage-local editing settings but excludes markers.
 - Queue rows always point back to the underlying stage, not a detached export preset.
 - Queue processing preserves queue order for combined output.

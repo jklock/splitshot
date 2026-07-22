@@ -29,7 +29,7 @@ TOOL_IDS = [
     "settings",
 ]
 ROOT = Path(__file__).resolve().parents[2]
-CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
+E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 RELEASE_PROOF_ARTIFACT_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
 RELEASE_PROOF_THRESHOLDS_MS = {
     "tool_switch": 500,
@@ -248,7 +248,7 @@ def _alternate_select_value(locator) -> str:
 
 def _copy_clip1_video(tmp_path: Path, name: str) -> Path:
     target = tmp_path / name
-    shutil.copyfile(CLIP1_VIDEO, target)
+    shutil.copyfile(E2E_VIDEO, target)
     return target
 
 
@@ -527,7 +527,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         )
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(CLIP1_VIDEO, output)
+        shutil.copyfile(E2E_VIDEO, output)
         project.export.last_log = "Master export log"
         project.export.last_error = None
         return output
@@ -857,7 +857,8 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                         return checkboxes.length > 0
                             && preview.includes('Score / Time')
                             && preview.includes('Points Down')
-                            && !preview.includes('Overall Placement');
+                            && preview.includes('Overall - ')
+                            && !preview.includes('Division + Class Placement');
                     }"""
                 )
                 review_card = page.locator("#review-text-box-list .text-box-card").last
@@ -865,21 +866,13 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                 preview_text = review_card.locator("[data-text-box-preview]").input_value()
                 assert "Score / Time" in preview_text
                 assert "Points Down" in preview_text
-                overall_checkbox = review_card.locator(
-                    'input[data-summary-metric="overall_placement"]'
-                )
-                assert overall_checkbox.is_checked() is False
                 page.screenshot(path="artifacts/review-visual-default.png", full_page=True)
-                overall_checkbox.check()
-                page.wait_for_function(
-                    """() => document.querySelector('#review-text-box-list .text-box-card:last-child [data-text-box-preview]')?.value.includes('Overall Placement')"""
-                )
                 preview_text = review_card.locator("[data-text-box-preview]").input_value()
                 page.screenshot(path="artifacts/review-visual-overall-selected.png", full_page=True)
-                assert "Overall Placement 1/26" in preview_text
-                assert "Division Placement 1/4" in preview_text
-                assert "Class Placement 1/4" in preview_text
-                assert "Division + Class Placement 1/1" in preview_text
+                assert "PCC - 1/4" in preview_text
+                assert "MA - 1/4" in preview_text
+                assert "Overall - 1/26" in preview_text
+                assert "Division + Class Placement" not in preview_text
             finally:
                 browser.close()
     finally:
@@ -1013,7 +1006,7 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
         )
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(CLIP1_VIDEO, destination)
+        shutil.copyfile(E2E_VIDEO, destination)
         project.export.last_log = "Real media proof export completed."
         project.export.last_error = None
         return destination

@@ -18,7 +18,7 @@ def main() -> int:
 
     video = args.video.resolve()
     if not video.exists():
-        raise FileNotFoundError(f"Clip1 fixture missing: {video}")
+        raise FileNotFoundError(f"E2E fixture missing: {video}")
 
     asset = probe_video(video)
     analysis = analyze_video_audio(video, threshold=0.35)
@@ -37,13 +37,13 @@ def main() -> int:
 
     if duration_seconds < args.min_duration:
         raise SystemExit(
-            f"Clip1 duration too short: {duration_seconds:.3f}s < {args.min_duration:.3f}s"
+            f"E2E fixture duration too short: {duration_seconds:.3f}s < {args.min_duration:.3f}s"
         )
     if analysis.beep_time_ms is None:
-        raise SystemExit("Clip1 fixture did not produce a detectable beep")
+        raise SystemExit("E2E fixture did not produce a detectable beep")
     if len(analysis.shots) < args.min_shots:
         raise SystemExit(
-            f"Clip1 fixture produced {len(analysis.shots)} shots; need at least {args.min_shots}"
+            f"E2E fixture produced {len(analysis.shots)} shots; need at least {args.min_shots}"
         )
     return 0
 

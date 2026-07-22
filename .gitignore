@@ -1,7 +1,10 @@
 .DS_Store
 .codex/config.toml
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 .venv/
 __pycache__/
 *.pyc
@@ -19,6 +22,8 @@ tmp/*
 tmp/codex/*
 !tmp/codex/.gitkeep
 logs/
+*.log
+output.txt
 .training/
 Stage*.MP4
 Stage*.mp4
@@ -29,6 +34,7 @@ artifacts/*.png
 artifacts/
 development/
 .archive/
+browser-audit*.ssproj/
 
 # Electron
 electron/bundle/

@@ -23,7 +23,7 @@ from splitshot.persistence.projects import save_project
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
 DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "fixtures" / "media" / "stage.mp4"
-CLIP1_VIDEO = REPO / "docs" / "Clip1.MP4"
+E2E_VIDEO = REPO / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 TIMEOUT = 120
 
 
@@ -47,7 +47,7 @@ def _default_packaged_artifact_root() -> Path:
         suffix = "packaged-local-windows"
     else:
         suffix = "packaged-local-linux"
-    return ARTIFACTS_DIR / "v106-phase-12-proof" / suffix
+    return ARTIFACTS_DIR / "v107-release-proof" / suffix
 
 
 def _prepare_test_video(out_dir: Path, source_override: Path | None = None) -> Path:
@@ -78,7 +78,7 @@ def _prepare_release_proof_videos(
     secondary_source: Path | None,
     tertiary_source: Path | None,
 ) -> tuple[Path, Path, Path]:
-    primary_source_path = (primary_source or CLIP1_VIDEO).resolve()
+    primary_source_path = (primary_source or E2E_VIDEO).resolve()
     secondary_source_path = (secondary_source or primary_source_path).resolve()
     tertiary_source_path = (tertiary_source or primary_source_path).resolve()
 

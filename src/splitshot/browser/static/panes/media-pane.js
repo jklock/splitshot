@@ -100,25 +100,13 @@ export function createMediaPane({
     return assetMeta(activeAsset);
   }
 
-  function directoryOf(path) {
-    const normalized = String(path || "").trim().replace(/[\\/]+$/, "");
-    if (!normalized) return "";
-    const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-    return index > 0 ? normalized.slice(0, index) : "";
-  }
-
   function joinProjectPath(base, leaf) {
     const normalized = String(base || "").trim().replace(/[\\/]+$/, "");
     if (!normalized) return "";
     return `${normalized}/${leaf}`;
   }
 
-  function mediaPickerDefaultRoot(stage) {
-    const primaryDir = directoryOf(stage?.primary_media?.path || "");
-    if (primaryDir) return primaryDir;
-    const firstAdded = stageAddedMedia(stage)[0];
-    const firstAddedDir = directoryOf(firstAdded?.asset?.path || "");
-    if (firstAddedDir) return firstAddedDir;
+  function mediaPickerDefaultRoot() {
     const projectPath = String(project().path || "").trim();
     const inputRoot = joinProjectPath(projectPath, "Input");
     return inputRoot || projectPath || "";
@@ -209,7 +197,7 @@ export function createMediaPane({
     const stage = stages().find((item) => item.id === stageId) || activeStage();
     selectStage(stageId);
     activity("media.import-primary", { stageId });
-    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot(stage));
+    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
     if (selectedPath) {
       await callApi("/api/project/stage/import-primary", { stage_id: stageId, path: selectedPath });
       setStatus("Imported primary media.");
@@ -225,7 +213,7 @@ export function createMediaPane({
     }
     selectStage(stageId);
     activity("media.import-added", { stageId });
-    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot(stage));
+    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
     if (selectedPath) {
       await callApi("/api/project/stage/import-added", { stage_id: stageId, path: selectedPath });
       setStatus("Imported added media.");

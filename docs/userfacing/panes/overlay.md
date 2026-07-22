@@ -83,5 +83,5 @@ Click `Export Badges` in the Overlay pane to save the current badge configuratio
 
 ## Related Guides
 
-Previous: [pip.md](pip.md)
-Next: [popup.md](popup.md)
+Previous: [markers.md](markers.md)
+Next: [review.md](review.md)

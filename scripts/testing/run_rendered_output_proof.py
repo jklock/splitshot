@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate local rendered-output proof artifacts for v1.0.6."""
+"""Generate local rendered-output proof artifacts for v1.0.7."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ from splitshot.ui.controller import ProjectController
 
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v106-phase-12-proof" / "source-rendered-output"
-PRIMARY_CLIP = REPO / "docs" / "Clip1.MP4"
+DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v107-release-proof" / "source-rendered-output"
+PRIMARY_CLIP = REPO / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 PRACTISCORE_CSV = REPO / "05072026" / "CSV" / "IDPA.csv"
 
 
@@ -170,7 +170,7 @@ def main() -> int:
     for path in (exports_dir, frames_dir, logs_dir, state_dir):
         path.mkdir(parents=True, exist_ok=True)
 
-    secondary_path = exports_dir / "Clip1-secondary.MP4"
+    secondary_path = exports_dir / "e2e-stage-secondary.mp4"
     if not secondary_path.exists():
         shutil.copy2(PRIMARY_CLIP, secondary_path)
 
@@ -237,7 +237,7 @@ def main() -> int:
             [
                 "Generated side_by_side, above_below, and pip exports from final rendered mp4 files.",
                 "Decoded frames were extracted from the rendered outputs themselves.",
-                "Each export used docs/Clip1.MP4 as primary input with a copied secondary clip.",
+                "Each export used tests/fixtures/media/e2e-stage.mp4 as primary input with a copied secondary clip.",
             ]
         ),
         encoding="utf-8",

@@ -48,7 +48,7 @@ from splitshot.ui.controller import VALID_OVERLAY_BADGE_NAMES, ProjectController
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
 EXPECTED_DISCONNECT_ERRNOS = {errno.EPIPE, errno.ECONNABORTED, errno.ECONNRESET, errno.ENOBUFS}
-PathChooser = Callable[[str, str | None], str | None]
+PathChooser = Callable[..., str | None]
 COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
 COMMON_IMAGE_FILE_PATTERNS = "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff"
 COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
@@ -351,7 +351,7 @@ def choose_local_path(
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary", "popup_image"}:
+        if kind in {"primary", "secondary", "popup_image", "practiscore"}:
             return filedialog.askopenfilename(
                 title=(
                     "Choose stage video"
@@ -359,15 +359,23 @@ def choose_local_path(
                     else (
                         "Choose secondary angle video"
                         if kind == "secondary"
-                        else "Choose marker image"
+                        else (
+                            "Choose marker image"
+                            if kind == "popup_image"
+                            else "Choose PractiScore results"
+                        )
                     )
                 ),
                 initialdir=initial_dir,
-                filetypes=[
-                    ("Image files", COMMON_IMAGE_FILE_PATTERNS),
-                    ("Video files", COMMON_VIDEO_FILE_PATTERNS),
-                    ("All files", "*.*"),
-                ],
+                filetypes=(
+                    [("PractiScore results", "*.csv *.txt"), ("All files", "*.*")]
+                    if kind == "practiscore"
+                    else [
+                        ("Image files", COMMON_IMAGE_FILE_PATTERNS),
+                        ("Video files", COMMON_VIDEO_FILE_PATTERNS),
+                        ("All files", "*.*"),
+                    ]
+                ),
             )
         if kind in {"project", "project_save", "project_open", "project_folder"}:
             return filedialog.askdirectory(
@@ -395,11 +403,19 @@ def choose_local_path_macos(
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary", "popup_image"}:
+    if kind in {"primary", "secondary", "popup_image", "practiscore"}:
         prompt = (
             "Choose stage video"
             if kind == "primary"
-            else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+            else (
+                "Choose secondary angle video"
+                if kind == "secondary"
+                else (
+                    "Choose marker image"
+                    if kind == "popup_image"
+                    else "Choose PractiScore results"
+                )
+            )
         )
         script = "\n".join(
             [
@@ -463,6 +479,20 @@ def display_name_for_path(path: str, fallback: str) -> str:
     if not path:
         return fallback
     return re.sub(r"^[A-Fa-f0-9]{32}_", "", Path(path).name)
+
+
+def reveal_local_folder(path: str | Path) -> None:
+    folder = Path(path).expanduser().resolve()
+    if not folder.is_dir():
+        raise ValueError(f"Project folder does not exist: {folder}")
+    command = (
+        ["open", str(folder)]
+        if sys.platform == "darwin"
+        else (["explorer", str(folder)] if sys.platform == "win32" else ["xdg-open", str(folder)])
+    )
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Could not open the project folder.")
 
 
 def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> bool:
@@ -934,6 +964,8 @@ class BrowserControlServer:
                     "/api/project/open": self._open_project,
                     "/api/project/save": self._save_project,
                     "/api/project/delete": self._delete_project,
+                    "/api/project/reveal": self._reveal_project,
+                    "/api/import/practiscore": self._import_practiscore,
                     "/api/import/primary": self._import_primary,
                     "/api/import/secondary": self._import_merge,
                     "/api/import/merge": self._import_merge,
@@ -1768,6 +1800,12 @@ class BrowserControlServer:
                 server._bump_media_url_token()
                 controller.delete_current_project()
 
+            def _reveal_project(self, payload: dict[str, Any]) -> None:
+                if controller.project_path is None:
+                    raise ValueError("Project path is required")
+                reveal_local_folder(controller.project_path)
+                controller.status_message = f"Opened project folder {controller.project_path}."
+
             def _import_primary(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()
                 controller.ingest_primary_video(str(payload["path"]))
@@ -1779,6 +1817,12 @@ class BrowserControlServer:
                         controller.status_message,
                         audio_codec,
                     )
+
+            def _import_practiscore(self, payload: dict[str, Any]) -> None:
+                path = str(payload.get("path", "")).strip()
+                if not path:
+                    raise ValueError("PractiScore results path is required")
+                controller.import_practiscore_file(path, source_name=Path(path).name)
 
             def _import_secondary(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()

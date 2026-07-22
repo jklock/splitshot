@@ -37,7 +37,7 @@ def test_default_packaged_artifact_root_uses_phase_12_tree(monkeypatch) -> None:
     monkeypatch.setattr(MODULE.sys, "platform", "darwin")
     assert (
         MODULE._default_packaged_artifact_root()
-        == ROOT / "artifacts" / "v106-phase-12-proof" / "packaged-local-mac"
+        == ROOT / "artifacts" / "v107-release-proof" / "packaged-local-mac"
     )
 
 

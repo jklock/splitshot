@@ -2,6 +2,86 @@ function normalizedKey(value) {
   return String(value || "").trim().toLocaleLowerCase();
 }
 
+const COMPETITION_DIVISION_CODES = Object.freeze({
+  idpa: Object.freeze({
+    bug: "BUG",
+    compactcarrypistol: "CCP",
+    customdefensivepistol: "CDP",
+    carryoptics: "CO",
+    enhancedservicepistol: "ESP",
+    enhancedservicerevolver: "ESR",
+    pistolcalibercarbine: "PCC",
+    revolver: "REV",
+    stockservicepistol: "SSP",
+    stockservicerevolver: "SSR",
+  }),
+  uspsa: Object.freeze({
+    carryoptics: "CO",
+    limited: "LTD",
+    limited10: "L10",
+    limitedten: "L10",
+    limitedoptics: "LO",
+    open: "OPEN",
+    pistolcalibercarbine: "PCC",
+    pcc: "PCC",
+    production: "PROD",
+    revolver: "REV",
+    singlestack: "SS",
+  }),
+});
+
+const COMPETITION_CLASS_CODES = Object.freeze({
+  idpa: Object.freeze({
+    distinguishedmaster: "DM",
+    master: "MA",
+    expert: "EX",
+    sharpshooter: "SS",
+    marksman: "MM",
+    novice: "NV",
+    unclassified: "UN",
+  }),
+  uspsa: Object.freeze({
+    grandmaster: "GM",
+    master: "M",
+    unclassified: "U",
+  }),
+});
+
+function compactCompetitionKey(value) {
+  return normalizedKey(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function competitionSport(scoring = {}, importedStage = {}) {
+  const matchType = normalizedKey(scoring.match_type || importedStage.match_type);
+  const ruleset = normalizedKey(scoring.ruleset);
+  if (matchType === "idpa" || ruleset.includes("idpa")) return "idpa";
+  if (matchType === "uspsa" || ruleset.includes("uspsa")) return "uspsa";
+  return matchType;
+}
+
+function competitionCode(value, aliases) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return aliases?.[compactCompetitionKey(raw)] || raw;
+}
+
+function competitionDimensionKey(value, aliases) {
+  return normalizedKey(competitionCode(value, aliases));
+}
+
+export function competitionIdentityLabels({ scoring = {}, importedStage = {} } = {}) {
+  const sport = competitionSport(scoring, importedStage);
+  const division = String(scoring.division || importedStage.division || "").trim();
+  const classification = String(
+    scoring.classification || importedStage.classification || "",
+  ).trim();
+  return {
+    sport,
+    division: competitionCode(division, COMPETITION_DIVISION_CODES[sport]),
+    classification: competitionCode(classification, COMPETITION_CLASS_CODES[sport]),
+  };
+}
+
 function finiteResult(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -39,9 +119,8 @@ function buildCohort(items, selectedNameKey, resultKey, ascending) {
 }
 
 export function buildCompetitionComparison({ scoring = {}, importedStage = {}, competitors = [] } = {}) {
-  const matchType = normalizedKey(scoring.match_type || importedStage.match_type);
-  const ruleset = normalizedKey(scoring.ruleset);
-  const idpa = matchType === "idpa" || ruleset.includes("idpa");
+  const sport = competitionSport(scoring, importedStage);
+  const idpa = sport === "idpa";
   const resultKey = idpa ? "final_time" : "hit_factor";
   const ascending = idpa;
   const identity = {
@@ -64,8 +143,13 @@ export function buildCompetitionComparison({ scoring = {}, importedStage = {}, c
       division: String(item.division || "").trim(),
       classification: String(item.classification || "").trim(),
     }));
-  const divisionKey = normalizedKey(identity.division);
-  const classificationKey = normalizedKey(identity.classification);
+  const divisionAliases = COMPETITION_DIVISION_CODES[sport];
+  const classificationAliases = COMPETITION_CLASS_CODES[sport];
+  const divisionKey = competitionDimensionKey(identity.division, divisionAliases);
+  const classificationKey = competitionDimensionKey(
+    identity.classification,
+    classificationAliases,
+  );
   const build = (items) => buildCohort(items, selectedNameKey, resultKey, ascending);
   return {
     sport: idpa ? "idpa" : "hit_factor",
@@ -73,12 +157,11 @@ export function buildCompetitionComparison({ scoring = {}, importedStage = {}, c
     ascending,
     identity,
     overall: build(all),
-    division: divisionKey ? build(all.filter((item) => normalizedKey(item.division) === divisionKey)) : build([]),
-    classification: classificationKey
-      ? build(all.filter((item) => normalizedKey(item.classification) === classificationKey))
+    division: divisionKey
+      ? build(all.filter((item) => competitionDimensionKey(item.division, divisionAliases) === divisionKey))
       : build([]),
-    divisionClassification: divisionKey && classificationKey
-      ? build(all.filter((item) => normalizedKey(item.division) === divisionKey && normalizedKey(item.classification) === classificationKey))
+    classification: classificationKey
+      ? build(all.filter((item) => competitionDimensionKey(item.classification, classificationAliases) === classificationKey))
       : build([]),
   };
 }
@@ -101,6 +184,7 @@ function buildStandingsCohort(items, selectedNameKey) {
 }
 
 export function buildFinalStandingsComparison({ scoring = {}, importedStage = {}, competitors = [] } = {}) {
+  const sport = competitionSport(scoring, importedStage);
   const identity = {
     name: String(scoring.competitor_name || importedStage.competitor_name || "").trim(),
     division: String(scoring.division || importedStage.division || "").trim(),
@@ -122,16 +206,22 @@ export function buildFinalStandingsComparison({ scoring = {}, importedStage = {}
     });
   });
   const all = [...deduplicated.values()];
-  const divisionKey = normalizedKey(identity.division);
-  const classificationKey = normalizedKey(identity.classification);
+  const divisionAliases = COMPETITION_DIVISION_CODES[sport];
+  const classificationAliases = COMPETITION_CLASS_CODES[sport];
+  const divisionKey = competitionDimensionKey(identity.division, divisionAliases);
+  const classificationKey = competitionDimensionKey(
+    identity.classification,
+    classificationAliases,
+  );
   const build = (items) => buildStandingsCohort(items, selectedNameKey);
   return {
     identity,
     overall: build(all),
-    division: divisionKey ? build(all.filter((item) => normalizedKey(item.division) === divisionKey)) : build([]),
-    classification: classificationKey ? build(all.filter((item) => normalizedKey(item.classification) === classificationKey)) : build([]),
-    divisionClassification: divisionKey && classificationKey
-      ? build(all.filter((item) => normalizedKey(item.division) === divisionKey && normalizedKey(item.classification) === classificationKey))
+    division: divisionKey
+      ? build(all.filter((item) => competitionDimensionKey(item.division, divisionAliases) === divisionKey))
+      : build([]),
+    classification: classificationKey
+      ? build(all.filter((item) => competitionDimensionKey(item.classification, classificationAliases) === classificationKey))
       : build([]),
   };
 }

@@ -122,6 +122,9 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/import/primary": (
         "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
     ),
+    "/api/import/practiscore": (
+        "test_browser_autosave_persists_practiscore_routes_to_project_json",
+    ),
     "/api/import/secondary": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
@@ -185,6 +188,7 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/output-profiles/delete",
     "/api/output-profiles/render",
     "/api/project/probe",
+    "/api/project/reveal",
     "/api/project/select-stage",
     "/api/project/stage/create",
     "/api/project/stage/delete",
@@ -363,6 +367,10 @@ def test_active_stage_media_edits_mark_queued_stage_stale(
     controller._sync_active_stage_to_project()
 
     controller.import_stage_primary(stage.id, str(primary_path))
+    assert Path(controller.project.primary_video.path).parent == controller.project_path / "Input"
+    assert Path(controller.project.active_stage.primary_media.path).parent == (
+        controller.project_path / "Input"
+    )
     controller.add_stage_to_queue(stage.id)
 
     assert controller.project.queue[0].status == QueueStatus.QUEUED
@@ -370,6 +378,9 @@ def test_active_stage_media_edits_mark_queued_stage_stale(
     assert controller.project.active_stage.queue_status == QueueStatus.QUEUED
 
     controller.import_stage_added(stage.id, str(secondary_path))
+    assert Path(controller.project.merge_sources[0].asset.path).parent == (
+        controller.project_path / "Input"
+    )
 
     assert controller.project.queue[0].status == QueueStatus.STALE
     assert controller.project.active_stage is not None
@@ -1642,7 +1653,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": False,
-            "missing_required_dirs": ["Input", "CSV", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
         }
 
         (project_path / "project.json").write_text("{}", encoding="utf-8")
@@ -1654,7 +1665,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": True,
-            "missing_required_dirs": ["Input", "CSV", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
         }
     finally:
         server.shutdown()
@@ -1739,11 +1750,10 @@ def test_browser_project_open_replaces_stale_media_state(
         video_path = Path(synthetic_video_factory())
         project_path = tmp_path / "saved.ssproj"
 
-        imported = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
-        assert imported["media"]["primary_available"] is True
-
         saved = _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
         assert saved["project"]["path"] == str(project_path)
+        imported = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        assert imported["media"]["primary_available"] is True
 
         cleared = _post_json(f"{server.url}api/project/new", {})
         assert cleared["media"]["primary_available"] is False
@@ -2452,12 +2462,13 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["export"]["preset"] == "youtube_long_1080p"
 
         before_swap = _read_project_json(project_path)
-        old_primary_path = before_swap["primary_video"]["path"]
         old_first_source_path = before_swap["merge_sources"][0]["asset"]["path"]
         _post_json(f"{server.url}api/swap", {})
         after_swap = _read_project_json(project_path)
         assert after_swap["primary_video"]["path"] == old_first_source_path
-        assert after_swap["secondary_video"]["path"] == old_primary_path
+        assert after_swap["secondary_video"]["path"] == before_swap["primary_trim_derivative"][
+            "derivative_path"
+        ]
 
         removable_source_id = after_swap["merge_sources"][-1]["id"]
         _post_json(f"{server.url}api/merge/remove", {"source_id": removable_source_id})
@@ -2936,6 +2947,10 @@ def test_browser_autosave_persists_practiscore_routes_to_project_json(tmp_path: 
         assert saved["scoring"]["competitor_name"] == "John Klockenkemper"
         assert saved["scoring"]["competitor_place"] == 4
 
+        _post_json(
+            f"{server.url}api/import/practiscore",
+            {"path": str(examples_dir / "IDPA.csv")},
+        )
         _post_multipart(
             f"{server.url}api/files/practiscore",
             "file",
@@ -3013,6 +3028,7 @@ def test_browser_project_save_bundles_imported_media_for_reopen(
         secondary_path = Path(synthetic_video_factory(name="secondary-upload"))
         project_path = tmp_path / "uploaded-media.ssproj"
 
+        _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
         _post_multipart(
             f"{server.url}api/files/primary",
             "file",

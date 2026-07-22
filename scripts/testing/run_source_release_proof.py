@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the v1.0.6 source-app release proof bundle and write deterministic artifacts."""
+"""Run the v1.0.7 source-app release proof bundle and write deterministic artifacts."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v106-release-proof" / "source"
+DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v107-release-proof" / "source"
 RELEASE_PROOF_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
 
 
@@ -51,7 +51,7 @@ def main() -> int:
             "python",
             "scripts/audits/browser/run_browser_ui_surface_audit.py",
             "--primary-video",
-            "docs/Clip1.MP4",
+            "tests/fixtures/media/e2e-stage.mp4",
             "--artifact-root",
             str(surface_root),
             "--report-json",

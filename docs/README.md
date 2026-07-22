@@ -21,16 +21,19 @@ If you just forked SplitShot, read these in order after the top-level install pa
 - [userfacing/workflow.md](userfacing/workflow.md)
 - [userfacing/troubleshooting.md](userfacing/troubleshooting.md)
 - [userfacing/panes/project.md](userfacing/panes/project.md)
+- [userfacing/panes/media.md](userfacing/panes/media.md)
+- [userfacing/panes/compose.md](userfacing/panes/compose.md)
+- [userfacing/panes/trim.md](userfacing/panes/trim.md)
 - [userfacing/panes/score.md](userfacing/panes/score.md)
 - [userfacing/panes/splits.md](userfacing/panes/splits.md)
-- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
-- [userfacing/panes/pip.md](userfacing/panes/pip.md)
-- [userfacing/panes/popup.md](userfacing/panes/popup.md)
+- [userfacing/panes/markers.md](userfacing/panes/markers.md)
 - [userfacing/panes/overlay.md](userfacing/panes/overlay.md)
 - [userfacing/panes/review.md](userfacing/panes/review.md)
 - [userfacing/panes/export.md](userfacing/panes/export.md)
-- [userfacing/panes/settings.md](userfacing/panes/settings.md)
+- [userfacing/panes/queue.md](userfacing/panes/queue.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
+- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
+- [userfacing/panes/settings.md](userfacing/panes/settings.md)
 
 This is the primary reading path for people trying to use SplitShot rather than maintain it.
 
@@ -40,7 +43,6 @@ This is the primary reading path for people trying to use SplitShot rather than 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md)
 - [project/GOVERNANCE.md](project/GOVERNANCE.md)
-- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
 - [project/ELECTRON_RELEASE.md](project/ELECTRON_RELEASE.md)
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md)
@@ -79,9 +81,11 @@ uv run python scripts/docs/capture_browser_screenshots.py
 
 Covered surfaces:
 
-- Every left-rail pane: `Project`, `PiP`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, `ShotML`
+- Every left-rail pane: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`
 - Expanded score, splits, waveform, metrics, marker, settings, review, and ShotML states already represented by the capture script
 - Shared modals: color picker and export log
+
+The canonical filenames are `ProjectPane.png`, `MediaPane.png`, `ComposePane.png`, `TrimPane.png`, `ScorePane.png`, `ScorePane2.png`, `SplitsPane.png`, `SplitsExpanded.png`, `WaveformExpanded.png`, `MarkersPane.png`, `MarkersPane2.png`, `OverlayPane.png`, `OverlayPane2.png`, `ColorPickerModal.png`, `ReviewPane.png`, `ReviewPane2.png`, `ExportPane.png`, `ExportPane2.png`, `ExportLogModal.png`, `QueuePane.png`, `MetricsPane.png`, `MetricsExpanded.png`, `ShotMLPane.png`, `ShotMLPane2.png`, `SettingsPane.png`, and `SettingsPane2.png`.
 
 ## Technical Docs
 
@@ -89,9 +93,6 @@ Covered surfaces:
 - [project/SHOTML_ARCHITECTURE.md](project/SHOTML_ARCHITECTURE.md)
 - [project/browser-pane-ownership.md](project/browser-pane-ownership.md)
 - [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
-- [project/browser-control-coverage-plan.md](project/browser-control-coverage-plan.md)
-- [project/browser-full-e2e-qa-plan.md](project/browser-full-e2e-qa-plan.md)
-- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 
 ## Read This Next
 

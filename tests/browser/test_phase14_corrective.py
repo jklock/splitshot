@@ -234,15 +234,15 @@ def test_media_active_stage_is_not_collapsible_and_does_not_queue():
     assert "/api/project/queue/" not in source
 
 
-def test_media_picker_root_prefers_stage_media_then_project_input():
+def test_media_picker_root_is_fixed_to_project_input():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     within = source[
         source.index("function mediaPickerDefaultRoot") : source.index(
             "function readSectionExpansion"
         )
     ]
-    assert "stage?.primary_media?.path" in within
-    assert "stageAddedMedia(stage)[0]" in within
+    assert "stage?.primary_media?.path" not in within
+    assert "stageAddedMedia(stage)[0]" not in within
     assert 'joinProjectPath(projectPath, "Input")' in within
     assert "projectPath ||" in within
 
@@ -309,28 +309,47 @@ def test_review_metric_value_wires_placement_dimensions():
     assert "overall_placement" in within
     assert "division_placement" in within
     assert "class_placement" in within
-    assert "division_class_placement" in within
+    assert 'case "division_class_placement"' not in within
     assert "formatPlacement" in within
 
 
-def test_review_passes_denominator_to_all_placement_fields():
+def test_review_passes_denominator_to_supported_placement_fields():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     within = source[source.index("reviewMetricValue") :]
     assert "formatPlacement(groups.overall.place, groups.overall.items.length)" in within
     assert "formatPlacement(groups.division.place, groups.division.items.length)" in within
     assert "formatPlacement(groups.class.place, groups.class.items.length)" in within
-    assert (
-        "formatPlacement(groups.divisionClass.place, groups.divisionClass.items.length)" in within
-    )
+    assert "formatPlacement(groups.divisionClass.place" not in within
 
 
-def test_review_uses_final_standings_and_does_not_default_overall():
+def test_review_uses_final_standings_and_defaults_to_actual_three_cohorts():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     assert "buildFinalStandingsComparison" in source
     assert "DEFAULT_SUMMARY_METRIC_IDS" in source
     default_block = source[source.index("DEFAULT_SUMMARY_METRIC_IDS") : source.index("DEFAULT_SUMMARY_METRIC_IDS") + 300]
-    assert '"overall_placement"' not in default_block
+    assert '"overall_placement"' in default_block
+    assert '"division_class_placement"' not in default_block
     assert "buildCompetitionComparison" not in source
+
+
+def test_review_labels_placement_with_actual_sport_identity():
+    source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
+    assert "competitionIdentityLabels" in source
+    assert 'label: identity.division || "Division"' in source
+    assert 'label: identity.classification || "Class"' in source
+    assert '{ id: "overall_placement", label: "Overall", separator: " - " }' in source
+    assert '`${def.label}${def.separator || " "}${value}`' in source
+    assert 'label: "Division + Class Placement"' not in source
+
+
+def test_metrics_uses_actual_standings_and_compact_sport_labels():
+    source = (STATIC_ROOT / "panes" / "metrics-pane.js").read_text()
+    assert "buildFinalStandingsComparison" in source
+    assert "competitionIdentityLabels" in source
+    assert "`${label} - ${cohort.place}/${cohort.count}`" in source
+    assert "Division Placement" not in source
+    assert "Class Placement" not in source
+    assert "Classification Placement" not in source
 
 
 def test_queue_uses_compact_stage_cards():

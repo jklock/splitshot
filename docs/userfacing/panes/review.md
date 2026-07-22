@@ -50,14 +50,13 @@ Available metrics render in this fixed order:
 2. `Raw Time`
 3. `Points Down`
 4. `Penalties`
-5. `Overall Placement`
-6. `Division Placement`
-7. `Class Placement`
-8. `Division + Class Placement`
+5. `<division acronym> - <place within division>/<total division competitors>`
+6. `<class acronym> - <place within class>/<total class competitors>`
+7. `Overall - <overall place>/<total competitors>`
 
-Placement values use the imported final match standings. The numerator and denominator always come from the same valid standings field; rows without a positive final match place are excluded. Division, class, and division-plus-class are separate cohorts.
+The division and class labels come from the imported sport data, so the visible rows use the source acronyms—for example, `PCC - 1/190`, `SS - 4/44`, and `Overall - 1/32`. The numerator and denominator are calculated from the same imported final-match cohort; rows without a positive final place are excluded. Division and class remain separate cohorts. SplitShot does not calculate or display a combined division-and-class row.
 
-`Overall Placement` is not selected in a new Summary box. Select it explicitly when wanted. Percent and Gap metrics remain disabled and do not render.
+The Overall row is selected by default in a new Summary box. Percent and Gap metrics remain disabled and do not render.
 
 Unchecked metrics do not render. Metrics that are unavailable from the imported data stay hidden or blank.
 
@@ -74,7 +73,7 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 9. When `Lock to shot stack` is on, dragging that rendered box moves the whole locked stack and keeps the box locked.
 10. Adjust width, height, colors, and opacity until the text reads clearly over the footage.
 11. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
-12. Check the Summary box preview to verify stage placement, times, penalties, and classifications.
+12. Check the Summary box preview to verify times, penalties, and the division, class, and overall rows against the imported source.
 
 ## Summary Box Behavior
 
@@ -96,5 +95,5 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 
 ## Related Guides
 
-Previous: [popup.md](popup.md) (Markers)
+Previous: [overlay.md](overlay.md)
 Next: [export.md](export.md)

@@ -26,8 +26,8 @@ jobs:
         run: choco install tesseract -y
       - name: Install dependencies
         run: uv sync --frozen --extra dev
-      - name: Verify Clip1 proof fixture
-        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
+      - name: Verify E2E proof fixture
+        run: uv run python scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
       - name: Runtime check
         run: uv run splitshot --check
       - name: Run tests
@@ -74,10 +74,10 @@ jobs:
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
-      - name: Verify Clip1 proof fixture
-        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
+      - name: Verify E2E proof fixture
+        run: uv run python scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Build Electron app
         run: cd electron && npm run build:win
@@ -115,10 +115,10 @@ jobs:
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
-      - name: Verify Clip1 proof fixture
-        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
+      - name: Verify E2E proof fixture
+        run: uv run python scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
       - name: Install Playwright browsers
         shell: bash
         run: |
@@ -147,9 +147,9 @@ jobs:
             --script-arg=--scope \
             --script-arg=release-proof \
             --script-arg=--artifact-root \
-            --script-arg=artifacts/v106-phase-12-proof/github-review/windows \
+            --script-arg=artifacts/v107-release-proof/github-review/windows \
             --script-arg=--primary-video \
-            --script-arg=docs/Clip1.MP4
+            --script-arg=tests/fixtures/media/e2e-stage.mp4
         timeout-minutes: 30
         shell: bash
       - name: Upload E2E artifacts

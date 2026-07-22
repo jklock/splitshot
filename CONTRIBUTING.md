@@ -2,6 +2,8 @@
 
 Contributions should preserve SplitShot's local-first workflow, shared controller model, and evidence-backed test discipline.
 
+The v1.0.7 release line is feature-frozen. Changes targeting it should correct defects, tests, packaging, or documentation without expanding the product surface.
+
 ## Start Here
 
 Read these before changing code:
@@ -22,6 +24,8 @@ Read these before changing code:
 6. Delete the branch after merge unless it still carries active work.
 
 ## Required Checks
+
+Use Python 3.12 with `uv`, Node.js 22 with `npm ci`, and make sure `ffmpeg` and `ffprobe` are on `PATH` for source media/export checks.
 
 - Browser-visible route or static-shell changes:
   run the narrow browser/static tests that own the surface.

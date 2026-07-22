@@ -271,8 +271,12 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
     image_path = tmp_path / "popup-reference.png"
     image_path.write_bytes(b"fake-image")
 
-    def fake_path_chooser(kind: str, current: str | None) -> str:
+    def fake_path_chooser(
+        kind: str, current: str | None, default_root: str | None = None
+    ) -> str:
         assert kind == "popup_image"
+        assert default_root is not None
+        assert Path(default_root).name == "Markers"
         return str(image_path)
 
     server = BrowserControlServer(port=0, path_chooser=fake_path_chooser)
@@ -675,6 +679,26 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(
                     )
                     _set_input_value(card.locator('button[data-field="text_color"] + input'), text)
                     _set_input_value(card.locator('[data-field="opacity"]'), opacity_percent)
+
+                alpha_layout = page.locator(
+                    '#badge-style-grid .style-card[data-badge="timer_badge"] .opacity-percent-field'
+                ).evaluate(
+                    """field => {
+                        const input = field.querySelector('.opacity-percent-input');
+                        const suffix = field.querySelector('.opacity-percent-suffix');
+                        const inputRect = input.getBoundingClientRect();
+                        const suffixRect = suffix.getBoundingClientRect();
+                        return {
+                            inputWidth: inputRect.width,
+                            suffixGap: suffixRect.left - inputRect.right,
+                            paddingRight: parseFloat(getComputedStyle(input).paddingRight),
+                        };
+                    }"""
+                )
+                assert alpha_layout["inputWidth"] >= 76
+                assert alpha_layout["suffixGap"] >= 8
+                assert alpha_layout["paddingRight"] >= 28
+                page.screenshot(path="artifacts/overlay-alpha-spacing.png", full_page=True)
 
                 page.evaluate(
                     """() => {

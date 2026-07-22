@@ -44,6 +44,7 @@ def _multipart_upload(
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
 DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
+AUDIT_TMP_ROOT = ROOT / "tmp" / "codex" / "browser-ui-surface-audit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional directory where release-proof pane screenshots and support artifacts will be written.",
     )
     parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=AUDIT_TMP_ROOT,
+        help="Directory for generated audit projects. Defaults to ignored tmp/codex state.",
+    )
+    parser.add_argument(
         "--base-url",
         type=str,
         default="",
@@ -197,21 +204,26 @@ def show_project_tool(page: Page) -> None:
     page.wait_for_selector("#primary-file-input", state="attached")
 
 
-def import_primary_video(page: Page, primary_video: Path, base_url: str = "") -> None:
+def audit_project_path(project_root: Path) -> Path:
+    import uuid
+
+    root = project_root.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"browser-audit-{uuid.uuid4().hex}.ssproj"
+
+
+def import_primary_video(
+    page: Page, primary_video: Path, base_url: str = "", project_root: Path = AUDIT_TMP_ROOT
+) -> None:
     show_project_tool(page)
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(audit_project_path(project_root))
+        page.evaluate("(path) => createNewProject(path)", project_path)
+        page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
     if base_url:
         _multipart_upload(base_url, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:
-        if not page.evaluate("Boolean(state?.project?.path)"):
-            project_path = str(primary_video.parent / "browser-audit.ssproj")
-            page.evaluate(
-                f"""async () => {{
-                    await callApi("/api/project/new", {{}});
-                    await callApi("/api/project/save", {{ path: {json.dumps(project_path)} }});
-                }}"""
-            )
-            page.wait_for_function("() => Boolean(state?.project?.path)")
         page.locator("#primary-file-input").set_input_files(str(primary_video))
     page.wait_for_function(
         "() => (state?.project?.analysis?.shots?.length || 0) > 0",
@@ -372,14 +384,6 @@ def audit_release_output_profile_review_truth(
             "() => (state?.project?.merge_sources || []).length > 0", timeout=30000
         )
         wait_for_processing_bar_to_settle(page)
-    source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
-    if not source_id:
-        return expect(
-            False,
-            "release_output_profile_review_truth",
-            "Merge source was not available for release-proof review-source checks.",
-        )
-
     _set_active_tool(page, "export")
     page.evaluate(
         """
@@ -401,79 +405,28 @@ def audit_release_output_profile_review_truth(
             "type": page.locator("#output-profile-type").is_disabled() is False,
             "frame": page.locator("#output-profile-frame").is_disabled() is False,
         },
-        "live_status_before": "",
-        "retained_status_after": "",
-        "retained_status_after_rerender": "",
-        "live_status_after_clear": "",
+        "review_controls_present": False,
     }
 
     _set_active_tool(page, "review")
-    result["live_status_before"] = page.locator("#review-source-status").text_content() or ""
-    page.locator("#review-source-select").evaluate(
-        """(element, nextValue) => {
-          element.value = nextValue;
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        }""",
-        source_id,
-    )
-    page.evaluate(
-        """
-        () => {
-          const button = document.getElementById('review-set-source');
-          if (button instanceof HTMLElement) button.click();
-        }
-        """
-    )
     page.wait_for_function(
-        """(expectedSourceId) => {
-          const select = document.getElementById('review-source-select');
-          return select?.value === expectedSourceId
-            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-        }""",
-        arg=source_id,
+        """() => document.querySelector('[data-tool-pane="review"]')?.hidden === false"""
     )
-    result["retained_status_after"] = page.locator("#review-source-status").text_content() or ""
-    _capture_surface_screenshot(page, artifact_root, "review-retained-audit")
-
-    _set_active_tool(page, "overlay")
-    _set_active_tool(page, "export")
-    _set_active_tool(page, "review")
-    result["retained_status_after_rerender"] = (
-        page.locator("#review-source-status").text_content() or ""
+    result["review_controls_present"] = page.evaluate(
+        """() => Boolean(
+          document.getElementById('review-add-text-box')
+          && document.getElementById('review-add-imported-box')
+          && document.getElementById('review-text-box-list')
+        )"""
     )
-
-    page.locator("#review-source-select").evaluate(
-        """(element, nextValue) => {
-          element.value = nextValue;
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        }""",
-        "",
-    )
-    page.evaluate(
-        """
-        () => {
-          const button = document.getElementById('review-set-source');
-          if (button instanceof HTMLElement) button.click();
-        }
-        """
-    )
-    page.wait_for_function(
-        "() => document.getElementById('review-source-status')?.textContent === 'Live'"
-    )
-    result["live_status_after_clear"] = page.locator("#review-source-status").text_content() or ""
-    _capture_surface_screenshot(page, artifact_root, "review-live-audit")
+    _capture_surface_screenshot(page, artifact_root, "review-audit")
 
     _write_artifact_json(artifact_root, "release-output-profile-review-truth.json", result)
     return expect(
         all(result["profile_fields_enabled"].values())
-        and result["live_status_before"] == "Live"
-        and result["retained_status_after"].startswith("Retained: ")
-        and result["retained_status_after_rerender"].startswith("Retained: ")
-        and result["live_status_after_clear"] == "Live",
+        and result["review_controls_present"],
         "release_output_profile_review_truth",
-        "Output-profile fields should enable immediately and Review Source should persist retained/live truth across rerenders.",
+        "Output-profile fields should enable immediately and current Review text-box controls should render.",
         result,
     )
 
@@ -1813,6 +1766,7 @@ def run_browser_audit(
     headed: bool,
     artifact_root: Path | None = None,
     base_url: str = "",
+    project_root: Path = AUDIT_TMP_ROOT,
 ) -> BrowserAudit:
     target = BROWSER_TARGETS[target_name]
     server: BrowserControlServer | None = None
@@ -1838,7 +1792,7 @@ def run_browser_audit(
                 ],
             )
 
-        import_primary_video(page, primary_video, audit_url)
+        import_primary_video(page, primary_video, audit_url, project_root)
         capture_release_surface_screenshots(page, artifact_root, primary_video)
         checks = [
             audit_overlay_surfaces(page),
@@ -1889,6 +1843,7 @@ def main() -> int:
                 args.headed,
                 args.artifact_root,
                 args.base_url,
+                args.project_root,
             )
             for browser_name in browsers
         ]

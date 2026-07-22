@@ -1,5 +1,9 @@
 import { createPaneBase } from "./pane-base.js";
-import { buildCompetitionComparison } from "../lib/competition-comparison.js";
+import {
+  buildCompetitionComparison,
+  buildFinalStandingsComparison,
+  competitionIdentityLabels,
+} from "../lib/competition-comparison.js";
 
 export function createMetricsPane({
   $ = (id) => document.getElementById(id),
@@ -525,7 +529,7 @@ export function createMetricsPane({
       graphs.push({
         id: "overall_placement",
         type: "bars",
-        title: "Overall Placement",
+        title: `Overall - ${myRank}/${totalCount}`,
         subtitle: "",
         unit: "s",
         bars: allCompetitors.map((c) => ({
@@ -544,7 +548,7 @@ export function createMetricsPane({
       graphs.push({
         id: "division_placement",
         type: "bars",
-        title: `${myDivision} Division Placement`,
+        title: `${myDivision} - ${divRank}/${sameDivision.length}`,
         subtitle: "",
         unit: "s",
         bars: sameDivision.map((c) => ({
@@ -563,7 +567,7 @@ export function createMetricsPane({
       graphs.push({
         id: "class_placement",
         type: "bars",
-        title: `${myClass} Class Placement`,
+        title: `${myClass} - ${classRank}/${sameClass.length}`,
         subtitle: "",
         unit: "s",
         bars: sameClass.map((c) => ({
@@ -1091,6 +1095,15 @@ export function createMetricsPane({
       importedStage,
       competitors: comparisonData,
     });
+    const standings = buildFinalStandingsComparison({
+      scoring: state?.project?.scoring || {},
+      importedStage,
+      competitors: comparisonData,
+    });
+    const identityLabels = competitionIdentityLabels({
+      scoring: state?.project?.scoring || {},
+      importedStage,
+    });
     const myName = comparison.identity.name;
     if (!myName) return [];
     const userBarColor = "#ff7b22";
@@ -1109,11 +1122,14 @@ export function createMetricsPane({
     }
     const graphs = [];
     [
-      ["overall", comparison.overall, "Overall Stage Placement"],
-      ["division", comparison.division, `${comparison.identity.division || "Division"} Division Placement`],
-      ["classification", comparison.classification, `${comparison.identity.classification || "Classification"} Classification Placement`],
-    ].forEach(([id, cohort, title]) => {
+      ["division", comparison.division, standings.division, identityLabels.division || "Division"],
+      ["classification", comparison.classification, standings.classification, identityLabels.classification || "Class"],
+      ["overall", comparison.overall, standings.overall, "Overall"],
+    ].forEach(([id, cohort, standing, label]) => {
       if (cohort.count >= 2 && cohort.current) {
+        const title = standing.current && standing.place !== null
+          ? `${label} - ${standing.place}/${standing.count}`
+          : label;
         graphs.push({
           id: `competitor_${id}_placement`, type: "bars", title, subtitle: "", unit,
           bars: buildBars(cohort),
@@ -1127,9 +1143,9 @@ export function createMetricsPane({
     return graphs;
   }
 
-  function currentCompetitionComparison() {
+  function currentFinalStandingsComparison() {
     const state = currentState();
-    return buildCompetitionComparison({
+    return buildFinalStandingsComparison({
       scoring: state?.project?.scoring || {},
       importedStage: state?.scoring_summary?.imported_stage || {},
       competitors: Array.isArray(state?.practiscore_options?.comparison_competitors)
@@ -1138,55 +1154,34 @@ export function createMetricsPane({
     });
   }
 
-  function competitionResultText(value, comparison) {
-    if (value === null || value === undefined) return "--";
-    return comparison.resultKey === "final_time"
-      ? `${Number(value).toFixed(2)}s`
-      : Number(value).toFixed(4);
-  }
-
   function renderCompetitionSummaryCards(container) {
     if (!container) return;
-    const comparison = currentCompetitionComparison();
+    const comparison = currentFinalStandingsComparison();
+    const state = currentState();
+    const labels = competitionIdentityLabels({
+      scoring: state?.project?.scoring || {},
+      importedStage: state?.scoring_summary?.imported_stage || {},
+    });
     const definitions = [
+      [labels.division || "Division", comparison.division, labels.division ? "Division" : "Division not selected"],
+      [labels.classification || "Class", comparison.classification, labels.classification ? "Class" : "Class not selected"],
       ["Overall", comparison.overall, ""],
-      [comparison.identity.division || "Division", comparison.division, comparison.identity.division ? "Division" : "Division not selected"],
-      [comparison.identity.classification || "Classification", comparison.classification, comparison.identity.classification ? "Classification" : "Classification not selected"],
     ];
     container.replaceChildren();
     definitions.forEach(([label, cohort, unavailableReason]) => {
       const card = documentObject.createElement("article");
       card.className = "metrics-placement-card";
       card.dataset.competitionCohort = label;
-      const heading = documentObject.createElement("small");
-      heading.textContent = label;
       const placement = documentObject.createElement("strong");
       placement.textContent = cohort.current && cohort.rank !== null
-        ? `${cohort.rank} / ${cohort.count}`
-        : "Not available";
-      card.append(heading, placement);
+        ? `${label} - ${cohort.place}/${cohort.count}`
+        : `${label} - Not available`;
+      card.append(placement);
       if (!cohort.current || cohort.rank === null) {
         const reason = documentObject.createElement("span");
         reason.className = "hint";
         reason.textContent = unavailableReason || "No valid result for this competitor in the cohort.";
         card.appendChild(reason);
-      } else {
-        const details = documentObject.createElement("dl");
-        [
-          ["Percentile", `${cohort.percentile.toFixed(1)}%`],
-          ["You", competitionResultText(cohort.current[comparison.resultKey], comparison)],
-          ["Leader", competitionResultText(cohort.leader?.[comparison.resultKey], comparison)],
-          ["Gap", competitionResultText(cohort.gap, comparison)],
-        ].forEach(([term, value]) => {
-          const row = documentObject.createElement("div");
-          const dt = documentObject.createElement("dt");
-          const dd = documentObject.createElement("dd");
-          dt.textContent = term;
-          dd.textContent = value;
-          row.append(dt, dd);
-          details.appendChild(row);
-        });
-        card.appendChild(details);
       }
       container.appendChild(card);
     });

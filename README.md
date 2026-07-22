@@ -4,7 +4,7 @@
 
 # SplitShot
 
-SplitShot is a local-first browser app for competition shooting video analysis, split timing, scoring, review overlays, PiP comparison, metrics, and final video export.
+SplitShot v1.0.7 is a local-first browser app for competition shooting video analysis, split timing, scoring, multi-media composition, metrics, and final video export.
 
 <img src="docs/screenshots/ExportPane.png" alt="SplitShot browser app showing the Export pane with render settings and final output controls" width="894">
 
@@ -32,7 +32,7 @@ If you just forked the repo and want maintainer context, use the developer secti
 - **Manual timing correction and review:** Inspect waveform markers, nudge or drag shot positions, add missing events, remove false positives, and make the final timeline match what actually happened on the run.
 - **Stage scoring with optional PractiScore context:** Score the run manually or import official stage and competitor context from PractiScore so timing, scoring, and final presentation stay tied to the same source data.
 - **Overlay, marker, and review composition:** Build export-ready timer badges, shot badges, score summaries, review text boxes, and marker callouts that stay visible in preview and final render.
-- **PiP and multi-angle comparison:** Add secondary videos or stills, place them as PiP, side-by-side, or above-below layouts, and tune sync and opacity to clarify transitions or positions.
+- **Compose and multi-angle comparison:** Add secondary videos or stills, place them as picture-in-picture, side-by-side, or above-below layouts, and tune sync and opacity to clarify transitions or positions.
 - **Post-stage metrics and export summaries:** Review timing graphs, expanded tables, CSV/text exports, and run summaries derived from the same corrected project state.
 - **Local final video rendering:** Export a finished video through FFmpeg with your chosen timing, overlays, review text, added media, and presentation settings.
 
@@ -40,17 +40,21 @@ If you just forked the repo and want maintainer context, use the developer secti
 
 1. Install SplitShot using the platform section below.
 2. Launch SplitShot from source with `uv run splitshot` or from the Electron shell with `npm start` inside `electron/`.
-3. Open or create a `.ssproj` bundle in the `Project` pane so the rest of the import and save controls are enabled.
-4. Import the primary stage video, wait for analysis to build the waveform and initial shot timeline, and confirm that the start beep and shot count look plausible.
+3. In `Project`, select an empty folder and create the project, or select a folder containing `project.json` to open it. SplitShot creates `Input`, `CSV`, `Markers`, and `Output` inside that folder.
+4. Use `Media` to add stages and import their primary and added media. Imported files are copied into the project's `Input` folder; later pickers open in the relevant project-owned location (`Input`, `CSV`, `Markers`, or `Output`) so assets stay together.
 5. If the first pass is off, adjust detection in `ShotML`, rerun analysis, and only then move into manual cleanup in `Splits`.
 6. Use `Splits` to correct timing, add or remove shots, review timing events, and make the final timeline match the footage before deeper presentation work.
 7. Import PractiScore context if you need official stage and competitor data, then finish scoring in `Score`.
-8. Add secondary media in `PiP`, create marker callouts in `Markers`, tune badges in `Overlay`, and configure text boxes and visibility in `Review`.
-9. Check `Metrics` for the post-stage timing and scoring summary, then finish in `Export` with the output path, codec, and render settings you want.
+8. Arrange added media in `Compose`, set source timing in `Trim`, create callouts in `Markers`, tune badges in `Overlay`, and configure text boxes in `Review`.
+9. Check `Metrics`, choose codec and render settings in `Export`, then use `Queue` to add, run, monitor, or cancel output jobs.
+
+The left rail contains 14 panes in workflow order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 
 For the full user workflow, continue with [docs/userfacing/workflow.md](docs/userfacing/workflow.md).
 
 ## Platform-Specific Local Use
+
+Source development requires Python 3.12, [`uv`](https://docs.astral.sh/uv/), and `ffmpeg` plus `ffprobe` on `PATH`. Electron development and packaging additionally require Node.js 22; use `npm ci` so installs match the committed lockfile. Packaged releases include their media-tool runtime.
 
 ### macOS
 
@@ -58,7 +62,7 @@ For the full user workflow, continue with [docs/userfacing/workflow.md](docs/use
   ```bash
   git clone https://github.com/jklock/splitshot.git
   cd splitshot/electron
-  npm install
+  npm ci
   npm start
   ```
 - Electron build target:
@@ -84,7 +88,7 @@ For the full user workflow, continue with [docs/userfacing/workflow.md](docs/use
   ```powershell
   git clone https://github.com/jklock/splitshot.git
   cd splitshot\electron
-  npm install
+  npm ci
   npm start
   ```
 - Electron build target:
@@ -110,7 +114,7 @@ For the full user workflow, continue with [docs/userfacing/workflow.md](docs/use
   ```bash
   git clone https://github.com/jklock/splitshot.git
   cd splitshot/electron
-  npm install
+  npm ci
   npm start
   ```
 - Electron build target:
@@ -148,8 +152,8 @@ SplitShot starts in browser mode by default. These are the supported CLI argumen
   Starts the app without automatically opening the browser.
 - `uv run splitshot --log-level off|error|warning|info|debug`
   Mirrors browser activity logs to the terminal at or above the selected level while keeping file logging enabled.
-- `uv run splitshot --project /path/to/project.ssproj`
-  Opens an existing `.ssproj` bundle at startup.
+- `uv run splitshot --project /path/to/project-folder`
+  Opens an existing project folder containing `project.json` at startup.
 - `uv run splitshot --check`
   Runs the runtime/toolchain check for FFmpeg, FFprobe, Qt WebEngine, native dialog support, and required browser assets.
 
@@ -171,7 +175,6 @@ Use these after the user-facing install and workflow docs:
 - [docs/project/DEVELOPING.md](docs/project/DEVELOPING.md): local setup, daily workflow, and first engineering reads
 - [docs/project/ARCHITECTURE.md](docs/project/ARCHITECTURE.md): runtime layers, controller/model boundaries, and data flow
 - [docs/project/GOVERNANCE.md](docs/project/GOVERNANCE.md): branch lifecycle, protections, and release-tag policy
-- [docs/project/V1_1_AUDIT.md](docs/project/V1_1_AUDIT.md): `v1.1` audit-first baseline, frozen non-regression contract, and worklist format
 - [src/splitshot/README.md](src/splitshot/README.md): source tree map and subsystem entrypoints
 - [docs/tests/TEST_SUITE_GUIDE.md](docs/tests/TEST_SUITE_GUIDE.md): validation and suite ownership
 - [scripts/README.md](scripts/README.md): scripts, audits, and release helpers

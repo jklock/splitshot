@@ -1164,12 +1164,12 @@ class ProjectController(QObject):
 
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
-        self.load_primary_video(path)
+        self.load_primary_video(self._stage_project_input_path(path, source_name=source_name))
         self.analyze_primary()
 
     def ingest_secondary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing secondary video...")
-        self.load_secondary_video(path)
+        self.load_secondary_video(self._stage_project_input_path(path, source_name=source_name))
 
     def set_project_details(
         self,
@@ -2323,7 +2323,8 @@ class ProjectController(QObject):
             self.project_changed.emit()
 
     def add_merge_source(self, path: str, source_name: str | None = None) -> None:
-        asset = probe_video(path)
+        project_path = self._stage_project_input_path(path, source_name=source_name)
+        asset = probe_video(project_path)
         self.project.merge_sources.append(
             MergeSource(
                 asset=asset,
@@ -2538,11 +2539,12 @@ class ProjectController(QObject):
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
         self._set_status(f"Importing primary media for stage {stage.label}...")
+        project_path = self._stage_project_input_path(path)
         if stage_id == self.project.active_stage_id:
-            self.ingest_primary_video(str(path))
+            self.ingest_primary_video(project_path)
             self._sync_project_to_active_stage()
         else:
-            stage.primary_media = probe_video(str(path))
+            stage.primary_media = probe_video(project_path)
             stage.primary_trim_derivative = MergeSourceTrimDerivative(
                 original_path=stage.primary_media.path
             )
@@ -2559,13 +2561,14 @@ class ProjectController(QObject):
         if not stage.primary_media.path:
             raise ValueError("Add primary media before adding secondary media")
         self._set_status(f"Importing added media for stage {stage.label}...")
+        project_path = self._stage_project_input_path(path)
         if stage_id == self.project.active_stage_id:
-            self.add_merge_source(str(path))
+            self.add_merge_source(project_path)
             self._sync_project_to_active_stage()
         else:
             stage.added_media.append(
                 MergeSource(
-                    asset=probe_video(str(path)),
+                    asset=probe_video(project_path),
                     pip_size_percent=stage.merge.pip_size_percent,
                     pip_x=stage.merge.pip_x,
                     pip_y=stage.merge.pip_y,

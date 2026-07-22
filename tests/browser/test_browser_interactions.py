@@ -329,6 +329,7 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 )
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
+                assert page.locator("#open-project-folder").is_disabled() is True
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
 
@@ -339,11 +340,12 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 _open_tool(page, "project")
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is False
                 assert page.locator("#import-practiscore").is_disabled() is False
+                assert page.locator("#open-project-folder").is_disabled() is False
                 assert page.locator("#project-path").input_value() == "created-project.ssproj"
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
                 notices.extend(dialogs)
-                assert any("missing Input, CSV, Output" in message for message in notices)
+                assert any("missing Input, CSV, Markers, Output" in message for message in notices)
             finally:
                 browser.close()
     finally:
@@ -353,7 +355,18 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
 def test_project_pane_manual_practiscore_file_import_remains_functional_with_active_project(
     tmp_path: Path,
 ) -> None:
-    server = BrowserControlServer(controller=ProjectController(), port=0)
+    selected_roots: list[str] = []
+
+    def choose_practiscore(
+        kind: str, current: str | None, default_root: str | None = None
+    ) -> str:
+        assert kind == "practiscore"
+        selected_roots.append(str(default_root or ""))
+        return str(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
+
+    server = BrowserControlServer(
+        controller=ProjectController(), port=0, path_chooser=choose_practiscore
+    )
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
@@ -364,16 +377,16 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
                     f"() => createNewProject({json.dumps(str(tmp_path / 'manual-import.ssproj'))})"
                 )
                 page.wait_for_function("() => Boolean(state?.project?.path)")
-                page.locator("#practiscore-file-input").set_input_files(
-                    str(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
-                )
+                page.locator("#import-practiscore").click()
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
 
+                assert selected_roots == [
+                    str(tmp_path / "manual-import.ssproj" / "CSV")
+                ]
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip() == "IDPA imported"
                 assert page.locator("#practiscore-import-summary").is_hidden() is True
-                page.locator("#import-practiscore").click()
                 page.wait_for_function("() => (state?.project?.stages || []).length > 0")
                 _open_tool(page, "media")
                 page.wait_for_function(
@@ -431,7 +444,7 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
                 assert (project_path / "CSV").is_dir()
                 assert (project_path / "Output").is_dir()
                 assert page.locator("#project-path").input_value() == "partial.ssproj"
-                assert any("missing CSV, Output" in message for message in dialogs)
+                assert any("missing CSV, Markers, Output" in message for message in dialogs)
             finally:
                 browser.close()
     finally:

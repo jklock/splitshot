@@ -2,6 +2,10 @@
 
 The Settings pane controls app-wide and folder-scoped defaults for layout, scoring, compose, overlay, markers, export, and ShotML.
 
+<img src="../../screenshots/SettingsPane.png" alt="Settings pane with scope, layout, scoring, Compose, Overlay, Markers, Export, and ShotML defaults" width="960">
+
+<img src="../../screenshots/SettingsPane2.png" alt="Lower Settings pane with expanded marker, export, and ShotML default controls" width="840">
+
 ## When To Use This Pane
 
 - Before starting a new project, to set preferred defaults.
@@ -110,6 +114,5 @@ The Compose section is the sole owner of global/folder compose defaults. Per-sou
 
 ## Related Guides
 
-Previous: [export.md](export.md)
-Next: [metrics.md](metrics.md)
-
+Previous: [shotml.md](shotml.md)
+Next: [../workflow.md](../workflow.md)

@@ -28,13 +28,14 @@
 | A stage was complete, then changed back to stale. | That is expected after copying settings or editing a queued stage. Requeue it. |
 | I changed export settings but nothing processed yet. | That is expected. Export only saves settings; Queue starts processing. |
 
-## Files And Project Bundle
+## Files And Project Folder
 
 | Problem | Fix |
 | --- | --- |
-| The bundle reopens but exported files land in the wrong place. | Recheck the project output root in `Project`, then process again from `Queue`. |
-| PractiScore context is missing after reopen. | Confirm the staged CSV/TXT file still exists in the project bundle and re-import if needed. |
+| The project reopens but exported files land in the wrong place. | Recheck the project output root in `Project`, then process again from `Queue`. |
+| PractiScore context is missing after reopen. | Confirm the staged CSV/TXT file still exists in the project `CSV/` folder and re-import if needed. |
 | Output files are hard to find. | Check the project `Output/` folder described in [project-structure.md](project-structure.md). |
+| A picker opened outside the project. | Confirm a project is active. Project content pickers use the active project as their starting location; a file chosen elsewhere is copied into the matching project subfolder. |
 
 ## Related Guides
 

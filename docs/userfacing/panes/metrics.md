@@ -1,10 +1,10 @@
 # Metrics Pane
 
-The Metrics pane is the read-only post-stage dashboard for the current run. It centers the run around six fixed graphs, then keeps the expanded table, scoring context, and CSV/text exports aligned with that same data.
+The Metrics pane is the read-only post-stage dashboard for the current run. It keeps timing graphs, imported competitor-cohort comparisons, the expanded table, scoring context, and CSV/text exports aligned with the same data.
 
 <img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, six graphs, compact timing table, scoring context, and export buttons beside the live preview" width="960">
 
-<img src="../../screenshots/MetricsPane2.png" alt="Expanded Metrics view with six graphs and the full shot-by-shot timing table" width="960">
+<img src="../../screenshots/MetricsExpanded.png" alt="Expanded Metrics view with timing and competitor-cohort graphs plus the full shot-by-shot timing table" width="960">
 
 ## When To Use This Pane
 
@@ -19,7 +19,7 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It c
 | Control | What it does |
 | --- | --- |
 | Summary cards | Show headline values such as draw, raw time, shot count, average split, beep, and result. |
-| `Shot Breakdown` | Shows six shooter-relevant graphs: `Split Timeline`, `Split Distribution`, `Shooting vs Non-Shooting Time`, `Overall Placement`, `Division Placement`, and `Class Placement`. |
+| `Shot Breakdown` | Shows timing graphs plus imported Overall, sport-division, and sport-class cohort comparisons when enough source data is available. Division and class labels use the imported acronyms. |
 | Compact timing table | Keeps the row-by-row snapshot in view. The columns are `Shot`, `Split`, `Run`, `Score`, `ShotML`, and `Action`. |
 | Scoring context block | Shows imported `Stage #`, `Competitor`, and `Place` first, followed by ruleset, result, raw/final timing, penalties, and points. |
 | `Export CSV` | Downloads the current metrics table as CSV. |
@@ -49,7 +49,7 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It c
 2. Start with `Split Timeline` to see split-by-split pace.
 3. Use `Split Distribution` to spot interval outliers and hesitation points.
 4. Use `Shooting vs Non-Shooting Time` to separate shooting cadence from movement and dead time.
-5. Check `Overall Placement`, `Division Placement`, and `Class Placement` when imported match data is available.
+5. Check the Overall, division-acronym, and class-acronym cohort comparisons when imported match data is available. These are three separate cohorts; there is no combined division-and-class cohort.
 6. Review the compact timing table for the row-by-row details.
 7. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details. The context is a two-column table so long names wrap instead of clipping.
 8. Click `Expand` for the dense table view.
@@ -76,5 +76,5 @@ Metrics does not edit the project. It changes when the source data changes:
 
 ## Related Guides
 
-Previous: [settings.md](settings.md)
-Next: [../workflow.md](../workflow.md)
+Previous: [queue.md](queue.md)
+Next: [shotml.md](shotml.md)

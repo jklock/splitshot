@@ -435,11 +435,20 @@ export function createShellRuntime({
       await createNewProject();
     });
     $("browse-project-path").addEventListener("click", browseProjectPath);
+    $("open-project-folder").addEventListener("click", async () => {
+      if (!hasActiveProject()) {
+        setStatus(gatedProjectActionMessage());
+        return;
+      }
+      await callApi("/api/project/reveal", {});
+    });
     $("browse-project-output-root").addEventListener("click", () => pickPath(
       "project_folder",
       "project-output-root",
       async () => scheduleProjectDetailsApply(),
-      currentState()?.project?.path || "",
+      currentState()?.project?.path
+        ? `${String(currentState().project.path).replace(/[\\/]+$/, "")}/Output`
+        : "",
     ));
     $("toggle-rail")?.addEventListener("click", () => {
       const nextRailCollapsed = !getRailCollapsed();
@@ -475,13 +484,25 @@ export function createShellRuntime({
       if (result) setActiveTool("media");
       event.target.value = "";
     });
-    $("import-practiscore").addEventListener("click", () => {
+    $("import-practiscore").addEventListener("click", async () => {
       if (!hasActiveProject()) {
         setStatus(gatedProjectActionMessage());
         return;
       }
+      const payload = validatePractiScoreSelection();
+      if (!payload) return;
       setStatus("Select a PractiScore results file (.csv or .txt).");
-      openHiddenFileInput("practiscore-file-input");
+      const projectRoot = String(currentState()?.project?.path || "").trim().replace(/[\\/]+$/, "");
+      const selectedPath = await pickPath(
+        "practiscore",
+        null,
+        null,
+        projectRoot ? `${projectRoot}/CSV` : "",
+      );
+      if (!selectedPath) return;
+      const context = await callApi("/api/project/practiscore", payload);
+      if (!context) return;
+      await callApi("/api/import/practiscore", { path: selectedPath });
     });
     $("open-practiscore-dashboard")?.addEventListener("click", async () => {
       if (!hasActiveProject()) {
@@ -507,11 +528,7 @@ export function createShellRuntime({
         return;
       }
       const context = await callApi("/api/project/practiscore", payload);
-      if (!context) {
-        event.target.value = "";
-        return;
-      }
-      await postFile("/api/files/practiscore", selectedFile);
+      if (context) await postFile("/api/files/practiscore", selectedFile);
       event.target.value = "";
     });
     $("delete-project").addEventListener("click", async () => {

@@ -9,11 +9,11 @@ on:
       release_ref:
         description: Git ref to build and publish
         required: true
-        default: v1.0.3
+        default: v1.0.7
       release_tag:
         description: Release tag to publish
         required: true
-        default: v1.0.3
+        default: v1.0.7
 
 env:
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref_name }}
@@ -51,7 +51,7 @@ jobs:
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Prepare macOS signing certificate
         env:
@@ -158,7 +158,7 @@ jobs:
       - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
@@ -180,9 +180,9 @@ jobs:
             --script-arg=--scope \
             --script-arg=release-proof \
             --script-arg=--artifact-root \
-            --script-arg=artifacts/v106-phase-12-proof/github-review/macos \
+            --script-arg=artifacts/v107-release-proof/github-review/macos \
             --script-arg=--primary-video \
-            --script-arg=docs/Clip1.MP4
+            --script-arg=tests/fixtures/media/e2e-stage.mp4
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()
@@ -224,7 +224,7 @@ jobs:
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Build
         run: cd electron && npm run build:linux
@@ -266,7 +266,7 @@ jobs:
       - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
@@ -290,9 +290,9 @@ jobs:
             --script-arg=--scope \
             --script-arg=release-proof \
             --script-arg=--artifact-root \
-            --script-arg=artifacts/v106-phase-12-proof/github-review/linux \
+            --script-arg=artifacts/v107-release-proof/github-review/linux \
             --script-arg=--primary-video \
-            --script-arg=docs/Clip1.MP4
+            --script-arg=tests/fixtures/media/e2e-stage.mp4
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()
@@ -334,7 +334,7 @@ jobs:
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Build
         run: cd electron && npm run build:win
@@ -374,7 +374,7 @@ jobs:
       - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps
-        run: cd electron && npm install
+        run: cd electron && npm ci
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
@@ -399,9 +399,9 @@ jobs:
             --script-arg=--scope \
             --script-arg=release-proof \
             --script-arg=--artifact-root \
-            --script-arg=artifacts/v106-phase-12-proof/github-review/windows \
+            --script-arg=artifacts/v107-release-proof/github-review/windows \
             --script-arg=--primary-video \
-            --script-arg=docs/Clip1.MP4
+            --script-arg=tests/fixtures/media/e2e-stage.mp4
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()

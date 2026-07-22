@@ -365,7 +365,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
         "shotml",
     ]:
         assert f'data-settings-section="{section_id}"' in html
-    assert "Open Project" not in html
+    assert 'id="open-project"' not in html
     assert "Open PiP" not in html
     assert "Open Score" not in html
     assert "Open Splits" not in html
@@ -719,6 +719,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-x"' in html
     assert 'id="score-y"' in html
     assert 'id="browse-project-path"' in html
+    assert 'id="open-project-folder"' in html
+    assert 'callApi("/api/project/reveal", {})' in js
     assert 'id="browse-project-output-root"' in html
     assert 'id="browse-primary-path"' not in html
     assert 'id="browse-secondary-path"' not in html
@@ -897,7 +899,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'setStatus("Select a PractiScore results file (.csv or .txt).");' in js
     assert "function openHiddenFileInput(inputId) {" in js
     assert 'if (typeof input.showPicker === "function") {' in js
-    assert 'openHiddenFileInput("practiscore-file-input");' in js
+    assert '"practiscore",' in js
+    assert 'projectRoot ? `${projectRoot}/CSV` : ""' in js
+    assert 'await callApi("/api/import/practiscore", { path: selectedPath });' in js
     assert "async function openPractiScoreDashboard() {" in js
     assert 'fetch("/api/practiscore/dashboard/open", {' in api_js
     assert "function hasActiveProject() {" in js
@@ -1957,7 +1961,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "expand-timing",
         "browse-project-output-root",
         "new-project",
-        "browse-project-path",
+            "browse-project-path",
+            "open-project-folder",
         "open-practiscore-dashboard",
         "import-practiscore",
         "save-project",
@@ -2374,6 +2379,17 @@ def test_readme_documents_one_command_uv_launch() -> None:
 
 def test_browser_static_logo_is_packaged() -> None:
     assert (STATIC_ROOT / "logo.png").is_file()
+
+
+def test_badge_alpha_control_reserves_space_for_number_spinner_and_suffix() -> None:
+    css = _read_split_css()
+    selector = "#badge-style-grid .badge-style-card .opacity-percent-input"
+    within = css[css.index(selector) : css.index(selector) + 650]
+    assert "min-width: 4.75rem;" in within
+    assert "padding: var(--space-1) 1.75rem var(--space-1) 0.55rem;" in within
+    assert "width: 4.75rem;" in within
+    suffix = css.index("#badge-style-grid .badge-style-card .opacity-percent-suffix")
+    assert "margin-left: var(--space-1);" in css[suffix : suffix + 400]
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

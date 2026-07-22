@@ -4354,13 +4354,14 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
     event.stopPropagation();
     const imageInput = card.querySelector('[data-popup-field="image_path"]');
     if (!(imageInput instanceof HTMLInputElement)) return;
+    const projectRoot = String(state?.project?.path || "").trim().replace(/[\\/]+$/, "");
     await pickPathForElement("popup_image", imageInput, `popup-image-${bubble.id}`, async (path) => {
       if (!path) return;
       imageInput.dataset.popupSourcePath = path;
       imageInput.title = path;
       syncControlValue(imageInput, fileName(path));
       setPopupBubbleField(bubble.id, "image_path", path, { commit: true, rerender: true });
-    });
+    }, projectRoot ? `${projectRoot}/Markers` : "");
   });
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", (event) => {
     event.preventDefault();

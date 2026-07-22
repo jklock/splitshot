@@ -65,7 +65,11 @@ export function createProcessingRuntime({
 
   function progressProfileForPath(path) {
     if (path === "/api/export") return { ceiling: 99, step: 4 };
-    if (path === "/api/files/practiscore" || path === "/api/project/practiscore") return { ceiling: 95, step: 15 };
+    if (
+      path === "/api/files/practiscore"
+      || path === "/api/import/practiscore"
+      || path === "/api/project/practiscore"
+    ) return { ceiling: 95, step: 15 };
     if (path === "/api/project/save") return { ceiling: 92, step: 18 };
     if (path === "/api/import/primary" || path === "/api/files/primary") return { ceiling: 95, step: 12 };
     if (path === "/api/import/secondary" || path === "/api/import/merge" || path === "/api/files/merge") {
@@ -171,7 +175,16 @@ export function createProcessingRuntime({
       return { message: "Opening PractiScore dashboard...", detail: "Launching PractiScore in your system browser" };
     }
     if (path === "/api/import/primary") {
-      return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
+      return { message: "Analyzing primary video...", detail: "Copying into project Input, then detecting beep and shots" };
+    }
+    if (path === "/api/import/practiscore") {
+      return { message: "Importing PractiScore results...", detail: "Copying into project CSV and building stages" };
+    }
+    if (path === "/api/project/stage/import-primary") {
+      return { message: "Importing primary media...", detail: "Copying into project Input and analyzing locally" };
+    }
+    if (path === "/api/project/stage/import-added") {
+      return { message: "Importing added media...", detail: "Copying into project Input" };
     }
     if (
       (path === "/api/analysis/threshold" || (path === "/api/analysis/shotml-settings" && payload?.rerun))
@@ -180,10 +193,10 @@ export function createProcessingRuntime({
       return { message: "Re-running ShotML...", detail: "Refreshing shot detections with the current settings" };
     }
     if (path === "/api/import/merge" || path === "/api/files/merge") {
-      return { message: "Importing media...", detail: "Adding media to the list" };
+      return { message: "Importing media...", detail: "Copying into project Input and adding media" };
     }
     if (path === "/api/import/secondary") {
-      return { message: "Importing media...", detail: "Adding media to the list" };
+      return { message: "Importing media...", detail: "Copying into project Input and adding media" };
     }
     if (path === "/api/merge/source/trim-all") {
       return { message: "Trimming added media...", detail: "Writing derivative files and refreshing waveform state" };
@@ -194,7 +207,8 @@ export function createProcessingRuntime({
     if (path === "/api/project/details") return { message: "Updating project details...", detail: "Saving metadata locally" };
     if (path === "/api/project/practiscore") return { message: "Updating match import settings...", detail: "Saving stage and competitor details" };
     if (path === "/api/project/open") return { message: "Opening project folder...", detail: "Loading project.json and local assets" };
-    if (path === "/api/project/save") return { message: "Updating project folder...", detail: "Writing project.json and organizing local assets" };
+    if (path === "/api/project/reveal") return { message: "Opening project folder...", detail: "Showing the project in your file browser" };
+    if (path === "/api/project/save") return { message: "Updating project folder...", detail: "Writing project.json metadata" };
     if (path === "/api/project/delete") return { message: "Deleting project folder...", detail: "Removing the project folder from disk" };
     if (path === "/api/project/new") return { message: "Creating new project...", detail: "Resetting project state" };
     return null;

@@ -35,18 +35,18 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     ).read_text(encoding="utf-8")
 
 
-def test_ci_test_workflows_use_clip1_for_packaged_e2e_validation() -> None:
+def test_ci_test_workflows_use_compact_fixture_for_packaged_e2e_validation() -> None:
     for workflow in TEST_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        has_clip1_env = "SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4" in source
-        has_clip1_arg = "--script-arg=docs/Clip1.MP4" in source
-        assert has_clip1_env or has_clip1_arg, f"{workflow.name}: missing Clip1 reference"
+        has_fixture_env = "SPLITSHOT_E2E_VIDEO: tests/fixtures/media/e2e-stage.mp4" in source
+        has_fixture_arg = "--script-arg=tests/fixtures/media/e2e-stage.mp4" in source
+        assert has_fixture_env or has_fixture_arg, f"{workflow.name}: missing E2E fixture"
         assert "--script-arg=--scope" in source, workflow.name
         assert "--script-arg=release-proof" in source, workflow.name
-        assert "artifacts/v106-phase-12-proof/github-review/" in source, workflow.name
+        assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         if workflow.name == "test-windows.yml":
             assert (
-                "scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5"
+                "scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5"
                 in source
             ), workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
@@ -55,18 +55,18 @@ def test_ci_test_workflows_use_clip1_for_packaged_e2e_validation() -> None:
         assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow.name
 
 
-def test_packaged_build_and_release_workflows_use_clip1_for_e2e_validation() -> None:
+def test_packaged_build_and_release_workflows_use_compact_e2e_fixture() -> None:
     for workflow in PACKAGED_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        has_clip1_env = "SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4" in source
-        has_clip1_arg = "--script-arg=docs/Clip1.MP4" in source
-        assert has_clip1_env or has_clip1_arg, workflow.name
+        has_fixture_env = "SPLITSHOT_E2E_VIDEO: tests/fixtures/media/e2e-stage.mp4" in source
+        has_fixture_arg = "--script-arg=tests/fixtures/media/e2e-stage.mp4" in source
+        assert has_fixture_env or has_fixture_arg, workflow.name
         assert "--script-arg=--scope" in source, workflow.name
         assert "--script-arg=release-proof" in source, workflow.name
-        assert "artifacts/v106-phase-12-proof/github-review/" in source, workflow.name
+        assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         if workflow.name == "build-windows.yml":
             assert (
-                "scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5"
+                "scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5"
                 in source
             ), workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name

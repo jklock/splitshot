@@ -160,6 +160,7 @@
   background: var(--red);
   border-color: var(--red);
   color: #fff;
+  grid-column: 1 / -1;
 }
 
 .path-row {
@@ -3053,14 +3054,15 @@
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-input {
   font-size: var(--text-base);
   min-height: 30px;
-  min-width: 3.1rem;
-  padding: var(--space-1) 0.55rem;
-  width: 3.1rem;
+  min-width: 4.75rem;
+  padding: var(--space-1) 1.75rem var(--space-1) 0.55rem;
+  width: 4.75rem;
 }
 
 #badge-style-grid .badge-style-card .opacity-percent-suffix,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-suffix {
   font-size: var(--text-base);
+  margin-left: var(--space-1);
 }
 
 #score-color-grid .score-color-field,

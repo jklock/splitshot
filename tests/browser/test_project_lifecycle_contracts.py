@@ -162,6 +162,24 @@ def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> No
     assert opened_urls == ["https://practiscore.com/dashboard/home"]
 
 
+def test_project_reveal_route_opens_active_project_folder(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "reveal.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    opened: list[Path] = []
+    monkeypatch.setattr(browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path)))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/project/reveal", {})
+    finally:
+        server.shutdown()
+
+    assert opened == [project_path]
+    assert payload["status"] == f"Opened project folder {project_path}."
+
+
 def test_project_details_save_open_and_refresh_contract(tmp_path: Path) -> None:
     project_path = tmp_path / "draft-details.ssproj"
     ProjectController().save_project(str(project_path))
@@ -412,4 +430,4 @@ def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder
     assert probed["path"] == str(project_path)
     assert probed["normalized_path"] == str(project_path.resolve())
     assert probed["has_project_file"] is False
-    assert probed["missing_required_dirs"] == ["CSV", "Output"]
+    assert probed["missing_required_dirs"] == ["CSV", "Markers", "Output"]

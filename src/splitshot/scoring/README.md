@@ -23,6 +23,8 @@ Use it when the change affects ruleset behavior, score letters, penalty semantic
 2. Store per-shot score marks and penalties on the shared project.
 3. Derive summary values for the browser shell, metrics, and overlay layers.
 
+Competition comparison labels come from the imported ruleset and competitor data, not hard-coded category names. Presentation uses `<division acronym> - <place>/<division total>`, `<class acronym> - <place>/<class total>`, and `Overall - <place>/<total competitors>`; each denominator is computed for that category in the imported source.
+
 ## Key Extension Points
 
 - `apply_scoring_preset`

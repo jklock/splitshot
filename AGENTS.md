@@ -11,10 +11,7 @@ SplitShot is a local-first browser app for competition shooting video analysis, 
 
 ## Environment
 
-Primary development environment:
-- macOS
-
-Assume macOS paths, shell behavior, and tooling unless this repository documents otherwise.
+Supported development environments are macOS, Windows, and Linux. Use platform-neutral paths in code and documentation; use PowerShell syntax only in Windows-specific examples.
 
 ## Worktree Setup
 
@@ -30,6 +27,9 @@ Before implementing:
 
 Bootstrap:
 `uv sync --extra dev`
+
+Electron bootstrap (Node.js 22):
+`cd electron && npm ci`
 
 Build:
 `uv run splitshot --check`
@@ -83,8 +83,8 @@ Do not over-document obvious code.
 SplitShot release work must follow the semver flow exactly.
 
 Current release baseline:
-- first real release: `v1.0.0`
-- future examples should use the next patch tag, such as `v1.0.1`, unless the manager asks for a different version
+- current feature-frozen release: `v1.0.7`
+- do not add new product features to this release line
 
 When a release or release-note task is requested:
 
@@ -93,6 +93,8 @@ When a release or release-note task is requested:
    - `src/splitshot/__init__.py`
    - `uv.lock`
    - `electron/package.json`
+   - `electron/package-lock.json`
+   Generated files under `electron/bundle/` inherit the version during packaging and are not authoritative version sources.
 2. Update the matching section in `CHANGELOG.md`.
 3. Extract release notes with:
    `uv run python scripts/release/extract_release_notes.py vX.Y.Z --output artifacts/release-notes.md`

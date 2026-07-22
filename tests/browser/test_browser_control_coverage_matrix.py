@@ -11,7 +11,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | project details, project output root, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, match-type selection, competitor/place/class/division selectors |"
+        "| Project / import | project details, project output root, create/select/reveal project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, match-type selection, competitor/place/class/division selectors |"
         in matrix
     )
     assert (
@@ -23,7 +23,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, popup editor, text-box drag |"
+        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, marker editor, text-box drag |"
         in matrix
     )
     assert (

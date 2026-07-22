@@ -5,8 +5,6 @@ from pathlib import Path
 
 
 INDEX_HTML = Path("src/splitshot/browser/static/index.html")
-INVENTORY_PLAN = Path("docs/project/browser-control-coverage-plan.md")
-FULL_E2E_PLAN = Path("docs/project/browser-full-e2e-qa-plan.md")
 
 EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     line.strip()
@@ -149,6 +147,7 @@ id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
+id:open-project-folder
 id:match-type
 id:match-class
 id:match-competitor-name
@@ -375,29 +374,3 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
         f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
     )
     assert len(actual_identifiers) == len(EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS)
-
-
-def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
-    inventory_plan = INVENTORY_PLAN.read_text(encoding="utf-8")
-    full_e2e_plan = FULL_E2E_PLAN.read_text(encoding="utf-8")
-
-    assert (
-        "For the phase-gated execution plan that defines what counts as truthful full-control end-to-end coverage"
-        in inventory_plan
-    )
-    assert (
-        "A full-app end-to-end QA claim requires satisfying the stricter exit criteria"
-        in inventory_plan
-    )
-
-    for snippet in [
-        "Phase 0: Lock The Truth Boundary",
-        "Phase 1: Shared Shell And Drag/Layout Interactions",
-        "Phase 2: Splits And Score End-To-End Closeout",
-        "Phase 3: Markers, Review, Overlay, And Color Picker",
-        "Phase 4: Compose, Export Settings, And Export Log",
-        "Phase 5: Settings And ShotML Full Coverage",
-        "Phase 6: Cross-Surface Final Truth Gate",
-        "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",
-    ]:
-        assert snippet in full_e2e_plan

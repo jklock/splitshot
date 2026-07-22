@@ -55,7 +55,7 @@ from splitshot.timeline.model import draw_time_ms
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
+E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -239,8 +239,8 @@ def test_overlay_renderer_score_marks_use_overlay_qfont(
     assert captured == [(default_overlay_font_family(), 28, True, False)]
 
 
-def test_clip1_fixture_contains_detectable_shots() -> None:
-    analysis = analyze_video_audio(CLIP1_VIDEO, threshold=0.35)
+def test_e2e_fixture_contains_detectable_shots() -> None:
+    analysis = analyze_video_audio(E2E_VIDEO, threshold=0.35)
 
     assert analysis.beep_time_ms is not None
     assert len(analysis.shots) > 0
@@ -311,11 +311,11 @@ def test_export_burns_overlay_badges_into_output_video(
     assert int(red_dominant_pixels.sum()) > 20
 
 
-def test_export_generates_clip1_ci_proof_mp4(tmp_path: Path) -> None:
-    assert CLIP1_VIDEO.exists(), f"Missing Clip1 test fixture at {CLIP1_VIDEO}"
+def test_export_generates_e2e_ci_proof_mp4(tmp_path: Path) -> None:
+    assert E2E_VIDEO.exists(), f"Missing E2E test fixture at {E2E_VIDEO}"
 
-    project = Project(name="Clip1 CI Export Proof")
-    project.primary_video = probe_video(CLIP1_VIDEO)
+    project = Project(name="E2E CI Export Proof")
+    project.primary_video = probe_video(E2E_VIDEO)
     project.primary_video.duration_ms = min(int(project.primary_video.duration_ms or 4000), 4000)
     project.overlay.position = OverlayPosition.TOP
     project.overlay.show_timer = False
@@ -328,7 +328,7 @@ def test_export_generates_clip1_ci_proof_mp4(tmp_path: Path) -> None:
     project.overlay.custom_box_height = 56
     project.merge.enabled = True
     project.merge.layout = MergeLayout.PIP
-    secondary = probe_video(CLIP1_VIDEO)
+    secondary = probe_video(E2E_VIDEO)
     secondary.duration_ms = project.primary_video.duration_ms
     project.merge_sources = [
         MergeSource(

@@ -2,6 +2,8 @@
 
 The Media pane is the stage media workspace. It makes one stage active at a time, names that stage, and shows the primary and added media that belong to it.
 
+<img src="../../screenshots/MediaPane.png" alt="Media pane showing the active stage, project-managed primary video, added media, and stage controls" width="960">
+
 ## Use This Pane For
 
 - Reviewing the active stage workspace and collapsing or expanding the file inventory.
@@ -22,10 +24,10 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 | `Save Stage` | Saves the current stage label. |
 | `Delete Stage` | Removes the active stage. |
 | File row | Shows one attached file with its filename, type, duration, and dimensions. |
-| `Add Primary` / `Replace` | Imports or replaces the primary file for the active stage. |
+| `Add Primary` / `Replace` | Opens in project `Input/`, imports the selected file there when needed, and replaces the active stage primary. |
 | `Set Primary` | Promotes an added file into the primary slot. |
 | `Remove` | Removes that file from the stage. |
-| `Add Media` | Adds additional media files to the active stage. |
+| `Add Media` | Opens in project `Input/` and adds project-managed media to the active stage. |
 | `Add Stage` | Creates another stage and makes it active. |
 
 ## Workflow
@@ -39,7 +41,7 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 7. Remove any files that do not belong.
 8. Leave that stage selected so Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, and Queue all use it.
 9. Repeat for every stage in the project.
-10. Move to [pip.md](pip.md) to configure the active stage composition.
+10. Move to [compose.md](compose.md) to configure the active stage composition.
 
 ## Notes
 
@@ -47,8 +49,10 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 - Stage media is stage-local. Switching stages swaps the full editing context.
 - The stage selector and summary token show which stage the rest of the app is editing.
 - Competitor identity selectors live in Project, not here. Media owns stage selection, stage naming, and stage files.
+- Files selected outside the project are copied into `Input/` before analysis. Files already in `Input/` are used directly.
+- Removing a file row detaches it from the stage but does not delete the file from `Input/`.
 
 ## Related Guides
 
 Previous: [project.md](project.md)
-Next: [pip.md](pip.md)
+Next: [compose.md](compose.md)

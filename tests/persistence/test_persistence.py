@@ -342,7 +342,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.popup_template.motion_mode == "guided"
     assert loaded.popup_template.follow_motion is True
     assert loaded.popup_template.use_shot_split_duration is True
-    assert "Markers/popup-image.png" in loaded.popups[0].image_path.replace("\\", "/")
+    assert loaded.popups[0].image_path == str(popup_image.resolve())
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
     assert loaded.ui_state.popup_authoring_collapsed is True
@@ -472,7 +472,7 @@ def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None
     assert loaded.overlay.scoring_colors["PE"] == "#445566"
 
 
-def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_path: Path) -> None:
+def test_save_project_does_not_move_external_media(tmp_path: Path) -> None:
     session_dir = tmp_path / "splitshot-browser-session"
     session_dir.mkdir()
     primary_path = session_dir / "1234567890abcdef1234567890abcdef_primary.mp4"
@@ -493,21 +493,16 @@ def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_
     bundle = save_project(project, tmp_path / "bundled.ssproj")
     loaded = load_project(bundle)
 
-    assert Path(project.primary_video.path).parent == bundle / "Input"
-    assert Path(project.merge_sources[0].asset.path).parent == bundle / "Input"
-    assert loaded.primary_video.path != str(primary_path)
-    assert loaded.merge_sources[0].asset.path != str(merge_path)
-    assert Path(loaded.primary_video.path).parent == bundle / "Input"
-    assert Path(loaded.merge_sources[0].asset.path).parent == bundle / "Input"
-    assert Path(loaded.primary_video.path).name == "primary.mp4"
-    assert Path(loaded.merge_sources[0].asset.path).name == "merge.mp4"
-    assert Path(loaded.primary_video.path).read_bytes() == b"primary-video"
-    assert Path(loaded.merge_sources[0].asset.path).read_bytes() == b"merge-video"
+    assert project.primary_video.path == str(primary_path)
+    assert project.merge_sources[0].asset.path == str(merge_path)
+    assert loaded.primary_video.path == str(primary_path)
+    assert loaded.merge_sources[0].asset.path == str(merge_path)
+    assert not any((bundle / "Input").iterdir())
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.path == loaded.merge_sources[0].asset.path
 
 
-def test_save_project_copies_practiscore_text_reports_into_csv_folder(tmp_path: Path) -> None:
+def test_save_project_does_not_copy_external_practiscore_source(tmp_path: Path) -> None:
     project = Project(name="PractiScore Report")
     report_path = EXAMPLES_DIR / "USPSA" / "report.txt"
     project.scoring.practiscore_source_path = str(report_path)
@@ -516,7 +511,7 @@ def test_save_project_copies_practiscore_text_reports_into_csv_folder(tmp_path: 
     bundle = save_project(project, tmp_path / "practiscore-project")
     loaded = load_project(bundle)
 
-    assert Path(project.scoring.practiscore_source_path).parent == bundle / "CSV"
-    assert Path(project.scoring.practiscore_source_path).name == "report.txt"
-    assert Path(loaded.scoring.practiscore_source_path).parent == bundle / "CSV"
+    assert project.scoring.practiscore_source_path == str(report_path)
+    assert loaded.scoring.practiscore_source_path == str(report_path)
+    assert not any((bundle / "CSV").iterdir())
     assert Path(loaded.scoring.practiscore_source_path).read_text() == report_path.read_text()

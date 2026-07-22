@@ -2,6 +2,12 @@
 
 The Export pane configures ffmpeg export settings for the active stage. It does not start processing directly.
 
+<img src="../../screenshots/ExportPane.png" alt="Export pane with output profile, framing, codec, bitrate, and ffmpeg settings for the active stage" width="960">
+
+<img src="../../screenshots/ExportPane2.png" alt="Lower Export pane with advanced frame-rate, codec, bitrate, color, and ffmpeg preset settings" width="840">
+
+<img src="../../screenshots/ExportLogModal.png" alt="Export log modal showing processing output from the latest Queue run" width="840">
+
 ## Use This Pane For
 
 - Setting the render settings for the active stage.
@@ -33,7 +39,7 @@ The Export pane configures ffmpeg export settings for the active stage. It does 
 ## Notes
 
 - Export settings are stage-local.
-- Queue is the only export execution surface.
+- Export changes settings only. Queue is the only export execution surface.
 - Review the stage here, then queue and process it downstream.
 
 ## Related Guides
