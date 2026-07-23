@@ -137,7 +137,7 @@ export function createMergePane({
 
     function placementModeLabel(mode) {
       return {
-        auto: "Auto (project default)",
+        auto: "Project default",
         base: "Base (video stage)",
         side_by_side: "Side by side",
         above_below: "Above / below",
@@ -150,7 +150,7 @@ export function createMergePane({
 
     function formatSyncOffsetLabel(offsetMs) {
       const numeric = Math.round(Number(offsetMs) || 0);
-      return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
+      return `${numeric > 0 ? "+" : ""}${numeric} ms`;
     }
 
     function mergePreviewTargetTime(primaryTime, source = null) {
@@ -518,7 +518,7 @@ export function createMergePane({
         const copy = documentObject.createElement("div");
         copy.className = "merge-media-card-copy";
         const title = documentObject.createElement("strong");
-        title.textContent = `${index + 1}. ${source?.active_display_name || fileName(source?.effective_media_path || asset.path || "")}`;
+        title.textContent = source?.active_display_name || fileName(source?.effective_media_path || asset.path || "");
 
         const toggle = documentObject.createElement("button");
         toggle.type = "button";
@@ -544,7 +544,7 @@ export function createMergePane({
         const meta = documentObject.createElement("small");
         meta.className = "merge-media-card-meta";
         const mediaType = asset.is_still_image ? "Image" : "Video";
-        const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
+        const dimensions = asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : "";
         meta.textContent = `${mediaType}${dimensions}`;
         copy.append(title, meta);
         header.append(copy, headerActions);
@@ -663,11 +663,6 @@ export function createMergePane({
           return label;
         };
 
-        const syncLabel = documentObject.createElement("small");
-        syncLabel.className = "merge-source-sync-label";
-        syncLabel.dataset.mergeSourceSyncLabel = "true";
-        syncLabel.dataset.sourceId = sourceId;
-        syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
         const syncField = documentObject.createElement("div");
         syncField.className = "merge-source-field merge-source-sync-field";
         const syncFieldLabel = documentObject.createElement("span");
@@ -718,7 +713,7 @@ export function createMergePane({
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
         body.hidden = !expanded;
-        body.append(controls, syncLabel);
+        body.append(controls);
         card.append(header, body);
         syncMergeSourceControls(
           sourceId,

@@ -155,9 +155,9 @@ def test_trim_pane_timing_bar_shows_beep_and_last_shot(synthetic_video_factory) 
                 page.wait_for_timeout(300)
 
                 timing_text = page.locator(".trim-timing-bar").inner_text()
-                assert "Beep:" in timing_text
-                assert "Last Shot:" in timing_text
-                assert "Total:" in timing_text
+                assert "Beep " in timing_text
+                assert "Last shot " in timing_text
+                assert "Duration " in timing_text
                 assert timing_text.count("s") >= 3
             finally:
                 browser.close()
@@ -248,11 +248,10 @@ def test_trim_pane_computed_label_format(synthetic_video_factory) -> None:
                 page.wait_for_timeout(500)
 
                 label = page.locator(".trim-computed-label").first.inner_text()
-                assert "Removed from start:" in label
-                assert "Removed from end:" in label
-                assert "Retained duration:" in label
-                assert "Original duration:" in label
-                assert len(re.findall(r"\d+\.\d{2}s", label)) == 4
+                assert label.startswith("Start ")
+                assert " · End " in label
+                assert " · Duration " in label
+                assert len(re.findall(r"\d+\.\d{2}s", label)) == 3
             finally:
                 browser.close()
     finally:
@@ -590,7 +589,7 @@ def test_trim_sync_nudge_adjusts_offset(synthetic_video_factory) -> None:
                 assert source_id
 
                 label_el = page.locator(
-                    f'.trim-source-card[data-source-id="{source_id}"] .pane-summary-token'
+                    f'.trim-source-card[data-source-id="{source_id}"] .trim-source-card-copy small'
                 )
                 before_label = label_el.inner_text()
                 assert "ms" in before_label.lower()
@@ -727,9 +726,9 @@ def test_trim_computed_label_updates_after_source_apply(synthetic_video_factory)
 
                 after_label = page.locator(".trim-computed-label").first.inner_text()
                 assert after_label != before_label
-                assert "Removed from start:" in after_label
-                assert "Removed from end:" in after_label
-                assert "Retained duration:" in after_label
+                assert after_label.startswith("Start ")
+                assert " · End " in after_label
+                assert " · Duration " in after_label
             finally:
                 browser.close()
     finally:

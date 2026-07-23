@@ -208,7 +208,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "#toggle-rail {" in rail_footer_css
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
-    assert "New added media size" in html
+    assert "New added media" not in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
     assert "Open PractiScore Dashboard" in html
@@ -657,7 +657,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="media-pane"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
-    assert "Stage Defaults" in html
+    assert "Defaults" in html
+    assert "Stage Defaults" not in html
     assert 'id="restore-merge-defaults"' in html
     assert (
         "Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync."

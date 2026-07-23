@@ -15,11 +15,11 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Media | active stage selector, stage name, `Save Stage`, `Delete Stage`, active-stage `Add Stage`, primary asset, stage file rows, file intake, `Set Primary`, `Remove`, `Add Media` |"
+        "| Media | active stage selector, stage name, `Save`, `Delete`, `Add Stage`, persistent Primary/Added Media disclosures, primary asset, file intake, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (
-        "| Compose | stage default layout/size/position controls, default restore, per-item card toggle, per-item size/opacity/position/layout/sync controls |"
+        "| Compose | stage default layout/size/position controls, `Reset Defaults`, per-item card toggle, per-item size/opacity/position/layout/sync controls |"
         in matrix
     )
     assert (
@@ -27,7 +27,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Queue | stage selector, queue membership, queue status, per-stage collapse, `Apply Active Stage Settings to Queued`, `Process Many`, `Process Into 1 File` |"
+        "| Queue | `Active Stage`, queue membership, plain queue status, per-stage collapse, `Process Queue`, `Process as One File` |"
         in matrix
     )
     assert (

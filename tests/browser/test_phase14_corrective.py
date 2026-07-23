@@ -143,13 +143,14 @@ def test_project_owns_output_root_control():
 # ---------------------------------------------------------------------------
 
 
-def test_media_pane_has_section_toggles():
+def test_media_pane_uses_flat_og_sections():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "media-section-toggle" in source
     assert "sectionExpanded" in source
-    assert "toggleSection" in source
-    assert "Active Stage" in source
-    assert 'data-media-section="stages"' in source
+    assert "Active Stage" not in source
+    assert "<strong>Stage</strong>" in source
+    assert "<strong>Primary</strong>" in source
+    assert "<strong>Added Media</strong>" in source
 
 
 def test_media_pane_uses_backend_dialog_not_file_inputs():
@@ -199,10 +200,11 @@ def test_media_file_rows_use_asset_meta():
     assert "assetTypeLabel" in source
 
 
-def test_media_pane_expansion_is_persisted():
+def test_media_pane_has_no_inventory_wrapper_or_count_chips():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "splitshot.media.sectionExpanded" in source
-    assert "localStorage" in source
+    assert "pane-summary-token" not in source
+    assert "<strong>Stages</strong>" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +240,7 @@ def test_media_picker_root_is_fixed_to_project_input():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     within = source[
         source.index("function mediaPickerDefaultRoot") : source.index(
-            "function readSectionExpansion"
+            "function selectStage"
         )
     ]
     assert "stage?.primary_media?.path" not in within
@@ -258,9 +260,9 @@ def test_queue_visible_entries_excludes_not_queued():
     assert 'status !== "not_queued"' in within
 
 
-def test_queue_needs_requeue_label_exists():
+def test_queue_stale_label_exists():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    assert "Needs requeue" in source
+    assert 'stale: "Stale"' in source
 
 
 def test_queue_has_stage_toggles():
@@ -332,13 +334,15 @@ def test_review_uses_final_standings_and_defaults_to_actual_three_cohorts():
     assert "buildCompetitionComparison" not in source
 
 
-def test_review_labels_placement_with_actual_sport_identity():
+def test_review_uses_generic_selectors_and_actual_sport_identity_in_output():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     assert "competitionIdentityLabels" in source
-    assert 'label: identity.division || "Division"' in source
-    assert 'label: identity.classification || "Class"' in source
+    assert 'label: "Division"' in source
+    assert 'outputLabel: identity.division || "Division"' in source
+    assert 'label: "Class"' in source
+    assert 'outputLabel: identity.classification || "Class"' in source
     assert '{ id: "overall_placement", label: "Overall", separator: " - " }' in source
-    assert '`${def.label}${def.separator || " "}${value}`' in source
+    assert '`${def.outputLabel || def.label}${def.separator || " "}${value}`' in source
     assert 'label: "Division + Class Placement"' not in source
 
 
@@ -355,8 +359,10 @@ def test_metrics_uses_actual_standings_and_compact_sport_labels():
 def test_queue_uses_compact_stage_cards():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
     assert "queue-stage-card" in source
-    assert "queue-status-pill" in source
-    assert "Queue Controls" in source
+    assert "queue-status-text" in source
+    assert "queue-status-pill" not in source
+    assert "Queue Controls" not in source
+    assert "<strong>Stage</strong>" in source
     assert "Queued Stages" in source
 
 
@@ -377,7 +383,7 @@ def test_trim_uses_source_cards_and_bulk_sections():
     assert "trim-card-row" in source
     assert "trim-sync-nudge-buttons" in source
     assert "computedTrimLabel" in source
-    assert "Undo Last Change" in source
+    assert ">Undo<" in source
     assert "trim-undo-btn" in source
     assert "setStatus" in source
 
@@ -393,6 +399,19 @@ def test_waveform_renderer_declares_lane_clipping():
 def test_merge_pane_uses_shared_shell_wrapper():
     html = (STATIC_ROOT / "index.html").read_text()
     assert 'class="pane-section merge-pane-shell"' in html
+
+
+def test_corrected_panes_use_the_og_borderless_disclosure_glyphs():
+    for relative_path in (
+        "panes/media-pane.js",
+        "panes/merge-pane.js",
+        "panes/queue-pane.js",
+        "panes/trim-sync-pane.js",
+    ):
+        source = (STATIC_ROOT / relative_path).read_text()
+        assert '? "v" : ">"' in source
+        assert "\\u25BC" not in source
+        assert "\\u25B6" not in source
 
 
 def test_phase15_pane_css_forces_single_column_flow_in_new_panes():

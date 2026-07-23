@@ -42,11 +42,13 @@ def test_queue_pane_js_exists():
     source = queue_js.read_text()
     assert "createQueuePane" in source
     assert "updateQueueMembership" in source
-    assert "applySettingsToQueued" in source
+    assert "applySettingsToQueued" not in source
     assert "processAll" in source
     assert "processIntoOneFile" in source
     assert "queueStatusLabel" in source
-    assert "Process Many" in source
+    assert "Process Queue" in source
+    assert "Process as One File" in source
+    assert "queue-apply-all-btn" not in source
     assert "queue-stage-card" in source
     assert "visibleQueueEntries" in source
 
@@ -89,3 +91,10 @@ def test_app_js_renders_panes_on_refresh():
 def test_queue_pane_wires_add_to_queue():
     queue_source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
     assert "/api/project/queue/add" in queue_source
+
+
+def test_queue_apply_all_route_remains_for_compatibility_without_ui_control():
+    server_source = Path("src/splitshot/browser/server.py").read_text()
+    queue_source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
+    assert '"/api/project/queue/apply-all"' in server_source
+    assert "/api/project/queue/apply-all" not in queue_source

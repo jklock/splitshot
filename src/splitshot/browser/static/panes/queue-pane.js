@@ -65,7 +65,7 @@ export function createQueuePane({
   function stageAssetSummary(stage) {
     const primaryName = stage?.primary_media?.path ? fileName(stage.primary_media.path) : "No primary";
     const assetCount = (stage?.primary_media?.path ? 1 : 0) + (Array.isArray(stage?.added_media) ? stage.added_media.length : 0);
-    return `${primaryName} • ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
+    return `${primaryName} · ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
   }
 
   function queueEntryAssetSummary(entry, stage) {
@@ -74,7 +74,7 @@ export function createQueuePane({
     const added = Array.isArray(snapshot.added_media) ? snapshot.added_media : (Array.isArray(stage?.added_media) ? stage.added_media : []);
     const primaryName = primary?.path ? fileName(primary.path) : "No primary";
     const assetCount = (primary?.path ? 1 : 0) + added.length;
-    return `${primaryName} • ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
+    return `${primaryName} · ${assetCount} asset${assetCount === 1 ? "" : "s"}`;
   }
 
   function queueStatusLabel(status) {
@@ -84,7 +84,7 @@ export function createQueuePane({
       processing: "Processing",
       complete: "Complete",
       failed: "Failed",
-      stale: "Needs requeue",
+      stale: "Stale",
     }[status] || String(status || "Not queued");
   }
 
@@ -145,12 +145,6 @@ export function createQueuePane({
     }
   }
 
-  async function applySettingsToQueued() {
-    activity("queue.apply-all");
-    await callApi("/api/project/queue/apply-all", {});
-    setStatus("Applied the active stage settings to queued stages.");
-  }
-
   async function processAll() {
     activity("queue.process");
     setStatus("Processing queued stages...");
@@ -179,8 +173,8 @@ export function createQueuePane({
             <small>${queueEntryAssetSummary(queueEntry, stage)}</small>
           </div>
           <div class="queue-stage-header-actions">
-            <span class="queue-status-pill queue-status-${status}">${queueStatusLabel(status)}</span>
-            <button class="pane-toggle queue-stage-toggle" type="button" data-stage-id="${stageId}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "\u25BC" : "\u25B6"}</button>
+            <span class="queue-status-text queue-status-${status}">${queueStatusLabel(status)}</span>
+            <button class="pane-toggle queue-stage-toggle" type="button" data-stage-id="${stageId}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "v" : ">"}</button>
           </div>
         </div>
         <div class="queue-stage-body"${expanded ? "" : " hidden"}>
@@ -201,16 +195,13 @@ export function createQueuePane({
     return `
       <section class="settings-section queue-pane-section">
         <div class="section-header media-section-header">
-          <strong>Queue Controls</strong>
+          <strong>Stage</strong>
         </div>
         <div class="queue-controls-body">
-          <label>Stage
+          <label>Active Stage
             <select id="queue-stage-select">${stageOptions}</select>
           </label>
           <button class="btn btn-secondary queue-membership-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>${queueActionLabel(stage?.id || "")}</button>
-          <button id="queue-apply-all-btn" class="btn btn-secondary queue-apply-all-btn" type="button">Apply Active Stage Settings to Queued</button>
-          <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Many</button>
-          <button id="queue-combined-btn" class="btn btn-primary queue-combined-btn" type="button">Process Into 1 File</button>
         </div>
         ${combinedOutput ? `
           <div class="queue-combined-output" data-queue-combined-output="${combinedOutput}">
@@ -237,10 +228,6 @@ export function createQueuePane({
       const membershipButton = target.closest(".queue-membership-btn");
       if (membershipButton instanceof HTMLElement) {
         updateQueueMembership(membershipButton.dataset.stageId || activeStage()?.id || "");
-        return;
-      }
-      if (target.closest(".queue-apply-all-btn")) {
-        applySettingsToQueued();
         return;
       }
       if (target.closest(".queue-process-btn")) {
@@ -273,9 +260,18 @@ export function createQueuePane({
       <div class="pane-section queue-pane-shell">
         <div class="section-header pane-title-row">
           <h3>Queue</h3>
-          <span class="pane-summary-token">${count} queued</span>
+          <span class="pane-status-text">${count} queued</span>
         </div>
         ${renderControlsSection()}
+        <section class="settings-section queue-pane-section queue-process-section">
+          <div class="section-header media-section-header">
+            <strong>Process</strong>
+          </div>
+          <div class="queue-process-actions">
+            <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Queue</button>
+            <button id="queue-combined-btn" class="btn btn-secondary queue-combined-btn" type="button">Process as One File</button>
+          </div>
+        </section>
         <section class="settings-section queue-pane-section">
           <div class="section-header media-section-header">
             <strong>Queued Stages</strong>

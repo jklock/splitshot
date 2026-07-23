@@ -83,9 +83,9 @@ export function createMediaPane({
     const parts = [assetTypeLabel(asset)];
     const dur = asset?.duration_ms ? splitSeconds(asset.duration_ms) : "";
     if (dur) parts.push(dur);
-    const dims = asset?.width && asset?.height ? `${asset.width}x${asset.height}` : "";
+    const dims = asset?.width && asset?.height ? `${asset.width}×${asset.height}` : "";
     if (dims) parts.push(dims);
-    return parts.join(" • ");
+    return parts.join(" · ");
   }
 
   function activeAssetMeta(sourceOrAsset) {
@@ -122,8 +122,7 @@ export function createMediaPane({
   }
 
   function sectionExpanded(sectionId) {
-    const stored = readSectionExpansion();
-    return stored[sectionId] !== false;
+    return readSectionExpansion()[sectionId] !== false;
   }
 
   function setSectionExpanded(sectionId, expanded) {
@@ -223,16 +222,12 @@ export function createMediaPane({
   function renderInventoryFileRow(stageId, source, isPrimary = false) {
     const asset = source.asset || source;
     const sourceId = isPrimary ? "primary" : (source.id || "");
-    const trimActive = Boolean(source?.trim_active);
     const activeName = source?.active_display_name || fileName(asset.path || "");
-    const originalName = source?.original_display_name || fileName(asset.path || "");
     return `
       <article class="media-asset-row" data-stage-id="${stageId}" data-source-id="${sourceId}">
         <div class="media-asset-copy">
-          <strong>${isPrimary ? "Primary" : "Added"}</strong>
-          <span>${htmlEscape(activeName)}</span>
-          <small>${htmlEscape(activeAssetMeta(source))}${trimActive ? " • Trimmed media active" : ""}</small>
-          ${trimActive ? `<small class="media-active-path-note">${htmlEscape(originalName)} original</small>` : ""}
+          <strong>${htmlEscape(activeName)}</strong>
+          <small>${htmlEscape(activeAssetMeta(source))}</small>
         </div>
         <div class="media-asset-actions">
           ${isPrimary
@@ -252,23 +247,20 @@ export function createMediaPane({
     return `
       <section class="settings-section media-pane-section media-pane-section-static">
         <div class="section-header media-section-header">
-          <strong>Active Stage</strong>
-          <div class="section-header-actions">
-            <span class="pane-summary-token">${htmlEscape(stage ? stageLabel(stage) : "No Stage")}</span>
-          </div>
+          <strong>Stage</strong>
         </div>
         <div class="media-pane-section-body">
           <div class="control-grid">
-            <label>Stage #
+            <label>Stage
               <select id="media-active-stage-select">${stageOptions}</select>
             </label>
-            <label>Stage Name
+            <label>Name
               <input id="media-active-stage-label" type="text" value="${htmlEscape(stage ? stageLabel(stage) : "")}" placeholder="Stage name" />
             </label>
           </div>
           <div class="media-active-stage-actions media-pane-actions media-pane-actions-split">
-            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage ? "" : "disabled"}>Save Stage</button>
-            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 ? "" : "disabled"}>Delete Stage</button>
+            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage ? "" : "disabled"}>Save</button>
+            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 ? "" : "disabled"}>Delete</button>
           </div>
           <button class="primary-button media-add-stage-btn media-add-stage-full" type="button">Add Stage</button>
         </div>
@@ -277,41 +269,38 @@ export function createMediaPane({
   }
 
   function renderStagesSection(stage) {
-    const expanded = sectionExpanded("stages");
     const added = stage ? stageAddedMedia(stage) : [];
+    const primaryExpanded = sectionExpanded("primary");
+    const addedExpanded = sectionExpanded("added");
     return `
-      <section class="settings-section media-pane-section ${expanded ? "" : "collapsed"}">
+      <section class="settings-section media-pane-section ${primaryExpanded ? "" : "collapsed"}">
         <div class="section-header media-section-header">
-          <strong>Stages</strong>
+          <strong>Primary</strong>
           <div class="section-header-actions">
-            <button class="pane-toggle media-section-toggle" type="button" data-media-section="stages" aria-label="${expanded ? "Collapse" : "Expand"} stages">${expanded ? "\u25BC" : "\u25B6"}</button>
+            <button class="pane-toggle media-section-toggle" type="button" data-media-section="primary" aria-label="${primaryExpanded ? "Collapse" : "Expand"} Primary">${primaryExpanded ? "v" : ">"}</button>
           </div>
         </div>
-        <div class="media-pane-section-body"${expanded ? "" : " hidden"}>
-          <section class="media-pane-inner-section">
-            <div class="media-inner-section-header">
-              <strong>Primary</strong>
-              <span class="pane-summary-token">${stage?.primary_media?.path ? "1 file" : "Empty"}</span>
-            </div>
-            ${stage?.primary_media?.path
-              ? renderInventoryFileRow(stage.id, stage.primary_media, true)
-              : `<div class="empty-state">
-                   <p>No primary asset for ${htmlEscape(stageLabel(stage))}.</p>
-                   <button class="btn-sm btn-primary media-intake-btn media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Add Primary</button>
-                 </div>`}
-          </section>
-          <section class="media-pane-inner-section">
-            <div class="media-inner-section-header">
-              <strong>Added Media</strong>
-              <span class="pane-summary-token">${added.length} file${added.length === 1 ? "" : "s"}</span>
-              <button class="btn-sm btn-primary media-intake-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
-            </div>
-            <div class="media-asset-stack">
-              ${added.length
-                ? added.map((source) => renderInventoryFileRow(stage.id, source, false)).join("")
-                : '<div class="empty-state">No added media for this stage.</div>'}
-            </div>
-          </section>
+        <div class="media-pane-section-body"${primaryExpanded ? "" : " hidden"}>
+          ${stage?.primary_media?.path
+            ? renderInventoryFileRow(stage.id, stage.primary_media, true)
+            : `<div class="empty-state">
+                 <p>No primary asset for ${htmlEscape(stageLabel(stage))}.</p>
+                 <button class="btn-sm btn-primary media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Replace</button>
+               </div>`}
+        </div>
+      </section>
+      <section class="settings-section media-pane-section ${addedExpanded ? "" : "collapsed"}">
+        <div class="section-header media-section-header">
+          <strong>Added Media</strong>
+          <div class="section-header-actions">
+            <button class="btn-sm btn-primary media-intake-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
+            <button class="pane-toggle media-section-toggle" type="button" data-media-section="added" aria-label="${addedExpanded ? "Collapse" : "Expand"} Added Media">${addedExpanded ? "v" : ">"}</button>
+          </div>
+        </div>
+        <div class="media-pane-section-body media-asset-stack"${addedExpanded ? "" : " hidden"}>
+          ${added.length
+            ? added.map((source) => renderInventoryFileRow(stage.id, source, false)).join("")
+            : '<div class="empty-state">No added media for this stage.</div>'}
         </div>
       </section>
     `;
@@ -389,7 +378,7 @@ export function createMediaPane({
       <div class="pane-section media-pane-shell">
         <div class="section-header pane-title-row">
           <h3>Media</h3>
-          <span class="pane-summary-token">${count} asset${count === 1 ? "" : "s"}</span>
+          <span class="pane-status-text">${count} asset${count === 1 ? "" : "s"}</span>
         </div>
         ${renderActiveStageSection(stage)}
         ${renderStagesSection(stage)}

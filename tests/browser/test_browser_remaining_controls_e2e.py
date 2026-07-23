@@ -889,7 +889,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         const trim = source?.trim_derivative;
                         return Boolean(trim?.derivative_path)
                             && trim.active_path_kind === 'local_derivative'
-                            && document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] .trim-active-path-badge')?.textContent.includes('Trimmed media active');
+                            && document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] .trim-active-path-state')?.textContent.includes('Using trimmed media');
                     }""",
                     arg=source_id,
                     timeout=120000,

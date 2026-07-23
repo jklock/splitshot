@@ -25,7 +25,7 @@ def test_added_media_requires_primary_in_controller() -> None:
         controller.import_stage_added(stage.id, "/does/not/matter.mp4")
 
 
-def test_media_intake_buttons_match_and_secondary_waits_for_primary(
+def test_media_intake_buttons_use_distinct_primary_and_green_add_styles(
     synthetic_video_factory,
 ) -> None:
     primary_path = Path(synthetic_video_factory(name="media-intake-gate"))
@@ -46,11 +46,11 @@ def test_media_intake_buttons_match_and_secondary_waits_for_primary(
                 primary_box = add_primary.bounding_box()
                 media_box = add_media.bounding_box()
                 assert primary_box and media_box
-                assert primary_box["height"] == pytest.approx(media_box["height"], abs=1)
-                assert primary_box["width"] == pytest.approx(media_box["width"], abs=1)
+                assert primary_box["height"] >= 30
+                assert media_box["height"] >= 30
                 assert add_primary.evaluate(
                     "el => getComputedStyle(el).backgroundColor"
-                ) == add_media.evaluate(
+                ) != add_media.evaluate(
                     "el => { el.disabled = false; const color = getComputedStyle(el).backgroundColor; el.disabled = true; return color; }"
                 )
 
@@ -81,8 +81,10 @@ def test_media_pane_active_stage_workspace_present(synthetic_video_factory) -> N
                 page.wait_for_timeout(100)
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
-                assert page.locator("#media-pane").get_by_text("Active Stage").count() >= 1
-                assert page.locator("#media-pane").get_by_text("Stages").count() >= 1
+                assert page.locator("#media-pane").get_by_text("Stage", exact=True).count() >= 1
+                assert page.locator("#media-pane").get_by_text("Primary", exact=True).count() == 1
+                assert page.locator("#media-pane").get_by_text("Added Media", exact=True).count() == 1
+                assert page.locator("#media-pane").get_by_text("Stages", exact=True).count() == 0
                 assert page.locator("button.media-add-stage-btn").count() >= 1
             finally:
                 browser.close()
@@ -135,6 +137,39 @@ def test_media_pane_primary_and_added_sections_present(synthetic_video_factory) 
                 inner_text = page.locator("#media-pane").inner_text()
                 assert "Primary" in inner_text
                 assert "Added Media" in inner_text
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_media_inventory_disclosures_persist_without_stages_wrapper(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="media-qa-disclosures"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                create_project(page, str(primary_path.parent / "media-qa-disclosures.ssproj"))
+                page.evaluate("() => callApi('/api/project/stage/create', {})")
+                page.wait_for_function("() => Boolean(state?.project?.active_stage_id)")
+                page.locator("button[data-tool='media']").click(force=True)
+                page.locator("#primary-file-input").set_input_files(str(primary_path))
+                page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
+
+                primary_toggle = page.locator('[data-media-section="primary"]')
+                primary_toggle.click()
+                assert primary_toggle.get_attribute("aria-label") == "Expand Primary"
+                assert page.locator("#media-pane .media-pane-section").nth(1).get_attribute(
+                    "class"
+                ).endswith("collapsed")
+                assert page.evaluate(
+                    "() => JSON.parse(localStorage.getItem('splitshot.media.sectionExpanded')).primary"
+                ) is False
+                assert page.locator("#media-pane").get_by_text("Stages", exact=True).count() == 0
             finally:
                 browser.close()
     finally:

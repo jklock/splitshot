@@ -92,12 +92,14 @@ export function createReviewPane({
       { id: "penalties", label: "Penalties" },
       {
         id: "division_placement",
-        label: identity.division || "Division",
+        label: "Division",
+        outputLabel: identity.division || "Division",
         separator: " - ",
       },
       {
         id: "class_placement",
-        label: identity.classification || "Class",
+        label: "Class",
+        outputLabel: identity.classification || "Class",
         separator: " - ",
       },
       { id: "overall_placement", label: "Overall", separator: " - " },
@@ -156,7 +158,7 @@ export function createReviewPane({
       .filter((def) => selectedIds.includes(def.id))
       .map((def) => {
         const value = reviewMetricValue(def.id, summary, imported);
-        return value ? `${def.label}${def.separator || " "}${value}` : "";
+        return value ? `${def.outputLabel || def.label}${def.separator || " "}${value}` : "";
       })
       .filter(Boolean)
       .join("\n")

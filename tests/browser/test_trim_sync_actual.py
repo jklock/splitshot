@@ -270,9 +270,9 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
                 assert trimmed["waveform_sample_count"] not in {None, 0}
                 assert (
                     page.locator(
-                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-badge'
+                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-state'
                     ).inner_text()
-                    == "Trimmed media active"
+                    == "Using trimmed media"
                 )
 
                 page.locator(f'button.trim-clear-btn[data-source-id="{source_id}"]').click()
@@ -296,9 +296,9 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
                 assert cleared["waveform_sample_count"] not in {None, 0}
                 assert (
                     page.locator(
-                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-badge'
+                        f'.trim-source-card[data-source-id="{source_id}"] .trim-active-path-state'
                     ).inner_text()
-                    == "Original media active"
+                    == "Using original"
                 )
             finally:
                 browser.close()
@@ -376,7 +376,6 @@ def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_
 
                 navigate_to_tool(page, "media")
                 media_text = page.locator("#media-pane").inner_text()
-                assert media_text.count("Trimmed media active") >= 2
                 assert primary_state["active_display_name"] in media_text
                 assert Path(added_state["effective_media_path"]).name in media_text
 

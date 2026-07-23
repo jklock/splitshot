@@ -640,15 +640,15 @@
               <div class="pane-section merge-pane-shell">
                 <div class="section-header pane-title-row">
                   <h3>Compose</h3>
-                  <span id="sync-offset" class="pane-summary-token">0 sources</span>
+                  <span id="sync-offset" class="pane-status-text">0 sources</span>
                 </div>
                 <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                   <div class="section-header sub-section-header">
-                    <h3>Stage Defaults</h3>
-                    <button id="restore-merge-defaults" type="button">Restore</button>
+                    <h3>Defaults</h3>
+                    <button id="restore-merge-defaults" class="btn-sm btn-secondary" type="button">Reset Defaults</button>
                   </div>
-                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media in this stage export</label>
-                  <label>New added media layout
+                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Include added media</label>
+                  <label>Layout
                     <select id="merge-layout">
                       <option value="side_by_side">Side by side</option>
                       <option value="above_below">Above / below</option>
@@ -658,17 +658,17 @@
                       <option value="dual_top_hud">Dual top HUD</option>
                     </select>
                   </label>
-                  <label>New added media size
+                  <label>Size
                     <div class="pip-size-control">
                       <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
                       <output id="pip-size-label">35%</output>
                     </div>
                   </label>
                   <div class="control-grid pip-position-grid">
-                    <label>Default Position X (0 left, 1 right)
+                    <label>Position X
                       <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                     </label>
-                    <label>Default Position Y (0 top, 1 bottom)
+                    <label>Position Y
                       <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                     </label>
                   </div>

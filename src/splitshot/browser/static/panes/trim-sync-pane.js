@@ -182,14 +182,12 @@ export function createTrimSyncPane({
     const durS = durMs / 1000;
     const start = sourceTrimStartS(source);
     const end = sourceTrimEndS(source);
-    const before = Math.max(0, start);
-    const after = Math.max(0, durS - end);
     const trimActive = source?.trim_derivative?.active_path_kind === "local_derivative"
       && source?.trim_derivative?.derivative_path;
     const kept = trimActive && Number(source?.active_duration_ms) > 0
       ? Number(source.active_duration_ms) / 1000
       : Math.max(0, end - start);
-    return `Removed from start: ${formatSeconds(before)}s  |  Removed from end: ${formatSeconds(after)}s  |  Retained duration: ${formatSeconds(kept)}s  |  Original duration: ${formatSeconds(durS)}s`;
+    return `Start ${formatSeconds(start)}s · End ${formatSeconds(end)}s · Duration ${formatSeconds(kept)}s`;
   }
 
   function sourceSyncStatusLabel(source = null) {
@@ -380,7 +378,6 @@ export function createTrimSyncPane({
     const isTrimmable = !asset.is_still_image && asset.media_kind !== "animated_gif";
     const activePath = source?.effective_media_path || trimDerivative?.derivative_path || asset.path || "";
     const activeDisplayName = source?.active_display_name || fileName(activePath || asset.path || "");
-    const originalDisplayName = source?.original_display_name || fileName(asset.path || "");
     const startS = sourceTrimStartS(source);
     const endS = sourceTrimEndS(source);
     return `
@@ -388,23 +385,21 @@ export function createTrimSyncPane({
         <div class="trim-source-card-header">
           <div class="trim-source-card-copy">
             <strong>${activeDisplayName}</strong>
-            <small>${source.is_primary_source ? "Primary video" : (asset.is_still_image ? "Image" : "Video")}${trimActive ? "  •  Trim active" : ""}${trimActive ? `  •  ${originalDisplayName} original` : ""}</small>
+            <small>${source.is_primary_source ? "Primary video" : `${asset.is_still_image ? "Image" : "Video"} · ${formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}`}</small>
           </div>
-          <span class="pane-summary-token">${source.is_primary_source ? "Primary" : formatSyncOffsetLabel(currentSourceSyncOffsetMs(source))}</span>
         </div>
         <div class="trim-source-card-body">
           <div class="trim-active-path-row">
-            <span class="trim-active-path-badge">${trimActive ? "Trimmed media active" : "Original media active"}</span>
-            <small class="trim-active-path-value">${fileName(activePath)}</small>
+            <small class="trim-active-path-state">${trimActive ? "Using trimmed media" : "Using original"}</small>
           </div>
           <small class="trim-computed-label">${isTrimmable ? computedTrimLabel(source) : "Still image • Trim not applicable"}</small>
           <div class="trim-card-row">
             <label class="merge-source-field">
-              <span>Start on original (s)</span>
+              <span>Start</span>
               <input type="number" min="0" step="0.01" value="${formatSeconds(startS)}" data-trim-start="${sourceId}" ${isTrimmable ? "" : "disabled"} />
             </label>
             <label class="merge-source-field">
-              <span>End on original (s)</span>
+              <span>End</span>
               <input type="number" min="0" step="0.01" value="${formatSeconds(endS)}" data-trim-end="${sourceId}" ${isTrimmable ? "" : "disabled"} />
             </label>
             <div class="trim-card-actions">
@@ -414,8 +409,8 @@ export function createTrimSyncPane({
             </div>
           </div>
           <div class="trim-card-row trim-card-row-quick">
-            <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Trim Start to Beep</button>
-            <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Trim End to Last Shot</button>
+            <button type="button" class="btn-sm btn-secondary trim-beep-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>Start at Beep</button>
+            <button type="button" class="btn-sm btn-secondary trim-last-shot-btn" data-source-id="${sourceId}" ${isTrimmable ? "" : "disabled"}>End at Last Shot</button>
           </div>
           ${source.is_primary_source ? "" : `<div class="trim-card-row trim-card-row-sync">
             <label class="merge-source-field trim-sync-offset-field">
@@ -447,7 +442,7 @@ export function createTrimSyncPane({
         <strong>${title}</strong>
         <div class="section-header-actions">
           ${detail ? `<small>${detail}</small>` : ""}
-          <button type="button" class="pane-toggle" data-trim-toggle="${sectionId}" aria-label="${expanded ? "Collapse" : "Expand"} ${title}">${expanded ? "\u25BC" : "\u25B6"}</button>
+          <button type="button" class="pane-toggle" data-trim-toggle="${sectionId}" aria-label="${expanded ? "Collapse" : "Expand"} ${title}">${expanded ? "v" : ">"}</button>
         </div>
       </div>
     `;
@@ -553,15 +548,13 @@ export function createTrimSyncPane({
         <div class="pane-section trim-pane-shell">
           <div class="section-header pane-title-row">
             <h3>Trim</h3>
-            <span class="pane-summary-token">${sources.length} source${sources.length === 1 ? "" : "s"}</span>
+            <span class="pane-status-text">${sources.length} source${sources.length === 1 ? "" : "s"}</span>
           </div>
           <div class="settings-section trim-pane-section ${isExpanded("bulk") ? "" : "collapsed"}" data-trim-section="bulk">
             ${renderSectionHeader("Bulk Trim", "bulk")}
             <div class="trim-pane-section-body"${isExpanded("bulk") ? "" : " hidden"}>
               <div class="trim-timing-bar">
-                <span>Beep: ${beepS}s</span>
-                <span>Last Shot: ${lastShotS}s</span>
-                <span>Total: ${durS}s</span>
+                <span>Beep ${beepS}s · Last shot ${lastShotS}s · Duration ${durS}s</span>
               </div>
               <div class="trim-transport" aria-label="Trim video transport">
                 <button id="trim-video-toggle" type="button" class="btn-sm btn-secondary">Play</button>
@@ -570,24 +563,24 @@ export function createTrimSyncPane({
               </div>
               <div class="trim-global-row">
               <label class="merge-source-field">
-                <span>Keep before beep (s)</span>
+                <span>Before beep</span>
                 <input id="trim-global-start" type="number" min="0" step="0.01" value="${formatSeconds(keepBeforeBeepS)}" placeholder="2.00" />
               </label>
               <label class="merge-source-field">
-                <span>Keep after last shot (s)</span>
+                <span>After last shot</span>
                 <input id="trim-global-end" type="number" min="0" step="0.01" value="${formatSeconds(keepAfterLastShotS)}" placeholder="2.00" />
               </label>
               <div class="trim-global-actions">
-                <button id="trim-global-defaults-btn" type="button" class="btn-sm btn-secondary">Reset to 2/2</button>
-                <button id="trim-global-undo" type="button" class="btn-sm btn-secondary">Undo Last Change</button>
-                <button id="trim-global-apply" type="button" class="btn btn-primary">Apply to All</button>
+                <button id="trim-global-defaults-btn" type="button" class="btn-sm btn-secondary">Reset</button>
+                <button id="trim-global-undo" type="button" class="btn-sm btn-secondary">Undo</button>
+                <button id="trim-global-apply" type="button" class="btn btn-primary">Apply All</button>
                 <button id="trim-global-clear" type="button" class="btn btn-secondary">Clear All</button>
               </div>
             </div>
             </div>
           </div>
           <div class="settings-section trim-pane-section ${isExpanded("sources") ? "" : "collapsed"}" data-trim-section="sources">
-            ${renderSectionHeader("Sources", "sources", `Beep: ${beepS}s  •  Last Shot: ${lastShotS}s`)}
+            ${renderSectionHeader("Sources", "sources")}
             <div id="trim-sync-list" class="trim-source-list">
               ${sources.length ? sources.map((source, index) => buildSourceCard(source, index)).join("") : '<div class="empty-state">No added media for this stage.</div>'}
             </div>

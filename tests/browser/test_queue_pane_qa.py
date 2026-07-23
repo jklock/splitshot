@@ -53,23 +53,28 @@ def test_queue_pane_membership_and_status_are_visible(synthetic_video_factory) -
         server.shutdown()
 
 
-def test_queue_apply_active_settings_reports_visible_result(synthetic_video_factory) -> None:
-    primary = Path(synthetic_video_factory(name="queue-pane-apply", beep_ms=400))
+def test_queue_uses_flat_og_controls_without_apply_settings_ui(synthetic_video_factory) -> None:
+    primary = Path(synthetic_video_factory(name="queue-pane-controls", beep_ms=400))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
             browser, page = _open_page(playwright, server)
             try:
-                stage_id = _prepare_stage(page, primary, primary.parent / "queue-apply.ssproj")
+                stage_id = _prepare_stage(page, primary, primary.parent / "queue-controls.ssproj")
                 page.evaluate(
                     "(id) => callApi('/api/project/queue/add', { stage_id: id })", stage_id
                 )
                 page.locator("button[data-tool='queue']").click(force=True)
-                page.locator("#queue-apply-all-btn").click()
-                page.wait_for_function(
-                    "() => /applied|settings/i.test(document.getElementById('status-copy')?.textContent || '')"
-                )
+                assert page.locator("#queue-apply-all-btn").count() == 0
+                assert page.locator("#queue-stage-select").evaluate(
+                    "select => select.parentElement.firstChild.textContent.trim()"
+                ) == "Active Stage"
+                assert page.get_by_text("Process", exact=True).is_visible()
+                assert page.get_by_role("button", name="Process Queue", exact=True).is_visible()
+                assert page.get_by_role("button", name="Process as One File", exact=True).is_visible()
+                assert page.locator(".queue-status-pill").count() == 0
+                assert page.locator(".queue-status-text").count() == 1
                 assert page.locator(".queue-stage-list").is_visible()
             finally:
                 browser.close()

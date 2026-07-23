@@ -863,6 +863,17 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                 )
                 review_card = page.locator("#review-text-box-list .text-box-card").last
                 review_card.locator('[data-text-box-action="toggle"]').click()
+                selector_labels = [
+                    label.strip()
+                    for label in review_card.locator(
+                        ".text-box-summary-metrics .check-row"
+                    ).all_text_contents()
+                ]
+                assert "Division" in selector_labels
+                assert "Class" in selector_labels
+                assert "Overall" in selector_labels
+                assert "PCC" not in selector_labels
+                assert "MA" not in selector_labels
                 preview_text = review_card.locator("[data-text-box-preview]").input_value()
                 assert "Score / Time" in preview_text
                 assert "Points Down" in preview_text

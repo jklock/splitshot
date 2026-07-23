@@ -123,31 +123,3 @@ def test_requeue_logs_event(synthetic_video_factory) -> None:
                 browser.close()
     finally:
         server.shutdown()
-
-
-def test_apply_all_queue_settings_logs(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
-    try:
-        with sync_playwright() as playwright:
-            browser, page = open_page(playwright, server)
-            try:
-                ensure_project_with_primary_and_merge(
-                    page, primary_path, merge_path, "queue-apply-all.ssproj"
-                )
-                navigate_to_tool(page, "queue")
-                page.wait_for_timeout(300)
-
-                apply_all = page.locator("#queue-apply-all-btn")
-                if not apply_all.count():
-                    apply_all = page.locator("button.queue-apply-all-btn").first
-
-                if apply_all.count():
-                    apply_all.click()
-                    page.wait_for_timeout(1000)
-                    tracker.assert_activity("queue.apply-all")
-                else:
-                    tracker.assert_no_activity("queue.apply-all")
-            finally:
-                browser.close()
-    finally:
-        server.shutdown()

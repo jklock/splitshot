@@ -6,6 +6,7 @@ import argparse
 import base64
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 
 from playwright.sync_api import Page, sync_playwright
@@ -16,8 +17,7 @@ from splitshot.ui.controller import ProjectController
 
 ROOT = Path(__file__).resolve().parents[2]
 SCREENSHOT_DIR = ROOT / "docs" / "screenshots"
-PRIMARY_VIDEO = ROOT / "tests" / "fixtures" / "media" / "stage.mp4"
-MERGE_VIDEO = ROOT / "tests" / "fixtures" / "media" / "stage-merge.mp4"
+SOURCE_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
 WORK_ROOT = ROOT / "tmp" / "codex" / "doc-screenshots"
 VIEWPORT = {"width": 1440, "height": 1024}
@@ -120,7 +120,63 @@ def screenshot(
     screenshot_dir: Path = SCREENSHOT_DIR,
 ) -> None:
     set_inspector_scroll(page, scroll_top)
+    stabilize_visible_video_frames(page)
     page.screenshot(path=str(screenshot_dir / filename), full_page=False)
+
+
+def stabilize_visible_video_frames(page: Page) -> None:
+    """Seek decoded primary and secondary frames before any visual proof capture."""
+    result = page.evaluate(
+        r"""
+        async () => {
+          const waitForFrame = async (video, targetTime) => {
+            if (!(video instanceof HTMLVideoElement)) return false;
+            if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+              await new Promise((resolve) => {
+                video.addEventListener('loadedmetadata', resolve, { once: true });
+                window.setTimeout(resolve, 3000);
+              });
+            }
+            const duration = Number.isFinite(video.duration) ? video.duration : 0;
+            const target = Math.min(Math.max(0.1, targetTime), Math.max(0.1, duration - 0.05));
+            if (Math.abs(video.currentTime - target) > 0.02) {
+              await new Promise((resolve) => {
+                video.addEventListener('seeked', resolve, { once: true });
+                video.currentTime = target;
+                window.setTimeout(resolve, 3000);
+              });
+            }
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            return video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+              && video.videoWidth > 0
+              && video.videoHeight > 0;
+          };
+
+          const primary = document.getElementById('primary-video');
+          const primaryTime = primary instanceof HTMLVideoElement && primary.currentTime > 0.05
+            ? primary.currentTime
+            : 1;
+          const primaryReady = await waitForFrame(primary, primaryTime);
+          scheduleInteractionPreviewRender({ video: true });
+          await new Promise((resolve) => window.setTimeout(resolve, 300));
+          const secondaryVideos = [...document.querySelectorAll('#merge-preview-layer video')];
+          const secondaryReady = secondaryVideos.length > 0
+            && (await Promise.all(secondaryVideos.map((video) => waitForFrame(video, primaryTime)))).every(Boolean);
+          renderLiveOverlay(primaryTime * 1000);
+          const primaryRect = primary?.getBoundingClientRect();
+          const playerVisible = Boolean(primaryRect && primaryRect.width > 0 && primaryRect.height > 0);
+          const secondaryVisible = secondaryVideos.some((video) => {
+            const rect = video.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && getComputedStyle(video).visibility !== 'hidden';
+          });
+          return { primaryReady, secondaryReady, playerVisible, secondaryVisible };
+        }
+        """
+    )
+    if not result["primaryReady"] or not result["secondaryReady"]:
+        raise RuntimeError(f"Screenshot video frames are not decoded: {result}")
+    if result["playerVisible"] and not result["secondaryVisible"]:
+        raise RuntimeError(f"Visible player is missing secondary video: {result}")
 
 
 def open_color_picker(page: Page) -> None:
@@ -149,7 +205,7 @@ def stabilize_pip_controls(page: Page) -> None:
     prepare_demo_state(page)
 
 
-def import_primary_video(page: Page) -> None:
+def import_primary_video(page: Page, video_path: Path) -> None:
     click_tool(page, "project")
     page.evaluate(
         """
@@ -157,7 +213,7 @@ def import_primary_video(page: Page) -> None:
           await callApi("/api/import/primary", { path });
         }
         """,
-        str(PRIMARY_VIDEO),
+        str(video_path),
     )
     page.wait_for_function(
         "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
@@ -183,9 +239,9 @@ def import_practiscore(page: Page) -> None:
     wait_for_app_idle(page)
 
 
-def import_merge_media(page: Page) -> None:
+def import_merge_media(page: Page, video_path: Path) -> None:
     click_tool(page, "merge")
-    page.locator("#merge-media-input").set_input_files(str(MERGE_VIDEO))
+    page.locator("#merge-media-input").set_input_files(str(video_path))
     page.wait_for_function(
         "() => (state?.project?.merge_sources?.length || 0) > 0 && document.querySelectorAll('#merge-media-list .merge-media-card').length > 0",
         timeout=120_000,
@@ -193,7 +249,7 @@ def import_merge_media(page: Page) -> None:
     wait_for_app_idle(page)
 
 
-def add_second_stage(page: Page) -> None:
+def add_second_stage(page: Page, video_path: Path) -> None:
     """Populate the Media and Queue panes without changing the configured active stage."""
     page.evaluate(
         """
@@ -206,7 +262,7 @@ def add_second_stage(page: Page) -> None:
           await callApi('/api/project/select-stage', { active_stage_id: originalStageId });
         }
         """,
-        str(MERGE_VIDEO),
+        str(video_path),
     )
     page.wait_for_function("() => (state?.project?.stages || []).length >= 2", timeout=120_000)
     wait_for_app_idle(page)
@@ -388,9 +444,20 @@ def seek_near_final_shot(page: Page) -> None:
 
 
 def validate_dynamic_standings(page: Page) -> None:
-    """Fail capture if the imported summary regresses to generic placement labels."""
+    """Keep generic selectors distinct from source-derived rendered standings."""
     click_tool(page, "review")
     prepare_demo_state(page)
+    selector_labels = page.locator(
+        "[data-summary-metric='division_placement'], "
+        "[data-summary-metric='class_placement'], "
+        "[data-summary-metric='overall_placement']"
+    ).evaluate_all(
+        "controls => controls.map((control) => control.closest('label')?.textContent?.trim() || '')"
+    )
+    if selector_labels != ["Division", "Class", "Overall"]:
+        raise RuntimeError(
+            f"Summary metric selectors must remain generic: {selector_labels}"
+        )
     page.wait_for_function(
         r"""
         () => {
@@ -438,7 +505,7 @@ def capture_all(page: Page, screenshot_dir: Path = SCREENSHOT_DIR) -> None:
             prepare_demo_state(page)
             if tool == "merge":
                 stabilize_pip_controls(page)
-            take(filename)
+            take(filename, 625 if tool == "trim-sync" else 0)
 
         click_tool(page, "scoring")
         prepare_demo_state(page)
@@ -551,6 +618,12 @@ def main() -> int:
     server.start_background(open_browser=False)
     try:
         with TemporaryDirectory(prefix="run-", dir=work_root) as temp_dir:
+            media_root = Path(temp_dir) / "capture-media"
+            media_root.mkdir(parents=True, exist_ok=True)
+            primary_video = media_root / "primary-stage.mp4"
+            secondary_video = media_root / "secondary-stage.mp4"
+            shutil.copy2(SOURCE_VIDEO, primary_video)
+            shutil.copy2(SOURCE_VIDEO, secondary_video)
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 try:
@@ -558,10 +631,10 @@ def main() -> int:
                     page.goto(server.url, wait_until="domcontentloaded")
                     page.wait_for_selector("#current-file")
                     create_project(page, Path(temp_dir) / "ScreenshotProject")
-                    import_primary_video(page)
+                    import_primary_video(page, primary_video)
                     import_practiscore(page)
-                    import_merge_media(page)
-                    add_second_stage(page)
+                    import_merge_media(page, secondary_video)
+                    add_second_stage(page, secondary_video)
                     page.wait_for_timeout(2000)
                     prepare_demo_state(page)
                     capture_all(page, args.output_dir.expanduser().resolve())

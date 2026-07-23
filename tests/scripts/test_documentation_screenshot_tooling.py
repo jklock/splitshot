@@ -52,10 +52,27 @@ def test_screenshot_manifest_is_complete_and_uses_clean_clone_fixtures() -> None
         "SettingsPane2.png",
     )
     assert module.VIEWPORT == {"width": 1440, "height": 1024}
-    assert module.PRIMARY_VIDEO == ROOT / "tests/fixtures/media/stage.mp4"
-    assert module.MERGE_VIDEO == ROOT / "tests/fixtures/media/stage-merge.mp4"
+    assert module.SOURCE_VIDEO == ROOT / "tests/fixtures/media/e2e-stage.mp4"
     assert module.PRACTISCORE == ROOT / "example_data/IDPA/IDPA.csv"
     assert module.WORK_ROOT.is_relative_to(ROOT / "tmp/codex")
+
+
+def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> None:
+    source = (ROOT / "scripts/docs/capture_browser_screenshots.py").read_text()
+    assert "stabilize_visible_video_frames(page)" in source
+    assert 'document.querySelectorAll(\'#merge-preview-layer video\')' in source
+    assert 'result["primaryReady"]' in source
+    assert 'result["secondaryReady"]' in source
+    assert 'result["playerVisible"] and not result["secondaryVisible"]' in source
+
+
+def test_screenshot_capture_keeps_summary_selectors_generic_and_output_dynamic() -> None:
+    source = (ROOT / "scripts/docs/capture_browser_screenshots.py").read_text()
+    assert 'selector_labels != ["Division", "Class", "Overall"]' in source
+    assert r"/^Overall - \d+\/\d+$/" in source
+    assert '"Division Placement"' in source
+    assert '"Class Placement"' in source
+    assert '"Division + Class Placement"' in source
 
 
 def test_browser_audit_projects_route_outside_fixture_tree(tmp_path: Path) -> None:
