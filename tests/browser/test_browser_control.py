@@ -1314,6 +1314,15 @@ def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None
             Path(saved["project"]["scoring"]["practiscore_source_path"]).parent
             == project_path / "CSV"
         )
+        assert (
+            Path(saved["project"]["practiscore_source_file"]).parent
+            == project_path / "CSV"
+        )
+        assert all(
+            Path(stage["scoring"]["practiscore_source_path"]).parent
+            == project_path / "CSV"
+            for stage in saved["project"]["stages"]
+        )
 
         _post_json(f"{server.url}api/project/new", {})
 

@@ -4656,6 +4656,7 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
+        self._stage_existing_practiscore_source_for_project()
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
         self._restore_practiscore_source_from_project()
@@ -5224,6 +5225,38 @@ class ProjectController(QObject):
             PRACTISCORE_DIRNAME,
             preferred_name=source_name,
         )
+
+    def _stage_existing_practiscore_source_for_project(self) -> None:
+        source_path = self._practiscore_source_path
+        if source_path is None:
+            stored_path = self.project.scoring.practiscore_source_path.strip()
+            if not stored_path:
+                return
+            source_path = Path(stored_path)
+        if not source_path.is_file():
+            return
+
+        source_name = self._practiscore_source_name or source_path.name
+        staged_path = Path(
+            self._stage_practiscore_source_path(
+                str(source_path),
+                source_name=source_name,
+            )
+        )
+        staged_value = str(staged_path)
+        self._practiscore_source_path = staged_path
+        self.project.practiscore_source_file = staged_value
+
+        scoring_states = [
+            self.project.scoring,
+            *(stage.scoring for stage in self.project.stages),
+        ]
+        for scoring in scoring_states:
+            scoring.practiscore_source_path = staged_value
+            scoring.practiscore_source_name = source_name
+            if scoring.imported_stage is not None:
+                scoring.imported_stage.source_path = staged_value
+                scoring.imported_stage.source_name = source_name
 
     def project_folder_has_project_file(self, path: str | Path) -> bool:
         return project_has_metadata(normalize_project_path(path))
