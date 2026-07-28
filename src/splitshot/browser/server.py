@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import csv
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 import errno
 import json
 import mimetypes
@@ -14,13 +12,16 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
@@ -45,7 +46,6 @@ from splitshot.persistence.projects import (
 )
 from splitshot.ui.controller import VALID_OVERLAY_BADGE_NAMES, ProjectController
 
-
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
 EXPECTED_DISCONNECT_ERRNOS = {errno.EPIPE, errno.ECONNABORTED, errno.ECONNRESET, errno.ENOBUFS}
 PathChooser = Callable[..., str | None]
@@ -56,20 +56,18 @@ _PCM_BROWSER_PROXY_FORMATS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
 _PCM_BROWSER_PROXY_SUFFIXES = {".mov", ".qt", ".mp4", ".m4v", ".m4a"}
 _BROWSER_COPY_SAFE_VIDEO_CODECS = {"av1", "h264", "vp8", "vp9"}
 MAX_BROWSER_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
-_BROWSER_CONTENT_SECURITY_POLICY = "; ".join(
-    [
-        "default-src 'none'",
-        "base-uri 'none'",
-        "frame-ancestors 'none'",
-        "form-action 'self'",
-        "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
-        "media-src 'self' blob:",
-        "connect-src 'self'",
-        "font-src 'self' data:",
-        "object-src 'none'",
-    ]
+_BROWSER_CONTENT_SECURITY_POLICY = (
+    "default-src 'none'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "media-src 'self' blob:; "
+    "connect-src 'self'; "
+    "font-src 'self' data:; "
+    "object-src 'none'"
 )
 
 
@@ -226,10 +224,7 @@ def _browser_preview_matches_source_timeline(
 
     source_frames = _int_metadata_value(source_timeline.get("nb_frames"))
     preview_frames = _int_metadata_value(preview_timeline.get("nb_frames"))
-    if source_frames is not None and preview_frames is not None and source_frames != preview_frames:
-        return False
-
-    return True
+    return source_frames is None or preview_frames is None or source_frames == preview_frames
 
 
 def _int_metadata_value(value: str | None) -> int | None:
@@ -411,16 +406,16 @@ def choose_local_path_macos(
                 "Choose secondary angle video"
                 if kind == "secondary"
                 else (
-                    "Choose marker image"
-                    if kind == "popup_image"
-                    else "Choose PractiScore results"
+                    "Choose marker image" if kind == "popup_image" else "Choose PractiScore results"
                 )
             )
         )
         script = "\n".join(
             [
-                f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
-                f"default location POSIX file {_applescript_string(str(default_dir))}",
+                (
+                    f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
+                    f"default location POSIX file {_applescript_string(str(default_dir))}"
+                ),
                 "POSIX path of chosenFile",
             ]
         )
@@ -435,8 +430,11 @@ def choose_local_path_macos(
     if kind in {"project", "project_save", "project_open", "project_folder"}:
         script = "\n".join(
             [
-                f"set chosenFolder to choose folder with prompt {_applescript_string('Choose SplitShot project folder')} "
-                f"default location POSIX file {_applescript_string(str(default_dir))}",
+                (
+                    "set chosenFolder to choose folder with prompt "
+                    f"{_applescript_string('Choose SplitShot project folder')} "
+                    f"default location POSIX file {_applescript_string(str(default_dir))}"
+                ),
                 "POSIX path of chosenFolder",
             ]
         )
@@ -455,9 +453,11 @@ def choose_local_path_macos(
 
     script = "\n".join(
         [
-            f"set chosenFile to choose file name with prompt {_applescript_string(prompt)} "
-            f"default name {_applescript_string(default_name)} "
-            f"default location POSIX file {_applescript_string(str(default_dir))}",
+            (
+                f"set chosenFile to choose file name with prompt {_applescript_string(prompt)} "
+                f"default name {_applescript_string(default_name)} "
+                f"default location POSIX file {_applescript_string(str(default_dir))}"
+            ),
             "POSIX path of chosenFile",
         ]
     )
@@ -848,10 +848,10 @@ class BrowserControlServer:
         class Handler(BaseHTTPRequestHandler):
             server_version = "SplitShotBrowser/1.0"
 
-            def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            def log_message(self, format: str, *args: Any) -> None:
                 return
 
-            def do_GET(self) -> None:  # noqa: N802
+            def do_GET(self) -> None:
                 parsed_url = urlparse(self.path)
                 request_path = parsed_url.path
                 activity.log("http.get", path=request_path, client=self.client_address[0])
@@ -902,7 +902,7 @@ class BrowserControlServer:
                     return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 activity.log("http.post", path=self.path, client=self.client_address[0])
                 if self.path == "/api/activity":
                     self._record_browser_activity()
@@ -1847,7 +1847,7 @@ class BrowserControlServer:
             def _set_shotml_settings(self, payload: dict[str, Any]) -> None:
                 settings = payload.get("settings", payload)
                 if not isinstance(settings, dict):
-                    raise ValueError("settings object is required")
+                    raise ValueError("settings object is required")  # noqa: TRY004
                 controller.set_shotml_settings(
                     settings,
                     rerun=bool(payload.get("rerun", False)),
@@ -2071,14 +2071,10 @@ class BrowserControlServer:
                 end_s = payload.get("end_s")
                 keep_before_beep_s = payload.get("keep_before_beep_s")
                 keep_after_last_shot_s = payload.get("keep_after_last_shot_s")
-                normalized_start_s = (
-                    float(start_s) if start_s not in {None, ""} else None
-                )
+                normalized_start_s = float(start_s) if start_s not in {None, ""} else None
                 normalized_end_s = float(end_s) if end_s not in {None, ""} else None
                 normalized_keep_before_s = (
-                    float(keep_before_beep_s)
-                    if keep_before_beep_s not in {None, ""}
-                    else None
+                    float(keep_before_beep_s) if keep_before_beep_s not in {None, ""} else None
                 )
                 normalized_keep_after_s = (
                     float(keep_after_last_shot_s)

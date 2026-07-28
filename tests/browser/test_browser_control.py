@@ -6,17 +6,17 @@ import json
 import re
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+
 import splitshot.browser.server as browser_server_module
 import splitshot.ui.controller as controller_module
-
-from splitshot.browser.activity import ActivityLogger
 from splitshot.analysis.detection import DetectionResult
+from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
@@ -34,7 +34,6 @@ from splitshot.domain.models import (
     VideoAsset,
 )
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -228,9 +227,9 @@ def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) ->
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
             "Content-Type: video/mp4\r\n\r\n"
-        ).encode("utf-8")
+        ).encode()
         + payload
-        + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        + f"\r\n--{boundary}--\r\n".encode()
     )
     request = urllib.request.Request(
         url,
@@ -1364,13 +1363,9 @@ def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None
             Path(saved["project"]["scoring"]["practiscore_source_path"]).parent
             == project_path / "CSV"
         )
-        assert (
-            Path(saved["project"]["practiscore_source_file"]).parent
-            == project_path / "CSV"
-        )
+        assert Path(saved["project"]["practiscore_source_file"]).parent == project_path / "CSV"
         assert all(
-            Path(stage["scoring"]["practiscore_source_path"]).parent
-            == project_path / "CSV"
+            Path(stage["scoring"]["practiscore_source_path"]).parent == project_path / "CSV"
             for stage in saved["project"]["stages"]
         )
 
@@ -2525,9 +2520,10 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         _post_json(f"{server.url}api/swap", {})
         after_swap = _read_project_json(project_path)
         assert after_swap["primary_video"]["path"] == old_first_source_path
-        assert after_swap["secondary_video"]["path"] == before_swap["primary_trim_derivative"][
-            "derivative_path"
-        ]
+        assert (
+            after_swap["secondary_video"]["path"]
+            == before_swap["primary_trim_derivative"]["derivative_path"]
+        )
 
         removable_source_id = after_swap["merge_sources"][-1]["id"]
         _post_json(f"{server.url}api/merge/remove", {"source_id": removable_source_id})

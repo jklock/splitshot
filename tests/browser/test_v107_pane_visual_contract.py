@@ -8,7 +8,6 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.video_test_helpers import create_project
 
-
 PANE_TO_TOOL = {
     "media": "media",
     "merge": "merge",
@@ -236,9 +235,7 @@ def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated() -> No
                         "(value) => document.documentElement.style.setProperty('--inspector-width', `${value}px`)",
                         width,
                     )
-                    fields = page.locator(
-                        '[data-tool-pane="overlay"] .opacity-percent-field'
-                    )
+                    fields = page.locator('[data-tool-pane="overlay"] .opacity-percent-field')
                     assert fields.count() == 4
                     for index in range(fields.count()):
                         geometry = fields.nth(index).evaluate(
@@ -270,9 +267,7 @@ def test_imported_stage_review_summary_is_populated_without_manual_reentry() -> 
     controller = ProjectController()
     practiscore_path = Path("example_data/IDPA/IDPA.csv").resolve()
     controller.import_practiscore_file(str(practiscore_path), source_name="IDPA.csv")
-    stage = next(
-        item for item in controller.project.stages if item.imported_stage_number == 3
-    )
+    stage = next(item for item in controller.project.stages if item.imported_stage_number == 3)
     controller.select_stage(stage.id)
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)

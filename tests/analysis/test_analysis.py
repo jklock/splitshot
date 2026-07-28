@@ -16,8 +16,8 @@ from splitshot.analysis.detection import (
     _suggest_timing_review_actions,
     analyze_video_audio,
 )
-from splitshot.config import AppSettings
 from splitshot.analysis.sync import compute_sync_offset
+from splitshot.config import AppSettings
 from splitshot.domain.models import (
     BadgeSize,
     MergeLayout,
@@ -41,7 +41,6 @@ from splitshot.timeline.model import (
 )
 from splitshot.ui.controller import ProjectController
 from splitshot.utils.time import seconds_to_ms
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -859,10 +858,7 @@ def test_practiscore_csv_infers_match_type_and_hydrates_every_imported_stage() -
 
         controller.select_stage(stage.id)
         assert controller.project.scoring.imported_stage is not None
-        assert (
-            controller.project.scoring.imported_stage.stage_number
-            == stage.imported_stage_number
-        )
+        assert controller.project.scoring.imported_stage.stage_number == stage.imported_stage_number
         assert controller.practiscore_browser_state()["comparison_competitors"]
 
 
@@ -899,12 +895,8 @@ def test_first_primary_import_inherits_previous_stage_configuration(
     controller.import_practiscore_file(
         str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
     )
-    second = next(
-        stage for stage in controller.project.stages if stage.imported_stage_number == 2
-    )
-    third = next(
-        stage for stage in controller.project.stages if stage.imported_stage_number == 3
-    )
+    second = next(stage for stage in controller.project.stages if stage.imported_stage_number == 2)
+    third = next(stage for stage in controller.project.stages if stage.imported_stage_number == 3)
     controller.select_stage(second.id)
     controller.import_stage_primary(
         second.id,

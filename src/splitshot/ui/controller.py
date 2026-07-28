@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
+import json
+import re
+import subprocess
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields, replace
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from inspect import Parameter, signature
-import json
 from pathlib import Path
-import re
-import subprocess
 from typing import Any
 from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal
 
 from splitshot.analysis.detection import (
+    TimingReviewSuggestion,
     analyze_video_audio,
     timing_change_proposals_from_review_suggestions,
-    TimingReviewSuggestion,
 )
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import (
@@ -32,9 +32,9 @@ from splitshot.config import (
 )
 from splitshot.domain.models import (
     AnalysisState,
+    AspectRatio,
     BadgeSize,
     BadgeStyle,
-    AspectRatio,
     CombinedExportSettings,
     ExportAudioCodec,
     ExportColorSpace,
@@ -43,39 +43,39 @@ from splitshot.domain.models import (
     ExportQuality,
     ExportVideoCodec,
     MergeLayout,
+    MergeSource,
     MergeSourceAssetPathKind,
     MergeSourceTrimDerivative,
     OutputProfile,
     OutputProfileKind,
+    OverlayPosition,
+    OverlayTextBox,
+    PipSize,
+    PopupBubble,
+    PopupTemplate,
+    Project,
     ProjectStage,
     QueueEntry,
     QueueStatus,
+    ScoreLetter,
+    ScoreMark,
     SecondarySourceAnalysis,
+    ShotEvent,
+    ShotMLSettings,
+    ShotSource,
+    TimingChangeProposal,
+    TimingEvent,
+    UIState,
+    VideoAsset,
     _deserialize_output_profiles,
     _merge_source_from_dict,
     _normalize_frame_profile,
     _popup_bubble_from_dict,
     _serialize_output_profiles,
-    OverlayPosition,
-    OverlayTextBox,
-    PopupBubble,
-    PopupTemplate,
-    PipSize,
-    Project,
-    MergeSource,
-    ScoreLetter,
-    ScoreMark,
-    ShotEvent,
-    ShotMLSettings,
-    ShotSource,
-    TimingEvent,
-    TimingChangeProposal,
-    UIState,
-    VideoAsset,
-    stage_to_dict,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
+    stage_to_dict,
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
@@ -104,8 +104,8 @@ from splitshot.scoring.practiscore import (
     PractiScoreCompetitorOption,
     PractiScoreOptions,
     _normalize_name,
-    describe_practiscore_file,
     default_ruleset_for_match_type,
+    describe_practiscore_file,
     normalize_match_type,
 )
 from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_practiscore_artifact
@@ -113,9 +113,9 @@ from splitshot.scoring.practiscore_web_extract import (
     EXPIRED_AUTHENTICATION_ERROR,
     MALFORMED_REMOTE_RESPONSE_ERROR,
     NORMALIZATION_IMPORT_FAILURE_ERROR,
+    TRANSIENT_NETWORK_FAILURE_ERROR,
     PractiScoreSyncError,
     RemotePractiScoreMatch,
-    TRANSIENT_NETWORK_FAILURE_ERROR,
     discover_remote_matches,
     download_remote_match_artifacts,
     practiscore_sync_audit_root,
@@ -125,7 +125,6 @@ from splitshot.timeline.model import (
     normalized_timing_event_for_shots,
     sort_shots,
 )
-
 
 VALID_OVERLAY_BADGE_NAMES = {
     "timer_badge",
@@ -299,9 +298,7 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
     }[size]
 
 
-def _float_matches(
-    left: float | int | None, right: float | int | None, *, tolerance: float = 1e-6
-) -> bool:
+def _float_matches(left: float | None, right: float | None, *, tolerance: float = 1e-6) -> bool:
     if left is None or right is None:
         return left == right
     return abs(float(left) - float(right)) <= tolerance
@@ -1744,7 +1741,7 @@ class ProjectController(QObject):
         return candidates
 
     def settings_template_names(self) -> list[str]:
-        names = [name for name in self.settings.settings_templates.keys() if str(name).strip()]
+        names = [name for name in self.settings.settings_templates if str(name).strip()]
         if not names:
             names = [self.settings.active_template_name or "Default"]
         if self.settings.active_template_name not in names:
@@ -2040,11 +2037,7 @@ class ProjectController(QObject):
         summary_metrics_changed = False
         for stage in self.project.stages:
             imported_box = next(
-                (
-                    box
-                    for box in stage.overlay.text_boxes
-                    if box.source == "imported_summary"
-                ),
+                (box for box in stage.overlay.text_boxes if box.source == "imported_summary"),
                 None,
             )
             if imported_box is None and stage.scoring.imported_stage is not None:
@@ -2082,15 +2075,13 @@ class ProjectController(QObject):
             if stage.imported_stage_number is not None
         }
         imported_stage_structure_needs_refresh = (
-            bool(expected_stage_numbers)
-            and actual_stage_numbers != expected_stage_numbers
+            bool(expected_stage_numbers) and actual_stage_numbers != expected_stage_numbers
         )
         imported_stages_need_refresh = any(
             stage.imported_stage_number is not None
             and (
                 stage.scoring.imported_stage is None
-                or stage.scoring.imported_stage.stage_number
-                != stage.imported_stage_number
+                or stage.scoring.imported_stage.stage_number != stage.imported_stage_number
                 or stage.scoring.match_type != options.match_type
             )
             for stage in self.project.stages
@@ -2104,9 +2095,7 @@ class ProjectController(QObject):
             try:
                 self.project.scoring.match_type = options.match_type
                 if imported_stage_structure_needs_refresh:
-                    self._rebuild_stages_from_practiscore_source(
-                        str(resolved_path), display_name
-                    )
+                    self._rebuild_stages_from_practiscore_source(str(resolved_path), display_name)
                 self._import_practiscore_source_for_all_stages(
                     str(resolved_path), display_name, emit_change=emit_change
                 )
@@ -2276,9 +2265,7 @@ class ProjectController(QObject):
         except ValueError:
             self._practiscore_comparison_competitors = []
             return
-        self._set_practiscore_comparison_competitors(
-            normalized.stage_import.comparison_competitors
-        )
+        self._set_practiscore_comparison_competitors(normalized.stage_import.comparison_competitors)
 
     def _active_stage_practiscore_overrides(self) -> dict[str, object]:
         stage = self.project.active_stage
@@ -2448,9 +2435,7 @@ class ProjectController(QObject):
         emit_change: bool = True,
     ) -> None:
         imported_stages = [
-            stage
-            for stage in self.project.stages
-            if stage.imported_stage_number is not None
+            stage for stage in self.project.stages if stage.imported_stage_number is not None
         ]
         if not imported_stages:
             self._import_practiscore_source(path, source_name, emit_change=emit_change)
@@ -2471,9 +2456,7 @@ class ProjectController(QObject):
         target_active_stage_id = (
             selected_stage.id if selected_stage is not None else original_active_stage_id
         )
-        detected_match_type = describe_practiscore_file(
-            path, source_name=source_name
-        ).match_type
+        detected_match_type = describe_practiscore_file(path, source_name=source_name).match_type
 
         for stage in imported_stages:
             self.project.active_stage_id = stage.id
@@ -2729,8 +2712,7 @@ class ProjectController(QObject):
             next_label = str(label).strip()
             if next_label and stage.label != next_label:
                 if any(
-                    item.id != stage_id
-                    and item.label.strip().casefold() == next_label.casefold()
+                    item.id != stage_id and item.label.strip().casefold() == next_label.casefold()
                     for item in self.project.stages
                 ):
                     raise ValueError(f'A stage named "{next_label}" already exists.')
@@ -3110,7 +3092,7 @@ class ProjectController(QObject):
                     self._sync_project_to_active_stage()
                     results.append(output_path)
                     self._set_status(f"Completed stage {idx + 1}/{len(queued)}: {stage.label}")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - isolate failures per queued stage.
                     render_path.unlink(missing_ok=True)
                     entry.status = QueueStatus.FAILED
                     entry.error_message = str(exc)
@@ -3190,7 +3172,7 @@ class ProjectController(QObject):
                 check=True,
             )
             info = json.loads(result.stdout)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise RuntimeError(f"Rendered output is invalid: {output_path} ({exc})") from exc
         streams = info.get("streams", [])
         if not any(stream.get("codec_type") == "video" for stream in streams):
@@ -3204,8 +3186,7 @@ class ProjectController(QObject):
 
         list_path = output_dir / "concat-list.txt"
         with open(list_path, "w") as f:
-            for result in results:
-                f.write(f"file '{result.resolve()}'\n")
+            f.writelines(f"file '{result.resolve()}'\n" for result in results)
         try:
             subprocess.run(
                 [
@@ -3354,7 +3335,7 @@ class ProjectController(QObject):
             ]
         )
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise RuntimeError(f"Separator render failed: {result.stderr}")
 
@@ -3470,8 +3451,8 @@ class ProjectController(QObject):
     ) -> tuple[float | None, float | None]:
         start_s = None
         end_s = None
-        primary_timeline_offset_ms = int(
-            round(float(self.project.primary_trim_derivative.start_s or 0.0) * 1000)
+        primary_timeline_offset_ms = round(
+            float(self.project.primary_trim_derivative.start_s or 0.0) * 1000
         )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
@@ -3502,8 +3483,8 @@ class ProjectController(QObject):
     ) -> tuple[float | None, float | None]:
         start_s = None
         end_s = None
-        primary_timeline_offset_ms = int(
-            round(float(self.project.primary_trim_derivative.start_s or 0.0) * 1000)
+        primary_timeline_offset_ms = round(
+            float(self.project.primary_trim_derivative.start_s or 0.0) * 1000
         )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
@@ -3685,8 +3666,7 @@ class ProjectController(QObject):
 
         action = "Cleared trim for" if clear else "Applied trim to"
         self._set_status(
-            f"{action} {processed_count} selected stage"
-            f"{'s' if processed_count != 1 else ''}."
+            f"{action} {processed_count} selected stage{'s' if processed_count != 1 else ''}."
         )
         self.project.touch()
         self.project_changed.emit()

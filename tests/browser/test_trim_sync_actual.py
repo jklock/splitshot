@@ -7,11 +7,11 @@ from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.activity_tracker import assert_status
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
-    navigate_to_tool,
-    get_primary_media_state,
     get_merge_source_state,
+    get_primary_media_state,
+    navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 
@@ -85,8 +85,10 @@ def test_bulk_trim_duration_matches_displayed_original_boundaries(
                 assert first["active_duration_ms"] == pytest.approx(expected_duration_ms, abs=40)
                 assert page.locator("#trim-global-start").input_value() == "2.00"
                 assert page.locator("#trim-global-end").input_value() == "2.00"
-                assert page.locator("#trim-video-time").inner_text().endswith(
-                    f"/ {first['active_duration_ms'] / 1000:.2f}s"
+                assert (
+                    page.locator("#trim-video-time")
+                    .inner_text()
+                    .endswith(f"/ {first['active_duration_ms'] / 1000:.2f}s")
                 )
                 page.screenshot(path="artifacts/trim-visual-applied.png", full_page=True)
 
@@ -217,7 +219,7 @@ def test_per_source_apply_creates_derivative_file(synthetic_video_factory) -> No
 
 
 def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "trim-active-waveform-p", "duration_ms": 3200, "beep_ms": 500},
         merge_kwargs={"name": "trim-active-waveform-m", "duration_ms": 3200, "beep_ms": 400},
@@ -307,7 +309,7 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
 
 
 def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "trim-primary-added-p", "duration_ms": 4200, "beep_ms": 500},
         merge_kwargs={"name": "trim-primary-added-m", "duration_ms": 4200, "beep_ms": 430},
