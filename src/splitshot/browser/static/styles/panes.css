@@ -497,8 +497,13 @@
 }
 
 .media-intake-btn {
-  height: var(--pane-primary-button-height);
-  min-height: var(--pane-primary-button-height);
+  height: 30px;
+  min-height: 30px;
+}
+
+.media-section-action-btn {
+  height: 30px;
+  min-height: 30px;
   min-width: 7.5rem;
   width: 7.5rem;
 }
@@ -3622,6 +3627,7 @@
 }
 
 .tool-pane[data-tool-pane="merge"] .pip-defaults-section .section-header-actions,
+.media-section-header .section-header-actions,
 .queue-stage-header-actions {
   gap: 8px;
 }

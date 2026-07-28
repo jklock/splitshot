@@ -242,10 +242,57 @@ async function scenarioProject(page) {
 
 async function scenarioMedia(page) {
   await setTool(page, 'media');
+  const originalState = await currentState(page);
+  const originalStageId = String(originalState.project?.active_stage_id || '');
+  const originalPrimaryPath = String(originalState.project?.primary_video?.path || '');
+  assert.ok(originalStageId, 'Expected an active stage for Media proof');
+  assert.ok(originalPrimaryPath, 'Expected active-stage primary media for Media proof');
+
+  await callApi(page, '/api/project/stage/create', { label: 'Stage 3 Empty Proof' });
+  const emptyState = await waitForState(
+    page,
+    (currentState) => (
+      String(currentState.project?.active_stage_id || '') !== originalStageId
+      && !String(currentState.project?.primary_video?.path || '')
+    ),
+    30_000,
+  );
+  const emptyStageId = String(emptyState.project?.active_stage_id || '');
+  assert.ok(emptyStageId, 'Expected the new empty stage to become active');
+
+  await page.locator('#media-active-stage-select').selectOption(originalStageId);
+  await waitForState(
+    page,
+    (currentState) => (
+      String(currentState.project?.active_stage_id || '') === originalStageId
+      && String(currentState.project?.primary_video?.path || '') === originalPrimaryPath
+    ),
+    30_000,
+  );
+  await page.locator('#media-active-stage-select').selectOption(emptyStageId);
+  await waitForState(
+    page,
+    (currentState) => (
+      String(currentState.project?.active_stage_id || '') === emptyStageId
+      && !String(currentState.project?.primary_video?.path || '')
+    ),
+    30_000,
+  );
+  await page.waitForFunction(
+    (stageId) => (
+      document.getElementById('media-active-stage-select')?.value === stageId
+      && !document.querySelector('.media-asset-row[data-source-id="primary"]')
+      && document.querySelector('.media-add-primary-btn')?.textContent?.trim() === 'Add Primary'
+    ),
+    emptyStageId,
+    { timeout: 30_000 },
+  );
+
   const summary = await page.evaluate(() => {
     const pane = document.querySelector('[data-tool-pane="media"]');
     const sections = Array.from(pane?.querySelectorAll('.media-pane-section') || []);
     const activeStageSection = sections[0] || null;
+    const primarySection = sections[1] || null;
     const addStage = pane?.querySelector('.media-add-stage-btn');
     const actionRow = pane?.querySelector('.media-active-stage-actions');
     const primaryRow = pane?.querySelector('.media-asset-row[data-source-id="primary"]');
@@ -253,13 +300,23 @@ async function scenarioMedia(page) {
     const deleteButton = pane?.querySelector('.media-delete-stage-btn');
     const addMediaButton = pane?.querySelector('.media-add-more-btn');
     const addPrimaryButton = pane?.querySelector('.media-add-primary-btn');
+    const primaryToggle = primarySection?.querySelector('.media-section-toggle');
+    const addPrimaryRect = addPrimaryButton?.getBoundingClientRect() || null;
+    const primaryToggleRect = primaryToggle?.getBoundingClientRect() || null;
     return {
       addStageInsideActiveStage: Boolean(activeStageSection && addStage && activeStageSection.contains(addStage)),
       addStageAfterActionRow: Boolean(actionRow && addStage && actionRow.nextElementSibling === addStage),
       saveDeleteGrouped: Boolean(actionRow && saveButton && deleteButton && actionRow.contains(saveButton) && actionRow.contains(deleteButton)),
       hasPrimaryRow: Boolean(primaryRow),
       primaryText: primaryRow?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      addPrimaryText: addPrimaryButton?.textContent?.trim() || '',
+      addPrimaryInHeader: Boolean(primarySection && addPrimaryButton && primarySection.querySelector('.section-header-actions')?.contains(addPrimaryButton)),
+      addPrimaryInBody: Boolean(primarySection?.querySelector('.media-pane-section-body .media-add-primary-btn')),
+      emptyPrimaryText: primarySection?.querySelector('.media-pane-section-body')?.textContent?.replace(/\s+/g, ' ').trim() || '',
       addMediaEnabled: addMediaButton instanceof HTMLButtonElement && !addMediaButton.disabled,
+      actionClearance: addPrimaryRect && primaryToggleRect
+        ? primaryToggleRect.left - addPrimaryRect.right
+        : null,
       intakeButtonsMatch: !addPrimaryButton || !addMediaButton || (
         Math.abs(addPrimaryButton.getBoundingClientRect().width - addMediaButton.getBoundingClientRect().width) <= 1
         && Math.abs(addPrimaryButton.getBoundingClientRect().height - addMediaButton.getBoundingClientRect().height) <= 1
@@ -269,10 +326,43 @@ async function scenarioMedia(page) {
   assert.equal(summary.addStageInsideActiveStage, true);
   assert.equal(summary.addStageAfterActionRow, true);
   assert.equal(summary.saveDeleteGrouped, true);
-  assert.equal(summary.hasPrimaryRow, true);
-  assert.equal(summary.addMediaEnabled, true);
+  assert.equal(summary.hasPrimaryRow, false);
+  assert.equal(summary.addPrimaryText, 'Add Primary');
+  assert.equal(summary.addPrimaryInHeader, true);
+  assert.equal(summary.addPrimaryInBody, false);
+  assert.equal(summary.emptyPrimaryText, 'No primary media.');
+  assert.equal(summary.addMediaEnabled, false);
+  assert.ok(summary.actionClearance >= 7, `Expected >=7px between Add Primary and disclosure, got ${summary.actionClearance}`);
   assert.equal(summary.intakeButtonsMatch, true);
-  return summary;
+
+  await page.locator('#media-active-stage-select').selectOption(originalStageId);
+  await waitForState(
+    page,
+    (currentState) => (
+      String(currentState.project?.active_stage_id || '') === originalStageId
+      && String(currentState.project?.primary_video?.path || '') === originalPrimaryPath
+    ),
+    30_000,
+  );
+  await page.waitForFunction(
+    (stageId) => (
+      document.getElementById('media-active-stage-select')?.value === stageId
+      && Boolean(document.querySelector('.media-asset-row[data-source-id="primary"]'))
+    ),
+    originalStageId,
+    { timeout: 30_000 },
+  );
+  const populatedSummary = await page.evaluate(() => ({
+    hasPrimaryRow: Boolean(document.querySelector('.media-asset-row[data-source-id="primary"]')),
+    replaceInAssetActions: Boolean(document.querySelector('.media-asset-row[data-source-id="primary"] .media-asset-actions .media-replace-primary-btn')),
+    addMediaEnabled: document.querySelector('.media-add-more-btn') instanceof HTMLButtonElement
+      && !document.querySelector('.media-add-more-btn').disabled,
+  }));
+  assert.equal(populatedSummary.hasPrimaryRow, true);
+  assert.equal(populatedSummary.replaceInAssetActions, true);
+  assert.equal(populatedSummary.addMediaEnabled, true);
+  await callApi(page, '/api/project/stage/delete', { stage_id: emptyStageId });
+  return { ...summary, populated: populatedSummary };
 }
 
 async function scenarioCompose(page) {

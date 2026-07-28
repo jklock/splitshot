@@ -9824,7 +9824,6 @@ mediaPane = createMediaPane({
   formatNumber,
   renderHeader,
   setStatus,
-  sendKeepaliveJson,
 });
 
 queuePane = createQueuePane({

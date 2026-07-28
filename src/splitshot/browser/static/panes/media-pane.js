@@ -9,7 +9,6 @@ export function createMediaPane({
   pickPath = async () => "",
   fileName = (value) => String(value || ""),
   splitSeconds = (value) => String(value ?? ""),
-  sendKeepaliveJson = () => false,
   setStatus = () => {},
 } = {}) {
   const mediaSectionExpansionKey = "splitshot.media.sectionExpanded";
@@ -139,14 +138,16 @@ export function createMediaPane({
     render();
   }
 
-  function selectStage(stageId) {
+  async function selectStage(stageId) {
     const proj = project();
-    if (!proj || !stageId) return;
-    proj.active_stage_id = stageId;
-    setActiveStageId(stageId);
-    sendKeepaliveJson("/api/project/select-stage", { active_stage_id: stageId });
+    if (!proj || !stageId) return false;
+    if (stageId === activeStageId()) return true;
     activity("media.select-stage", { stageId });
+    const result = await callApi("/api/project/select-stage", { active_stage_id: stageId });
+    if (!result) return false;
+    setActiveStageId(stageId);
     render();
+    return true;
   }
 
   async function createStage() {
@@ -193,8 +194,7 @@ export function createMediaPane({
 
   async function openPrimaryForStage(stageId) {
     if (!stageId || !hasOpenProject()) return;
-    const stage = stages().find((item) => item.id === stageId) || activeStage();
-    selectStage(stageId);
+    if (!(await selectStage(stageId))) return;
     activity("media.import-primary", { stageId });
     const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
     if (selectedPath) {
@@ -205,12 +205,12 @@ export function createMediaPane({
 
   async function openAddMoreForStage(stageId) {
     if (!stageId || !hasOpenProject()) return;
-    const stage = stages().find((item) => item.id === stageId) || activeStage();
+    if (!(await selectStage(stageId))) return;
+    const stage = activeStage();
     if (!stage?.primary_media?.path) {
       setStatus("Add primary media before adding secondary media.");
       return;
     }
-    selectStage(stageId);
     activity("media.import-added", { stageId });
     const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
     if (selectedPath) {
@@ -277,30 +277,30 @@ export function createMediaPane({
         <div class="section-header media-section-header">
           <strong>Primary</strong>
           <div class="section-header-actions">
+            ${stage?.primary_media?.path
+              ? ""
+              : `<button class="btn-sm btn-primary media-section-action-btn media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Add Primary</button>`}
             <button class="pane-toggle media-section-toggle" type="button" data-media-section="primary" aria-label="${primaryExpanded ? "Collapse" : "Expand"} Primary">${primaryExpanded ? "v" : ">"}</button>
           </div>
         </div>
         <div class="media-pane-section-body"${primaryExpanded ? "" : " hidden"}>
           ${stage?.primary_media?.path
             ? renderInventoryFileRow(stage.id, stage.primary_media, true)
-            : `<div class="empty-state">
-                 <p>No primary asset for ${htmlEscape(stageLabel(stage))}.</p>
-                 <button class="btn-sm btn-primary media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Replace</button>
-               </div>`}
+            : '<div class="empty-state">No primary media.</div>'}
         </div>
       </section>
       <section class="settings-section media-pane-section ${addedExpanded ? "" : "collapsed"}">
         <div class="section-header media-section-header">
           <strong>Added Media</strong>
           <div class="section-header-actions">
-            <button class="btn-sm btn-primary media-intake-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
+            <button class="btn-sm btn-primary media-intake-btn media-section-action-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
             <button class="pane-toggle media-section-toggle" type="button" data-media-section="added" aria-label="${addedExpanded ? "Collapse" : "Expand"} Added Media">${addedExpanded ? "v" : ">"}</button>
           </div>
         </div>
         <div class="media-pane-section-body media-asset-stack"${addedExpanded ? "" : " hidden"}>
           ${added.length
             ? added.map((source) => renderInventoryFileRow(stage.id, source, false)).join("")
-            : '<div class="empty-state">No added media for this stage.</div>'}
+            : '<div class="empty-state">No added media.</div>'}
         </div>
       </section>
     `;
@@ -364,7 +364,7 @@ export function createMediaPane({
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
       if (target.id === "media-active-stage-select") {
-        selectStage(target.value || "");
+        void selectStage(target.value || "");
       }
     };
   }
