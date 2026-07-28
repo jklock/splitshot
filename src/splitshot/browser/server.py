@@ -2071,19 +2071,38 @@ class BrowserControlServer:
                 end_s = payload.get("end_s")
                 keep_before_beep_s = payload.get("keep_before_beep_s")
                 keep_after_last_shot_s = payload.get("keep_after_last_shot_s")
-                controller.trim_all_merge_sources(
-                    start_s=float(start_s) if start_s not in {None, ""} else None,
-                    end_s=float(end_s) if end_s not in {None, ""} else None,
-                    keep_before_beep_s=(
-                        float(keep_before_beep_s) if keep_before_beep_s not in {None, ""} else None
-                    ),
-                    keep_after_last_shot_s=(
-                        float(keep_after_last_shot_s)
-                        if keep_after_last_shot_s not in {None, ""}
-                        else None
-                    ),
-                    clear=clear,
+                normalized_start_s = (
+                    float(start_s) if start_s not in {None, ""} else None
                 )
+                normalized_end_s = float(end_s) if end_s not in {None, ""} else None
+                normalized_keep_before_s = (
+                    float(keep_before_beep_s)
+                    if keep_before_beep_s not in {None, ""}
+                    else None
+                )
+                normalized_keep_after_s = (
+                    float(keep_after_last_shot_s)
+                    if keep_after_last_shot_s not in {None, ""}
+                    else None
+                )
+                stage_ids = payload.get("stage_ids")
+                if isinstance(stage_ids, list):
+                    controller.trim_selected_stages(
+                        [str(stage_id) for stage_id in stage_ids],
+                        start_s=normalized_start_s,
+                        end_s=normalized_end_s,
+                        keep_before_beep_s=normalized_keep_before_s,
+                        keep_after_last_shot_s=normalized_keep_after_s,
+                        clear=clear,
+                    )
+                else:
+                    controller.trim_all_merge_sources(
+                        start_s=normalized_start_s,
+                        end_s=normalized_end_s,
+                        keep_before_beep_s=normalized_keep_before_s,
+                        keep_after_last_shot_s=normalized_keep_after_s,
+                        clear=clear,
+                    )
                 server._clear_browser_media_cache()
                 server._bump_media_url_token()
 

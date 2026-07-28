@@ -5,6 +5,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.video_test_helpers import create_project
 
 
@@ -211,6 +212,93 @@ def test_four_panes_hold_og_spacing_at_supported_inspector_widths(
                       .map((button) => button.textContent.trim()).sort()"""
                 )
                 assert green_buttons == ["Add Media", "Add Stage"]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1500, "height": 1000})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                create_project(page, str(Path("tmp/codex/alpha-spacing.ssproj").resolve()))
+                page.evaluate("() => callApi('/api/project/stage/create', {})")
+                page.locator('button[data-tool="overlay"]').click(force=True)
+
+                for width in (360, 520, 640):
+                    page.evaluate(
+                        "(value) => document.documentElement.style.setProperty('--inspector-width', `${value}px`)",
+                        width,
+                    )
+                    fields = page.locator(
+                        '[data-tool-pane="overlay"] .opacity-percent-field'
+                    )
+                    assert fields.count() == 4
+                    for index in range(fields.count()):
+                        geometry = fields.nth(index).evaluate(
+                            """(field) => {
+                              const input = field.querySelector('.opacity-percent-input');
+                              const suffix = field.querySelector('.opacity-percent-suffix');
+                              const inputRect = input.getBoundingClientRect();
+                              const suffixRect = suffix.getBoundingClientRect();
+                              const style = getComputedStyle(input);
+                              return {
+                                gap: suffixRect.left - inputRect.right,
+                                rightPadding: parseFloat(style.paddingRight),
+                                textAlign: style.textAlign,
+                                overflow: inputRect.right > field.getBoundingClientRect().right + 1,
+                              };
+                            }"""
+                        )
+                        assert geometry["gap"] >= 12
+                        assert geometry["rightPadding"] >= 44
+                        assert geometry["textAlign"] == "left"
+                        assert geometry["overflow"] is False
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_imported_stage_review_summary_is_populated_without_manual_reentry() -> None:
+    controller = ProjectController()
+    practiscore_path = Path("example_data/IDPA/IDPA.csv").resolve()
+    controller.import_practiscore_file(str(practiscore_path), source_name="IDPA.csv")
+    stage = next(
+        item for item in controller.project.stages if item.imported_stage_number == 3
+    )
+    controller.select_stage(stage.id)
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1500, "height": 1000})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                page.locator('button[data-tool="review"]').click(force=True)
+                card = page.locator(".text-box-card").filter(has_text="Summary").first
+                card.locator('[data-text-box-action="toggle"]').click()
+                page.wait_for_function(
+                    """() => {
+                      const card = document.querySelector('.text-box-card');
+                      return card
+                        && card.querySelectorAll('[data-summary-metric]').length >= 3
+                        && card.querySelector('[data-text-box-preview]')?.value.includes('Overall - ');
+                    }"""
+                )
+                imported = page.evaluate("state.project.scoring.imported_stage")
+                preview = card.locator("[data-text-box-preview]").input_value()
+                assert f"{imported['division']} - " in preview
+                assert f"{imported['classification']} - " in preview
+                assert "Overall - " in preview
+                assert card.locator("[data-summary-metric]:checked").count() >= 3
             finally:
                 browser.close()
     finally:

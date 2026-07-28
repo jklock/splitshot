@@ -11,7 +11,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | project details, project output root, create/select/reveal project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, match-type selection, competitor/place/class/division selectors |"
+        "| Project / import | project details, project output root, create/select/reveal project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, inferred match type, competitor/place/class/division selectors |"
         in matrix
     )
     assert (

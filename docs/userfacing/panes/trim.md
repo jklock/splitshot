@@ -1,13 +1,13 @@
 # Trim Pane
 
-The Trim pane creates project-managed media derivatives for the active stage. It can trim every video around the detected run or apply different trim and synchronization values to individual sources.
+The Trim pane creates project-managed media derivatives. Bulk Trim can apply the same before-beep and after-last-shot window to selected stages, while Sources edits the active stage one file at a time.
 
 <img src="../../screenshots/TrimPane.png" alt="Trim pane with bulk timing controls, video transport, and expanded primary and added-media source cards" width="960">
 
 ## Use This Pane For
 
 - Keeping a fixed amount of video before the beep and after the last shot.
-- Applying or clearing a bulk trim across the active stage.
+- Selecting any combination of stages and applying or clearing the same bulk trim across them.
 - Applying a different start and end trim to one source.
 - Aligning added videos with the primary video.
 - Returning to the original source or undoing the latest trim change.
@@ -17,12 +17,14 @@ The Trim pane creates project-managed media derivatives for the active stage. It
 | Control | What it does |
 | --- | --- |
 | `Play` / scrubber | Previews the active video and shows the current position. |
-| `Keep before beep` | Keeps this many seconds before the detected beep. |
-| `Keep after last shot` | Keeps this many seconds after the final shot. |
-| `Reset to 2/2` | Restores two seconds before and after the run. |
-| `Undo Last Change` | Restores the previous trim state. |
-| `Apply to All` | Creates trim derivatives for every trimmable source in the active stage. |
-| `Clear All` | Returns all stage sources to their originals. |
+| Stage checkboxes | Select the stages included in the next bulk action. Every stage with primary media is selected initially. |
+| `Select All` / `Clear` | Selects every trimmable stage or deselects every stage. |
+| `Before beep` | Keeps this many seconds before each selected stage's detected beep. |
+| `After last shot` | Keeps this many seconds after each selected stage's final shot. |
+| `Reset` | Restores two seconds before and after the run. |
+| `Undo` | Restores the previous bulk trim state for every stage included in that action. |
+| `Apply All` | Creates trim derivatives for every video in each selected stage. |
+| `Clear All` | Returns every source in each selected stage to its original. |
 
 ## Source Controls
 
@@ -30,12 +32,12 @@ Each source card identifies the original file and whether original or trimmed me
 
 | Control | What it does |
 | --- | --- |
-| `Trim start` / `Trim end` | Set the source-specific retained range in seconds. |
+| `Start` / `End` | Set the source-specific retained range in seconds. |
 | `Apply` | Creates and activates the derivative for that source. |
 | `Clear` | Returns that source to its original media. |
 | `Undo` | Restores the previous trim state for that source. |
-| `Trim Start to Beep` | Sets the start from the detected beep. |
-| `Trim End to Last Shot` | Sets the end from the final shot. |
+| `Start at Beep` | Sets the start from the detected beep. |
+| `End at Last Shot` | Sets the end from the final shot. |
 | `Sync offset` and nudge buttons | Align an added video with the primary video. |
 | `Analyze Sync` / `Re-run Sync` | Calculates a suggested sync relationship for added video. |
 

@@ -207,6 +207,14 @@ def test_media_pane_has_no_inventory_wrapper_or_count_chips():
     assert "<strong>Stages</strong>" not in source
 
 
+def test_media_pane_locks_stage_mutations_while_an_import_is_pending():
+    source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
+    assert "mediaMutationPending" in source
+    assert "runMediaMutation" in source
+    assert 'pane.setAttribute("aria-busy"' in source
+    assert 'mediaMutationPending ? "disabled" : ""' in source
+
+
 # ---------------------------------------------------------------------------
 # V107-1420 — Queue routing, filtering, filler removal, Compose overlap
 # ---------------------------------------------------------------------------
@@ -354,6 +362,44 @@ def test_metrics_uses_actual_standings_and_compact_sport_labels():
     assert "Division Placement" not in source
     assert "Class Placement" not in source
     assert "Classification Placement" not in source
+
+
+def test_practiscore_file_import_uses_backend_match_type_inference():
+    source = (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
+    start = source.index('$("practiscore-file-input").addEventListener("change"')
+    within = source[start : start + 700]
+    assert 'postFile("/api/files/practiscore"' in within
+    assert "readPractiScoreMatchSelection" not in within
+    assert "match_type:" not in within
+
+
+def test_trim_bulk_actions_send_the_explicit_selected_stage_ids():
+    source = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
+    assert "selectedTrimStageIds" in source
+    assert 'id="trim-stage-select-all"' in source
+    assert 'id="trim-stage-clear"' in source
+    assert "data-trim-stage-id" in source
+    assert "stage_ids: stageIds" in source
+
+
+def test_review_summary_uses_imported_score_time_raw_time_and_penalties():
+    source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
+    within = source[source.index("function reviewMetricValue") :]
+    assert "imported.final_time" in within
+    assert "summary.raw_seconds ?? imported.raw_seconds" in within
+    assert "summary.total_penalties ?? imported.shot_penalties" in within
+
+
+def test_badge_alpha_field_reserves_stepper_space_and_suffix_gap():
+    source = (STATIC_ROOT / "styles" / "panes.css").read_text()
+    start = source.index(
+        "#badge-style-grid .badge-style-card .opacity-percent-input"
+    )
+    within = source[start : start + 1200]
+    assert "padding: var(--space-1) 2.75rem" in within
+    assert "text-align: left" in within
+    assert "grid-template-columns: minmax(0, 1fr) auto" in within
+    assert "gap: 12px" in within
 
 
 def test_queue_uses_compact_stage_cards():

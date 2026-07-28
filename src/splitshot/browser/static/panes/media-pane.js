@@ -12,6 +12,7 @@ export function createMediaPane({
   setStatus = () => {},
 } = {}) {
   const mediaSectionExpansionKey = "splitshot.media.sectionExpanded";
+  let mediaMutationPending = false;
 
   function currentState() {
     return getState() || {};
@@ -138,7 +139,22 @@ export function createMediaPane({
     render();
   }
 
-  async function selectStage(stageId) {
+  async function runMediaMutation(action) {
+    if (mediaMutationPending) {
+      setStatus("Wait for the current media action to finish.");
+      return null;
+    }
+    mediaMutationPending = true;
+    render();
+    try {
+      return await action();
+    } finally {
+      mediaMutationPending = false;
+      render();
+    }
+  }
+
+  async function selectStageRequest(stageId) {
     const proj = project();
     if (!proj || !stageId) return false;
     if (stageId === activeStageId()) return true;
@@ -150,73 +166,99 @@ export function createMediaPane({
     return true;
   }
 
+  async function selectStage(stageId) {
+    return runMediaMutation(() => selectStageRequest(stageId));
+  }
+
   async function createStage() {
-    activity("media.create-stage");
-    await callApi("/api/project/stage/create", {});
-    setStatus("Created new stage.");
+    return runMediaMutation(async () => {
+      activity("media.create-stage");
+      const result = await callApi("/api/project/stage/create", {});
+      if (result) setStatus("Created new stage.");
+      return result;
+    });
   }
 
   async function renameStage(stageId, label) {
     const trimmed = String(label || "").trim();
     if (!stageId || !trimmed) return;
-    activity("media.rename-stage", { stageId, label: trimmed });
-    await callApi("/api/project/stage/update", { stage_id: stageId, label: trimmed });
-    setStatus(`Renamed stage to "${trimmed}".`);
+    return runMediaMutation(async () => {
+      activity("media.rename-stage", { stageId, label: trimmed });
+      const result = await callApi("/api/project/stage/update", { stage_id: stageId, label: trimmed });
+      if (result) setStatus(`Renamed stage to "${trimmed}".`);
+      return result;
+    });
   }
 
   async function deleteStage(stageId) {
     if (!stageId) return;
-    activity("media.delete-stage", { stageId });
-    await callApi("/api/project/stage/delete", { stage_id: stageId });
-    setStatus("Deleted stage.");
+    return runMediaMutation(async () => {
+      activity("media.delete-stage", { stageId });
+      const result = await callApi("/api/project/stage/delete", { stage_id: stageId });
+      if (result) setStatus("Deleted stage.");
+      return result;
+    });
   }
 
   async function clearPrimary(stageId) {
     if (!stageId) return;
-    activity("media.clear-primary", { stageId });
-    await callApi("/api/project/stage/clear-primary", { stage_id: stageId });
-    setStatus("Cleared primary media.");
+    return runMediaMutation(async () => {
+      activity("media.clear-primary", { stageId });
+      const result = await callApi("/api/project/stage/clear-primary", { stage_id: stageId });
+      if (result) setStatus("Cleared primary media.");
+      return result;
+    });
   }
 
   async function removeAdded(stageId, sourceId) {
     if (!stageId || !sourceId) return;
-    activity("media.remove-added", { stageId, sourceId });
-    await callApi("/api/project/stage/remove-added", { stage_id: stageId, source_id: sourceId });
-    setStatus("Removed added media.");
+    return runMediaMutation(async () => {
+      activity("media.remove-added", { stageId, sourceId });
+      const result = await callApi("/api/project/stage/remove-added", { stage_id: stageId, source_id: sourceId });
+      if (result) setStatus("Removed added media.");
+      return result;
+    });
   }
 
   async function setPrimary(stageId, sourceId) {
     if (!stageId || !sourceId) return;
-    activity("media.set-primary", { stageId, sourceId });
-    await callApi("/api/project/stage/set-primary", { stage_id: stageId, source_id: sourceId });
-    setStatus("Set as primary media.");
+    return runMediaMutation(async () => {
+      activity("media.set-primary", { stageId, sourceId });
+      const result = await callApi("/api/project/stage/set-primary", { stage_id: stageId, source_id: sourceId });
+      if (result) setStatus("Set as primary media.");
+      return result;
+    });
   }
 
   async function openPrimaryForStage(stageId) {
     if (!stageId || !hasOpenProject()) return;
-    if (!(await selectStage(stageId))) return;
-    activity("media.import-primary", { stageId });
-    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
-    if (selectedPath) {
-      await callApi("/api/project/stage/import-primary", { stage_id: stageId, path: selectedPath });
-      setStatus("Imported primary media.");
-    }
+    return runMediaMutation(async () => {
+      if (!(await selectStageRequest(stageId))) return null;
+      activity("media.import-primary", { stageId });
+      const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
+      if (!selectedPath) return null;
+      const result = await callApi("/api/project/stage/import-primary", { stage_id: stageId, path: selectedPath });
+      if (result) setStatus("Imported primary media.");
+      return result;
+    });
   }
 
   async function openAddMoreForStage(stageId) {
     if (!stageId || !hasOpenProject()) return;
-    if (!(await selectStage(stageId))) return;
-    const stage = activeStage();
-    if (!stage?.primary_media?.path) {
-      setStatus("Add primary media before adding secondary media.");
-      return;
-    }
-    activity("media.import-added", { stageId });
-    const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
-    if (selectedPath) {
-      await callApi("/api/project/stage/import-added", { stage_id: stageId, path: selectedPath });
-      setStatus("Imported added media.");
-    }
+    return runMediaMutation(async () => {
+      if (!(await selectStageRequest(stageId))) return null;
+      const stage = activeStage();
+      if (!stage?.primary_media?.path) {
+        setStatus("Add primary media before adding secondary media.");
+        return null;
+      }
+      activity("media.import-added", { stageId });
+      const selectedPath = await pickPath("primary", null, null, mediaPickerDefaultRoot());
+      if (!selectedPath) return null;
+      const result = await callApi("/api/project/stage/import-added", { stage_id: stageId, path: selectedPath });
+      if (result) setStatus("Imported added media.");
+      return result;
+    });
   }
 
   function renderInventoryFileRow(stageId, source, isPrimary = false) {
@@ -231,10 +273,10 @@ export function createMediaPane({
         </div>
         <div class="media-asset-actions">
           ${isPrimary
-            ? `<button class="btn-sm btn-secondary media-replace-primary-btn" type="button" data-stage-id="${stageId}">Replace</button>
-               <button class="btn-sm btn-danger media-remove-file-btn" type="button" data-stage-id="${stageId}" data-source-id="primary">Clear</button>`
-            : `<button class="btn-sm btn-secondary media-set-primary-btn" type="button" data-stage-id="${stageId}" data-source-id="${sourceId}">Set Primary</button>
-               <button class="btn-sm btn-danger media-remove-file-btn" type="button" data-stage-id="${stageId}" data-source-id="${sourceId}">Remove</button>`}
+            ? `<button class="btn-sm btn-secondary media-replace-primary-btn" type="button" data-stage-id="${stageId}" ${mediaMutationPending ? "disabled" : ""}>Replace</button>
+               <button class="btn-sm btn-danger media-remove-file-btn" type="button" data-stage-id="${stageId}" data-source-id="primary" ${mediaMutationPending ? "disabled" : ""}>Clear</button>`
+            : `<button class="btn-sm btn-secondary media-set-primary-btn" type="button" data-stage-id="${stageId}" data-source-id="${sourceId}" ${mediaMutationPending ? "disabled" : ""}>Set Primary</button>
+               <button class="btn-sm btn-danger media-remove-file-btn" type="button" data-stage-id="${stageId}" data-source-id="${sourceId}" ${mediaMutationPending ? "disabled" : ""}>Remove</button>`}
         </div>
       </article>
     `;
@@ -252,17 +294,17 @@ export function createMediaPane({
         <div class="media-pane-section-body">
           <div class="control-grid">
             <label>Stage
-              <select id="media-active-stage-select">${stageOptions}</select>
+              <select id="media-active-stage-select" ${mediaMutationPending ? "disabled" : ""}>${stageOptions}</select>
             </label>
             <label>Name
-              <input id="media-active-stage-label" type="text" value="${htmlEscape(stage ? stageLabel(stage) : "")}" placeholder="Stage name" />
+              <input id="media-active-stage-label" type="text" value="${htmlEscape(stage ? stageLabel(stage) : "")}" placeholder="Stage name" ${mediaMutationPending ? "disabled" : ""} />
             </label>
           </div>
           <div class="media-active-stage-actions media-pane-actions media-pane-actions-split">
-            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage ? "" : "disabled"}>Save</button>
-            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 ? "" : "disabled"}>Delete</button>
+            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage && !mediaMutationPending ? "" : "disabled"}>Save</button>
+            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 && !mediaMutationPending ? "" : "disabled"}>Delete</button>
           </div>
-          <button class="primary-button media-add-stage-btn media-add-stage-full" type="button">Add Stage</button>
+          <button class="primary-button media-add-stage-btn media-add-stage-full" type="button" ${mediaMutationPending ? "disabled" : ""}>Add Stage</button>
         </div>
       </section>
     `;
@@ -279,7 +321,7 @@ export function createMediaPane({
           <div class="section-header-actions">
             ${stage?.primary_media?.path
               ? ""
-              : `<button class="btn-sm btn-primary media-section-action-btn media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}">Add Primary</button>`}
+              : `<button class="btn-sm btn-primary media-section-action-btn media-add-primary-btn" type="button" data-stage-id="${stage?.id || ""}" ${mediaMutationPending ? "disabled" : ""}>Add Primary</button>`}
             <button class="pane-toggle media-section-toggle" type="button" data-media-section="primary" aria-label="${primaryExpanded ? "Collapse" : "Expand"} Primary">${primaryExpanded ? "v" : ">"}</button>
           </div>
         </div>
@@ -293,7 +335,7 @@ export function createMediaPane({
         <div class="section-header media-section-header">
           <strong>Added Media</strong>
           <div class="section-header-actions">
-            <button class="btn-sm btn-primary media-intake-btn media-section-action-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path ? "" : "disabled"}>Add Media</button>
+            <button class="btn-sm btn-primary media-intake-btn media-section-action-btn media-add-more-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage?.primary_media?.path && !mediaMutationPending ? "" : "disabled"}>Add Media</button>
             <button class="pane-toggle media-section-toggle" type="button" data-media-section="added" aria-label="${addedExpanded ? "Collapse" : "Expand"} Added Media">${addedExpanded ? "v" : ">"}</button>
           </div>
         </div>
@@ -374,6 +416,7 @@ export function createMediaPane({
     if (!pane) return;
     const stage = activeStage();
     const count = stageAssetCount(stage);
+    pane.setAttribute("aria-busy", mediaMutationPending ? "true" : "false");
     pane.innerHTML = `
       <div class="pane-section media-pane-shell">
         <div class="section-header pane-title-row">

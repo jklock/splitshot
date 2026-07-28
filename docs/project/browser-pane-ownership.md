@@ -7,7 +7,7 @@ Audit basis: the v1.0.7 browser shell/backend wiring and the code-first pane fun
 - `Project`: project lifecycle, project drafts, project-folder creation/reveal, PractiScore import source, imported stage selector for context lookup, `match-stage-number`, `match-competitor-name`, `match-competitor-place`, and the compact imported summary.
 - `Media`: active-stage selection, stage naming, stage file rows, file intake, primary designation, file removal, and stage creation or deletion.
 - `Compose`: composition-only controls for the active stage.
-- `Trim`: active-stage trim and sync controls only.
+- `Trim`: selected-stage bulk trim plus active-stage source trim and sync controls.
 - `Score`: scoring workbench and imported PractiScore scoring reference.
 - `Splits`: split rows, timing event editing, waveform controls, and timing workbench state.
 - `Markers`: marker image and callout authoring.

@@ -419,6 +419,56 @@ def test_stage_metadata_update_route_updates_active_stage_context() -> None:
     assert state["project"]["scoring"]["competitor_name"] == "Test Shooter"
 
 
+def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def record_selected_trim(
+        self,
+        stage_ids,
+        *,
+        start_s=None,
+        end_s=None,
+        keep_before_beep_s=None,
+        keep_after_last_shot_s=None,
+        clear=False,
+    ) -> None:
+        captured.update(
+            {
+                "stage_ids": list(stage_ids),
+                "start_s": start_s,
+                "end_s": end_s,
+                "keep_before_beep_s": keep_before_beep_s,
+                "keep_after_last_shot_s": keep_after_last_shot_s,
+                "clear": clear,
+            }
+        )
+
+    monkeypatch.setattr(ProjectController, "trim_selected_stages", record_selected_trim)
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(
+            f"{server.url}api/merge/source/trim-all",
+            {
+                "stage_ids": ["stage-2", "stage-4"],
+                "keep_before_beep_s": 1.5,
+                "keep_after_last_shot_s": 2.5,
+                "clear": False,
+            },
+        )
+    finally:
+        server.shutdown()
+
+    assert captured == {
+        "stage_ids": ["stage-2", "stage-4"],
+        "start_s": None,
+        "end_s": None,
+        "keep_before_beep_s": 1.5,
+        "keep_after_last_shot_s": 2.5,
+        "clear": False,
+    }
+
+
 def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:
     calls: list[tuple[object, tuple[str, int]]] = []
 

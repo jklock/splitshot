@@ -19,10 +19,10 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 
 | Control | What it does |
 | --- | --- |
-| `Stage #` | Chooses which stage is active across the rest of the app. |
-| `Stage Name` | Renames the active stage. |
-| `Save Stage` | Saves the current stage label. |
-| `Delete Stage` | Removes the active stage. |
+| `Stage` | Chooses which stage is active across the rest of the app. |
+| `Name` | Renames the active stage. |
+| `Save` | Saves the current stage label. |
+| `Delete` | Removes the active stage. |
 | File row | Shows one attached file with its filename, type, duration, and dimensions. |
 | `Add Primary` / `Replace` | Opens in project `Input/`, imports the selected file there when needed, and replaces the active stage primary. |
 | `Set Primary` | Promotes an added file into the primary slot. |
@@ -47,7 +47,10 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 
 - One stage is active at a time across Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, and Queue.
 - Stage media is stage-local. Switching stages swaps the full editing context.
-- The stage selector and summary token show which stage the rest of the app is editing.
+- Media temporarily locks its stage controls while a file picker/import is running so one import cannot be attached while another stage is being selected or created.
+- Stage names must be unique.
+- A manually created stage starts with no media or imported stage result, but inherits the active stage's analysis settings, scoring family, Compose, overlay, marker, and Export configuration.
+- Imported match stages exist before their videos are paired. On the first primary import, an imported stage inherits the nearest earlier stage's analysis, Compose, overlay, marker, and Export configuration while retaining its own imported scoring result.
 - Competitor identity selectors live in Project, not here. Media owns stage selection, stage naming, and stage files.
 - Files selected outside the project are copied into `Input/` before analysis. Files already in `Input/` are used directly.
 - Removing a file row detaches it from the stage but does not delete the file from `Input/`.

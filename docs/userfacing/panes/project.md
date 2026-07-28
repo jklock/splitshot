@@ -26,7 +26,7 @@ The Project pane owns project metadata, PractiScore import, competitor identity 
 | `Project description` | Stores project notes. |
 | `Open PractiScore Dashboard` | Opens PractiScore in your system browser. |
 | `Select PractiScore File` | Opens in the project `CSV/` folder and imports a project-managed CSV/TXT file. Files selected elsewhere are copied into `CSV/`. |
-| `Match type` | Chooses the active scoring family. |
+| `Match type` | Shows the scoring family inferred from the imported CSV/TXT; it can be changed manually when working without an import. |
 | Stage selector | Chooses the imported stage for context lookup. |
 | Competitor name selector | Selects the imported competitor by name. |
 | Competitor place selector | Selects the imported competitor by place. |
@@ -46,7 +46,7 @@ The selected directory is the root for the rest of the workflow. Media pickers s
 
 ## Downstream Effects
 
-- Imported PractiScore data seeds stage-local scoring context and the project summary.
+- Imported PractiScore data infers the match type and hydrates every imported stage with its own stage result, competitor standings context, and Review summary metrics.
 - Stage media intake, file rows, primary designation, file removal, and active-stage selection live in Media.
 - Queue and export processing live downstream in Queue, not here.
 - Autosave updates `project.json`; it does not copy or relocate project files.

@@ -3033,15 +3033,24 @@
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-input {
   font-size: var(--text-base);
   min-height: 30px;
-  min-width: 4.75rem;
-  padding: var(--space-1) 1.75rem var(--space-1) 0.55rem;
-  width: 4.75rem;
+  min-width: 0;
+  padding: var(--space-1) 2.75rem var(--space-1) 0.75rem;
+  text-align: left;
+  width: 100%;
 }
 
 #badge-style-grid .badge-style-card .opacity-percent-suffix,
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-suffix {
   font-size: var(--text-base);
-  margin-left: var(--space-1);
+  margin-left: 0;
+}
+
+#badge-style-grid .badge-style-card .opacity-percent-field,
+.cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-field {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
 }
 
 #score-color-grid .score-color-field,
@@ -3645,6 +3654,38 @@
 .trim-global-row,
 .trim-card-row {
   gap: 8px;
+}
+
+.trim-stage-selector {
+  display: grid;
+  gap: 8px;
+}
+
+.trim-stage-selector-header {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.trim-stage-selector-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.trim-stage-selector-actions small {
+  color: var(--muted);
+}
+
+.trim-stage-checklist {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.trim-stage-option {
+  min-height: 30px;
 }
 
 .trim-card-actions {

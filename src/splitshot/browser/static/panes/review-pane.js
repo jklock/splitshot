@@ -753,16 +753,25 @@ export function createReviewPane({
       ? imported.score_counts?.["Points Down"] ?? imported.aggregate_points
       : null;
     switch (metricId) {
-      case "score_time":
-        return summary.display_value || "--";
-      case "raw_time":
-        return summary.raw_seconds !== null && summary.raw_seconds !== undefined
-          ? `${Number(summary.raw_seconds).toFixed(2)}s` : "";
+      case "score_time": {
+        const computed = String(summary.display_value || "").trim();
+        if (computed && computed !== "--") return computed;
+        return imported.final_time !== null && imported.final_time !== undefined
+          ? Number(imported.final_time).toFixed(2)
+          : "";
+      }
+      case "raw_time": {
+        const rawSeconds = summary.raw_seconds ?? imported.raw_seconds;
+        return rawSeconds !== null && rawSeconds !== undefined
+          ? `${Number(rawSeconds).toFixed(2)}s`
+          : "";
+      }
       case "points_down":
         return pointsDown !== null && pointsDown !== undefined ? String(pointsDown) : "";
-      case "penalties":
-        return summary.total_penalties !== null && summary.total_penalties !== undefined
-          ? String(summary.total_penalties) : "";
+      case "penalties": {
+        const penalties = summary.total_penalties ?? imported.shot_penalties;
+        return penalties !== null && penalties !== undefined ? String(penalties) : "";
+      }
       case "overall_placement":
         return formatPlacement(groups.overall.place, groups.overall.items.length);
       case "division_placement":
@@ -784,12 +793,21 @@ export function createReviewPane({
     if (!hasImported) return false;
     const groups = reviewComparisonGroups(summary, imported);
     switch (metricId) {
-      case "score_time": return Boolean(summary.display_value);
-      case "raw_time": return summary.raw_seconds !== null && summary.raw_seconds !== undefined;
+      case "score_time": return (
+        (Boolean(summary.display_value) && summary.display_value !== "--")
+        || (imported.final_time !== null && imported.final_time !== undefined)
+      );
+      case "raw_time": return (
+        (summary.raw_seconds !== null && summary.raw_seconds !== undefined)
+        || (imported.raw_seconds !== null && imported.raw_seconds !== undefined)
+      );
       case "points_down": return imported.match_type === "idpa"
         ? imported.score_counts?.["Points Down"] !== null && imported.score_counts?.["Points Down"] !== undefined
         : summary.shot_penalties !== null && summary.shot_penalties !== undefined;
-      case "penalties": return summary.total_penalties !== null && summary.total_penalties !== undefined;
+      case "penalties": return (
+        (summary.total_penalties !== null && summary.total_penalties !== undefined)
+        || (imported.shot_penalties !== null && imported.shot_penalties !== undefined)
+      );
       case "overall_placement": return groups.overall.place !== null;
       case "division_placement": return groups.division.place !== null;
       case "class_placement": return groups.class.place !== null;

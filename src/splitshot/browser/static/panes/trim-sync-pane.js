@@ -23,9 +23,20 @@ export function createTrimSyncPane({
   let keepAfterLastShotS = 2;
   let transportActive = false;
   let transportVideo = null;
+  let stageSelectionInitialized = false;
+  let knownTrimStageIds = new Set();
+  const selectedTrimStageIds = new Set();
 
   function currentState() {
     return getState() || {};
+  }
+
+  function htmlEscape(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
   }
 
   function isExpanded(sectionId) {
@@ -94,6 +105,48 @@ export function createTrimSyncPane({
   function stageSources() {
     const primary = primaryTrimSource();
     return primary ? [primary, ...mergeSources()] : mergeSources();
+  }
+
+  function trimmableStages() {
+    const project = currentState()?.project || {};
+    return (project.stages || [])
+      .map((stage) => (
+        stage?.id === project.active_stage_id && !stage?.primary_media?.path && project.primary_video?.path
+          ? {
+              ...stage,
+              primary_media: project.primary_video,
+              added_media: project.merge_sources || stage.added_media || [],
+            }
+          : stage
+      ))
+      .filter((stage) => Boolean(stage?.primary_media?.path));
+  }
+
+  function syncTrimStageSelection() {
+    const stages = trimmableStages();
+    const currentIds = new Set(stages.map((stage) => String(stage.id || "")));
+    [...selectedTrimStageIds].forEach((stageId) => {
+      if (!currentIds.has(stageId)) selectedTrimStageIds.delete(stageId);
+    });
+    if (!stageSelectionInitialized) {
+      stages.forEach((stage) => selectedTrimStageIds.add(String(stage.id || "")));
+      stageSelectionInitialized = true;
+    } else {
+      stages.forEach((stage) => {
+        const stageId = String(stage.id || "");
+        if (stageId && !knownTrimStageIds.has(stageId)) selectedTrimStageIds.add(stageId);
+      });
+    }
+    knownTrimStageIds = currentIds;
+    return stages;
+  }
+
+  function updateTrimStageSelectionSummary() {
+    const output = $("trim-stage-selection-count");
+    if (output) {
+      const count = selectedTrimStageIds.size;
+      output.textContent = `${count} selected`;
+    }
   }
 
   function formatSeconds(value) {
@@ -204,28 +257,47 @@ export function createTrimSyncPane({
     return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
   }
 
-  function queueUndoSnapshot(kind, sourceId = null) {
+  function trimSourceSnapshot(source, fallbackId) {
+    const nextSourceId = sourceIdentifier(source, fallbackId);
+    return {
+      source_id: nextSourceId,
+      sync_offset_ms: currentSourceSyncOffsetMs(source),
+      start_s: source?.trim_derivative?.start_s ?? null,
+      end_s: source?.trim_derivative?.end_s ?? null,
+      clear: !(
+        source?.trim_derivative
+        && source.trim_derivative.active_path_kind === "local_derivative"
+        && source.trim_derivative.derivative_path
+      ),
+    };
+  }
+
+  function queueUndoSnapshot(kind, sourceId = null, stageIds = []) {
     if (restoringUndo) return;
+    const selectedIds = new Set(stageIds);
     trimUndoHistory.push({
       kind,
       sourceId,
       snapshot: {
+        active_stage_id: currentState()?.project?.active_stage_id || "",
         global_start: $("trim-global-start")?.value || "",
         global_end: $("trim-global-end")?.value || "",
-        sources: stageSources().map((source, index) => {
-          const nextSourceId = sourceIdentifier(source, String(index));
-          return {
-            source_id: nextSourceId,
-            sync_offset_ms: currentSourceSyncOffsetMs(source),
-            start_s: source?.trim_derivative?.start_s ?? null,
-            end_s: source?.trim_derivative?.end_s ?? null,
-            clear: !(
-              source?.trim_derivative
-              && source.trim_derivative.active_path_kind === "local_derivative"
-              && source.trim_derivative.derivative_path
-            ),
-          };
-        }),
+        sources: stageSources().map((source, index) => trimSourceSnapshot(source, String(index))),
+        stages: kind === "bulk"
+          ? (currentState()?.project?.stages || [])
+            .filter((stage) => selectedIds.has(String(stage.id || "")))
+            .map((stage) => ({
+              stage_id: String(stage.id || ""),
+              sources: [
+                {
+                  id: PRIMARY_SOURCE_ID,
+                  trim_derivative: stage.primary_trim_derivative || {},
+                  sync_offset_ms: 0,
+                },
+                ...(Array.isArray(stage.added_media) ? stage.added_media : []),
+              ].map((source, index) => trimSourceSnapshot(source, String(index))),
+            }))
+          : [],
       },
     });
     if (trimUndoHistory.length > 40) trimUndoHistory.shift();
@@ -236,29 +308,47 @@ export function createTrimSyncPane({
     renderVideo();
   }
 
+  async function restoreSourceSnapshots(sources) {
+    for (const source of sources) {
+      if (source.source_id !== PRIMARY_SOURCE_ID) {
+        await callApi("/api/merge/source", {
+          source_id: source.source_id,
+          sync_offset_ms: Math.round(Number(source.sync_offset_ms) || 0),
+        });
+        await callApi("/api/merge/source/trim", {
+          source_id: source.source_id,
+          clear: Boolean(source.clear),
+          start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
+          end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+        });
+      } else {
+        await callApi("/api/primary/trim", {
+          clear: Boolean(source.clear),
+          start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
+          end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+        });
+      }
+    }
+  }
+
   async function restoreTrimSnapshot(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.sources)) return;
     restoringUndo = true;
     try {
-      for (const source of snapshot.sources) {
-        if (source.source_id !== PRIMARY_SOURCE_ID) {
-          await callApi("/api/merge/source", {
-            source_id: source.source_id,
-            sync_offset_ms: Math.round(Number(source.sync_offset_ms) || 0),
+      if (Array.isArray(snapshot.stages) && snapshot.stages.length) {
+        for (const stage of snapshot.stages) {
+          await callApi("/api/project/select-stage", {
+            active_stage_id: stage.stage_id,
           });
-          await callApi("/api/merge/source/trim", {
-            source_id: source.source_id,
-            clear: Boolean(source.clear),
-            start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
-            end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
-          });
-        } else {
-          await callApi("/api/primary/trim", {
-            clear: Boolean(source.clear),
-            start_s: source.clear || source.start_s === null ? null : Number(source.start_s),
-            end_s: source.clear || source.end_s === null ? null : Number(source.end_s),
+          await restoreSourceSnapshots(stage.sources || []);
+        }
+        if (snapshot.active_stage_id) {
+          await callApi("/api/project/select-stage", {
+            active_stage_id: snapshot.active_stage_id,
           });
         }
+      } else {
+        await restoreSourceSnapshots(snapshot.sources);
       }
       if ($("trim-global-start")) $("trim-global-start").value = snapshot.global_start || "";
       if ($("trim-global-end")) $("trim-global-end").value = snapshot.global_end || "";
@@ -292,18 +382,37 @@ export function createTrimSyncPane({
     const endValue = parseFloat(endInput?.value || "");
     if (!clear && Number.isFinite(startValue) && startValue >= 0) keepBeforeBeepS = startValue;
     if (!clear && Number.isFinite(endValue) && endValue >= 0) keepAfterLastShotS = endValue;
-    if (recordUndo) queueUndoSnapshot("bulk");
+    const stageIds = [...selectedTrimStageIds];
+    const legacyActiveMedia = stageIds.length === 0
+      && (currentState()?.project?.stages || []).length === 0
+      && Boolean(primaryVideo()?.path);
+    if (stageIds.length === 0 && !legacyActiveMedia) {
+      setStatus("Select at least one stage.");
+      return;
+    }
+    const selectedCount = legacyActiveMedia ? 1 : stageIds.length;
+    if (recordUndo) queueUndoSnapshot("bulk", null, stageIds);
     activity(clear ? "trim.clear-all" : "trim.apply-all", {
       keep_before_beep_s: startValue,
       keep_after_last_shot_s: endValue,
+      stage_ids: stageIds,
     });
-    setStatus(clear ? "Clearing trim derivatives..." : "Trimming stage media...");
-    await callApi("/api/merge/source/trim-all", {
+    setStatus(
+      clear
+        ? `Clearing trim for ${selectedCount} selected stage${selectedCount === 1 ? "" : "s"}...`
+        : `Trimming ${selectedCount} selected stage${selectedCount === 1 ? "" : "s"}...`,
+    );
+    const request = {
       clear,
       keep_before_beep_s: clear || !Number.isFinite(startValue) || startValue < 0 ? null : startValue,
       keep_after_last_shot_s: clear || !Number.isFinite(endValue) || endValue < 0 ? null : endValue,
-    });
-    setStatus(clear ? "Cleared all trims." : "Trimmed all stage media.");
+    };
+    if (!legacyActiveMedia) request.stage_ids = stageIds;
+    await callApi("/api/merge/source/trim-all", request);
+    setStatus(
+      `${clear ? "Cleared trim for" : "Trimmed"} ${selectedCount} selected stage`
+      + `${selectedCount === 1 ? "" : "s"}.`,
+    );
     refreshTrimPreview();
   }
 
@@ -473,6 +582,28 @@ export function createTrimSyncPane({
     $("trim-global-clear")?.addEventListener("click", () => trimAll(true));
     $("trim-global-undo")?.addEventListener("click", () => undoLastTrimChange());
     $("trim-global-defaults-btn")?.addEventListener("click", applyGlobalDefaults);
+    $("trim-stage-select-all")?.addEventListener("click", () => {
+      trimmableStages().forEach((stage) => selectedTrimStageIds.add(String(stage.id || "")));
+      documentObject.querySelectorAll("[data-trim-stage-id]").forEach((input) => {
+        input.checked = true;
+      });
+      updateTrimStageSelectionSummary();
+    });
+    $("trim-stage-clear")?.addEventListener("click", () => {
+      selectedTrimStageIds.clear();
+      documentObject.querySelectorAll("[data-trim-stage-id]").forEach((input) => {
+        input.checked = false;
+      });
+      updateTrimStageSelectionSummary();
+    });
+    documentObject.querySelectorAll("[data-trim-stage-id]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const stageId = input.dataset.trimStageId || "";
+        if (input.checked) selectedTrimStageIds.add(stageId);
+        else selectedTrimStageIds.delete(stageId);
+        updateTrimStageSelectionSummary();
+      });
+    });
     documentObject.querySelectorAll(".trim-apply-btn").forEach((button) => {
       button.addEventListener("click", () => {
         trimSource(button.dataset.sourceId || "", false);
@@ -536,6 +667,7 @@ export function createTrimSyncPane({
     const pane = documentObject.querySelector('[data-tool-pane="trim-sync"]');
     if (!pane) return;
     const sources = stageSources();
+    const stages = syncTrimStageSelection();
     const existingList = $("trim-sync-list");
     const primaryBeep = originalBeepTimeMs();
     const primaryLastShot = originalLastShotTimeMs();
@@ -555,6 +687,26 @@ export function createTrimSyncPane({
             <div class="trim-pane-section-body"${isExpanded("bulk") ? "" : " hidden"}>
               <div class="trim-timing-bar">
                 <span>Beep ${beepS}s · Last shot ${lastShotS}s · Duration ${durS}s</span>
+              </div>
+              <div class="trim-stage-selector">
+                <div class="trim-stage-selector-header">
+                  <strong>Stages</strong>
+                  <div class="trim-stage-selector-actions">
+                    <small id="trim-stage-selection-count">${selectedTrimStageIds.size} selected</small>
+                    <button id="trim-stage-select-all" type="button" class="btn-sm btn-secondary">Select All</button>
+                    <button id="trim-stage-clear" type="button" class="btn-sm btn-secondary">Clear</button>
+                  </div>
+                </div>
+                <div class="trim-stage-checklist">
+                  ${stages.map((stage) => {
+                    const stageId = String(stage.id || "");
+                    const sourceCount = 1 + (Array.isArray(stage.added_media) ? stage.added_media.length : 0);
+                    return `<label class="check-row trim-stage-option">
+                      <input type="checkbox" data-trim-stage-id="${stageId}" ${selectedTrimStageIds.has(stageId) ? "checked" : ""} />
+                      <span>${htmlEscape(stage.label || "Stage")} · ${sourceCount} source${sourceCount === 1 ? "" : "s"}</span>
+                    </label>`;
+                  }).join("")}
+                </div>
               </div>
               <div class="trim-transport" aria-label="Trim video transport">
                 <button id="trim-video-toggle" type="button" class="btn-sm btn-secondary">Play</button>

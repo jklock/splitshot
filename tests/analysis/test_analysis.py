@@ -660,6 +660,58 @@ def test_open_project_reimports_practiscore_when_saved_context_exists_but_import
     assert reopened.project.scoring.imported_stage.final_time == 10.15
 
 
+def test_open_project_repairs_empty_imported_summary_metric_selection(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
+    for stage in controller.project.stages:
+        summary_box = next(
+            box for box in stage.overlay.text_boxes if box.source == "imported_summary"
+        )
+        summary_box.summary_metric_ids = []
+    controller._sync_active_stage_to_project()
+    project_path = tmp_path / "repair-summary.ssproj"
+    controller.save_project(str(project_path))
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    for stage in reopened.project.stages:
+        summary_box = next(
+            box for box in stage.overlay.text_boxes if box.source == "imported_summary"
+        )
+        assert summary_box.summary_metric_ids
+
+
+def test_open_project_repairs_missing_practiscore_stage_records(tmp_path: Path) -> None:
+    controller = ProjectController()
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
+    controller.project.stages = [
+        stage for stage in controller.project.stages if stage.imported_stage_number != 3
+    ]
+    controller.project.active_stage_id = controller.project.stages[0].id
+    controller._sync_active_stage_to_project()
+    project_path = tmp_path / "repair-stages.ssproj"
+    controller.save_project(str(project_path))
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    assert [stage.imported_stage_number for stage in reopened.project.stages] == [1, 2, 3, 4]
+    assert [stage.label for stage in reopened.project.stages] == [
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4",
+    ]
+    assert all(stage.scoring.imported_stage is not None for stage in reopened.project.stages)
+
+
 def test_open_project_does_not_guess_renamed_external_media(
     synthetic_video_factory, tmp_path: Path
 ) -> None:
@@ -776,6 +828,158 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
     assert imported_box.y is None
     assert imported_box.width == 0
     assert imported_box.height == 0
+    assert imported_box.summary_metric_ids == [
+        "score_time",
+        "raw_time",
+        "points_down",
+        "penalties",
+        "division_placement",
+        "class_placement",
+        "overall_placement",
+    ]
+
+
+def test_practiscore_csv_infers_match_type_and_hydrates_every_imported_stage() -> None:
+    controller = ProjectController()
+
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
+
+    assert controller.practiscore_browser_state()["detected_match_type"] == "idpa"
+    assert [stage.imported_stage_number for stage in controller.project.stages] == [1, 2, 3, 4]
+    for stage in controller.project.stages:
+        assert stage.scoring.match_type == "idpa"
+        assert stage.scoring.imported_stage is not None
+        assert stage.scoring.imported_stage.stage_number == stage.imported_stage_number
+        summary_box = next(
+            box for box in stage.overlay.text_boxes if box.source == "imported_summary"
+        )
+        assert summary_box.summary_metric_ids
+
+        controller.select_stage(stage.id)
+        assert controller.project.scoring.imported_stage is not None
+        assert (
+            controller.project.scoring.imported_stage.stage_number
+            == stage.imported_stage_number
+        )
+        assert controller.practiscore_browser_state()["comparison_competitors"]
+
+
+def test_new_stage_inherits_active_configuration_without_media_or_results() -> None:
+    controller = ProjectController()
+    source = controller.create_stage("Stage 2")
+    controller.project.overlay.font_size = 32
+    controller.project.overlay.show_score = True
+    controller.project.merge.layout = MergeLayout.PIP
+    controller.project.export.target_width = 1920
+    controller.project.export.target_height = 1080
+    controller.project.scoring.match_type = "idpa"
+    controller.project.scoring.imported_stage = None
+
+    inherited = controller.create_stage("Stage 3")
+
+    assert inherited.id != source.id
+    assert inherited.primary_media.path == ""
+    assert inherited.added_media == []
+    assert inherited.analysis.shots == []
+    assert inherited.overlay.font_size == 32
+    assert inherited.overlay.show_score is True
+    assert inherited.merge.layout == MergeLayout.PIP
+    assert inherited.export.target_width == 1920
+    assert inherited.export.target_height == 1080
+    assert inherited.scoring.match_type == "idpa"
+    assert inherited.scoring.imported_stage is None
+
+
+def test_first_primary_import_inherits_previous_stage_configuration(
+    synthetic_video_factory,
+) -> None:
+    controller = ProjectController()
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
+    second = next(
+        stage for stage in controller.project.stages if stage.imported_stage_number == 2
+    )
+    third = next(
+        stage for stage in controller.project.stages if stage.imported_stage_number == 3
+    )
+    controller.select_stage(second.id)
+    controller.import_stage_primary(
+        second.id,
+        str(synthetic_video_factory(name="inherit-stage-two", beep_ms=400)),
+    )
+    controller.project.overlay.font_size = 32
+    controller.project.overlay.show_score = True
+    controller.project.merge.layout = MergeLayout.PIP
+    controller.project.export.target_width = 1920
+    controller.project.export.target_height = 1080
+    controller.select_stage(third.id)
+
+    controller.import_stage_primary(
+        third.id,
+        str(synthetic_video_factory(name="inherit-stage-three", beep_ms=400)),
+    )
+
+    assert third.overlay.font_size == 32
+    assert third.overlay.show_score is True
+    assert third.merge.layout == MergeLayout.PIP
+    assert third.export.target_width == 1920
+    assert third.export.target_height == 1080
+    assert third.scoring.imported_stage is not None
+    assert third.scoring.imported_stage.stage_number == 3
+    assert third.primary_media.path
+
+
+def test_stage_names_must_be_unique() -> None:
+    controller = ProjectController()
+    first = controller.create_stage("Stage 2")
+
+    with pytest.raises(ValueError, match="already exists"):
+        controller.create_stage("stage 2")
+    second = controller.create_stage("Stage 3")
+    with pytest.raises(ValueError, match="already exists"):
+        controller.update_stage_metadata(second.id, label=first.label)
+
+
+def test_trim_selected_stages_processes_only_requested_stages_and_restores_active(
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    first = controller.create_stage("Stage 1")
+    second = controller.create_stage("Stage 2")
+    third = controller.create_stage("Stage 3")
+    controller.select_stage(second.id)
+    first.primary_media = VideoAsset(path="/fixtures/stage-1.mp4")
+    second.primary_media = VideoAsset(path="/fixtures/stage-2.mp4")
+    third.primary_media = VideoAsset(path="/fixtures/stage-3.mp4")
+    controller.project.primary_video = second.primary_media
+    processed: list[tuple[str, float | None, float | None, bool]] = []
+
+    def record_trim(**kwargs) -> None:
+        processed.append(
+            (
+                controller.project.active_stage_id,
+                kwargs["keep_before_beep_s"],
+                kwargs["keep_after_last_shot_s"],
+                kwargs["clear"],
+            )
+        )
+
+    monkeypatch.setattr(controller, "trim_all_merge_sources", record_trim)
+
+    controller.trim_selected_stages(
+        [first.id, third.id],
+        keep_before_beep_s=1.5,
+        keep_after_last_shot_s=2.5,
+    )
+
+    assert processed == [
+        (first.id, 1.5, 2.5, False),
+        (third.id, 1.5, 2.5, False),
+    ]
+    assert controller.project.active_stage_id == second.id
 
 
 def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes(

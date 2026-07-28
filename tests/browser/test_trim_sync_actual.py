@@ -139,7 +139,7 @@ def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
                 )
                 tracker.assert_activity("trim.clear-all")
                 try:
-                    assert_status(page, "Cleared all trims")
+                    assert_status(page, "Cleared trim for")
                 except AssertionError:
                     try:
                         assert_status(page, "analysis")

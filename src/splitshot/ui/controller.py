@@ -31,6 +31,7 @@ from splitshot.config import (
     save_settings,
 )
 from splitshot.domain.models import (
+    AnalysisState,
     BadgeSize,
     BadgeStyle,
     AspectRatio,
@@ -134,6 +135,15 @@ VALID_OVERLAY_BADGE_NAMES = {
 }
 
 _PRACTISCORE_FILE_SUFFIXES = {".csv", ".txt"}
+_DEFAULT_SUMMARY_METRIC_IDS = (
+    "score_time",
+    "raw_time",
+    "points_down",
+    "penalties",
+    "division_placement",
+    "class_placement",
+    "overall_placement",
+)
 
 _VALID_BROWSER_UI_TOOLS = {
     "project",
@@ -1250,7 +1260,7 @@ class ProjectController(QObject):
                 changed = True
         if changed:
             if self._can_reimport_practiscore_source():
-                self._import_practiscore_source(
+                self._import_practiscore_source_for_all_stages(
                     str(self._practiscore_source_path),
                     self._practiscore_source_name,
                 )
@@ -1269,8 +1279,7 @@ class ProjectController(QObject):
         path = self._stage_practiscore_source_path(path, source_name=source_name)
         self._set_practiscore_source(path, source_name)
         self._rebuild_stages_from_practiscore_source(path, source_name)
-        self._import_practiscore_source(path, source_name)
-        self._sync_project_to_active_stage()
+        self._import_practiscore_source_for_all_stages(path, source_name)
 
     def _rebuild_stages_from_practiscore_source(
         self, path: str, source_name: str | None = None
@@ -1315,7 +1324,25 @@ class ProjectController(QObject):
                     order_index=order_index,
                     imported_stage_number=stage_number,
                     imported_stage_name=stage_name,
+                    analysis=AnalysisState(
+                        detection_threshold=seeded_analysis.detection_threshold,
+                        shotml_settings=deepcopy(seeded_analysis.shotml_settings),
+                    ),
+                    scoring=deepcopy(seeded_scoring),
+                    overlay=deepcopy(seeded_overlay),
+                    popups=deepcopy(seeded_popups),
+                    popup_template=deepcopy(seeded_popup_template),
+                    merge=deepcopy(seeded_merge),
+                    export=deepcopy(seeded_export),
                 )
+                stage.scoring.stage_number = stage_number
+                stage.scoring.imported_stage = None
+                stage.scoring.penalties = 0.0
+                stage.scoring.penalty_counts = {}
+                stage.scoring.hit_factor = None
+                stage.export.output_path = None
+                stage.export.last_log = ""
+                stage.export.last_error = None
             else:
                 stage.order_index = order_index
                 stage.imported_stage_number = stage_number
@@ -2010,9 +2037,77 @@ class ProjectController(QObject):
         self._practiscore_source_path = resolved_path
         self._practiscore_source_name = display_name
         self._practiscore_options = options
-        if self.project.scoring.imported_stage is None:
+        summary_metrics_changed = False
+        for stage in self.project.stages:
+            imported_box = next(
+                (
+                    box
+                    for box in stage.overlay.text_boxes
+                    if box.source == "imported_summary"
+                ),
+                None,
+            )
+            if imported_box is None and stage.scoring.imported_stage is not None:
+                boxes = list(overlay_text_boxes_for_render(stage.overlay))
+                boxes.append(
+                    OverlayTextBox(
+                        enabled=True,
+                        lock_to_stack=False,
+                        source="imported_summary",
+                        quadrant="above_final",
+                        background_color=stage.overlay.custom_box_background_color,
+                        text_color=stage.overlay.custom_box_text_color,
+                        opacity=stage.overlay.custom_box_opacity,
+                        style_type=stage.overlay.style_type,
+                        font_family=stage.overlay.font_family,
+                        font_size=stage.overlay.font_size,
+                        font_bold=stage.overlay.font_bold,
+                        font_italic=stage.overlay.font_italic,
+                        summary_metric_ids=list(_DEFAULT_SUMMARY_METRIC_IDS),
+                    )
+                )
+                stage.overlay.text_boxes = boxes
+                sync_overlay_legacy_custom_box_fields(stage.overlay)
+                summary_metrics_changed = True
+            elif imported_box is not None and not imported_box.summary_metric_ids:
+                imported_box.summary_metric_ids = list(_DEFAULT_SUMMARY_METRIC_IDS)
+                summary_metrics_changed = True
+        if summary_metrics_changed:
+            self._sync_active_stage_to_project()
+            changed = True
+        expected_stage_numbers = set(options.stage_numbers or [])
+        actual_stage_numbers = {
+            stage.imported_stage_number
+            for stage in self.project.stages
+            if stage.imported_stage_number is not None
+        }
+        imported_stage_structure_needs_refresh = (
+            bool(expected_stage_numbers)
+            and actual_stage_numbers != expected_stage_numbers
+        )
+        imported_stages_need_refresh = any(
+            stage.imported_stage_number is not None
+            and (
+                stage.scoring.imported_stage is None
+                or stage.scoring.imported_stage.stage_number
+                != stage.imported_stage_number
+                or stage.scoring.match_type != options.match_type
+            )
+            for stage in self.project.stages
+        )
+        if (
+            self.project.scoring.imported_stage is None
+            or self.project.scoring.match_type != options.match_type
+            or imported_stage_structure_needs_refresh
+            or imported_stages_need_refresh
+        ):
             try:
-                self._import_practiscore_source(
+                self.project.scoring.match_type = options.match_type
+                if imported_stage_structure_needs_refresh:
+                    self._rebuild_stages_from_practiscore_source(
+                        str(resolved_path), display_name
+                    )
+                self._import_practiscore_source_for_all_stages(
                     str(resolved_path), display_name, emit_change=emit_change
                 )
                 return True
@@ -2168,6 +2263,23 @@ class ProjectController(QObject):
             and self._current_practiscore_selection_matches_source()
         )
 
+    def _refresh_practiscore_comparison_for_active_stage(self) -> None:
+        if self._practiscore_source_path is None:
+            self._practiscore_comparison_competitors = []
+            return
+        try:
+            normalized = normalize_downloaded_practiscore_artifact(
+                self._practiscore_source_path,
+                source_name=self._practiscore_source_name,
+                **self._practiscore_import_context_kwargs(),
+            )
+        except ValueError:
+            self._practiscore_comparison_competitors = []
+            return
+        self._set_practiscore_comparison_competitors(
+            normalized.stage_import.comparison_competitors
+        )
+
     def _active_stage_practiscore_overrides(self) -> dict[str, object]:
         stage = self.project.active_stage
         scoring = self.project.scoring
@@ -2252,8 +2364,11 @@ class ProjectController(QObject):
         source_name: str | None = None,
         *,
         emit_change: bool = True,
+        preserve_active_overrides: bool = True,
     ) -> None:
-        active_stage_overrides = self._active_stage_practiscore_overrides()
+        active_stage_overrides = (
+            self._active_stage_practiscore_overrides() if preserve_active_overrides else {}
+        )
         normalized = normalize_downloaded_practiscore_artifact(
             path,
             source_name=source_name,
@@ -2306,11 +2421,14 @@ class ProjectController(QObject):
                     font_size=self.project.overlay.font_size,
                     font_bold=self.project.overlay.font_bold,
                     font_italic=self.project.overlay.font_italic,
+                    summary_metric_ids=list(_DEFAULT_SUMMARY_METRIC_IDS),
                 )
             )
             self.project.overlay.text_boxes = boxes
         else:
             imported_box.enabled = True
+            if not imported_box.summary_metric_ids:
+                imported_box.summary_metric_ids = list(_DEFAULT_SUMMARY_METRIC_IDS)
         sync_overlay_legacy_custom_box_fields(self.project.overlay)
         self._restore_active_stage_practiscore_overrides(active_stage_overrides)
         self.update_hit_factor()
@@ -2318,6 +2436,80 @@ class ProjectController(QObject):
             imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
         )
         self._set_status(f"Imported PractiScore results for {stage_label}.")
+        if emit_change:
+            self.project.touch()
+            self.project_changed.emit()
+
+    def _import_practiscore_source_for_all_stages(
+        self,
+        path: str,
+        source_name: str | None = None,
+        *,
+        emit_change: bool = True,
+    ) -> None:
+        imported_stages = [
+            stage
+            for stage in self.project.stages
+            if stage.imported_stage_number is not None
+        ]
+        if not imported_stages:
+            self._import_practiscore_source(path, source_name, emit_change=emit_change)
+            self._sync_project_to_active_stage()
+            return
+
+        selected_scoring = deepcopy(self.project.scoring)
+        self._sync_project_to_active_stage()
+        original_active_stage_id = self.project.active_stage_id
+        selected_stage = next(
+            (
+                stage
+                for stage in imported_stages
+                if stage.imported_stage_number == selected_scoring.stage_number
+            ),
+            None,
+        )
+        target_active_stage_id = (
+            selected_stage.id if selected_stage is not None else original_active_stage_id
+        )
+        detected_match_type = describe_practiscore_file(
+            path, source_name=source_name
+        ).match_type
+
+        for stage in imported_stages:
+            self.project.active_stage_id = stage.id
+            self._sync_active_stage_to_project()
+            scoring = self.project.scoring
+            scoring.match_type = detected_match_type
+            scoring.stage_number = stage.imported_stage_number
+            scoring.competitor_name = selected_scoring.competitor_name
+            scoring.competitor_place = selected_scoring.competitor_place
+            scoring.classification = selected_scoring.classification
+            scoring.division = selected_scoring.division
+            scoring.practiscore_source_path = path
+            scoring.practiscore_source_name = source_name or Path(path).name
+            self._import_practiscore_source(
+                path,
+                source_name,
+                emit_change=False,
+                preserve_active_overrides=False,
+            )
+            self._sync_project_to_active_stage()
+
+        if any(stage.id == target_active_stage_id for stage in imported_stages):
+            self.project.active_stage_id = target_active_stage_id
+        else:
+            self.project.active_stage_id = imported_stages[0].id
+        self._sync_active_stage_to_project()
+        active_stage_number = self.project.active_stage.imported_stage_number
+        if active_stage_number is not None:
+            self.project.scoring.stage_number = active_stage_number
+            self._import_practiscore_source(
+                path,
+                source_name,
+                emit_change=False,
+                preserve_active_overrides=False,
+            )
+            self._sync_project_to_active_stage()
         if emit_change:
             self.project.touch()
             self.project_changed.emit()
@@ -2388,14 +2580,22 @@ class ProjectController(QObject):
             self._sync_project_to_active_stage()
         self.project.active_stage_id = stage_id
         self._sync_active_stage_to_project()
+        self._refresh_practiscore_comparison_for_active_stage()
         self._set_status(f"Selected stage {self._active_stage_label()}.")
         self.project.touch()
         self.project_changed.emit()
 
     def create_stage(self, label: str | None = None) -> ProjectStage:
         seed_from_project = not self.project.stages
+        if not seed_from_project:
+            self._sync_project_to_active_stage()
         next_order = max((stage.order_index for stage in self.project.stages), default=0) + 1
         stage_label = str(label or "").strip() or f"Stage {next_order}"
+        if any(
+            stage.label.strip().casefold() == stage_label.casefold()
+            for stage in self.project.stages
+        ):
+            raise ValueError(f'A stage named "{stage_label}" already exists.')
         stage = ProjectStage(
             label=stage_label,
             order_index=next_order,
@@ -2412,6 +2612,27 @@ class ProjectController(QObject):
             stage.popup_template = deepcopy(self.project.popup_template)
             stage.merge = deepcopy(self.project.merge)
             stage.export = deepcopy(self.project.export)
+        else:
+            active = self.project.active_stage
+            if active is not None:
+                stage.analysis = AnalysisState(
+                    detection_threshold=active.analysis.detection_threshold,
+                    shotml_settings=deepcopy(active.analysis.shotml_settings),
+                )
+                stage.scoring = deepcopy(active.scoring)
+                stage.scoring.stage_number = next_order
+                stage.scoring.imported_stage = None
+                stage.scoring.penalties = 0.0
+                stage.scoring.penalty_counts = {}
+                stage.scoring.hit_factor = None
+                stage.overlay = deepcopy(active.overlay)
+                stage.popups = deepcopy(active.popups)
+                stage.popup_template = deepcopy(active.popup_template)
+                stage.merge = deepcopy(active.merge)
+                stage.export = deepcopy(active.export)
+                stage.export.output_path = None
+                stage.export.last_log = ""
+                stage.export.last_error = None
         self.project.stages.append(stage)
         self.project.active_stage_id = stage.id
         self._sync_active_stage_to_project()
@@ -2507,6 +2728,12 @@ class ProjectController(QObject):
         if label is not None:
             next_label = str(label).strip()
             if next_label and stage.label != next_label:
+                if any(
+                    item.id != stage_id
+                    and item.label.strip().casefold() == next_label.casefold()
+                    for item in self.project.stages
+                ):
+                    raise ValueError(f'A stage named "{next_label}" already exists.')
                 stage.label = next_label
                 changed = True
         if stage_number is not None:
@@ -2538,10 +2765,50 @@ class ProjectController(QObject):
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
+        if not stage.primary_media.path:
+            configured_source = max(
+                (
+                    item
+                    for item in self.project.stages
+                    if item.id != stage.id
+                    and item.primary_media.path
+                    and item.order_index < stage.order_index
+                ),
+                key=lambda item: item.order_index,
+                default=None,
+            )
+            if configured_source is not None:
+                stage.analysis = AnalysisState(
+                    detection_threshold=configured_source.analysis.detection_threshold,
+                    shotml_settings=deepcopy(configured_source.analysis.shotml_settings),
+                )
+                stage.overlay = deepcopy(configured_source.overlay)
+                stage.popups = deepcopy(configured_source.popups)
+                stage.popup_template = deepcopy(configured_source.popup_template)
+                stage.merge = deepcopy(configured_source.merge)
+                stage.export = deepcopy(configured_source.export)
+                stage.export.output_path = None
+                stage.export.last_log = ""
+                stage.export.last_error = None
+                if stage_id == self.project.active_stage_id:
+                    self._sync_active_stage_to_project()
         self._set_status(f"Importing primary media for stage {stage.label}...")
         project_path = self._stage_project_input_path(path)
         if stage_id == self.project.active_stage_id:
+            preserved_overlay = deepcopy(self.project.overlay)
+            preserved_popups = deepcopy(self.project.popups)
+            preserved_popup_template = deepcopy(self.project.popup_template)
+            preserved_merge = deepcopy(self.project.merge)
+            preserved_export = deepcopy(self.project.export)
             self.ingest_primary_video(project_path)
+            self.project.overlay = preserved_overlay
+            self.project.popups = preserved_popups
+            self.project.popup_template = preserved_popup_template
+            self.project.merge = preserved_merge
+            self.project.export = preserved_export
+            self.project.export.output_path = None
+            self.project.export.last_log = ""
+            self.project.export.last_error = None
             self._sync_project_to_active_stage()
         else:
             stage.primary_media = probe_video(project_path)
@@ -3370,6 +3637,56 @@ class ProjectController(QObject):
         self._sync_project_to_active_stage()
         self._set_status(
             "Cleared trim for all stage media." if clear else "Applied trim to all stage media."
+        )
+        self.project.touch()
+        self.project_changed.emit()
+
+    def trim_selected_stages(
+        self,
+        stage_ids: Iterable[str],
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        keep_before_beep_s: float | None = None,
+        keep_after_last_shot_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
+        requested_ids = list(dict.fromkeys(str(stage_id) for stage_id in stage_ids))
+        selected_stages = [
+            stage
+            for stage in self.project.stages
+            if stage.id in requested_ids and stage.primary_media.path
+        ]
+        if not selected_stages:
+            raise ValueError("Select at least one stage with primary media.")
+
+        self._sync_project_to_active_stage()
+        original_active_stage_id = self.project.active_stage_id
+        processed_count = 0
+        try:
+            for stage in selected_stages:
+                self.project.active_stage_id = stage.id
+                self._sync_active_stage_to_project()
+                self.trim_all_merge_sources(
+                    start_s=start_s,
+                    end_s=end_s,
+                    keep_before_beep_s=keep_before_beep_s,
+                    keep_after_last_shot_s=keep_after_last_shot_s,
+                    clear=clear,
+                )
+                processed_count += 1
+        finally:
+            if any(stage.id == original_active_stage_id for stage in self.project.stages):
+                self.project.active_stage_id = original_active_stage_id
+            else:
+                self.project.active_stage_id = self.project.stages[0].id
+            self._sync_active_stage_to_project()
+            self._refresh_practiscore_comparison_for_active_stage()
+
+        action = "Cleared trim for" if clear else "Applied trim to"
+        self._set_status(
+            f"{action} {processed_count} selected stage"
+            f"{'s' if processed_count != 1 else ''}."
         )
         self.project.touch()
         self.project_changed.emit()
