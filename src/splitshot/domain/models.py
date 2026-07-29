@@ -985,6 +985,7 @@ class Project:
     last_combined_output_path: str = ""
     combined_export_settings: CombinedExportSettings = field(default_factory=CombinedExportSettings)
     practiscore_source_file: str = ""
+    excluded_imported_stage_numbers: list[int] = field(default_factory=list)
 
     @property
     def active_stage(self) -> ProjectStage | None:
@@ -1308,6 +1309,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     data["last_combined_output_path"] = project.last_combined_output_path
     data["combined_export_settings"] = _serialize(project.combined_export_settings)
     data["practiscore_source_file"] = project.practiscore_source_file
+    data["excluded_imported_stage_numbers"] = sorted(set(project.excluded_imported_stage_numbers))
     data.pop("_stages", None)
     data.pop("_queue", None)
     return _promote_camera_role_key(data)
@@ -2657,6 +2659,15 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             data.get("combined_export_settings")
         )
         project.practiscore_source_file = str(data.get("practiscore_source_file", ""))
+        raw_excluded_stage_numbers = data.get("excluded_imported_stage_numbers", [])
+        if isinstance(raw_excluded_stage_numbers, list):
+            project.excluded_imported_stage_numbers = sorted(
+                {
+                    int(stage_number)
+                    for stage_number in raw_excluded_stage_numbers
+                    if str(stage_number).strip().isdigit() and int(stage_number) > 0
+                }
+            )
     else:
         from copy import deepcopy
 

@@ -711,6 +711,49 @@ def test_open_project_repairs_missing_practiscore_stage_records(tmp_path: Path) 
     assert all(stage.scoring.imported_stage is not None for stage in reopened.project.stages)
 
 
+def test_deleted_imported_stage_stays_deleted_after_autosave_and_reopen(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.import_practiscore_file(
+        str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv"
+    )
+    project_path = tmp_path / "deleted-imported-stage.ssproj"
+    controller.save_project(str(project_path))
+    stage_one = next(
+        stage for stage in controller.project.stages if stage.imported_stage_number == 1
+    )
+
+    controller.delete_stage(stage_one.id)
+    controller.autosave_project_if_needed()
+
+    assert [stage.imported_stage_number for stage in controller.project.stages] == [2, 3, 4]
+    assert controller.project.excluded_imported_stage_numbers == [1]
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    assert [stage.imported_stage_number for stage in reopened.project.stages] == [2, 3, 4]
+    assert reopened.project.excluded_imported_stage_numbers == [1]
+
+
+def test_explicit_practiscore_reimport_restores_deleted_imported_stage(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    source = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+    stage_one = next(
+        stage for stage in controller.project.stages if stage.imported_stage_number == 1
+    )
+    controller.delete_stage(stage_one.id)
+
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+
+    assert [stage.imported_stage_number for stage in controller.project.stages] == [1, 2, 3, 4]
+    assert controller.project.excluded_imported_stage_numbers == []
+
+
 def test_open_project_does_not_guess_renamed_external_media(
     synthetic_video_factory, tmp_path: Path
 ) -> None:

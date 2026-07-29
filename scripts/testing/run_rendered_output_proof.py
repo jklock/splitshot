@@ -74,7 +74,7 @@ def _extract_frames(video_path: Path, frame_dir: Path, stem: str) -> list[str]:
 def _write_contact_sheet_html(contact_sheet: Path, entries: list[dict[str, object]]) -> None:
     lines = [
         "<html><body>",
-        "<h1>v106 Rendered Output Proof</h1>",
+        "<h1>SplitShot Rendered Output Proof</h1>",
     ]
     for entry in entries:
         lines.append(f"<h2>{entry['layout']}</h2>")

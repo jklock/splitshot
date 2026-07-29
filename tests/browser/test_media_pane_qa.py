@@ -414,6 +414,39 @@ def test_media_delete_stage_removes_stage_from_selector_visibly(synthetic_video_
         server.shutdown()
 
 
+def test_media_delete_imported_stage_persists_after_autosave(tmp_path: Path) -> None:
+    controller = ProjectController()
+    source = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+    controller.save_project(str(tmp_path / "media-delete-imported.ssproj"))
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.locator("button[data-tool='media']").click(force=True)
+                page.wait_for_function("() => (state?.project?.stages || []).length === 4")
+                page.locator("#media-active-stage-select").select_option(
+                    controller.project.active_stage_id
+                )
+                page.locator(".media-delete-stage-btn").click()
+                page.wait_for_function(
+                    """() => {
+                        const stages = state?.project?.stages || [];
+                        return stages.length === 3
+                            && stages.every((stage) => stage.imported_stage_number !== 1);
+                    }"""
+                )
+
+                assert "Stage 1" not in page.locator("#media-active-stage-select").inner_text()
+                assert controller.project.excluded_imported_stage_numbers == [1]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_media_clear_primary_shows_empty_primary_state(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="media-qa-clear-primary"))
     server = BrowserControlServer(port=0)

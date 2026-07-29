@@ -5,7 +5,7 @@ This document is the maintainer-facing source of truth for SplitShot branch prot
 ## Branch Model
 
 - `main` is the only long-lived branch.
-- All feature, fix, and experiment work should happen on short-lived branches such as `codex/*` or focused topic branches.
+- All feature, fix, and experiment work should happen on short-lived, focused topic branches.
 - Merge the branch back into `main` when the change is ready.
 - Delete the branch after merge unless it is intentionally still serving active work.
 

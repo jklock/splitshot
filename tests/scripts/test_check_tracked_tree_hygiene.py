@@ -48,6 +48,8 @@ def test_audit_reports_each_disallowed_tracked_file_class(tmp_path: Path) -> Non
         tmp_path,
         {
             ".archive/notes.md": b"internal",
+            ".codex/skills/private/SKILL.md": b"internal",
+            "AGENTS.md": b"internal",
             "browser-audit-deadbeef.ssproj/project.json": b"{}",
             "output.txt": b"generated",
             "run.log": b"log",
@@ -60,6 +62,11 @@ def test_audit_reports_each_disallowed_tracked_file_class(tmp_path: Path) -> Non
     violations = HYGIENE.audit(repo)
 
     assert any("generated directory: .archive/notes.md" in item for item in violations)
+    assert any(
+        "private development material: .codex/skills/private/SKILL.md" in item
+        for item in violations
+    )
+    assert any("private development material: AGENTS.md" in item for item in violations)
     assert any("generated browser project:" in item for item in violations)
     assert any("generated output/log: output.txt" in item for item in violations)
     assert any("generated output/log: run.log" in item for item in violations)

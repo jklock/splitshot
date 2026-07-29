@@ -1275,6 +1275,7 @@ class ProjectController(QObject):
     def import_practiscore_file(self, path: str, source_name: str | None = None) -> None:
         path = self._stage_practiscore_source_path(path, source_name=source_name)
         self._set_practiscore_source(path, source_name)
+        self.project.excluded_imported_stage_numbers = []
         self._rebuild_stages_from_practiscore_source(path, source_name)
         self._import_practiscore_source_for_all_stages(path, source_name)
 
@@ -1282,7 +1283,12 @@ class ProjectController(QObject):
         self, path: str, source_name: str | None = None
     ) -> None:
         options = describe_practiscore_file(path, source_name=source_name)
-        stage_numbers = list(options.stage_numbers or [])
+        excluded_stage_numbers = set(self.project.excluded_imported_stage_numbers)
+        stage_numbers = [
+            stage_number
+            for stage_number in (options.stage_numbers or [])
+            if stage_number not in excluded_stage_numbers
+        ]
         if not stage_numbers:
             return
 
@@ -2630,6 +2636,13 @@ class ProjectController(QObject):
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
+        if stage.imported_stage_number is not None:
+            self.project.excluded_imported_stage_numbers = sorted(
+                {
+                    *self.project.excluded_imported_stage_numbers,
+                    stage.imported_stage_number,
+                }
+            )
         self.project.stages = [item for item in self.project.stages if item.id != stage_id]
         self.project.queue = [entry for entry in self.project.queue if entry.stage_id != stage_id]
         for index, item in enumerate(self.project.stages, start=1):

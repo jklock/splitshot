@@ -22,7 +22,7 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 | `Stage` | Chooses which stage is active across the rest of the app. |
 | `Name` | Renames the active stage. |
 | `Save` | Saves the current stage label. |
-| `Delete` | Removes the active stage. |
+| `Delete` | Removes the active stage. An imported stage stays deleted after autosave and reopen; explicitly reimporting the PractiScore file restores it. |
 | File row | Shows one attached file with its filename, type, duration, and dimensions. |
 | `Add Primary` / `Replace` | Opens in project `Input/`, imports the selected file there when needed, and replaces the active stage primary. |
 | `Set Primary` | Promotes an added file into the primary slot. |

@@ -24,6 +24,16 @@ GENERATED_DIRS = {
     "logs",
     "node_modules",
 }
+PRIVATE_PATH_PREFIXES = (
+    ".codex/",
+    ".github/instructions/",
+    ".vscode/",
+    "tests/docs/",
+)
+PRIVATE_PATHS = {
+    ".github/copilot-instructions.md",
+    "AGENTS.md",
+}
 MEDIA_SUFFIXES = {
     ".avi",
     ".gif",
@@ -111,6 +121,8 @@ def audit(repo: Path) -> list[str]:
         lower_path = path.lower()
         lower_name = pure_path.name.lower()
 
+        if path in PRIVATE_PATHS or path.startswith(PRIVATE_PATH_PREFIXES):
+            violations.append(f"private development material: {path}")
         if any(part in GENERATED_DIRS for part in pure_path.parts):
             violations.append(f"generated directory: {path}")
         if any(
