@@ -29,8 +29,10 @@ from splitshot.domain.models import (
     VideoAsset,
 )
 from splitshot.export.pipeline import (
+    _encoder_command,
     _is_expected_decoder_pipe_shutdown,
     _merged_duration_ms,
+    _normalized_output_fades,
     _prune_expected_decoder_pipe_shutdown_lines,
     export_project,
 )
@@ -56,6 +58,60 @@ from splitshot.timeline.model import draw_time_ms
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
+
+
+def test_output_fades_scale_to_short_clip_and_emit_video_audio_filters(tmp_path: Path) -> None:
+    assert _normalized_output_fades(0.5, 0.5, 0.6) == pytest.approx((0.3, 0.3))
+    project = Project()
+    project.primary_video.path = "source.mp4"
+
+    command = _encoder_command(
+        project,
+        1920,
+        1080,
+        30.0,
+        tmp_path / "output.mp4",
+        fade_in_s=0.5,
+        fade_out_s=0.5,
+        duration_s=10.0,
+        fade_audio=True,
+    )
+
+    assert command[command.index("-vf") + 1] == (
+        "fade=t=in:st=0:d=0.500:color=black,fade=t=out:st=9.500:d=0.500:color=black"
+    )
+    assert command[command.index("-af") + 1] == (
+        "afade=t=in:st=0:d=0.500,afade=t=out:st=9.500:d=0.500"
+    )
+
+
+def test_export_with_audio_fade_enabled_handles_silent_video(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
+    source_with_audio = synthetic_video_factory(
+        name="silent-fade",
+        duration_ms=700,
+        beep_ms=200,
+        shot_times_ms=[400],
+        resolution=(160, 90),
+    )
+    silent_source = source_with_audio.with_name("silent-fade-video-only.mp4")
+    project = Project(name="Silent Fade")
+    project.primary_video = probe_video(silent_source)
+    project.export.target_width = 160
+    project.export.target_height = 90
+
+    output = export_project(
+        project,
+        tmp_path / "silent-fade-output.mp4",
+        fade_in_s=0.2,
+        fade_out_s=0.2,
+        fade_audio=True,
+    )
+
+    streams = _ffprobe_json(output)["streams"]
+    assert any(stream["codec_type"] == "video" for stream in streams)
+    assert not any(stream["codec_type"] == "audio" for stream in streams)
 
 
 def _ffprobe_json(path: Path) -> dict:

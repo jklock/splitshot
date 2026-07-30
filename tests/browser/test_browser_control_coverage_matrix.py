@@ -27,7 +27,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Queue | `Active Stage`, queue membership, plain queue status, per-stage collapse, `Process Queue`, `Process as One File` |"
+        "| Queue | `Active Stage`, queue membership, always-visible status rows, project fades, output-folder reveal, whole-queue progress, `Process Many`, `Process Into 1 File` |"
         in matrix
     )
     assert (

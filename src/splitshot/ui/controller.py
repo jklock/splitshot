@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import UTC, datetime
@@ -70,6 +71,7 @@ from splitshot.domain.models import (
     _deserialize_output_profiles,
     _merge_source_from_dict,
     _normalize_frame_profile,
+    _normalize_output_profile_export_settings,
     _popup_bubble_from_dict,
     _serialize_output_profiles,
     legacy_custom_box_as_text_box,
@@ -2969,6 +2971,15 @@ class ProjectController(QObject):
 
     # --- Queue management ---
 
+    def set_queue_settings(self, *, fade_in_s: float, fade_out_s: float) -> None:
+        values = (float(fade_in_s), float(fade_out_s))
+        if any(value < 0 or not math.isfinite(value) for value in values):
+            raise ValueError("Fade durations must be finite nonnegative seconds.")
+        self.project.queue_settings.fade_in_s = values[0]
+        self.project.queue_settings.fade_out_s = values[1]
+        self.project.touch()
+        self.project_changed.emit()
+
     def add_stage_to_queue(self, stage_id: str) -> None:
         stage = self._stage_by_id(stage_id)
         if stage is None:
@@ -3047,7 +3058,12 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def process_queue(self, mode: str = "individual") -> None:
+    def process_queue(
+        self,
+        mode: str = "individual",
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
         if mode not in ("individual", "combined"):
             raise ValueError("Mode must be 'individual' or 'combined'")
         queued = [
@@ -3062,6 +3078,32 @@ class ProjectController(QObject):
         output_dir = self._ensure_output_dir()
         results: list[Path] = []
         self.project.last_combined_output_path = ""
+        total_units = len(queued) + (1 if mode == "combined" else 0)
+
+        def report_progress(
+            *,
+            stage_progress: float,
+            stage_index: int,
+            stage_label: str,
+            phase: str = "render",
+        ) -> None:
+            if progress_callback is None:
+                return
+            overall = min(
+                0.999,
+                max(0.0, (stage_index + max(0.0, min(1.0, stage_progress))) / total_units),
+            )
+            progress_callback(
+                {
+                    "progress": overall,
+                    "stage_progress": max(0.0, min(1.0, stage_progress)),
+                    "stage_index": stage_index + 1,
+                    "stage_count": len(queued),
+                    "stage_label": stage_label,
+                    "mode": mode,
+                    "phase": phase,
+                }
+            )
 
         try:
             for idx, entry in enumerate(
@@ -3072,10 +3114,23 @@ class ProjectController(QObject):
                 if stage is None:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = "Stage not found"
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=f"Stage {idx + 1}",
+                        phase="failed",
+                    )
                     continue
                 if not stage.primary_media.path:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = "No primary media"
+                    stage.queue_status = QueueStatus.FAILED
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                        phase="failed",
+                    )
                     continue
                 stage.queue_status = QueueStatus.PROCESSING
                 self._set_status(f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}...")
@@ -3090,8 +3145,19 @@ class ProjectController(QObject):
                     export_project(
                         self.project,
                         str(render_path),
-                        progress_callback=None,
-                        log_callback=None,
+                        progress_callback=lambda value, idx=idx, label=stage.label: report_progress(
+                            stage_progress=value,
+                            stage_index=idx,
+                            stage_label=label,
+                        ),
+                        log_callback=log_callback,
+                        fade_in_s=(
+                            self.project.queue_settings.fade_in_s if mode == "individual" else 0.0
+                        ),
+                        fade_out_s=(
+                            self.project.queue_settings.fade_out_s if mode == "individual" else 0.0
+                        ),
+                        fade_audio=mode == "individual",
                     )
                     self._validate_rendered_output(render_path)
                     render_path.replace(output_path)
@@ -3104,6 +3170,11 @@ class ProjectController(QObject):
                     stage.last_processed_at = entry.processed_at
                     self._sync_project_to_active_stage()
                     results.append(output_path)
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                    )
                     self._set_status(f"Completed stage {idx + 1}/{len(queued)}: {stage.label}")
                 except Exception as exc:  # noqa: BLE001 - isolate failures per queued stage.
                     render_path.unlink(missing_ok=True)
@@ -3111,15 +3182,65 @@ class ProjectController(QObject):
                     entry.error_message = str(exc)
                     stage.queue_status = QueueStatus.FAILED
                     self._sync_project_to_active_stage()
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                        phase="failed",
+                    )
                     self._set_status(f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}")
 
             if mode == "combined" and len(results) >= 1:
+                report_progress(
+                    stage_progress=0.0,
+                    stage_index=len(queued),
+                    stage_label="Combined output",
+                    phase="combine",
+                )
                 combined_path = self._concat_outputs(results, output_dir)
+                report_progress(
+                    stage_progress=0.55,
+                    stage_index=len(queued),
+                    stage_label="Combined output",
+                    phase="combine",
+                )
+                self._apply_queue_fades_to_file(combined_path)
                 self._validate_rendered_output(combined_path)
                 self.project.last_combined_output_path = str(combined_path)
-                self._set_status(f"Combined export complete: {combined_path}")
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "progress": 1.0,
+                            "stage_progress": 1.0,
+                            "stage_index": len(queued),
+                            "stage_count": len(queued),
+                            "stage_label": "Combined output",
+                            "mode": mode,
+                            "phase": "complete",
+                        }
+                    )
+                failed_count = sum(1 for entry in queued if entry.status == QueueStatus.FAILED)
+                self._set_status(
+                    f"Combined export complete: {combined_path} "
+                    f"({len(results)} succeeded, {failed_count} failed)."
+                )
             else:
-                self._set_status(f"Processed {len(results)} stage(s).")
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "progress": 1.0,
+                            "stage_progress": 1.0,
+                            "stage_index": len(queued),
+                            "stage_count": len(queued),
+                            "stage_label": "Queue",
+                            "mode": mode,
+                            "phase": "complete",
+                        }
+                    )
+                failed_count = sum(1 for entry in queued if entry.status == QueueStatus.FAILED)
+                self._set_status(
+                    f"Queue finished: {len(results)} succeeded, {failed_count} failed."
+                )
         finally:
             self.project.active_stage_id = original_active_stage_id
             if self.project.active_stage:
@@ -3161,6 +3282,87 @@ class ProjectController(QObject):
         except Exception:
             temp_combined_path.unlink(missing_ok=True)
             raise
+
+    def _apply_queue_fades_to_file(self, output_path: Path) -> None:
+        fade_in_s = self.project.queue_settings.fade_in_s
+        fade_out_s = self.project.queue_settings.fade_out_s
+        if fade_in_s <= 0 and fade_out_s <= 0:
+            return
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        info = json.loads(probe.stdout)
+        duration_s = float(info.get("format", {}).get("duration") or 0.0)
+        from splitshot.export.pipeline import _normalized_output_fades
+
+        fade_in_s, fade_out_s = _normalized_output_fades(fade_in_s, fade_out_s, duration_s)
+        video_filters: list[str] = []
+        audio_filters: list[str] = []
+        if fade_in_s > 0:
+            video_filters.append(f"fade=t=in:st=0:d={fade_in_s:.3f}:color=black")
+            audio_filters.append(f"afade=t=in:st=0:d={fade_in_s:.3f}")
+        if fade_out_s > 0:
+            start_s = max(0.0, duration_s - fade_out_s)
+            video_filters.append(f"fade=t=out:st={start_s:.3f}:d={fade_out_s:.3f}:color=black")
+            audio_filters.append(f"afade=t=out:st={start_s:.3f}:d={fade_out_s:.3f}")
+        has_audio = any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
+        faded_path = self._temporary_output_path(output_path)
+        codec = "libx265" if self.project.export.video_codec == ExportVideoCodec.HEVC else "libx264"
+        command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(output_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-vf",
+            ",".join(video_filters),
+            "-c:v",
+            codec,
+            "-preset",
+            self.project.export.ffmpeg_preset,
+            "-b:v",
+            f"{self.project.export.video_bitrate_mbps:g}M",
+        ]
+        if has_audio:
+            command.extend(
+                [
+                    "-af",
+                    ",".join(audio_filters),
+                    "-c:a",
+                    self.project.export.audio_codec.value,
+                    "-ar",
+                    str(self.project.export.audio_sample_rate),
+                    "-b:a",
+                    f"{self.project.export.audio_bitrate_kbps}k",
+                ]
+            )
+        else:
+            command.append("-an")
+        command.extend(["-movflags", "+faststart", str(faded_path)])
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(f"Combined fade failed: {result.stderr}")
+            self._validate_rendered_output(faded_path)
+            faded_path.replace(output_path)
+        finally:
+            faded_path.unlink(missing_ok=True)
 
     def _validate_rendered_output(self, output_path: Path) -> None:
         if not output_path.exists():
@@ -3367,6 +3569,23 @@ class ProjectController(QObject):
         derivative_dir.mkdir(parents=True, exist_ok=True)
         return derivative_dir
 
+    def _trimmed_derivative_path(self, source_file: Path) -> str:
+        stage = self.project.active_stage
+        stage_number = (
+            stage.imported_stage_number
+            if stage is not None and stage.imported_stage_number is not None
+            else (stage.order_index if stage is not None else 1)
+        )
+        timestamp = datetime.now().astimezone()
+        stem = f"Trim_Stage{stage_number}_{timestamp:%H-%M-%S}_{timestamp:%Y-%m-%d}"
+        directory = self._trimmed_media_dir() or source_file.parent
+        candidate = directory / f"{stem}.mp4"
+        suffix = 2
+        while candidate.exists():
+            candidate = directory / f"{stem}_{suffix}.mp4"
+            suffix += 1
+        return str(candidate)
+
     def _apply_primary_trim(
         self,
         *,
@@ -3391,12 +3610,7 @@ class ProjectController(QObject):
         if not source_path:
             raise ValueError("Primary video has no asset path")
         source_file = Path(source_path)
-        derivative_dir = self._trimmed_media_dir()
-        derivative_path = (
-            str(derivative_dir / f"primary_trim_{uuid4().hex}.mp4")
-            if derivative_dir is not None
-            else str(source_file.with_name(f"{source_file.stem}_primary_trim_{uuid4().hex}.mp4"))
-        )
+        derivative_path = self._trimmed_derivative_path(source_file)
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
             derivative_asset = probe_video(derivative_path)
@@ -3432,14 +3646,7 @@ class ProjectController(QObject):
         if not source_path:
             raise ValueError("Merge source has no asset path")
         source_file = Path(source_path)
-        derivative_dir = self._trimmed_media_dir()
-        derivative_path = (
-            str(derivative_dir / f"{source.id}_trim_{uuid4().hex}.mp4")
-            if derivative_dir is not None
-            else str(
-                source_file.with_name(f"{source_file.stem}_{source.id}_trim_{uuid4().hex}.mp4")
-            )
-        )
+        derivative_path = self._trimmed_derivative_path(source_file)
         try:
             trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
             derivative_asset = probe_video(derivative_path)
@@ -5449,7 +5656,10 @@ class ProjectController(QObject):
         return [output_profile_to_dict(p) for p in self._output_profiles]
 
     def create_output_profile(
-        self, profile_name: str, profile_kind: str = "stage_output"
+        self,
+        profile_name: str,
+        profile_kind: str = "stage_output",
+        export_settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         from splitshot.domain.models import OutputProfileKind, output_profile_to_dict
 
@@ -5463,6 +5673,9 @@ class ProjectController(QObject):
             scope_id=Path(self.project_path or "").name,
             profile_name=profile_name or "New Profile",
             profile_kind=kind,
+            export_settings=_normalize_output_profile_export_settings(
+                export_settings if export_settings is not None else asdict(self.project.export)
+            ),
         )
         self._output_profiles.append(profile)
         self._sync_output_profiles_to_disk()
@@ -5497,7 +5710,35 @@ class ProjectController(QObject):
                 profile.review_source_id = str(value)
             elif key == "last_rendered_at":
                 profile.last_rendered_at = str(value)
+            elif key == "export_settings":
+                profile.export_settings = _normalize_output_profile_export_settings(value)
         self._sync_output_profiles_to_disk()
+        return output_profile_to_dict(profile)
+
+    def apply_output_profile(self, output_id: str) -> dict[str, Any]:
+        from splitshot.domain.models import output_profile_to_dict
+
+        profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
+        if profile is None:
+            raise ValueError(f"Output profile {output_id} not found")
+        if profile.export_settings:
+            self.set_export_settings(profile.export_settings)
+            preset = profile.export_settings.get("preset")
+            if preset is not None:
+                self.project.export.preset = ExportPreset(str(preset))
+        frame_aspect = {
+            "16:9": AspectRatio.LANDSCAPE,
+            "9:16": AspectRatio.PORTRAIT,
+            "1:1": AspectRatio.SQUARE,
+            "4:5": AspectRatio.PORTRAIT_45,
+        }.get(profile.frame_profile)
+        if frame_aspect is not None:
+            self.project.export.aspect_ratio = frame_aspect
+        self._sync_project_to_active_stage()
+        self._mark_stage_queue_stale(self.project.active_stage_id)
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Applied output profile {profile.profile_name}.")
         return output_profile_to_dict(profile)
 
     def delete_output_profile(self, output_id: str) -> bool:
@@ -5693,6 +5934,9 @@ class ProjectController(QObject):
         output_dir.mkdir(parents=True, exist_ok=True)
         self.project.output_root = str(output_dir)
         return output_dir
+
+    def output_dir(self) -> Path:
+        return self._ensure_output_dir()
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

@@ -103,7 +103,7 @@ def test_trim_pane_renders_global_and_source_sections(synthetic_video_factory) -
                 page.wait_for_timeout(200)
                 assert page.evaluate("activeTool") == "trim-sync"
 
-                assert page.locator(".trim-timing-bar").count() >= 1
+                assert page.locator(".trim-timing-bar").count() == 0
                 assert page.locator("#trim-global-start").count() == 1
                 assert page.locator("#trim-global-end").count() == 1
                 assert page.locator("#trim-global-apply").count() == 1
@@ -135,7 +135,9 @@ def test_trim_pane_renders_global_and_source_sections(synthetic_video_factory) -
         server.shutdown()
 
 
-def test_trim_pane_timing_bar_shows_beep_and_last_shot(synthetic_video_factory) -> None:
+def test_trim_pane_omits_bulk_beep_last_shot_duration_summary(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(
         synthetic_video_factory(
             name="trim-qa-timing", duration_ms=4000, beep_ms=500, shot_times_ms=[600, 1000, 1400]
@@ -154,11 +156,9 @@ def test_trim_pane_timing_bar_shows_beep_and_last_shot(synthetic_video_factory) 
                 page.locator("button[data-tool='trim-sync']").click(force=True)
                 page.wait_for_timeout(300)
 
-                timing_text = page.locator(".trim-timing-bar").inner_text()
-                assert "Beep " in timing_text
-                assert "Last shot " in timing_text
-                assert "Duration " in timing_text
-                assert timing_text.count("s") >= 3
+                bulk_text = page.locator('[data-trim-section="bulk"]').inner_text()
+                assert "Last shot" not in bulk_text
+                assert "Duration" not in bulk_text
             finally:
                 browser.close()
     finally:

@@ -20,6 +20,8 @@ The Queue pane is the multi-stage export surface. It shows queue status, selects
 | `Apply Active Stage Settings to Queued` | Copies the active stage settings to the queued stages. |
 | `Stage` | Chooses which stage Queue is acting on. |
 | Queue row | Shows one queued stage with its current queue status. |
+| `Fade in` / `Fade out` | Sets project-level video and audio fades in 0.1-second steps. `0` disables that boundary. |
+| `Show Output Folder` | Opens the configured project output directory. |
 | `Process Many` | Exports one output file per queued stage. |
 | `Process Into 1 File` | Renders all queued stages, then concatenates them into one file. |
 
@@ -48,7 +50,10 @@ The Queue pane is the multi-stage export surface. It shows queue status, selects
 - Queue executes the ffmpeg settings saved in Export; changing settings in Export does not render a file until Queue processing starts.
 - `Apply Active Stage Settings to Queued` copies stage-local editing settings but excludes markers.
 - Queue rows always point back to the underlying stage, not a detached export preset.
+- Queue rows are compact and always visible; they do not have a collapsed state.
 - Queue processing preserves queue order for combined output.
+- The green processing bar tracks the whole queue and reaches 100% only after every stage has been attempted and any combined file has been faded and validated.
+- Individual mode fades each stage output. One-file mode fades only the outer boundaries of the combined file. Short clips automatically scale overlapping fade requests.
 
 ## Related Guides
 

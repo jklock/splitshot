@@ -669,12 +669,6 @@ export function createTrimSyncPane({
     const sources = stageSources();
     const stages = syncTrimStageSelection();
     const existingList = $("trim-sync-list");
-    const primaryBeep = originalBeepTimeMs();
-    const primaryLastShot = originalLastShotTimeMs();
-    const primaryDurMs = primaryVideo()?.duration_ms ?? 0;
-    const beepS = primaryBeep !== null ? (primaryBeep / 1000).toFixed(2) : "--.--";
-    const lastShotS = primaryLastShot !== null ? (primaryLastShot / 1000).toFixed(2) : "--.--";
-    const durS = primaryDurMs ? (primaryDurMs / 1000).toFixed(2) : "--.--";
     withPreservedScrollState(existingList ? [existingList] : [], () => {
       pane.innerHTML = `
         <div class="pane-section trim-pane-shell">
@@ -685,9 +679,6 @@ export function createTrimSyncPane({
           <div class="settings-section trim-pane-section ${isExpanded("bulk") ? "" : "collapsed"}" data-trim-section="bulk">
             ${renderSectionHeader("Bulk Trim", "bulk")}
             <div class="trim-pane-section-body"${isExpanded("bulk") ? "" : " hidden"}>
-              <div class="trim-timing-bar">
-                <span>Beep ${beepS}s · Last shot ${lastShotS}s · Duration ${durS}s</span>
-              </div>
               <div class="trim-stage-selector">
                 <div class="trim-stage-selector-header">
                   <strong>Stages</strong>

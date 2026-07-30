@@ -53,9 +53,10 @@ The main loop is:
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
-- Metrics centers post-stage analysis around Shot / Interval Timeline, Split / Interval Bar Chart, Run Comparison Overlay, and Stage Segment Breakdown, while CSV/text exports mirror the same current run state.
+- Metrics begins with match and per-stage summaries, keeps active-stage cards and detailed graphs below, and exports stage-identified CSV/text data.
 - Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.
-- Export progress uses the processing bar, which temporarily occupies the full top status row, plus the live export log modal.
+- Queue processing uses the green processing bar for whole-queue progress, including combined-file completion, while the live export log remains available from Export.
+- Export profiles persist framing and ffmpeg controls. Queue owns execution, project-level fades, and output-folder reveal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
 ## Editing Notes

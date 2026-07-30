@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-
+import math
 from dataclasses import dataclass, field, fields, is_dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -409,6 +409,7 @@ class OutputProfile:
     retained_proxy_id: str = ""
     archive_id: str = ""
     last_rendered_at: str = ""
+    export_settings: dict[str, Any] = field(default_factory=dict)
 
 
 def _normalize_frame_profile(value: str) -> str:
@@ -416,6 +417,31 @@ def _normalize_frame_profile(value: str) -> str:
     if normalized in OUTPUT_PROFILE_FRAME_PROFILE_VALUES:
         return normalized
     return "source"
+
+
+def _normalize_output_profile_export_settings(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    settings = _export_from_dict(value)
+    return {
+        "quality": settings.quality.value,
+        "aspect_ratio": settings.aspect_ratio.value,
+        "crop_center_x": settings.crop_center_x,
+        "crop_center_y": settings.crop_center_y,
+        "preset": settings.preset.value,
+        "target_width": settings.target_width,
+        "target_height": settings.target_height,
+        "frame_rate": settings.frame_rate.value,
+        "video_codec": settings.video_codec.value,
+        "video_bitrate_mbps": settings.video_bitrate_mbps,
+        "audio_codec": settings.audio_codec.value,
+        "audio_sample_rate": settings.audio_sample_rate,
+        "audio_bitrate_kbps": settings.audio_bitrate_kbps,
+        "color_space": settings.color_space.value,
+        "two_pass": settings.two_pass,
+        "multi_track": settings.multi_track,
+        "ffmpeg_preset": settings.ffmpeg_preset,
+    }
 
 
 def output_profile_from_dict(data: dict[str, Any]) -> OutputProfile:
@@ -438,6 +464,7 @@ def output_profile_from_dict(data: dict[str, Any]) -> OutputProfile:
         retained_proxy_id=str(data.get("retained_proxy_id", "")),
         archive_id=str(data.get("archive_id", "")),
         last_rendered_at=str(data.get("last_rendered_at", "")),
+        export_settings=_normalize_output_profile_export_settings(data.get("export_settings")),
     )
 
 
@@ -459,6 +486,7 @@ def output_profile_to_dict(profile: OutputProfile) -> dict[str, Any]:
         "retained_proxy_id": profile.retained_proxy_id,
         "archive_id": profile.archive_id,
         "last_rendered_at": profile.last_rendered_at,
+        "export_settings": _normalize_output_profile_export_settings(profile.export_settings),
     }
 
 
@@ -920,6 +948,12 @@ class CombinedExportSettings:
 
 
 @dataclass(slots=True)
+class QueueSettings:
+    fade_in_s: float = 0.5
+    fade_out_s: float = 0.5
+
+
+@dataclass(slots=True)
 class ProjectStage:
     id: str = field(default_factory=lambda: uuid4().hex)
     label: str = ""
@@ -984,6 +1018,7 @@ class Project:
     queue: list[QueueEntry] = field(default_factory=list)
     last_combined_output_path: str = ""
     combined_export_settings: CombinedExportSettings = field(default_factory=CombinedExportSettings)
+    queue_settings: QueueSettings = field(default_factory=QueueSettings)
     practiscore_source_file: str = ""
     excluded_imported_stage_numbers: list[int] = field(default_factory=list)
 
@@ -995,7 +1030,6 @@ class Project:
             if stage.id == self.active_stage_id:
                 return stage
         return self.stages[0] if self.stages else None
-
 
     def sort_shots(self) -> None:
         self.analysis.shots.sort(key=lambda shot: shot.time_ms)
@@ -1223,6 +1257,23 @@ def _combined_export_settings_from_dict(data: dict[str, Any]) -> CombinedExportS
     )
 
 
+def _queue_settings_from_dict(data: dict[str, Any] | None) -> QueueSettings:
+    payload = data if isinstance(data, dict) else {}
+    try:
+        fade_in_s = float(payload.get("fade_in_s", 0.5))
+    except (TypeError, ValueError):
+        fade_in_s = 0.5
+    try:
+        fade_out_s = float(payload.get("fade_out_s", 0.5))
+    except (TypeError, ValueError):
+        fade_out_s = 0.5
+    if not math.isfinite(fade_in_s) or fade_in_s < 0:
+        fade_in_s = 0.5
+    if not math.isfinite(fade_out_s) or fade_out_s < 0:
+        fade_out_s = 0.5
+    return QueueSettings(fade_in_s=fade_in_s, fade_out_s=fade_out_s)
+
+
 def project_to_dict(project: Project) -> dict[str, Any]:
     data = _serialize(project)
     overlay = data.get("overlay")
@@ -1308,6 +1359,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     data["queue"] = [queue_entry_to_dict(entry) for entry in project.queue]
     data["last_combined_output_path"] = project.last_combined_output_path
     data["combined_export_settings"] = _serialize(project.combined_export_settings)
+    data["queue_settings"] = _serialize(project.queue_settings)
     data["practiscore_source_file"] = project.practiscore_source_file
     data["excluded_imported_stage_numbers"] = sorted(set(project.excluded_imported_stage_numbers))
     data.pop("_stages", None)
@@ -1352,11 +1404,15 @@ def _parse_enum(enum_type: type[StrEnum], value: str | None, default: StrEnum) -
     return enum_type(value)
 
 
-def _badge_style_from_dict(data: dict[str, Any] | None, fallback: BadgeStyle | None = None) -> BadgeStyle:
+def _badge_style_from_dict(
+    data: dict[str, Any] | None, fallback: BadgeStyle | None = None
+) -> BadgeStyle:
     default = fallback or BadgeStyle()
     payload = data or {}
     return BadgeStyle(
-        background_color=str(payload.get("background_color", default.background_color) or default.background_color),
+        background_color=str(
+            payload.get("background_color", default.background_color) or default.background_color
+        ),
         text_color=str(payload.get("text_color", default.text_color) or default.text_color),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", default.opacity)))),
     )
@@ -2658,6 +2714,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         project.combined_export_settings = _combined_export_settings_from_dict(
             data.get("combined_export_settings")
         )
+        project.queue_settings = _queue_settings_from_dict(data.get("queue_settings"))
         project.practiscore_source_file = str(data.get("practiscore_source_file", ""))
         raw_excluded_stage_numbers = data.get("excluded_imported_stage_numbers", [])
         if isinstance(raw_excluded_stage_numbers, list):

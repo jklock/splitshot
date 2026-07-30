@@ -30,15 +30,11 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
                 page.fill("#trim-global-start", "0.5")
                 page.fill("#trim-global-end", "3.0")
                 page.click("#trim-global-apply")
-                page.wait_for_timeout(300)
+                page.wait_for_function(
+                    "() => !document.querySelector('#status')?.textContent?.startsWith('Trimming ')"
+                )
                 tracker.assert_activity("trim.apply-all")
-                try:
-                    assert_status(page, "Applied trim")
-                except AssertionError:
-                    try:
-                        assert_status(page, "analysis")
-                    except AssertionError:
-                        assert_status(page, "Trimming stage media")
+                assert_status(page, "Trimmed 1 selected stage")
             finally:
                 browser.close()
     finally:

@@ -76,6 +76,10 @@ def test_queue_uses_flat_og_controls_without_apply_settings_ui(synthetic_video_f
                 assert page.locator(".queue-status-pill").count() == 0
                 assert page.locator(".queue-status-text").count() == 1
                 assert page.locator(".queue-stage-list").is_visible()
+                assert page.locator(".queue-stage-toggle").count() == 0
+                assert page.get_by_role("button", name="Show Output Folder").is_enabled()
+                assert page.locator("#queue-fade-in").input_value() == "0.5"
+                assert page.locator("#queue-fade-out").input_value() == "0.5"
             finally:
                 browser.close()
     finally:

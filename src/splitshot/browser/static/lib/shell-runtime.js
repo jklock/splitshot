@@ -67,6 +67,7 @@ export function createShellRuntime({
   renderReviewSourceControls = () => {},
   renderReviewImportedMetrics = () => {},
   createOutputProfile = () => {},
+  saveOutputProfile = () => {},
   deleteOutputProfile = () => {},
   selectOutputProfile = () => {},
   setReviewSource = () => {},
@@ -1010,6 +1011,7 @@ export function createShellRuntime({
       $(id).addEventListener("change", scheduleExportLayoutApply);
     });
     $("create-output-profile")?.addEventListener("click", createOutputProfile);
+    $("save-output-profile")?.addEventListener("click", saveOutputProfile);
     $("delete-output-profile")?.addEventListener("click", deleteOutputProfile);
     $("output-profile-select")?.addEventListener("change", () => {
       selectOutputProfile();

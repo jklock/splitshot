@@ -112,6 +112,23 @@ export function createActivityRuntime({
         }
         return;
       }
+      if (entry.event === "api.queue.progress") {
+        const nextProgress = Number(entry.progress);
+        if (Number.isFinite(nextProgress)) setProcessingProgress(nextProgress * 100);
+        const message = document.getElementById("processing-message");
+        const detail = document.getElementById("processing-detail");
+        if (message) {
+          message.textContent = entry.phase === "combine"
+            ? "Finalizing combined output..."
+            : `Processing ${entry.stage_label || "queue"}...`;
+        }
+        if (detail) {
+          detail.textContent = entry.phase === "combine"
+            ? "Concatenating, fading, and validating"
+            : `Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
+        }
+        return;
+      }
       if (entry.event === "api.export.complete") {
         setProcessingProgress(100);
         exportLogChanged = true;

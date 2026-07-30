@@ -171,6 +171,12 @@ export function createProcessingRuntime({
 
   function processingForPath(path, payload = null) {
     if (path === "/api/export") return { message: "Exporting video...", detail: "Running FFmpeg locally" };
+    if (path === "/api/project/queue/process") {
+      return {
+        message: payload?.mode === "combined" ? "Processing combined queue..." : "Processing queue...",
+        detail: "Rendering queued stages locally",
+      };
+    }
     if (path === "/api/practiscore/dashboard/open") {
       return { message: "Opening PractiScore dashboard...", detail: "Launching PractiScore in your system browser" };
     }

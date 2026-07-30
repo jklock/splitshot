@@ -18,12 +18,13 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It k
 
 | Control | What it does |
 | --- | --- |
-| Summary cards | Show headline values such as draw, raw time, shot count, average split, beep, and result. |
+| Match and Stage Stats | Shows combined match metrics first, followed by one summary row per stage. USPSA totals are labeled `Combined HF`, not official match scoring. |
+| Summary cards | Show active-stage headline values such as draw, raw time, shot count, average split, beep, and result. |
 | `Shot Breakdown` | Shows timing graphs plus imported Overall, sport-division, and sport-class cohort comparisons when enough source data is available. Division and class labels use the imported acronyms. |
 | Compact timing table | Keeps the row-by-row snapshot in view. The columns are `Shot`, `Split`, `Run`, `Score`, `ShotML`, and `Action`. |
 | Scoring context block | Shows imported `Stage #`, `Competitor`, and `Place` first, followed by ruleset, result, raw/final timing, penalties, and points. |
-| `Export CSV` | Downloads the current metrics table as CSV. |
-| `Export Text` | Downloads a plain-text run summary. |
+| `Export CSV` | Downloads match stats, per-stage summaries, and stage-identified detailed rows. |
+| `Export Text` | Downloads match and stage summaries followed by active-stage detail. |
 | `Expand` | Opens the full-width Metrics table. |
 | `Collapse` | Returns from the expanded table to the normal workspace. |
 
@@ -45,16 +46,17 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It k
 
 ## How To Use It
 
-1. Read the summary cards for draw, raw, shots, average split, beep, and result.
-2. Start with `Split Timeline` to see split-by-split pace.
-3. Use `Split Distribution` to spot interval outliers and hesitation points.
-4. Use `Shooting vs Non-Shooting Time` to separate shooting cadence from movement and dead time.
-5. Check the Overall, division-acronym, and class-acronym cohort comparisons when imported match data is available. These are three separate cohorts; there is no combined division-and-class cohort.
-6. Review the compact timing table for the row-by-row details.
-7. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details. The context is a two-column table so long names wrap instead of clipping.
-8. Click `Expand` for the dense table view.
-9. Click `Export CSV` for spreadsheet work.
-10. Click `Export Text` for coaching notes, messages, or training logs.
+1. Read `Match and Stage Stats` for the combined and per-stage view.
+2. Read the active-stage summary cards for draw, raw, shots, average split, beep, and result.
+3. Start with the compact `Split Timeline` to see split-by-split pace.
+4. Use `Split Distribution` to spot interval outliers and hesitation points.
+5. Use `Shooting vs Non-Shooting Time` to separate shooting cadence from movement and dead time.
+6. Check the Overall, division-acronym, and class-acronym cohort comparisons when imported match data is available. These are three separate cohorts; there is no combined division-and-class cohort.
+7. Review the compact timing table for the row-by-row details.
+8. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details. The context is a two-column table so long names wrap instead of clipping.
+9. Click `Expand` for the dense table view.
+10. Click `Export CSV` for spreadsheet work.
+11. Click `Export Text` for coaching notes, messages, or training logs.
 
 ## Read-Only Behavior
 

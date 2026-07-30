@@ -76,8 +76,8 @@ export function createMetricsPane({
     },
   });
 
-  function buildMetricsRows() {
-    const state = currentState();
+  function buildMetricsRows(sourceState = currentState()) {
+    const state = sourceState;
     const segmentsByShotId = new Map((state.timing_segments || []).map((segment) => [segment.shot_id, segment]));
     const beepMs = numericMs(state?.metrics?.beep_ms);
     const defaultScore = defaultScoreLetter();
@@ -136,6 +136,17 @@ export function createMetricsPane({
         practiscoreMs: importedRawMs,
         rawDeltaMs,
       };
+    });
+  }
+
+  function metricsRowsForStage(entry) {
+    const state = currentState();
+    return buildMetricsRows({
+      ...state,
+      metrics: entry?.metrics || {},
+      scoring_summary: entry?.scoring_summary || {},
+      split_rows: entry?.split_rows || [],
+      timing_segments: entry?.timing_segments || [],
     });
   }
 
@@ -202,6 +213,58 @@ export function createMetricsPane({
         entry.actionSummary || "--",
       ].forEach((value) => {
         const cell = documentObject.createElement("div");
+        cell.textContent = value || "--";
+        table.appendChild(cell);
+      });
+    });
+  }
+
+  function renderStageMetricsOverview(table) {
+    if (!table) return;
+    const state = currentState();
+    const match = state.match_metrics || {};
+    const stages = Array.isArray(state.stage_metrics) ? state.stage_metrics : [];
+    const headers = ["Stage", "Draw", "Raw", "Shots", "Avg Split", "Beep", "Result", "Shot Points", "Penalties"];
+    table.replaceChildren();
+    table.style.gridTemplateColumns = "minmax(130px, 1.3fr) repeat(8, minmax(74px, 1fr))";
+    headers.forEach((label) => {
+      const cell = documentObject.createElement("div");
+      cell.className = "head";
+      cell.textContent = label;
+      table.appendChild(cell);
+    });
+    const rows = [
+      {
+        label: "Match Stats",
+        metrics: match,
+        result: `${match.result_label || "Result"} ${match.display_value || "--"}`,
+        match: true,
+      },
+      ...stages.map((entry) => ({
+        label: `Stage ${entry.stage_number}: ${entry.stage_name || `Stage ${entry.stage_number}`}`,
+        metrics: entry.metrics || {},
+        scoring: entry.scoring_summary || {},
+        result: `${entry.scoring_summary?.display_label || "Result"} ${entry.scoring_summary?.display_value || "--"}`,
+      })),
+    ];
+    rows.forEach((entry) => {
+      const metrics = entry.metrics;
+      const scoring = entry.scoring || {};
+      const values = [
+        entry.label,
+        splitSeconds(metrics.draw_ms),
+        splitSeconds(metrics.raw_time_ms ?? metrics.stage_time_ms),
+        String(metrics.total_shots || 0),
+        splitSeconds(metrics.average_split_ms),
+        entry.match ? "—" : splitSeconds(metrics.beep_ms),
+        entry.result,
+        formatNumber(entry.match ? metrics.shot_points : scoring.shot_points, 2),
+        formatNumber(entry.match ? metrics.total_penalties : scoring.total_penalties, 2),
+      ];
+      values.forEach((value, index) => {
+        const cell = documentObject.createElement("div");
+        if (entry.match) cell.classList.add("metrics-match-cell");
+        if (index === 0) cell.classList.add("metrics-stage-label");
         cell.textContent = value || "--";
         table.appendChild(cell);
       });
@@ -663,14 +726,15 @@ export function createMetricsPane({
     node.appendChild(title);
   }
 
-  function createMetricsGraphCanvas({ compact = true } = {}) {
+  function createMetricsGraphCanvas({ compact = true, timeline = false } = {}) {
     const svg = createSvgNode("svg");
     svg.classList.add("metrics-graph-svg");
-    svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
-    svg.setAttribute("preserveAspectRatio", "none");
+    if (timeline) svg.classList.add("metrics-graph-timeline-svg");
     const viewWidth = compact ? 260 : 320;
-    const viewHeight = compact ? 132 : 150;
-    const padding = { left: 12, right: 10, top: 10, bottom: 22 };
+    const viewHeight = timeline ? (compact ? 84 : 110) : (compact ? 132 : 150);
+    svg.setAttribute("viewBox", `0 0 ${viewWidth} ${viewHeight}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    const padding = { left: 12, right: 10, top: 10, bottom: timeline ? 18 : 22 };
     const plotWidth = viewWidth - padding.left - padding.right;
     const plotHeight = viewHeight - padding.top - padding.bottom;
     return { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight };
@@ -754,7 +818,7 @@ export function createMetricsPane({
   function renderMetricsTimelineGraphSvg(graph, { compact = true } = {}) {
     const points = (graph.points || []).filter((point) => point.value !== null && point.value !== undefined);
     if (points.length === 0) return null;
-    const { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight } = createMetricsGraphCanvas({ compact });
+    const { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight } = createMetricsGraphCanvas({ compact, timeline: true });
     const totalValue = Math.max(...points.map((point) => Number(point.value || 0)), 0.001);
     const baselineY = padding.top + (plotHeight / 2);
     const xForValue = (value) => padding.left + ((Number(value || 0) / totalValue) * plotWidth);
@@ -1220,6 +1284,7 @@ export function createMetricsPane({
     });
 
     renderCompetitionSummaryCards($("metrics-competition-summary"));
+    renderStageMetricsOverview($("metrics-stage-overview"));
 
     withPreservedScrollState([trendList], () => renderMetricsTrendTable(trendList));
 
@@ -1270,19 +1335,68 @@ export function createMetricsPane({
     const state = currentState();
     const summary = state.scoring_summary || {};
     const rows = buildMetricsRows();
+    const stageEntries = Array.isArray(state.stage_metrics) ? state.stage_metrics : [];
+    const match = state.match_metrics || {};
+    const allStageRows = stageEntries.flatMap((stage) => metricsRowsForStage(stage).map((entry) => ({ stage, entry })));
     const imported = summary.imported_stage || {};
+    const activeStage = stageEntries.find((stage) => stage.stage_id === state.project?.active_stage_id)
+      || stageEntries[0]
+      || {};
     const comparisonShooters = Array.isArray(state?.practiscore_options?.competitors)
       ? state.practiscore_options.competitors
       : [];
-    const penaltyFieldRows = (summary.penalty_fields || []).map((field) => [
-      field.id || "",
-      field.label || "",
-      field.unit || "",
-      field.count ?? "",
-      field.value ?? "",
-      (Number(field.count || 0) * Number(field.value || 0)) || "",
-    ]);
+    const stageGraphSections = stageEntries.flatMap((stage) => (
+      buildMetricsGraphCsvSections(metricsRowsForStage(stage)).map((section) => ({
+        ...section,
+        name: `stage_${stage.stage_number}_${section.name}`,
+        headers: ["stage_id", "stage_number", "stage_name", ...section.headers],
+        rows: section.rows.map((row) => [
+          stage.stage_id,
+          stage.stage_number,
+          stage.stage_name,
+          ...row,
+        ]),
+      }))
+    ));
     const sections = [
+      {
+        name: "match_stats",
+        headers: ["stage_count", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "shot_points", "penalties"],
+        rows: [[
+          match.stage_count ?? 0,
+          match.draw_ms == null ? "" : precise(match.draw_ms),
+          match.raw_time_ms == null ? "" : precise(match.raw_time_ms),
+          match.total_shots ?? 0,
+          match.average_split_ms == null ? "" : precise(match.average_split_ms),
+          "",
+          match.result_label || "",
+          match.result_value ?? "",
+          match.shot_points ?? "",
+          match.total_penalties ?? "",
+        ]],
+      },
+      {
+        name: "stage_metrics",
+        headers: ["stage_id", "stage_number", "stage_name", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "shot_points", "penalties"],
+        rows: stageEntries.map((stage) => {
+          const metrics = stage.metrics || {};
+          const scoring = stage.scoring_summary || {};
+          return [
+            stage.stage_id,
+            stage.stage_number,
+            stage.stage_name,
+            metrics.draw_ms == null ? "" : precise(metrics.draw_ms),
+            metrics.raw_time_ms == null ? "" : precise(metrics.raw_time_ms),
+            metrics.total_shots ?? 0,
+            metrics.average_split_ms == null ? "" : precise(metrics.average_split_ms),
+            metrics.beep_ms == null ? "" : precise(metrics.beep_ms),
+            scoring.display_label || "",
+            scoring.display_value || "",
+            scoring.shot_points ?? "",
+            scoring.total_penalties ?? "",
+          ];
+        }),
+      },
       {
         name: "run_summary",
         headers: [
@@ -1337,6 +1451,9 @@ export function createMetricsPane({
       {
         name: "comparison_context",
         headers: [
+          "stage_id",
+          "stage_number",
+          "stage_name",
           "competitor",
           "class",
           "division",
@@ -1352,6 +1469,9 @@ export function createMetricsPane({
         ],
         rows: comparisonShooters.length > 0
           ? comparisonShooters.map((competitor) => [
+            activeStage.stage_id || "",
+            activeStage.stage_number ?? "",
+            activeStage.stage_name || "",
             competitor.name || "",
             competitor.class || "",
             competitor.division || "",
@@ -1365,11 +1485,14 @@ export function createMetricsPane({
             competitor.hit_factor ?? "",
             "",
           ])
-          : [["", "", "", "", "", "", "", "", "", "", "", ""]],
+          : [[activeStage.stage_id || "", activeStage.stage_number ?? "", activeStage.stage_name || "", "", "", "", "", "", "", "", "", "", "", "", ""]],
       },
       {
         name: "per_shot_metrics",
         headers: [
+          "stage_id",
+          "stage_number",
+          "stage_name",
           "shot_number",
           "segment_label",
           "interval_label",
@@ -1386,7 +1509,10 @@ export function createMetricsPane({
           "penalties",
           "shotml_confidence",
         ],
-        rows: rows.map((entry) => [
+        rows: allStageRows.map(({ stage, entry }) => [
+          stage.stage_id,
+          stage.stage_number,
+          stage.stage_name,
           entry.shotNumber || "",
           entry.label || "",
           entry.intervalLabel || "",
@@ -1406,16 +1532,30 @@ export function createMetricsPane({
       },
       {
         name: "scoring_breakdown",
-        headers: ["penalty_id", "label", "unit", "count", "value", "total"],
-        rows: [
-          ...penaltyFieldRows,
-          ["shot_points", "Shot Points", "points", "", summary.shot_points ?? "", summary.shot_points ?? ""],
-          ["shot_penalties", "Shot Penalties", "points", "", summary.shot_penalties ?? "", summary.shot_penalties ?? ""],
-          ["field_penalties", "Field Penalties", "points", "", summary.field_penalties ?? "", summary.field_penalties ?? ""],
-          ["total_penalties", summary.penalty_label || "Total Penalties", "points", "", summary.total_penalties ?? "", summary.total_penalties ?? ""],
-        ],
+        headers: ["stage_id", "stage_number", "stage_name", "penalty_id", "label", "unit", "count", "value", "total"],
+        rows: stageEntries.flatMap((stage) => {
+          const scoring = stage.scoring_summary || {};
+          const prefix = [stage.stage_id, stage.stage_number, stage.stage_name];
+          const fields = (scoring.penalty_fields || []).map((field) => [
+            ...prefix,
+            field.id || "",
+            field.label || "",
+            field.unit || "",
+            field.count ?? "",
+            field.value ?? "",
+            (Number(field.count || 0) * Number(field.value || 0)) || "",
+          ]);
+          return [
+            ...fields,
+            [...prefix, "shot_points", "Shot Points", "points", "", scoring.shot_points ?? "", scoring.shot_points ?? ""],
+            [...prefix, "shot_penalties", "Shot Penalties", "points", "", scoring.shot_penalties ?? "", scoring.shot_penalties ?? ""],
+            [...prefix, "field_penalties", "Field Penalties", "points", "", scoring.field_penalties ?? "", scoring.field_penalties ?? ""],
+            [...prefix, "total_penalties", scoring.penalty_label || "Total Penalties", "points", "", scoring.total_penalties ?? "", scoring.total_penalties ?? ""],
+          ];
+        }),
       },
       ...buildMetricsGraphCsvSections(rows),
+      ...stageGraphSections,
     ];
 
     const output = [];
@@ -1433,10 +1573,23 @@ export function createMetricsPane({
     const summary = state.scoring_summary || {};
     const rows = buildMetricsRows();
     const graphs = buildMetricsGraphSeries(rows);
+    const match = state.match_metrics || {};
+    const stages = Array.isArray(state.stage_metrics) ? state.stage_metrics : [];
     const segmentGraph = graphs.find((graph) => graph.id === "stage_segment_breakdown") || null;
     const comparisonGraph = graphs.find((graph) => graph.id === "run_comparison_overlay") || null;
     const lines = [
       state.project?.name || "Untitled Project",
+      "Match Stats",
+      `- Raw: ${splitSeconds(match.raw_time_ms)} | Shots: ${match.total_shots || 0} | Avg Split: ${splitSeconds(match.average_split_ms)} | ${match.result_label || "Result"}: ${match.display_value || "--"} | Shot Points: ${formatNumber(match.shot_points, 2)} | Penalties: ${formatNumber(match.total_penalties, 2)}`,
+      "",
+      "Stage Stats",
+      ...stages.map((stage) => {
+        const metrics = stage.metrics || {};
+        const scoring = stage.scoring_summary || {};
+        return `- Stage ${stage.stage_number}: ${stage.stage_name || ""} | Draw: ${splitSeconds(metrics.draw_ms)} | Raw: ${splitSeconds(metrics.raw_time_ms)} | Shots: ${metrics.total_shots || 0} | Avg Split: ${splitSeconds(metrics.average_split_ms)} | Beep: ${splitSeconds(metrics.beep_ms)} | ${scoring.display_label || "Result"}: ${scoring.display_value || "--"} | Shot Points: ${formatNumber(scoring.shot_points, 2)} | Penalties: ${formatNumber(scoring.total_penalties, 2)}`;
+      }),
+      "",
+      "Active Stage Detail",
       `Video: ${fileName(state.project?.primary_video?.path || "")}`,
       `${summary.display_label || "Result"}: ${summary.display_value || "--"}`,
       `Raw Time: ${summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : "--"}`,
@@ -1497,6 +1650,7 @@ export function createMetricsPane({
     metricsPractiScoreLabel,
     renderMetricsTable,
     renderMetricsTrendTable,
+    renderStageMetricsOverview,
     metricsSecondsValue,
     metricsPercentValue,
     metricsMedian,

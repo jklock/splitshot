@@ -273,19 +273,17 @@ def test_queue_stale_label_exists():
     assert 'stale: "Stale"' in source
 
 
-def test_queue_has_stage_toggles():
+def test_queue_has_no_stage_toggles():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    assert "pane-toggle" in source
-    assert "queue-stage-toggle" in source
-    assert "section-header-with-toggle" in source
-    assert "isStageExpanded" in source
-    assert "toggleStage" in source
+    assert "queue-stage-toggle" not in source
+    assert "isStageExpanded" not in source
+    assert "toggleStage" not in source
 
 
-def test_queue_expansion_is_persisted():
+def test_queue_has_no_persisted_expansion_state():
     source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
-    assert "splitshot.queue.stageExpanded" in source
-    assert "localStorage" in source
+    assert "splitshot.queue.stageExpanded" not in source
+    assert "localStorage" not in source
 
 
 def test_export_drops_output_path_browser_controls():
@@ -451,7 +449,6 @@ def test_corrected_panes_use_the_og_borderless_disclosure_glyphs():
     for relative_path in (
         "panes/media-pane.js",
         "panes/merge-pane.js",
-        "panes/queue-pane.js",
         "panes/trim-sync-pane.js",
     ):
         source = (STATIC_ROOT / relative_path).read_text()

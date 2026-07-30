@@ -19,7 +19,7 @@ The Export pane configures ffmpeg export settings for the active stage. It does 
 | Control | What it does |
 | --- | --- |
 | Output Profiles selector | Loads or switches an output profile for the active stage. |
-| `Create` / `Delete` | Creates or removes an output profile. |
+| `Create` / `Save Profile` / `Delete` | Creates a snapshot of the current Export settings, updates the selected profile, or removes it. |
 | `Profile name` | Names the selected output profile. |
 | `Type` | Chooses the stage output type. |
 | `Frame profile` | Chooses the output framing override. |
@@ -39,6 +39,8 @@ The Export pane configures ffmpeg export settings for the active stage. It does 
 ## Notes
 
 - Export settings are stage-local.
+- Selecting a saved profile applies its framing and ffmpeg settings to the active stage. If that stage is queued, it changes to `Needs requeue`.
+- Profiles never store output paths, logs, or errors.
 - Export changes settings only. Queue is the only export execution surface.
 - Review the stage here, then queue and process it downstream.
 

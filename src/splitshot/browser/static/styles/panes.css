@@ -2408,6 +2408,34 @@
   height: 150px;
 }
 
+.metrics-graph-timeline-svg {
+  height: 84px;
+}
+
+.metrics-graph-card-wide .metrics-graph-timeline-svg {
+  height: 110px;
+}
+
+.metrics-stage-overview {
+  font-size: var(--text-xs);
+  overflow-x: auto;
+}
+
+.metrics-stage-overview > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--space-1) 0.35rem;
+}
+
+.metrics-stage-overview .metrics-match-cell {
+  background: rgba(57, 208, 111, 0.08);
+  font-weight: var(--weight-semibold);
+}
+
+.metrics-stage-overview .metrics-stage-label {
+  text-align: left;
+}
+
 .metrics-graph-grid-line {
   stroke: rgba(244, 245, 246, 0.12);
   stroke-width: 1;

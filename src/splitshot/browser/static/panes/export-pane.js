@@ -46,13 +46,17 @@ export function createExportPane({
     if (descriptionId) {
       const preset = (currentState().export_presets || []).find((item) => item.id === select.value);
       let description = $(descriptionId);
+      if (!preset?.description) {
+        description?.remove();
+        return;
+      }
       if (!description) {
         description = document.createElement("div");
         description.id = descriptionId;
         description.className = "hint export-preset-description";
         select.closest("label")?.insertAdjacentElement("afterend", description);
       }
-      if (description) description.textContent = preset ? preset.description : "";
+      if (description) description.textContent = preset.description;
     }
   }
 

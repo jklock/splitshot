@@ -5643,6 +5643,7 @@ function renderOutputProfiles() {
   const typeSelect = $("output-profile-type");
   const frameSelect = $("output-profile-frame");
   const exportBadgesButton = $("export-badges");
+  const saveButton = $("save-output-profile");
   if (selected && draft
     && selected.profile_name === draft.profile_name
     && selected.profile_kind === draft.profile_kind
@@ -5655,6 +5656,7 @@ function renderOutputProfiles() {
   if (nameInput) nameInput.disabled = !selected;
   if (typeSelect) typeSelect.disabled = !selected;
   if (frameSelect) frameSelect.disabled = !selected;
+  if (saveButton) saveButton.disabled = !selected;
   if (exportBadgesButton) {
     exportBadgesButton.dataset.outputId = resolvedSelectedId;
     exportBadgesButton.onclick = () => {
@@ -5699,7 +5701,32 @@ function exportBadges() {
 function createOutputProfile() {
   const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
   autoSelectNewestOutputProfile = true;
-  callApi("/api/output-profiles/create", { profile_name: baseName, profile_kind: "stage_output" });
+  callApi("/api/output-profiles/create", {
+    profile_name: baseName,
+    profile_kind: "stage_output",
+    export_settings: currentExportProfileSettings(),
+  });
+}
+
+function currentExportProfileSettings() {
+  return {
+    ...(state?.project?.export || {}),
+    preset: $("export-preset")?.value || state?.project?.export?.preset || "custom",
+    ...readExportLayoutPayload(),
+    ...readExportSettingsPayload(),
+  };
+}
+
+function saveOutputProfile() {
+  const id = activeOutputProfileId();
+  if (!id) return;
+  callApi("/api/output-profiles/update", {
+    output_id: id,
+    profile_name: $("output-profile-name")?.value || "",
+    profile_kind: $("output-profile-type")?.value || "stage_output",
+    frame_profile: $("output-profile-frame")?.value || "source",
+    export_settings: currentExportProfileSettings(),
+  });
 }
 
 function deleteOutputProfile() {
@@ -5727,6 +5754,7 @@ function selectOutputProfile() {
   if (nameInput) { nameInput.value = draft?.profile_name || selected?.profile_name || ""; nameInput.disabled = !selected; }
   if (typeSelect) { typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
   if (frameSelect) { frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
+  if (selected) callApi("/api/output-profiles/apply", { output_id: id });
 }
 
 let _outputProfileFieldCommitTimer = null;
@@ -10098,6 +10126,7 @@ shellRuntime = createShellRuntime({
   renderReviewImportedMetrics,
   renderOutputProfiles,
   createOutputProfile,
+  saveOutputProfile,
   deleteOutputProfile,
   selectOutputProfile,
   scheduleOutputProfileFieldCommit,

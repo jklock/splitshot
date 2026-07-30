@@ -10,8 +10,6 @@ export function createQueuePane({
   setStatus = () => {},
   sendKeepaliveJson = () => false,
 } = {}) {
-  const expansionKey = "splitshot.queue.stageExpanded";
-
   function currentState() {
     return getState() || {};
   }
@@ -88,27 +86,6 @@ export function createQueuePane({
     }[status] || String(status || "Not queued");
   }
 
-  function isStageExpanded(stageId) {
-    try {
-      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
-      if (stored && typeof stored === "object" && stored[stageId] !== undefined) return Boolean(stored[stageId]);
-    } catch (_) {}
-    return false;
-  }
-
-  function setStageExpanded(stageId, expanded) {
-    try {
-      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
-      const next = { ...(stored && typeof stored === "object" ? stored : {}), [stageId]: expanded };
-      windowObject?.localStorage?.setItem(expansionKey, JSON.stringify(next));
-    } catch (_) {}
-  }
-
-  function toggleStage(stageId) {
-    setStageExpanded(stageId, !isStageExpanded(stageId));
-    render();
-  }
-
   function selectStage(stageId) {
     const proj = project();
     if (!proj || !stageId) return;
@@ -162,23 +139,17 @@ export function createQueuePane({
     const stageId = queueEntry.stage_id;
     const status = queueEntry?.status || stage?.queue_status || "not_queued";
     const selected = stageId === activeStageId();
-    const expanded = isStageExpanded(stageId);
     const actionLabel = queueActionLabel(stageId);
     const disabled = status === "processing";
     return `
       <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stageId}">
-        <div class="queue-stage-header section-header-with-toggle">
+        <div class="queue-stage-header">
           <div class="queue-stage-copy">
             <strong>${stageLabel(stage || queueEntry?.snapshot || {})}</strong>
             <small>${queueEntryAssetSummary(queueEntry, stage)}</small>
           </div>
           <div class="queue-stage-header-actions">
             <span class="queue-status-text queue-status-${status}">${queueStatusLabel(status)}</span>
-            <button class="pane-toggle queue-stage-toggle" type="button" data-stage-id="${stageId}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "v" : ">"}</button>
-          </div>
-        </div>
-        <div class="queue-stage-body"${expanded ? "" : " hidden"}>
-          <div class="queue-stage-actions">
             <button class="btn-sm btn-secondary queue-membership-btn" type="button" data-stage-id="${stageId}" ${disabled ? "disabled" : ""}>${actionLabel}</button>
           </div>
         </div>
@@ -202,6 +173,7 @@ export function createQueuePane({
             <select id="queue-stage-select">${stageOptions}</select>
           </label>
           <button class="btn btn-secondary queue-membership-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>${queueActionLabel(stage?.id || "")}</button>
+          <button id="queue-show-output-folder" class="btn btn-secondary" type="button" ${project().output_root ? "" : "disabled"}>Show Output Folder</button>
         </div>
         ${combinedOutput ? `
           <div class="queue-combined-output" data-queue-combined-output="${combinedOutput}">
@@ -218,16 +190,14 @@ export function createQueuePane({
     pane.onclick = (event) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
-      const toggle = target.closest(".queue-stage-toggle");
-      if (toggle instanceof HTMLElement) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleStage(toggle.dataset.stageId || "");
-        return;
-      }
       const membershipButton = target.closest(".queue-membership-btn");
       if (membershipButton instanceof HTMLElement) {
+        event.stopPropagation();
         updateQueueMembership(membershipButton.dataset.stageId || activeStage()?.id || "");
+        return;
+      }
+      if (target.closest("#queue-show-output-folder")) {
+        callApi("/api/project/output/reveal", {});
         return;
       }
       if (target.closest(".queue-process-btn")) {
@@ -248,6 +218,13 @@ export function createQueuePane({
       if (!target) return;
       if (target.id === "queue-stage-select") {
         selectStage(target.value || "");
+        return;
+      }
+      if (target.id === "queue-fade-in" || target.id === "queue-fade-out") {
+        callApi("/api/project/queue/settings", {
+          fade_in_s: Math.max(0, Number($("queue-fade-in")?.value || 0)),
+          fade_out_s: Math.max(0, Number($("queue-fade-out")?.value || 0)),
+        });
       }
     };
   }
@@ -263,6 +240,19 @@ export function createQueuePane({
           <span class="pane-status-text">${count} queued</span>
         </div>
         ${renderControlsSection()}
+        <section class="settings-section queue-pane-section">
+          <div class="section-header media-section-header">
+            <strong>Output Fades</strong>
+          </div>
+          <div class="control-grid">
+            <label>Fade in (seconds)
+              <input id="queue-fade-in" type="number" min="0" step="0.1" value="${Number(project()?.queue_settings?.fade_in_s ?? 0.5)}" />
+            </label>
+            <label>Fade out (seconds)
+              <input id="queue-fade-out" type="number" min="0" step="0.1" value="${Number(project()?.queue_settings?.fade_out_s ?? 0.5)}" />
+            </label>
+          </div>
+        </section>
         <section class="settings-section queue-pane-section queue-process-section">
           <div class="section-header media-section-header">
             <strong>Process</strong>
@@ -293,6 +283,5 @@ export function createQueuePane({
     render,
     mount,
     updateQueueMembership,
-    toggleStage,
   });
 }

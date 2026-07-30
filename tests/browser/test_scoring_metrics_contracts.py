@@ -1,13 +1,61 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
+from splitshot.domain.models import (
+    ImportedStageScore,
+    Project,
+    ProjectStage,
+    ScoreLetter,
+    ScoreMark,
+    ShotEvent,
+)
 from splitshot.scoring.logic import apply_scoring_preset
 
-
 STATIC_ROOT = Path("src/splitshot/browser/static")
+
+
+def test_browser_state_exposes_per_stage_and_combined_match_metrics() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=1_000, score=ScoreMark(letter=ScoreLetter.A)),
+        ShotEvent(time_ms=1_500, score=ScoreMark(letter=ScoreLetter.A)),
+    ]
+    apply_scoring_preset(project, "uspsa_minor")
+    first = ProjectStage(
+        id="stage-1",
+        label="Stage 1",
+        order_index=1,
+        analysis=deepcopy(project.analysis),
+        scoring=deepcopy(project.scoring),
+    )
+    project.analysis.shots = [
+        ShotEvent(time_ms=2_000, score=ScoreMark(letter=ScoreLetter.A)),
+    ]
+    second = ProjectStage(
+        id="stage-2",
+        label="Stage 2",
+        order_index=2,
+        analysis=deepcopy(project.analysis),
+        scoring=deepcopy(project.scoring),
+    )
+    project.stages = [second, first]
+    project.active_stage_id = first.id
+    project.analysis = deepcopy(first.analysis)
+    project.scoring = deepcopy(first.scoring)
+
+    payload = browser_state(project, "Ready.")
+
+    assert [entry["stage_id"] for entry in payload["stage_metrics"]] == ["stage-1", "stage-2"]
+    assert payload["match_metrics"]["stage_count"] == 2
+    assert payload["match_metrics"]["total_shots"] == 3
+    assert payload["match_metrics"]["raw_time_ms"] == 3500
+    assert payload["match_metrics"]["draw_ms"] == 1500
+    assert payload["match_metrics"]["result_label"] == "Combined HF"
 
 
 def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows() -> None:
@@ -117,6 +165,7 @@ def test_browser_state_defines_missing_beep_raw_time_and_confidence_projection()
 
 def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    metrics_pane_js = (STATIC_ROOT / "panes" / "metrics-pane.js").read_text()
 
     assert js.count("const rows = buildMetricsRows();") == 5
     assert "const confidence = splitRowShotMLConfidence(row);" in js
@@ -149,6 +198,16 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert '"Split Timeline"' in js
     assert '"Stage Segments"' in js
     assert '"Run Comparison Overlay"' in js
+    assert 'renderStageMetricsOverview($("metrics-stage-overview"))' in metrics_pane_js
+    assert "const viewHeight = timeline ? (compact ? 84 : 110)" in metrics_pane_js
+    assert 'name: "match_stats"' in metrics_pane_js
+    assert 'name: "stage_metrics"' in metrics_pane_js
+
+
+def test_bulk_trim_omits_redundant_timing_summary() -> None:
+    js = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
+    assert "Last shot" not in js
+    assert "formatTrimSummaryTime" not in js
 
 
 def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None:

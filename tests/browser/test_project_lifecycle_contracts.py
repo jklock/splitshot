@@ -4,11 +4,9 @@ import json
 import urllib.request
 from pathlib import Path
 
-
 import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -35,9 +33,9 @@ def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) ->
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
             "Content-Type: application/octet-stream\r\n\r\n"
-        ).encode("utf-8")
+        ).encode()
         + payload
-        + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        + f"\r\n--{boundary}--\r\n".encode()
     )
     request = urllib.request.Request(
         url,
@@ -167,7 +165,9 @@ def test_project_reveal_route_opens_active_project_folder(monkeypatch, tmp_path:
     controller = ProjectController()
     controller.save_project(str(project_path))
     opened: list[Path] = []
-    monkeypatch.setattr(browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path)))
+    monkeypatch.setattr(
+        browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path))
+    )
 
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -178,6 +178,29 @@ def test_project_reveal_route_opens_active_project_folder(monkeypatch, tmp_path:
 
     assert opened == [project_path]
     assert payload["status"] == f"Opened project folder {project_path}."
+
+
+def test_output_reveal_route_opens_configured_output_folder(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "reveal-output.ssproj"
+    output_path = tmp_path / "custom-output"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.project.output_root = str(output_path)
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path))
+    )
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/project/output/reveal", {})
+    finally:
+        server.shutdown()
+
+    assert opened == [output_path]
+    assert output_path.is_dir()
+    assert payload["status"] == f"Opened output folder {output_path}."
 
 
 def test_project_details_save_open_and_refresh_contract(tmp_path: Path) -> None:

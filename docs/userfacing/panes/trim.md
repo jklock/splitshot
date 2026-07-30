@@ -43,6 +43,8 @@ Each source card identifies the original file and whether original or trimmed me
 
 Still images and animated GIFs are not trimmed. Trim derivatives remain inside the project `Input/` area, and clearing a trim changes the active source back to the original without removing the original media.
 
+Trimmed files use `Trim_Stage#_HH-MM-SS_YYYY-MM-DD.mp4`. Same-second collisions add `_2`, `_3`, and so on.
+
 ## Related Guides
 
 Previous: [compose.md](compose.md)

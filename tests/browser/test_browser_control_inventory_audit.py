@@ -130,6 +130,7 @@ id:color-picker-saturation
 id:color-space
 id:create-output-profile
 id:delete-output-profile
+id:save-output-profile
 id:delete-project
 id:timing-enabled
 id:draw-lock-to-stack
