@@ -1,6 +1,6 @@
 # Metrics Pane
 
-The Metrics pane is the read-only post-stage dashboard for the current run. It keeps timing graphs, imported competitor-cohort comparisons, the expanded table, scoring context, and CSV/text exports aligned with the same data.
+The Metrics pane is the read-only post-stage dashboard for the current run. It keeps timing graphs, imported competitor-cohort comparisons, the expanded table, scoring context, and CSV/text exports aligned with the same data. Expanded graphs use a responsive multi-column layout so labels remain readable and the detailed table stays visible.
 
 <img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, six graphs, compact timing table, scoring context, and export buttons beside the live preview" width="960">
 

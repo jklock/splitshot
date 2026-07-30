@@ -6900,7 +6900,7 @@ function createMetricsGraphCanvas({ compact = true } = {}) {
   svg.classList.add("metrics-graph-svg");
   svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
   svg.setAttribute("preserveAspectRatio", "none");
-  const viewWidth = compact ? 260 : 320;
+  const viewWidth = compact ? 260 : 640;
   const viewHeight = compact ? 132 : 150;
   const padding = { left: 12, right: 10, top: 10, bottom: 22 };
   const plotWidth = viewWidth - padding.left - padding.right;

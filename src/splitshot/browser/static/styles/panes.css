@@ -2348,7 +2348,12 @@
 }
 
 .metrics-graph-list-workbench {
+  align-content: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   margin-bottom: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-1);
 }
 
 .metrics-graph-card {
@@ -3309,7 +3314,7 @@
 .metrics-workbench {
   background: var(--surface);
   display: none;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(300px, 2fr) minmax(180px, 1fr);
   min-height: 0;
   overflow: hidden;
 }

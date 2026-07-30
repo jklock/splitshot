@@ -730,7 +730,7 @@ export function createMetricsPane({
     const svg = createSvgNode("svg");
     svg.classList.add("metrics-graph-svg");
     if (timeline) svg.classList.add("metrics-graph-timeline-svg");
-    const viewWidth = compact ? 260 : 320;
+    const viewWidth = compact ? 260 : 640;
     const viewHeight = timeline ? (compact ? 84 : 110) : (compact ? 132 : 150);
     svg.setAttribute("viewBox", `0 0 ${viewWidth} ${viewHeight}`);
     svg.setAttribute("preserveAspectRatio", "none");
