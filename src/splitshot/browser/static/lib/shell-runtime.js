@@ -436,13 +436,7 @@ export function createShellRuntime({
       await createNewProject();
     });
     $("browse-project-path").addEventListener("click", browseProjectPath);
-    $("open-project-folder").addEventListener("click", async () => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      await callApi("/api/project/reveal", {});
-    });
+    $("open-project").addEventListener("click", browseProjectPath);
     $("browse-project-output-root").addEventListener("click", () => pickPath(
       "project_folder",
       "project-output-root",

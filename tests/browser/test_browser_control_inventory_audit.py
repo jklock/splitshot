@@ -148,7 +148,7 @@ id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
-id:open-project-folder
+id:open-project
 id:match-type
 id:match-class
 id:match-competitor-name

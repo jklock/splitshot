@@ -329,7 +329,7 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 )
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
-                assert page.locator("#open-project-folder").is_disabled() is True
+                assert page.locator("#open-project").is_enabled() is True
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
 
@@ -340,12 +340,43 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 _open_tool(page, "project")
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is False
                 assert page.locator("#import-practiscore").is_disabled() is False
-                assert page.locator("#open-project-folder").is_disabled() is False
+                assert page.locator("#open-project").is_enabled() is True
                 assert page.locator("#project-path").input_value() == "created-project.ssproj"
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
                 notices.extend(dialogs)
                 assert any("missing Input, CSV, Markers, Output" in message for message in notices)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_open_project_button_opens_existing_project_from_folder_picker(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "existing-project.ssproj"
+    saved = ProjectController()
+    saved.project.name = "Existing Project"
+    saved.save_project(str(project_path))
+    server = BrowserControlServer(
+        controller=ProjectController(),
+        port=0,
+        path_chooser=lambda kind, current=None, default_root=None: (
+            str(project_path) if kind == "project_folder" else ""
+        ),
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.get_by_role("button", name="Open Project", exact=True).click()
+                page.wait_for_function(
+                    "() => state?.project?.name === 'Existing Project'"
+                )
+                assert page.locator("#project-path").input_value() == project_path.name
             finally:
                 browser.close()
     finally:

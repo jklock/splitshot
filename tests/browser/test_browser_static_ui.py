@@ -365,7 +365,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
         "shotml",
     ]:
         assert f'data-settings-section="{section_id}"' in html
-    assert 'id="open-project"' not in html
+    assert '<button id="open-project" type="button">Open Project</button>' in html
+    assert 'id="open-project-folder"' not in html
     assert "Open PiP" not in html
     assert "Open Score" not in html
     assert "Open Splits" not in html
@@ -720,8 +721,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-x"' in html
     assert 'id="score-y"' in html
     assert 'id="browse-project-path"' in html
-    assert 'id="open-project-folder"' in html
-    assert 'callApi("/api/project/reveal", {})' in js
+    assert '$("open-project").addEventListener("click", browseProjectPath);' in shell_runtime_js
     assert 'id="browse-project-output-root"' in html
     assert 'id="browse-primary-path"' not in html
     assert 'id="browse-secondary-path"' not in html
@@ -1963,7 +1963,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "browse-project-output-root",
         "new-project",
         "browse-project-path",
-        "open-project-folder",
+        "open-project",
         "open-practiscore-dashboard",
         "import-practiscore",
         "save-project",
