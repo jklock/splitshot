@@ -34,6 +34,7 @@ from splitshot.scoring.logic import (
     calculate_scoring_summary,
     current_shot_index,
     format_imported_stage_overlay_text,
+    format_review_summary_overlay_text,
     penalty_field_short_label,
     shot_display_time_ms,
 )
@@ -423,7 +424,12 @@ class OverlayRenderer:
 
     @staticmethod
     def _text_box_text(
-        project: Project, position_ms: int, source: str, text: str, enabled: bool
+        project: Project,
+        position_ms: int,
+        source: str,
+        text: str,
+        enabled: bool,
+        summary_metric_ids: list[str] | None = None,
     ) -> str:
         if not enabled:
             return ""
@@ -436,9 +442,17 @@ class OverlayRenderer:
             if final_shot_time is None or position_ms < final_shot_time:
                 return ""
             override_text = text.strip()
-            if override_text:
+            review_text = format_review_summary_overlay_text(
+                project, summary_metric_ids
+            ).strip()
+            legacy_text = format_imported_stage_overlay_text(
+                project.scoring.imported_stage
+            ).strip()
+            if override_text and override_text not in {review_text, legacy_text}:
                 return override_text
-            return format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
+            if review_text:
+                return review_text
+            return legacy_text
         return text.strip()
 
     def paint(
@@ -530,6 +544,7 @@ class OverlayRenderer:
                 text_box.source,
                 text_box.text,
                 text_box.enabled,
+                text_box.summary_metric_ids,
             )
             if not text_value:
                 continue

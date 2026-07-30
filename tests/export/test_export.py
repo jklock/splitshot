@@ -38,13 +38,6 @@ from splitshot.export.pipeline import (
 )
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import (
-    OverlayRenderer,
-    _auto_badge_size,
-    _combined_rect,
-    _overlay_qfont,
-    _standard_badge_texts,
-)
 from splitshot.overlay.font_policy import (
     WINDOWS_MONO_FONT_FAMILIES,
     WINDOWS_SANS_FONT_FAMILIES,
@@ -52,9 +45,15 @@ from splitshot.overlay.font_policy import (
     default_overlay_font_family,
     resolve_overlay_font_family,
 )
+from splitshot.overlay.render import (
+    OverlayRenderer,
+    _auto_badge_size,
+    _combined_rect,
+    _overlay_qfont,
+    _standard_badge_texts,
+)
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
-
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
@@ -732,10 +731,11 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     project.overlay.show_shots = False
     project.overlay.show_score = True
     project.overlay.text_boxes = [
-        OverlayTextBox(
-            enabled=True,
-            source="imported_summary",
-            quadrant="above_final",
+            OverlayTextBox(
+                enabled=True,
+                source="imported_summary",
+                text="Geometry\nRaw 13.05\nPD 4\nFinal 17.05",
+                quadrant="above_final",
             background_color="#ff7b22",
             text_color="#ffffff",
             opacity=1.0,
@@ -882,6 +882,79 @@ def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot()
     )
 
 
+def test_overlay_renderer_uses_review_metric_configuration_and_stage_data() -> None:
+    project = Project(name="WYSIWYG Review Summary")
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=26500, score=ScoreMark(letter=ScoreLetter.DOWN_3))
+    ]
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.scoring.competitor_name = "Shooter"
+    project.scoring.competitor_place = 5
+    project.scoring.division = "Carry Optics"
+    project.scoring.classification = "Sharpshooter"
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        competitor_name="Shooter",
+        competitor_place=5,
+        division="Carry Optics",
+        classification="Sharpshooter",
+        raw_seconds=21.71,
+        final_time=23.71,
+        aggregate_points=3,
+        score_counts={"Points Down": 3},
+    )
+    project.scoring.comparison_competitors = [
+        {
+            "name": f"Shooter {index}",
+            "place": index,
+            "division": "Carry Optics" if index <= 11 else "Stock Service Pistol",
+            "classification": "Sharpshooter" if index <= 8 else "Marksman",
+        }
+        for index in range(1, 28)
+        if index != 5
+    ]
+
+    assert OverlayRenderer._text_box_text(
+        project,
+        26500,
+        "imported_summary",
+        "",
+        True,
+        [
+            "score_time",
+            "raw_time",
+            "points_down",
+            "penalties",
+            "division_placement",
+            "class_placement",
+            "overall_placement",
+        ],
+    ) == (
+        "Score / Time 29.50\n"
+        "Raw Time 26.50s\n"
+        "Points Down 3\n"
+        "Penalties 0\n"
+        "CO - 5/11\n"
+        "SS - 5/8\n"
+        "Overall - 5/27"
+    )
+    assert OverlayRenderer._text_box_text(
+        project,
+        26500,
+        "imported_summary",
+        "Summary\nRaw 21.71\nPD 3\nFinal 23.71",
+        True,
+        ["score_time", "raw_time", "points_down", "penalties"],
+    ) == (
+        "Score / Time 29.50\n"
+        "Raw Time 26.50s\n"
+        "Points Down 3\n"
+        "Penalties 0"
+    )
+
+
 def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
     project = Project(name="Imported Summary Browser Line Height")
     project.analysis.beep_time_ms_primary = 100
@@ -894,10 +967,11 @@ def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_sum
     project.overlay.show_score = False
     project.overlay.font_size = 14
     project.overlay.text_boxes = [
-        OverlayTextBox(
-            enabled=True,
-            source="imported_summary",
-            quadrant="top_left",
+            OverlayTextBox(
+                enabled=True,
+                source="imported_summary",
+                text="Geometry\nRaw 23.24\nPoints 101\nHF 4.3460",
+                quadrant="top_left",
             background_color="#ff0000",
             text_color="#ffffff",
             opacity=1.0,

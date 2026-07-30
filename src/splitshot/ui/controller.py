@@ -101,6 +101,8 @@ from splitshot.scoring.logic import (
     calculate_hit_factor,
     default_score_mark_for_ruleset,
     ensure_default_shot_scores,
+    format_imported_stage_overlay_text,
+    format_review_summary_overlay_text,
 )
 from splitshot.scoring.practiscore import (
     PractiScoreCompetitorOption,
@@ -2263,6 +2265,7 @@ class ProjectController(QObject):
     def _refresh_practiscore_comparison_for_active_stage(self) -> None:
         if self._practiscore_source_path is None:
             self._practiscore_comparison_competitors = []
+            self.project.scoring.comparison_competitors = []
             return
         try:
             normalized = normalize_downloaded_practiscore_artifact(
@@ -2272,6 +2275,7 @@ class ProjectController(QObject):
             )
         except ValueError:
             self._practiscore_comparison_competitors = []
+            self.project.scoring.comparison_competitors = []
             return
         self._set_practiscore_comparison_competitors(normalized.stage_import.comparison_competitors)
 
@@ -2352,6 +2356,9 @@ class ProjectController(QObject):
             }
             for c in competitors
         ]
+        self.project.scoring.comparison_competitors = deepcopy(
+            self._practiscore_comparison_competitors
+        )
 
     def _import_practiscore_source(
         self,
@@ -2687,6 +2694,27 @@ class ProjectController(QObject):
         stage.popup_template = deepcopy(self.project.popup_template)
         stage.merge = deepcopy(self.project.merge)
         stage.export = deepcopy(self.project.export)
+
+    def _cascade_active_presentation_settings(self) -> None:
+        """Waterfall video presentation settings to later stages without overrides."""
+        active = self.project.active_stage
+        if active is None:
+            return
+        self._sync_project_to_active_stage()
+        active.presentation_overridden = True
+        for stage in self.project.stages:
+            if stage.order_index <= active.order_index or stage.presentation_overridden:
+                continue
+            stage.overlay = deepcopy(active.overlay)
+            stage.popups = deepcopy(active.popups)
+            stage.popup_template = deepcopy(active.popup_template)
+            stage.merge = deepcopy(active.merge)
+            stage.export = deepcopy(active.export)
+            stage.export.output_path = None
+            stage.export.last_log = ""
+            stage.export.last_error = None
+            self._mark_stage_queue_stale(stage.id)
+        self._mark_stage_queue_stale(active.id)
 
     def _active_stage_label(self) -> str:
         stage = self.project.active_stage
@@ -3136,6 +3164,8 @@ class ProjectController(QObject):
                 self._set_status(f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}...")
                 self.project.active_stage_id = stage.id
                 self._sync_active_stage_to_project()
+                self._refresh_practiscore_comparison_for_active_stage()
+                self._sync_project_to_active_stage()
                 slug = self._stage_slug(stage)
                 output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
                 render_path = self._temporary_output_path(output_path)
@@ -4633,6 +4663,7 @@ class ProjectController(QObject):
         self.settings.overlay_position = position
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4643,6 +4674,7 @@ class ProjectController(QObject):
         self.settings.badge_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4652,6 +4684,7 @@ class ProjectController(QObject):
         )
         self.project.overlay.spacing = max(0, min(40, int(spacing)))
         self.project.overlay.margin = max(0, min(40, int(margin)))
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4800,6 +4833,17 @@ class ProjectController(QObject):
                         box.x = 0.5
                     if box.y is None:
                         box.y = 0.5
+                if box.source == "imported_summary" and box.text.strip():
+                    auto_texts = {
+                        format_imported_stage_overlay_text(
+                            self.project.scoring.imported_stage
+                        ).strip(),
+                        format_review_summary_overlay_text(
+                            self.project, box.summary_metric_ids
+                        ).strip(),
+                    }
+                    if box.text.strip() in auto_texts:
+                        box.text = ""
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)
@@ -4825,6 +4869,7 @@ class ProjectController(QObject):
                 normalized_color = str(color or "").strip()
                 if normalized_score_key and normalized_color:
                     overlay.scoring_colors[normalized_score_key] = normalized_color
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4845,12 +4890,13 @@ class ProjectController(QObject):
         template_payload = payload.get("popup_template")
         if isinstance(template_payload, dict):
             _popup_template_from_payload(self.project.popup_template, template_payload)
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def set_merge_enabled(self, enabled: bool) -> None:
         self.project.merge.enabled = enabled
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4859,7 +4905,7 @@ class ProjectController(QObject):
         self.settings.merge_layout = layout
         save_settings(self.settings)
         self.settings_changed.emit()
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4869,13 +4915,13 @@ class ProjectController(QObject):
         self.settings.pip_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def set_pip_size_percent(self, percent: int) -> None:
         self.project.merge.pip_size_percent = max(1, min(95, int(percent)))
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4884,7 +4930,7 @@ class ProjectController(QObject):
             self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
         if pip_y is not None:
             self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4950,7 +4996,7 @@ class ProjectController(QObject):
     def reset_merge_defaults(self) -> None:
         self.project.merge.enabled = False
         _reset_project_merge_defaults(self.project)
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self._set_status("Restored PiP defaults.")
         self.project_changed.emit()
@@ -5003,12 +5049,14 @@ class ProjectController(QObject):
         self.settings.export_quality = quality
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def apply_export_preset(self, preset: str) -> None:
         if preset == ExportPreset.CUSTOM.value:
             self.project.export.preset = ExportPreset.CUSTOM
+            self._cascade_active_presentation_settings()
             self.project.touch()
             self.project_changed.emit()
             return
@@ -5016,6 +5064,7 @@ class ProjectController(QObject):
         self.settings.export_quality = self.project.export.quality
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project_changed.emit()
 
     def set_export_settings(self, payload: dict[str, object]) -> None:
@@ -5084,6 +5133,7 @@ class ProjectController(QObject):
                 export.output_path = None
         if manual_override_keys.intersection(payload):
             export.preset = ExportPreset.CUSTOM
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -5734,8 +5784,7 @@ class ProjectController(QObject):
         }.get(profile.frame_profile)
         if frame_aspect is not None:
             self.project.export.aspect_ratio = frame_aspect
-        self._sync_project_to_active_stage()
-        self._mark_stage_queue_stale(self.project.active_stage_id)
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
         self._set_status(f"Applied output profile {profile.profile_name}.")

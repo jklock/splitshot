@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import math
+from dataclasses import asdict, dataclass, field
 
 from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.timeline.model import raw_time_ms
@@ -474,6 +474,177 @@ def format_imported_stage_overlay_text(
             hit_factor_value = max(0.0, float(imported_stage.total_points)) / display_raw_seconds
     if hit_factor_value is not None:
         lines.append(f"HF {float(hit_factor_value):.4f}")
+    return "\n".join(lines)
+
+
+_REVIEW_SUMMARY_METRICS = (
+    ("score_time", "Score / Time"),
+    ("raw_time", "Raw Time"),
+    ("points_down", "Points Down"),
+    ("penalties", "Penalties"),
+    ("division_placement", "Division"),
+    ("class_placement", "Class"),
+    ("overall_placement", "Overall"),
+)
+_DEFAULT_REVIEW_SUMMARY_METRIC_IDS = tuple(metric_id for metric_id, _ in _REVIEW_SUMMARY_METRICS)
+_DIVISION_CODES = {
+    "bug": "BUG",
+    "carryoptics": "CO",
+    "compactcarrypistol": "CCP",
+    "customdefensivepistol": "CDP",
+    "enhancedservicepistol": "ESP",
+    "enhancedservicerevolver": "ESR",
+    "limited": "LTD",
+    "limited10": "L10",
+    "limitedten": "L10",
+    "limitedoptics": "LO",
+    "open": "OPEN",
+    "pcc": "PCC",
+    "pistolcalibercarbine": "PCC",
+    "production": "PROD",
+    "revolver": "REV",
+    "singlestack": "SS",
+    "stockservicepistol": "SSP",
+    "stockservicerevolver": "SSR",
+}
+_IDPA_CLASS_CODES = {
+    "distinguishedmaster": "DM",
+    "expert": "EX",
+    "marksman": "MM",
+    "master": "MA",
+    "novice": "NV",
+    "sharpshooter": "SS",
+    "unclassified": "UN",
+}
+_USPSA_CLASS_CODES = {
+    "grandmaster": "GM",
+    "master": "M",
+    "unclassified": "U",
+}
+
+
+def _competition_key(value: object) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _competition_code(value: object, aliases: dict[str, str]) -> str:
+    clean_value = str(value or "").strip()
+    return aliases.get(_competition_key(clean_value), clean_value)
+
+
+def _class_codes(project: Project) -> dict[str, str]:
+    imported = project.scoring.imported_stage
+    match_type = str(project.scoring.match_type or getattr(imported, "match_type", "")).casefold()
+    return _IDPA_CLASS_CODES if match_type == "idpa" else _USPSA_CLASS_CODES
+
+
+def _review_placement(
+    project: Project,
+    *,
+    dimension: str | None = None,
+) -> str:
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    selected_name = str(
+        project.scoring.competitor_name or imported.competitor_name or ""
+    ).strip()
+    if not selected_name:
+        return ""
+    selected = {
+        "name": selected_name,
+        "place": imported.competitor_place,
+        "division": project.scoring.division or imported.division,
+        "classification": project.scoring.classification or imported.classification,
+    }
+    competitors = [selected, *project.scoring.comparison_competitors]
+    deduplicated: dict[str, dict[str, object]] = {}
+    for competitor in competitors:
+        name = str(competitor.get("name") or competitor.get("competitor_name") or "").strip()
+        key = name.casefold()
+        if not key or key in deduplicated:
+            continue
+        deduplicated[key] = {**competitor, "name": name}
+    cohort = list(deduplicated.values())
+    if dimension:
+        aliases = _DIVISION_CODES if dimension == "division" else _class_codes(project)
+        selected_value = _competition_code(selected.get(dimension), aliases).casefold()
+        cohort = [
+            competitor
+            for competitor in cohort
+            if _competition_code(competitor.get(dimension), aliases).casefold() == selected_value
+        ]
+    ranked = sorted(
+        (
+            (int(competitor["place"]), str(competitor["name"]).casefold())
+            for competitor in cohort
+            if competitor.get("place") not in {None, ""}
+        ),
+        key=lambda item: item[0],
+    )
+    selected_key = selected_name.casefold()
+    selected_rank = next(
+        (index + 1 for index, (_place, name) in enumerate(ranked) if name == selected_key),
+        None,
+    )
+    return "" if selected_rank is None else f"{selected_rank}/{len(ranked)}"
+
+
+def format_review_summary_overlay_text(
+    project: Project,
+    metric_ids: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Return the same auto Review summary text used by the browser preview."""
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    requested = tuple(
+        "overall_placement" if metric_id == "division_class_placement" else metric_id
+        for metric_id in (metric_ids or _DEFAULT_REVIEW_SUMMARY_METRIC_IDS)
+    )
+    summary = calculate_scoring_summary(project)
+    points_down = (
+        imported.score_counts.get("Points Down", imported.aggregate_points)
+        if imported.match_type == "idpa"
+        else None
+    )
+    division_label = _competition_code(
+        project.scoring.division or imported.division, _DIVISION_CODES
+    )
+    class_label = _competition_code(
+        project.scoring.classification or imported.classification, _class_codes(project)
+    )
+    values = {
+        "score_time": (
+            str(summary.get("display_value") or "")
+            if summary.get("display_value") != "--"
+            else (
+                f"{float(imported.final_time):.2f}"
+                if imported.final_time is not None
+                else ""
+            )
+        ),
+        "raw_time": (
+            f"{float(summary['raw_seconds']):.2f}s"
+            if summary.get("raw_seconds") is not None
+            else ""
+        ),
+        "points_down": "" if points_down is None else _format_overlay_stat(float(points_down)),
+        "penalties": _format_overlay_stat(float(summary.get("total_penalties", 0.0))),
+        "division_placement": _review_placement(project, dimension="division"),
+        "class_placement": _review_placement(project, dimension="classification"),
+        "overall_placement": _review_placement(project),
+    }
+    labels = {
+        "division_placement": division_label or "Division",
+        "class_placement": class_label or "Class",
+    }
+    lines: list[str] = []
+    for metric_id, default_label in _REVIEW_SUMMARY_METRICS:
+        if metric_id not in requested or not values[metric_id]:
+            continue
+        separator = " - " if metric_id.endswith("_placement") else " "
+        lines.append(f"{labels.get(metric_id, default_label)}{separator}{values[metric_id]}")
     return "\n".join(lines)
 
 

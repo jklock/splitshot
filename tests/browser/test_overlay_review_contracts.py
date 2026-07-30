@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
 from splitshot.domain.models import (
+    ImportedStageScore,
     PopupBubble,
     PopupMotionPoint,
     ScoreLetter,
@@ -18,8 +19,8 @@ from splitshot.domain.models import (
     ShotSource,
 )
 from splitshot.overlay.render import OverlayRenderer, _shot_score_badge_content
+from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.ui.controller import ProjectController
-
 
 STATIC_ROOT = Path("src/splitshot/browser/static")
 
@@ -87,6 +88,82 @@ def test_overlay_api_preserves_locked_coordinates_but_renderer_uses_stack() -> N
         assert timer_badge[2] == pytest.approx(0.28)
     finally:
         server.shutdown()
+
+
+def test_overlay_changes_waterfall_to_later_unedited_stages() -> None:
+    controller = ProjectController()
+    first = controller.create_stage("Stage 1")
+    second = controller.create_stage("Stage 2")
+    third = controller.create_stage("Stage 3")
+    fourth = controller.create_stage("Stage 4")
+
+    controller.select_stage(second.id)
+    controller.set_overlay_display_options(
+        {
+            "show_timer": False,
+            "show_score": True,
+            "text_boxes": [
+                {
+                    "id": "summary",
+                    "enabled": True,
+                    "source": "imported_summary",
+                    "text": "",
+                    "quadrant": "above_final",
+                    "summary_metric_ids": ["score_time", "raw_time"],
+                }
+            ],
+        }
+    )
+
+    assert third.overlay.show_timer is False
+    assert fourth.overlay.show_timer is False
+    assert third.overlay.text_boxes[0].summary_metric_ids == ["score_time", "raw_time"]
+    assert fourth.overlay.text_boxes[0].quadrant == "above_final"
+
+    controller.select_stage(third.id)
+    controller.set_overlay_display_options({"show_timer": True})
+    controller.select_stage(second.id)
+    controller.set_overlay_display_options({"show_score": False})
+
+    assert third.overlay.show_timer is True
+    assert third.overlay.show_score is True
+    assert fourth.overlay.show_timer is False
+    assert fourth.overlay.show_score is False
+    assert first.overlay.show_score is True
+
+
+def test_overlay_api_does_not_persist_generated_review_text_as_an_override() -> None:
+    controller = ProjectController()
+    controller.create_stage("Stage 1")
+    controller.project.analysis.beep_time_ms_primary = 0
+    controller.project.analysis.shots = [
+        ShotEvent(time_ms=26500, score=ScoreMark(letter=ScoreLetter.DOWN_3))
+    ]
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        aggregate_points=3,
+        score_counts={"Points Down": 3},
+    )
+    apply_scoring_preset(controller.project, "idpa_time_plus")
+    controller.set_overlay_display_options(
+        {
+            "text_boxes": [
+                {
+                    "id": "summary",
+                    "source": "imported_summary",
+                    "text": "Score / Time 29.50\nRaw Time 26.50s\nPoints Down 3\nPenalties 0",
+                    "summary_metric_ids": [
+                        "score_time",
+                        "raw_time",
+                        "points_down",
+                        "penalties",
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert controller.project.overlay.text_boxes[0].text == ""
 
 
 @pytest.mark.parametrize(
@@ -707,6 +784,8 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
         in review_js
     )
     assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in review_js
+    assert 'const overrideText = String(box.text || "").trim();' in review_js
+    assert 'box.text = summaryTextForBox(' not in review_js
     assert "function resolvedOverlayTextBoxSize(box) {" in review_js
     assert "function overlayStackAnchorRect(overlay) {" in app_js
     assert "return overlayPane?.overlayStackAnchorRect(overlay) || null;" in app_js

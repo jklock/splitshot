@@ -704,6 +704,7 @@ class ScoringState:
     penalty_counts: dict[str, float] = field(default_factory=dict)
     hit_factor: float | None = None
     imported_stage: ImportedStageScore | None = None
+    comparison_competitors: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -976,6 +977,7 @@ class ProjectStage:
     queue_snapshot: dict[str, Any] = field(default_factory=dict)
     last_processed_at: str = ""
     last_output_path: str = ""
+    presentation_overridden: bool = False
 
 
 @dataclass(slots=True)
@@ -1075,6 +1077,7 @@ def stage_to_dict(stage: ProjectStage) -> dict[str, Any]:
         "queue_snapshot": stage.queue_snapshot,
         "last_processed_at": stage.last_processed_at,
         "last_output_path": stage.last_output_path,
+        "presentation_overridden": stage.presentation_overridden,
     }
 
 
@@ -1127,6 +1130,7 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
         else {},
         last_processed_at=str(data.get("last_processed_at", "") or ""),
         last_output_path=str(data.get("last_output_path", "") or ""),
+        presentation_overridden=bool(data.get("presentation_overridden", False)),
     )
 
 
@@ -1151,6 +1155,11 @@ def _scoring_from_dict(data: dict[str, Any]) -> ScoringState:
         },
         hit_factor=None if data.get("hit_factor") is None else float(data["hit_factor"]),
         imported_stage=_imported_stage_from_dict(data.get("imported_stage")),
+        comparison_competitors=[
+            {str(key): value for key, value in item.items()}
+            for item in data.get("comparison_competitors", [])
+            if isinstance(item, dict)
+        ],
     )
 
 
@@ -2429,6 +2438,8 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 if scoring_data.get("competitor_place") in {None, ""}
                 else int(scoring_data.get("competitor_place"))
             ),
+            classification=str(scoring_data.get("classification", "")),
+            division=str(scoring_data.get("division", "")),
             practiscore_source_path=str(scoring_data.get("practiscore_source_path", "")),
             practiscore_source_name=str(scoring_data.get("practiscore_source_name", "")),
             penalties=float(scoring_data.get("penalties", 0)),
@@ -2446,6 +2457,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 else float(scoring_data["hit_factor"])
             ),
             imported_stage=_imported_stage_from_dict(scoring_data.get("imported_stage")),
+            comparison_competitors=[
+                {str(key): value for key, value in item.items()}
+                for item in scoring_data.get("comparison_competitors", [])
+                if isinstance(item, dict)
+            ],
         ),
         popups=[
             _popup_bubble_from_dict(item)

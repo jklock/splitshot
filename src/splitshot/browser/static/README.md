@@ -52,6 +52,7 @@ The main loop is:
 - Layout sizing uses CSS variables such as `--app-height`, `--rail-width`, `--inspector-width`, and `--waveform-height`.
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
+- Overlay, Review, Compose, and Export presentation edits waterfall from the active stage to later stages until a later stage is edited directly. Review auto-summary values remain stage-specific, and Queue renders the same configured boxes, metrics, badges, and placement shown in preview.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
 - Metrics begins with match and per-stage summaries, keeps active-stage cards and detailed graphs below, and exports stage-identified CSV/text data.
 - Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.

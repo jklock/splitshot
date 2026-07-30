@@ -170,6 +170,7 @@ def test_stage_to_dict_and_back():
             path="/tmp/test.mp4", duration_ms=8000, width=1920, height=1080, fps=29.97
         ),
         queue_status=QueueStatus.QUEUED,
+        presentation_overridden=True,
     )
     d = stage_to_dict(s)
     assert d["id"] == "abc"
@@ -177,6 +178,7 @@ def test_stage_to_dict_and_back():
     assert d["order_index"] == 3
     assert d["primary_media"]["path"] == "/tmp/test.mp4"
     assert d["queue_status"] == "queued"
+    assert d["presentation_overridden"] is True
 
     s2 = _stage_from_dict(d)
     assert s2.id == "abc"
@@ -184,6 +186,23 @@ def test_stage_to_dict_and_back():
     assert s2.order_index == 3
     assert s2.primary_media.path == "/tmp/test.mp4"
     assert s2.queue_status == QueueStatus.QUEUED
+    assert s2.presentation_overridden is True
+
+
+def test_review_comparison_context_round_trips_for_export() -> None:
+    project = Project()
+    project.scoring.comparison_competitors = [
+        {
+            "name": "Other Shooter",
+            "place": 2,
+            "division": "Carry Optics",
+            "classification": "Sharpshooter",
+        }
+    ]
+
+    restored = project_from_dict(project_to_dict(project))
+
+    assert restored.scoring.comparison_competitors == project.scoring.comparison_competitors
 
 
 def test_legacy_with_merge_sources_migrates_correctly():

@@ -169,7 +169,12 @@ export function createReviewPane({
     if (box.source === "imported_summary") {
       const summary = currentState()?.scoring_summary || {};
       const imported = summary.imported_stage || {};
-      return summaryTextForBox(box, summary, imported) || box.text || currentState()?.scoring_summary?.imported_overlay_text || "";
+      const configuredText = summaryTextForBox(box, summary, imported);
+      const legacyText = String(currentState()?.scoring_summary?.imported_overlay_text || "").trim();
+      const overrideText = String(box.text || "").trim();
+      return (overrideText && overrideText !== configuredText && overrideText !== legacyText
+        ? overrideText
+        : configuredText || legacyText);
     }
     return box.text || "";
   }
@@ -396,9 +401,6 @@ export function createReviewPane({
       }
       if (field === "summary_metric_ids") {
         box.summary_metric_ids = normalizedSummaryMetricIds(rawValue);
-        if (box.source === "imported_summary") {
-          box.text = summaryTextForBox(box, currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {});
-        }
         return box;
       }
       if (field === "quadrant") {
@@ -640,7 +642,11 @@ export function createReviewPane({
     const textArea = card.querySelector('[data-text-box-field="text"]');
     if (textArea) {
       textArea.dataset.importedSummaryDefault = box.source === "imported_summary"
-        ? (currentState()?.scoring_summary?.imported_overlay_text || "")
+        ? summaryTextForBox(
+          box,
+          currentState()?.scoring_summary || {},
+          currentState()?.scoring_summary?.imported_stage || {},
+        )
         : "";
       textArea.value = box.text || overlayTextBoxDisplayText(box);
       textArea.disabled = false;

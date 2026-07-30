@@ -52,6 +52,8 @@ The Queue pane is the multi-stage export surface. It shows queue status, selects
 - Queue rows always point back to the underlying stage, not a detached export preset.
 - Queue rows are compact and always visible; they do not have a collapsed state.
 - Queue processing preserves queue order for combined output.
+- Presentation edits made on a stage waterfall to later, unedited stages. A directly edited later stage keeps its own configuration. Stage timing, scoring, and Review Summary values always remain stage-specific.
+- Queue output is WYSIWYG with the video preview: enabled overlay badges, Review boxes, metric selections, styles, sizes, and positions are rendered into the file.
 - The green processing bar tracks the whole queue and reaches 100% only after every stage has been attempted and any combined file has been faded and validated.
 - Individual mode fades each stage output. One-file mode fades only the outer boundaries of the combined file. Short clips automatically scale overlapping fade requests.
 
