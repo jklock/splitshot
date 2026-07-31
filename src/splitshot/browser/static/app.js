@@ -9875,6 +9875,7 @@ introOutroPane = createIntroOutroPane({
   pickPath,
   activity,
   fileName,
+  previewFrameClientRect,
 });
 
 queuePane = createQueuePane({

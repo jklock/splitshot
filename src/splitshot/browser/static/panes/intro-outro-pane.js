@@ -31,8 +31,14 @@ export function createIntroOutroPane({
   pickPath = async () => "",
   activity = () => {},
   fileName = (value) => String(value || ""),
+  previewFrameClientRect = () => null,
 } = {}) {
   let selectedKind = "intro";
+  const draftClips = new Map();
+  const draftVersions = { intro: 0, outro: 0 };
+  const saveRevisions = { intro: 0, outro: 0 };
+  const saveChains = { intro: Promise.resolve(), outro: Promise.resolve() };
+  let boundaryDrag = null;
 
   function state() {
     return getState() || {};
@@ -42,8 +48,12 @@ export function createIntroOutroPane({
     return state().project || {};
   }
 
-  function clip(kind = selectedKind) {
+  function storedClip(kind = selectedKind) {
     return project()?.[`${kind}_clip`] || { asset: {}, overlay: {} };
+  }
+
+  function clip(kind = selectedKind) {
+    return draftClips.get(kind) || storedClip(kind);
   }
 
   function boxes(kind = selectedKind) {
@@ -112,19 +122,65 @@ export function createIntroOutroPane({
     };
   }
 
-  async function saveBoxes(nextBoxes) {
-    activity("intro-outro.overlay.update", { kind: selectedKind, count: nextBoxes.length });
-    await callApi("/api/project/intro-outro/overlay", {
-      kind: selectedKind,
-      text_boxes: nextBoxes.map(normalizedBox),
+  function editableClip(kind = selectedKind) {
+    const currentDraft = draftClips.get(kind);
+    if (currentDraft) return currentDraft;
+    const current = storedClip(kind);
+    const draft = {
+      ...current,
+      asset: { ...(current.asset || {}) },
+      overlay: {
+        ...(current.overlay || {}),
+        text_boxes: (Array.isArray(current?.overlay?.text_boxes) ? current.overlay.text_boxes : []).map(normalizedBox),
+      },
+    };
+    draftClips.set(kind, draft);
+    return draft;
+  }
+
+  function setDraftBoxes(kind, nextBoxes) {
+    const draft = editableClip(kind);
+    draft.overlay = { ...(draft.overlay || {}), text_boxes: nextBoxes.map(normalizedBox) };
+    draftClips.set(kind, draft);
+    draftVersions[kind] += 1;
+  }
+
+  function queueSave(kind, path, payload) {
+    const revision = ++saveRevisions[kind];
+    const draftVersion = draftVersions[kind];
+    saveChains[kind] = saveChains[kind]
+      .catch(() => null)
+      .then(() => callApi(path, payload));
+    return saveChains[kind].then((result) => {
+      if (saveRevisions[kind] === revision && draftVersions[kind] === draftVersion) {
+        draftClips.delete(kind);
+        render();
+      }
+      return result;
+    });
+  }
+
+  async function saveBoxes(nextBoxes, kind = selectedKind) {
+    const normalizedBoxes = nextBoxes.map(normalizedBox);
+    setDraftBoxes(kind, normalizedBoxes);
+    if (kind === selectedKind) updatePreview();
+    activity("intro-outro.overlay.update", { kind, count: normalizedBoxes.length });
+    await queueSave(kind, "/api/project/intro-outro/overlay", {
+      kind,
+      text_boxes: normalizedBoxes,
     });
   }
 
   async function saveFades() {
-    await callApi("/api/project/intro-outro/fades", {
-      kind: selectedKind,
-      fade_in_s: Math.max(0, Number($("intro-outro-fade-in")?.value || 0)),
-      fade_out_s: Math.max(0, Number($("intro-outro-fade-out")?.value || 0)),
+    const kind = selectedKind;
+    const draft = editableClip(kind);
+    draft.fade_in_s = Math.max(0, Number($("intro-outro-fade-in")?.value || 0));
+    draft.fade_out_s = Math.max(0, Number($("intro-outro-fade-out")?.value || 0));
+    draftVersions[kind] += 1;
+    await queueSave(kind, "/api/project/intro-outro/fades", {
+      kind,
+      fade_in_s: draft.fade_in_s,
+      fade_out_s: draft.fade_out_s,
     });
   }
 
@@ -137,7 +193,8 @@ export function createIntroOutroPane({
     selectedKind = kind;
     const result = await callApi("/api/project/in-out/media", { kind, path });
     if (result) {
-      render();
+      draftClips.delete(kind);
+      render({ force: true });
       updatePreview();
     }
   }
@@ -159,9 +216,12 @@ export function createIntroOutroPane({
     const overlay = $("custom-overlay");
     if (!overlay) return;
     overlay.innerHTML = "";
-    boxes().filter((box) => box.enabled && boxDisplayText(box).trim()).forEach((box) => {
+    boxes().map((box, index) => ({ box, index })).filter(({ box }) => box.enabled && boxDisplayText(box).trim()).forEach(({ box, index }) => {
       const badge = documentObject.createElement("div");
       badge.className = "overlay-badge intro-outro-preview-badge";
+      badge.dataset.introOutroBoxDrag = "true";
+      badge.dataset.boxIndex = String(index);
+      badge.dataset.boundaryKind = selectedKind;
       badge.textContent = boxDisplayText(box);
       badge.style.background = box.background_color || "#000000";
       badge.style.color = box.text_color || "#ffffff";
@@ -184,6 +244,7 @@ export function createIntroOutroPane({
       badge.style.left = left;
       badge.style.top = top;
       badge.style.transform = `translate(${left === "4%" ? "0" : left === "96%" ? "-100%" : "-50%"}, ${top === "6%" ? "0" : top === "94%" ? "-100%" : "-50%"})`;
+      badge.addEventListener("pointerdown", beginBoundaryDrag);
       overlay.appendChild(badge);
     });
     overlay.classList.toggle("has-badge", overlay.childElementCount > 0);
@@ -213,9 +274,14 @@ export function createIntroOutroPane({
     </article>`;
   }
 
-  function render() {
+  function render({ force = false } = {}) {
     const pane = $("intro-outro-pane");
     if (!pane) return;
+    const focused = documentObject.activeElement;
+    if (!force && focused instanceof HTMLElement && pane.contains(focused) && focused.matches("input, select, textarea")) {
+      updatePreview();
+      return;
+    }
     const selectedClip = clip();
     const path = selectedClip?.asset?.path || "";
     pane.innerHTML = `<div class="pane-section intro-outro-shell">
@@ -233,7 +299,7 @@ export function createIntroOutroPane({
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
       const kindButton = target.closest("[data-boundary-kind]");
-      if (kindButton) { selectedKind = kindButton.dataset.boundaryKind || "intro"; render(); return; }
+      if (kindButton) { selectedKind = kindButton.dataset.boundaryKind || "intro"; render({ force: true }); return; }
       if (target.closest("#intro-outro-select-video")) { await selectVideo(selectedKind); return; }
       if (target.closest("#intro-outro-add-text")) { await saveBoxes([...boxes(), normalizedBox({ source: "manual", text: "Title" })]); return; }
       if (target.closest("#intro-outro-add-match")) { await saveBoxes([...boxes(), normalizedBox({ source: "match_summary", summary_metric_ids: [...DEFAULT_MATCH_METRICS], quadrant: "top_right" })]); return; }
@@ -268,7 +334,84 @@ export function createIntroOutroPane({
       if (field === "source" && value === "match_summary" && !next[index].summary_metric_ids.length) next[index].summary_metric_ids = [...DEFAULT_MATCH_METRICS];
       await saveBoxes(next);
     };
+    pane.oninput = (event) => {
+      const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
+      if (!target || target.matches("#intro-outro-fade-in, #intro-outro-fade-out")) return;
+      const card = target.closest("[data-box-index]");
+      if (!card || !target.dataset.boxField) return;
+      const index = Number(card.dataset.boxIndex);
+      const next = boxes().map(normalizedBox);
+      const field = target.dataset.boxField;
+      let value = target.type === "checkbox" ? target.checked : target.value;
+      if (["font_size", "width", "height", "x", "y"].includes(field)) value = Number(value);
+      if (field === "opacity") value = Number(value) / 100;
+      next[index][field] = value;
+      setDraftBoxes(selectedKind, next);
+      updatePreview();
+    };
+    pane.onfocusout = () => {
+      windowObject.setTimeout(() => {
+        if (!pane.contains(documentObject.activeElement)) render({ force: true });
+      }, 0);
+    };
   }
+
+  function frameRect() {
+    const stage = $("video-stage");
+    if (!stage) return null;
+    return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  }
+
+  function beginBoundaryDrag(event) {
+    if (event.button !== 0) return;
+    const badge = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const rect = frameRect();
+    if (!badge || !rect || rect.width <= 0 || rect.height <= 0) return;
+    const index = Number(badge.dataset.boxIndex);
+    const kind = badge.dataset.boundaryKind || selectedKind;
+    const box = boxes(kind)[index];
+    if (!box) return;
+    const badgeRect = badge.getBoundingClientRect();
+    event.preventDefault();
+    event.stopPropagation();
+    boundaryDrag = {
+      kind,
+      index,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: Math.max(0, Math.min(1, (badgeRect.left - rect.left + (badgeRect.width / 2)) / rect.width)),
+      startY: Math.max(0, Math.min(1, (badgeRect.top - rect.top + (badgeRect.height / 2)) / rect.height)),
+    };
+    badge.setPointerCapture?.(event.pointerId);
+    $("custom-overlay")?.classList.add("dragging");
+  }
+
+  function moveBoundaryDrag(event) {
+    if (!boundaryDrag || (event.pointerId !== undefined && event.pointerId !== boundaryDrag.pointerId)) return;
+    const rect = frameRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const next = boxes(boundaryDrag.kind).map(normalizedBox);
+    const box = next[boundaryDrag.index];
+    if (!box) return;
+    box.quadrant = "custom";
+    box.x = Math.max(0, Math.min(1, boundaryDrag.startX + ((event.clientX - boundaryDrag.startClientX) / rect.width)));
+    box.y = Math.max(0, Math.min(1, boundaryDrag.startY + ((event.clientY - boundaryDrag.startClientY) / rect.height)));
+    setDraftBoxes(boundaryDrag.kind, next);
+    if (boundaryDrag.kind === selectedKind) updatePreview();
+  }
+
+  function endBoundaryDrag(event) {
+    if (!boundaryDrag || (event.pointerId !== undefined && event.pointerId !== boundaryDrag.pointerId)) return;
+    const { kind } = boundaryDrag;
+    boundaryDrag = null;
+    $("custom-overlay")?.classList.remove("dragging");
+    void saveBoxes(boxes(kind), kind);
+  }
+
+  documentObject.addEventListener("pointermove", moveBoundaryDrag);
+  documentObject.addEventListener("pointerup", endBoundaryDrag);
+  documentObject.addEventListener("pointercancel", endBoundaryDrag);
 
   return Object.freeze({ render, updatePreview, selectedKind: () => selectedKind });
 }

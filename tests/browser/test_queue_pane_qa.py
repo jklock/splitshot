@@ -139,8 +139,75 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.9"
                 page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
+                assert page.locator(".intro-outro-preview-badge").get_attribute(
+                    "data-intro-outro-box-drag"
+                ) == "true"
                 assert page.get_by_role("button", name="Add Text Box").is_visible()
                 assert page.get_by_role("button", name="Add Match Results").is_visible()
+
+                card = page.locator(".intro-outro-box").first
+                card.locator('[data-box-field="source"]').select_option("manual")
+                card.locator('[data-box-field="text"]').fill("Stable intro title")
+                card.locator('[data-box-field="text"]').dispatch_event("change")
+                card.locator('[data-box-field="quadrant"]').select_option("custom")
+                card.locator('[data-box-field="style_type"]').select_option("rounded")
+                card.locator('[data-box-field="x"]').fill("0.21")
+                page.wait_for_timeout(300)
+                card.locator('[data-box-field="y"]').fill("0.73")
+                card.locator('[data-box-field="y"]').dispatch_event("change")
+                for field, value in {
+                    "width": "320",
+                    "height": "96",
+                    "font_family": "Arial",
+                    "font_size": "34",
+                    "opacity": "62",
+                }.items():
+                    control = card.locator(f'[data-box-field="{field}"]')
+                    control.fill(value)
+                    control.dispatch_event("change")
+                card.locator('[data-box-field="font_bold"]').uncheck()
+                card.locator('[data-box-field="font_italic"]').check()
+                page.wait_for_function(
+                    """() => {
+                        const box = state?.project?.intro_clip?.overlay?.text_boxes?.[0];
+                        return box?.text === 'Stable intro title'
+                            && box?.quadrant === 'custom'
+                            && box?.style_type === 'rounded'
+                            && box?.x === 0.21
+                            && box?.y === 0.73
+                            && box?.width === 320
+                            && box?.height === 96
+                            && box?.font_size === 34
+                            && box?.opacity === 0.62
+                            && box?.font_bold === false
+                            && box?.font_italic === true;
+                    }"""
+                )
+                page.wait_for_timeout(500)
+                assert card.locator('[data-box-field="text"]').input_value() == "Stable intro title"
+                assert card.locator('[data-box-field="x"]').input_value() == "0.21"
+                assert card.locator('[data-box-field="y"]').input_value() == "0.73"
+
+                badge = page.locator(".intro-outro-preview-badge")
+                badge_box = badge.bounding_box()
+                stage_box = page.locator("#video-stage").bounding_box()
+                assert badge_box is not None
+                assert stage_box is not None
+                drag_x = min(stage_box["x"] + stage_box["width"] - 40, badge_box["x"] + 90)
+                drag_y = max(stage_box["y"] + 40, badge_box["y"] - 70)
+                page.mouse.move(
+                    badge_box["x"] + (badge_box["width"] / 2),
+                    badge_box["y"] + (badge_box["height"] / 2),
+                )
+                page.mouse.down()
+                page.mouse.move(drag_x, drag_y, steps=8)
+                page.mouse.up()
+                page.wait_for_function(
+                    """() => {
+                        const box = state?.project?.intro_clip?.overlay?.text_boxes?.[0];
+                        return box?.quadrant === 'custom' && box?.x !== 0.21 && box?.y !== 0.73;
+                    }"""
+                )
 
                 queue_nav.click(force=True)
                 assert page.locator("#queue-include-intro").is_enabled()
