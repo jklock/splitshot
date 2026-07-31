@@ -2851,7 +2851,6 @@
   .control-grid,
   .score-color-grid,
   .metrics-summary-grid,
-  .project-action-grid,
   .score-option-grid,
   .penalty-grid {
     grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));

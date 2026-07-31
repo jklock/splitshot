@@ -217,6 +217,50 @@ def test_four_panes_hold_og_spacing_at_supported_inspector_widths(
         server.shutdown()
 
 
+def test_project_create_and_open_actions_fill_the_inspector_evenly() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1500, "height": 1000})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                page.locator('button[data-tool="project"]').click(force=True)
+
+                for width in (400, 520, 640):
+                    page.evaluate(
+                        "(value) => document.documentElement.style.setProperty('--inspector-width', `${value}px`)",
+                        width,
+                    )
+                    geometry = page.locator(".project-action-grid").evaluate(
+                        """(grid) => {
+                          const create = document.querySelector('#new-project').getBoundingClientRect();
+                          const open = document.querySelector('#open-project').getBoundingClientRect();
+                          const remove = document.querySelector('#delete-project').getBoundingClientRect();
+                          const bounds = grid.getBoundingClientRect();
+                          return {
+                            createWidth: create.width,
+                            openWidth: open.width,
+                            createLeftGap: create.left - bounds.left,
+                            openRightGap: bounds.right - open.right,
+                            deleteLeftGap: remove.left - bounds.left,
+                            deleteRightGap: bounds.right - remove.right,
+                          };
+                        }"""
+                    )
+                    assert abs(geometry["createWidth"] - geometry["openWidth"]) < 0.5
+                    assert geometry["createWidth"] > 0
+                    assert abs(geometry["createLeftGap"]) < 0.5
+                    assert abs(geometry["openRightGap"]) < 0.5
+                    assert abs(geometry["deleteLeftGap"]) < 0.5
+                    assert abs(geometry["deleteRightGap"]) < 0.5
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated() -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
