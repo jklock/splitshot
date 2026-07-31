@@ -69,12 +69,20 @@ from splitshot.domain.models import (
     TimingEvent,
     UIState,
     VideoAsset,
+    _combined_export_settings_from_dict,
     _deserialize_output_profiles,
+    _export_from_dict,
+    _intro_outro_clip_from_dict,
+    _merge_from_dict,
     _merge_source_from_dict,
     _normalize_frame_profile,
     _normalize_output_profile_export_settings,
+    _overlay_from_dict,
     _popup_bubble_from_dict,
+    _popup_template_from_dict,
+    _queue_settings_from_dict,
     _serialize_output_profiles,
+    _shotml_settings_from_dict,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
@@ -5868,7 +5876,65 @@ class ProjectController(QObject):
             },
         }
 
-    def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
+    def _capture_current_project_defaults(
+        self,
+        existing: dict[str, object],
+        *,
+        section: str | None,
+    ) -> dict[str, object]:
+        """Snapshot every persistent control owned by the requested Settings section."""
+        captured = deepcopy(existing)
+        project_payload = project_to_dict(self.project)
+        section_name = str(section or "all").strip().lower()
+
+        if section_name in {"all", "overlay"}:
+            captured["overlay"] = deepcopy(project_payload.get("overlay", {}))
+        if section_name in {"all", "pip"}:
+            captured["merge"] = deepcopy(project_payload.get("merge", {}))
+        if section_name in {"all", "markers"}:
+            captured["popup_template"] = deepcopy(project_payload.get("popup_template", {}))
+        if section_name in {"all", "export"}:
+            export = deepcopy(project_payload.get("export", {}))
+            if isinstance(export, dict):
+                for runtime_key in ("output_path", "last_log", "last_error"):
+                    export.pop(runtime_key, None)
+                captured["export"] = export
+        if section_name in {"all", "shotml"}:
+            analysis = project_payload.get("analysis", {})
+            if isinstance(analysis, dict):
+                captured["shotml_settings"] = deepcopy(analysis.get("shotml_settings", {}))
+        if section_name == "all":
+            queue_settings = deepcopy(project_payload.get("queue_settings", {}))
+            if isinstance(queue_settings, dict):
+                for media_key in (
+                    "intro_path",
+                    "outro_path",
+                    "include_intro",
+                    "include_outro",
+                ):
+                    queue_settings.pop(media_key, None)
+                captured["queue_settings"] = queue_settings
+            captured["combined_export_settings"] = deepcopy(
+                project_payload.get("combined_export_settings", {})
+            )
+            for kind in ("intro", "outro"):
+                clip = project_payload.get(f"{kind}_clip", {})
+                if isinstance(clip, dict):
+                    captured[f"{kind}_clip_settings"] = {
+                        "fade_in_s": clip.get("fade_in_s", 0.5),
+                        "fade_out_s": clip.get("fade_out_s", 0.5),
+                        "overlay": deepcopy(clip.get("overlay", {})),
+                    }
+        return captured
+
+    def set_settings_defaults(
+        self,
+        payload: dict[str, object],
+        *,
+        scope: str = "app",
+        section: str | None = None,
+        capture_current_project: bool = False,
+    ) -> None:
         template_action = str(payload.get("template_action") or "").strip().lower()
         if template_action:
             template_name = (
@@ -5904,6 +5970,11 @@ class ProjectController(QObject):
             else self.settings
         )
         target = AppSettings.from_dict(base.to_dict())
+        if capture_current_project:
+            target.project_defaults = self._capture_current_project_defaults(
+                target.project_defaults,
+                section=section,
+            )
         if "default_match_type" in payload:
             default_match_type = str(payload["default_match_type"] or "").strip().lower()
             if default_match_type:
@@ -6113,6 +6184,21 @@ class ProjectController(QObject):
         if keys is None:
             raise ValueError("Unknown settings section.")
         rebuild_with_updates({key: fallback_config.get(key) for key in keys})
+        project_defaults_key = {
+            "pip": "merge",
+            "overlay": "overlay",
+            "markers": "popup_template",
+            "export": "export",
+            "shotml": "shotml_settings",
+        }.get(section_name)
+        if project_defaults_key:
+            fallback_project_defaults = fallback.project_defaults
+            if scope == "folder" and project_defaults_key in fallback_project_defaults:
+                target.project_defaults[project_defaults_key] = deepcopy(
+                    fallback_project_defaults[project_defaults_key]
+                )
+            else:
+                target.project_defaults.pop(project_defaults_key, None)
 
         if scope == "folder":
             if self.project_path is None:
@@ -6470,6 +6556,47 @@ class ProjectController(QObject):
         project.overlay.text_boxes = [
             OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
         ]
+        saved_project_defaults = effective.project_defaults
+        saved_overlay = saved_project_defaults.get("overlay")
+        if isinstance(saved_overlay, dict):
+            project.overlay = _overlay_from_dict(saved_overlay)
+        saved_merge = saved_project_defaults.get("merge")
+        if isinstance(saved_merge, dict):
+            project.merge = _merge_from_dict(saved_merge)
+        saved_export = saved_project_defaults.get("export")
+        if isinstance(saved_export, dict):
+            project.export = _export_from_dict(saved_export)
+            project.export.output_path = None
+            project.export.last_log = ""
+            project.export.last_error = None
+        saved_popup_template = saved_project_defaults.get("popup_template")
+        if isinstance(saved_popup_template, dict):
+            project.popup_template = _popup_template_from_dict(saved_popup_template)
+        saved_shotml = saved_project_defaults.get("shotml_settings")
+        if isinstance(saved_shotml, dict):
+            project.analysis.shotml_settings = _shotml_settings_from_dict(saved_shotml)
+            project.analysis.detection_threshold = (
+                project.analysis.shotml_settings.detection_threshold
+            )
+        saved_queue_settings = saved_project_defaults.get("queue_settings")
+        if isinstance(saved_queue_settings, dict):
+            project.queue_settings = _queue_settings_from_dict(saved_queue_settings)
+            project.queue_settings.intro_path = ""
+            project.queue_settings.outro_path = ""
+            project.queue_settings.include_intro = False
+            project.queue_settings.include_outro = False
+        saved_combined_export = saved_project_defaults.get("combined_export_settings")
+        if isinstance(saved_combined_export, dict):
+            project.combined_export_settings = _combined_export_settings_from_dict(
+                saved_combined_export
+            )
+        for kind in ("intro", "outro"):
+            saved_clip = saved_project_defaults.get(f"{kind}_clip_settings")
+            if not isinstance(saved_clip, dict):
+                continue
+            clip = _intro_outro_clip_from_dict(saved_clip, "")
+            clip.asset = VideoAsset()
+            setattr(project, f"{kind}_clip", clip)
         if effective.layout_locked is not None:
             project.ui_state.layout_locked = bool(effective.layout_locked)
         if effective.layout_rail_width is not None:

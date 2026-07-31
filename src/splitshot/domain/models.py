@@ -1282,6 +1282,7 @@ def _export_from_dict(data: dict[str, Any]) -> ExportSettings:
         audio_bitrate_kbps=int(data.get("audio_bitrate_kbps", 320)),
         color_space=ExportColorSpace(data.get("color_space", ExportColorSpace.BT709_SDR.value)),
         two_pass=bool(data.get("two_pass", False)),
+        multi_track=bool(data.get("multi_track", False)),
         ffmpeg_preset=str(data.get("ffmpeg_preset", "medium")),
         last_log=str(data.get("last_log", "")),
         last_error=None if data.get("last_error") in {None, ""} else str(data["last_error"]),

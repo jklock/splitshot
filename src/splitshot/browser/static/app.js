@@ -9171,6 +9171,8 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
     });
   return {
     scope: $("settings-scope")?.value || "app",
+    section: section || undefined,
+    project_defaults: Boolean(projectDefaults),
     settings: {
       default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
       overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),

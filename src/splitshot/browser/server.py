@@ -1922,6 +1922,8 @@ class BrowserControlServer:
                     if isinstance(payload.get("settings", payload), dict)
                     else {},
                     scope=str(payload.get("scope", "app") or "app"),
+                    section=(str(payload.get("section") or "").strip() or None),
+                    capture_current_project=bool(payload.get("project_defaults", False)),
                 )
 
             def _set_beep(self, payload: dict[str, Any]) -> None:

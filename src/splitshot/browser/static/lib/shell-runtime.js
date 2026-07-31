@@ -828,7 +828,10 @@ export function createShellRuntime({
       $(id)?.addEventListener("blur", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
     });
 
-    $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
+    $("settings-import-current")?.addEventListener("click", async () => {
+      await flushPendingProjectDrafts();
+      await applySettingsDefaults({ projectDefaults: true });
+    });
     $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
     [
       "settings-default-tool",
@@ -895,27 +898,37 @@ export function createShellRuntime({
       scheduleSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
+      documentObject.activeElement?.blur?.();
       resetMergeDraft();
       resetExportDraft();
       cancelPendingExportDrafts();
+      await flushPendingSettingsDefaults();
       await callApi("/api/settings/reset-defaults", {});
     });
-    $("settings-use-current-layout")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true, section: "layout" }));
+    $("settings-use-current-layout")?.addEventListener("click", async () => {
+      await flushPendingProjectDrafts();
+      await applySettingsDefaults({ projectDefaults: true, section: "layout" });
+    });
     $("settings-release-layout")?.addEventListener("click", async () => {
+      documentObject.activeElement?.blur?.();
+      await flushPendingSettingsDefaults();
       await callApi("/api/settings/reset-defaults", {
         scope: $("settings-scope")?.value || "app",
         section: "layout",
       });
     });
     documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const section = button.getAttribute("data-settings-save-section") || "";
-        applySettingsDefaults({ projectDefaults: true, section });
+        await flushPendingProjectDrafts();
+        await applySettingsDefaults({ projectDefaults: true, section });
       });
     });
     documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {
       button.addEventListener("click", async () => {
+        documentObject.activeElement?.blur?.();
         const section = button.getAttribute("data-settings-reset-section") || "";
+        await flushPendingSettingsDefaults();
         await callApi("/api/settings/reset-defaults", {
           scope: $("settings-scope")?.value || "app",
           section,
