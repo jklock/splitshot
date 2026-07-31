@@ -3669,9 +3669,12 @@ class ProjectController(QObject):
         )
         from splitshot.export.pipeline import _normalized_output_fades
 
+        clip = getattr(self.project, f"{kind}_clip", None)
+        if clip is None:
+            raise ValueError("Queue boundary kind must be intro or outro.")
         fade_in_s, fade_out_s = _normalized_output_fades(
-            self.project.queue_settings.fade_in_s,
-            self.project.queue_settings.fade_out_s,
+            clip.fade_in_s,
+            clip.fade_out_s,
             source_duration_s,
         )
         video_filters = [
@@ -5210,6 +5213,20 @@ class ProjectController(QObject):
             raise ValueError("Intro/Outro overlay kind must be intro or outro.")
         clip = getattr(self.project, f"{normalized_kind}_clip")
         self._set_overlay_display_options(payload, clip.overlay, cascade=False)
+
+    def set_intro_outro_fades(
+        self, kind: str, *, fade_in_s: float, fade_out_s: float
+    ) -> None:
+        normalized_kind = str(kind or "").strip().lower()
+        if normalized_kind not in {"intro", "outro"}:
+            raise ValueError("Intro / Outro fade kind must be intro or outro.")
+        values = (float(fade_in_s), float(fade_out_s))
+        if any(value < 0 or not math.isfinite(value) for value in values):
+            raise ValueError("Fade durations must be finite nonnegative seconds.")
+        clip = getattr(self.project, f"{normalized_kind}_clip")
+        clip.fade_in_s, clip.fade_out_s = values
+        self.project.touch()
+        self.project_changed.emit()
 
     def _set_overlay_display_options(
         self,

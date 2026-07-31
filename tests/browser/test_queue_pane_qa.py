@@ -117,6 +117,26 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.get_by_role("heading", name="Intro / Outro", exact=True).is_visible()
                 assert page.get_by_role("button", name="Intro", exact=True).is_visible()
                 assert page.get_by_role("button", name="Outro", exact=True).is_visible()
+                assert page.locator("#intro-outro-fade-in").input_value() == "0.5"
+                assert page.locator("#intro-outro-fade-out").input_value() == "0.5"
+                page.locator("#intro-outro-fade-in").fill("0.7")
+                page.locator("#intro-outro-fade-in").dispatch_event("change")
+                page.wait_for_function("() => state.project.intro_clip.fade_in_s === 0.7")
+                page.locator("#intro-outro-fade-out").fill("0.9")
+                page.locator("#intro-outro-fade-out").dispatch_event("change")
+                page.wait_for_function("() => state.project.intro_clip.fade_out_s === 0.9")
+                page.get_by_role("button", name="Outro", exact=True).click()
+                assert page.locator("#intro-outro-fade-in").input_value() == "0.5"
+                assert page.locator("#intro-outro-fade-out").input_value() == "0.5"
+                page.locator("#intro-outro-fade-in").fill("1.1")
+                page.locator("#intro-outro-fade-in").dispatch_event("change")
+                page.wait_for_function("() => state.project.outro_clip.fade_in_s === 1.1")
+                page.locator("#intro-outro-fade-out").fill("1.3")
+                page.locator("#intro-outro-fade-out").dispatch_event("change")
+                page.wait_for_function("() => state.project.outro_clip.fade_out_s === 1.3")
+                page.get_by_role("button", name="Intro", exact=True).click()
+                assert page.locator("#intro-outro-fade-in").input_value() == "0.7"
+                assert page.locator("#intro-outro-fade-out").input_value() == "0.9"
                 page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
                 assert page.get_by_role("button", name="Add Text Box").is_visible()

@@ -67,6 +67,10 @@ def test_intro_outro_media_overlays_and_queue_choices_round_trip() -> None:
             text_color="#ffcc00",
         )
     ]
+    controller.project.intro_clip.fade_in_s = 0.7
+    controller.project.intro_clip.fade_out_s = 0.9
+    controller.project.outro_clip.fade_in_s = 1.1
+    controller.project.outro_clip.fade_out_s = 1.3
     controller.project.queue_settings.include_intro = True
     controller.project.queue_settings.include_outro = False
 
@@ -79,8 +83,86 @@ def test_intro_outro_media_overlays_and_queue_choices_round_trip() -> None:
         "stage_count",
     ]
     assert restored.intro_clip.overlay.text_boxes[0].text_color == "#ffcc00"
+    assert restored.intro_clip.fade_in_s == 0.7
+    assert restored.intro_clip.fade_out_s == 0.9
+    assert restored.outro_clip.fade_in_s == 1.1
+    assert restored.outro_clip.fade_out_s == 1.3
     assert restored.queue_settings.include_intro is True
     assert restored.queue_settings.include_outro is False
+
+
+def test_intro_outro_clip_fades_drive_video_and_audio_filters(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = ProjectController()
+    controller.project.intro_clip.fade_in_s = 0.7
+    controller.project.intro_clip.fade_out_s = 0.9
+    controller.project.outro_clip.fade_in_s = 1.1
+    controller.project.outro_clip.fade_out_s = 1.3
+    source = tmp_path / "boundary.mp4"
+    reference = tmp_path / "reference.mp4"
+    captured: list[list[str]] = []
+
+    def fake_probe(path: Path) -> dict[str, object]:
+        if path == source:
+            return {
+                "format": {"duration": "10.0"},
+                "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+            }
+        return {
+            "format": {"duration": "20.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1920,
+                    "height": 1080,
+                    "avg_frame_rate": "30/1",
+                },
+                {
+                    "codec_type": "audio",
+                    "sample_rate": "48000",
+                    "channel_layout": "stereo",
+                },
+            ],
+        }
+
+    monkeypatch.setattr("splitshot.ui.controller.run_ffprobe_json", fake_probe)
+    monkeypatch.setattr(
+        "splitshot.ui.controller.run_ffmpeg",
+        lambda command, **_kwargs: captured.append(command),
+    )
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+
+    controller._prepare_queue_boundary_clip(source, reference, tmp_path, "intro")
+    controller._prepare_queue_boundary_clip(source, reference, tmp_path, "outro")
+
+    intro_video = captured[0][captured[0].index("-vf") + 1]
+    intro_audio = captured[0][captured[0].index("-af") + 1]
+    outro_video = captured[1][captured[1].index("-vf") + 1]
+    outro_audio = captured[1][captured[1].index("-af") + 1]
+    assert "fade=t=in:st=0:d=0.700" in intro_video
+    assert "fade=t=out:st=9.100:d=0.900" in intro_video
+    assert "afade=t=in:st=0:d=0.700" in intro_audio
+    assert "afade=t=out:st=9.100:d=0.900" in intro_audio
+    assert "fade=t=in:st=0:d=1.100" in outro_video
+    assert "fade=t=out:st=8.700:d=1.300" in outro_video
+    assert "afade=t=in:st=0:d=1.100" in outro_audio
+    assert "afade=t=out:st=8.700:d=1.300" in outro_audio
+
+
+def test_intro_outro_clip_fades_migrate_to_safe_defaults() -> None:
+    payload = project_to_dict(ProjectController().project)
+    payload["intro_clip"].pop("fade_in_s")
+    payload["intro_clip"].pop("fade_out_s")
+    payload["outro_clip"]["fade_in_s"] = "bad"
+    payload["outro_clip"]["fade_out_s"] = -1
+
+    restored = project_from_dict(payload)
+
+    assert restored.intro_clip.fade_in_s == 0.5
+    assert restored.intro_clip.fade_out_s == 0.5
+    assert restored.outro_clip.fade_in_s == 0.5
+    assert restored.outro_clip.fade_out_s == 0.5
 
 
 def test_intro_overlay_uses_export_overlay_renderer_with_match_text(

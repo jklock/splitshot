@@ -1059,6 +1059,7 @@ class BrowserControlServer:
                     "/api/project/queue/settings": self._set_queue_settings,
                     "/api/project/in-out/media": self._set_in_out_media,
                     "/api/project/queue/media": self._set_in_out_media,
+                    "/api/project/intro-outro/fades": self._set_intro_outro_fades,
                     "/api/project/intro-outro/overlay": self._set_intro_outro_overlay,
                     "/api/project/queue/process": self._process_queue,
                 }
@@ -2406,6 +2407,13 @@ class BrowserControlServer:
                 controller.set_intro_outro_overlay(
                     str(payload.get("kind", "")),
                     payload,
+                )
+
+            def _set_intro_outro_fades(self, payload: dict[str, Any]) -> None:
+                controller.set_intro_outro_fades(
+                    str(payload.get("kind", "")),
+                    fade_in_s=float(payload.get("fade_in_s", 0.5)),
+                    fade_out_s=float(payload.get("fade_out_s", 0.5)),
                 )
 
             def _process_queue(self, payload: dict[str, Any]) -> None:

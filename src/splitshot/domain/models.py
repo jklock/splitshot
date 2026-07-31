@@ -972,6 +972,8 @@ def _boundary_overlay_defaults() -> OverlaySettings:
 class IntroOutroClip:
     asset: VideoAsset = field(default_factory=VideoAsset)
     overlay: OverlaySettings = field(default_factory=_boundary_overlay_defaults)
+    fade_in_s: float = 0.5
+    fade_out_s: float = 0.5
 
 
 @dataclass(slots=True)
@@ -1360,6 +1362,18 @@ def _intro_outro_clip_from_dict(data: dict[str, Any] | None, legacy_path: str = 
     if not asset.path and legacy_path:
         asset.path = legacy_path
     overlay_payload = payload.get("overlay") if isinstance(payload.get("overlay"), dict) else None
+    try:
+        fade_in_s = float(payload.get("fade_in_s", 0.5))
+    except (TypeError, ValueError):
+        fade_in_s = 0.5
+    try:
+        fade_out_s = float(payload.get("fade_out_s", 0.5))
+    except (TypeError, ValueError):
+        fade_out_s = 0.5
+    if not math.isfinite(fade_in_s) or fade_in_s < 0:
+        fade_in_s = 0.5
+    if not math.isfinite(fade_out_s) or fade_out_s < 0:
+        fade_out_s = 0.5
     return IntroOutroClip(
         asset=asset,
         overlay=(
@@ -1367,6 +1381,8 @@ def _intro_outro_clip_from_dict(data: dict[str, Any] | None, legacy_path: str = 
             if overlay_payload is not None
             else _boundary_overlay_defaults()
         ),
+        fade_in_s=fade_in_s,
+        fade_out_s=fade_out_s,
     )
 
 

@@ -120,6 +120,14 @@ export function createIntroOutroPane({
     });
   }
 
+  async function saveFades() {
+    await callApi("/api/project/intro-outro/fades", {
+      kind: selectedKind,
+      fade_in_s: Math.max(0, Number($("intro-outro-fade-in")?.value || 0)),
+      fade_out_s: Math.max(0, Number($("intro-outro-fade-out")?.value || 0)),
+    });
+  }
+
   async function selectVideo(kind) {
     const electronPicker = windowObject.splitshot?.openInOutVideoDialog;
     const path = typeof electronPicker === "function"
@@ -213,7 +221,7 @@ export function createIntroOutroPane({
     pane.innerHTML = `<div class="pane-section intro-outro-shell">
       <div class="section-header pane-title-row"><h3>Intro / Outro</h3><span class="pane-status-text">Match media</span></div>
       <div class="button-grid two-up intro-outro-kind-tabs"><button type="button" data-boundary-kind="intro" class="${selectedKind === "intro" ? "active" : ""}">Intro</button><button type="button" data-boundary-kind="outro" class="${selectedKind === "outro" ? "active" : ""}">Outro</button></div>
-      <section class="settings-section"><div class="section-header"><strong>${selectedKind === "intro" ? "Intro" : "Outro"} Video</strong></div><button id="intro-outro-select-video" class="btn btn-primary" type="button">${path ? "Replace Video" : "Select Video"}</button><small class="intro-outro-file">${path ? escapeHtml(fileName(path)) : "No video selected"}</small></section>
+      <section class="settings-section"><div class="section-header"><strong>${selectedKind === "intro" ? "Intro" : "Outro"} Video</strong></div><button id="intro-outro-select-video" class="btn btn-primary" type="button">${path ? "Replace Video" : "Select Video"}</button><small class="intro-outro-file">${path ? escapeHtml(fileName(path)) : "No video selected"}</small><div class="control-grid"><label>Fade in (seconds)<input id="intro-outro-fade-in" type="number" min="0" step="0.1" value="${Number(selectedClip.fade_in_s ?? 0.5)}" /></label><label>Fade out (seconds)<input id="intro-outro-fade-out" type="number" min="0" step="0.1" value="${Number(selectedClip.fade_out_s ?? 0.5)}" /></label></div></section>
       <section class="settings-section"><div class="section-header"><strong>Text Overlays</strong></div><div class="button-grid two-up"><button id="intro-outro-add-text" type="button">Add Text Box</button><button id="intro-outro-add-match" type="button">Add Match Results</button></div><div class="intro-outro-box-list">${boxes().map((box, index) => boxEditor(normalizedBox(box), index)).join("") || '<div class="empty-state">Add a text box or Match Results overlay.</div>'}</div></section>
     </div>`;
     bindEvents(pane);
@@ -235,6 +243,10 @@ export function createIntroOutroPane({
     pane.onchange = async (event) => {
       const target = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement ? event.target : null;
       if (!target) return;
+      if (target.matches("#intro-outro-fade-in, #intro-outro-fade-out")) {
+        await saveFades();
+        return;
+      }
       if (target.dataset.metricId) {
         const index = Number(target.dataset.boxIndex);
         const next = boxes().map(normalizedBox);
