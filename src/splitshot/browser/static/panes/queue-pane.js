@@ -150,8 +150,8 @@ export function createQueuePane({
         </div>
         <div class="queue-controls-body">
           <div class="queue-boundary-actions queue-include-actions">
-            <label class="check-row"><input id="queue-include-intro" type="checkbox" ${queueSettings.include_intro ? "checked" : ""} ${introPath ? "" : "disabled"} /> Include In</label>
-            <label class="check-row"><input id="queue-include-outro" type="checkbox" ${queueSettings.include_outro ? "checked" : ""} ${outroPath ? "" : "disabled"} /> Include Out</label>
+            <label class="check-row"><input id="queue-include-intro" type="checkbox" ${queueSettings.include_intro ? "checked" : ""} ${introPath ? "" : "disabled"} /> Include intro</label>
+            <label class="check-row"><input id="queue-include-outro" type="checkbox" ${queueSettings.include_outro ? "checked" : ""} ${outroPath ? "" : "disabled"} /> Include outro</label>
           </div>
           <button id="queue-show-output-folder" class="btn btn-secondary" type="button" ${project().output_root ? "" : "disabled"}>Show Output Folder</button>
           <button id="queue-show-log" class="btn btn-secondary" type="button">Show Log</button>

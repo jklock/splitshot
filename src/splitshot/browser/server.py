@@ -359,7 +359,7 @@ def choose_local_path(
                     "Choose stage video"
                     if kind == "primary"
                     else (
-                        "Choose In / Out video"
+                        "Choose Intro / Outro video"
                         if kind in {"queue_media", "in_out_media"}
                         else (
                             "Choose secondary angle video"
@@ -421,7 +421,7 @@ def choose_local_path_macos(
             "Choose stage video"
             if kind == "primary"
             else (
-                "Choose In / Out video"
+                "Choose Intro / Outro video"
                 if kind in {"queue_media", "in_out_media"}
                 else (
                     "Choose secondary angle video"

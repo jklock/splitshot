@@ -3024,9 +3024,9 @@ class ProjectController(QObject):
     def set_in_out_media(self, kind: str, path: str) -> str:
         normalized_kind = str(kind or "").strip().lower()
         if normalized_kind not in {"intro", "outro"}:
-            raise ValueError("In / Out media kind must be intro or outro.")
+            raise ValueError("Intro / Outro media kind must be intro or outro.")
         if self.project_path is None:
-            raise ValueError("Create or open a project before selecting In / Out media.")
+            raise ValueError("Create or open a project before selecting Intro / Outro media.")
         source_path = str(path or "").strip()
         if not source_path:
             setattr(self.project.queue_settings, f"{normalized_kind}_path", "")
@@ -3046,7 +3046,7 @@ class ProjectController(QObject):
         setattr(self.project.queue_settings, f"{normalized_kind}_path", staged_path)
         getattr(self.project, f"{normalized_kind}_clip").asset = probe_video(staged_path)
         setattr(self.project.queue_settings, f"include_{normalized_kind}", True)
-        label = "In" if normalized_kind == "intro" else "Out"
+        label = "Intro" if normalized_kind == "intro" else "Outro"
         self._set_status(f"Selected {label} video: {Path(staged_path).name}")
         self.project.touch()
         self.project_changed.emit()

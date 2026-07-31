@@ -179,7 +179,7 @@ async function main() {
     await waitForProjectPath(window, startupProject);
     console.log('  startup project loaded');
 
-    console.log('Selecting In video through native bridge...');
+    console.log('Selecting Intro video through native bridge...');
     await window.locator("button[data-tool='intro-outro']").click();
     await window.getByRole('button', { name: 'Select Video', exact: true }).click();
     await window.waitForFunction(() => Boolean(state?.project?.intro_clip?.asset?.path));
@@ -191,7 +191,7 @@ async function main() {
     await window.locator("button[data-tool='queue']").click();
     assert.equal(await window.locator('#queue-include-intro').isEnabled(), true);
     assert.equal(await window.locator('#queue-include-intro').isChecked(), true);
-    console.log('  native In video selection reached preview and Queue');
+    console.log('  native Intro video selection reached preview and Queue');
 
     console.log('Simulating second instance...');
     const queued = await window.evaluate(({ executablePath, targetPath }) => (

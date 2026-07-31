@@ -114,7 +114,9 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert intro_nav.inner_text() == "In / Out"
                 assert intro_nav.evaluate("node => node.compareDocumentPosition(document.querySelector(\"button[data-tool='queue']\")) & Node.DOCUMENT_POSITION_FOLLOWING")
                 intro_nav.click(force=True)
-                assert page.get_by_role("heading", name="In / Out", exact=True).is_visible()
+                assert page.get_by_role("heading", name="Intro / Outro", exact=True).is_visible()
+                assert page.get_by_role("button", name="Intro", exact=True).is_visible()
+                assert page.get_by_role("button", name="Outro", exact=True).is_visible()
                 page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
                 assert page.get_by_role("button", name="Add Text Box").is_visible()

@@ -403,7 +403,7 @@ ipcMain.handle('open-in-out-video-dialog', async () => {
     return process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH;
   }
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose In / Out video',
+    title: 'Choose Intro / Outro video',
     properties: ['openFile'],
     filters: [
       { name: 'Videos', extensions: ['mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm'] },

@@ -54,11 +54,11 @@ The main loop is:
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
 - Overlay, Review, Compose, and Export presentation edits waterfall from the active stage to later stages until a later stage is edited directly. Review auto-summary values remain stage-specific, and Queue renders the same configured boxes, metrics, badges, and placement shown in preview.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
-- In / Out stores project-managed boundary videos, previews text boxes through the same overlay contract as stage exports, and offers selectable match-level result fields.
+- The In / Out sidebar item opens the Intro / Outro pane, which stores project-managed boundary videos, previews text boxes through the same overlay contract as stage exports, and offers selectable match-level result fields.
 - Metrics begins with Match Metrics and a collapsed Stage Breakdown tree, with complete stage-specific cards, graphs, scoring context, and shot rows inside each branch.
 - Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.
 - Queue and multi-stage Trim processing use the green processing bar for aggregate per-video progress. Their shared live processing log is available from the pane that starts the work.
-- Export profiles persist framing and ffmpeg controls. In / Out owns boundary media and overlays. Queue owns inclusion choices, execution, project-level fades, and output-folder reveal.
+- Export profiles persist framing and ffmpeg controls. The Intro / Outro pane owns boundary media and overlays. Queue owns inclusion choices, execution, project-level fades, and output-folder reveal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
 ## Editing Notes

@@ -14,7 +14,7 @@ Audit basis: the v1.0.7 browser shell/backend wiring and the code-first pane fun
 - `Overlay`: overlay styling, placement, drag, and preview controls.
 - `Review`: review playback state, review visibility state, and imported summary presentation.
 - `Export`: stage-local export settings only; no direct render execution surface.
-- `In / Out`: project-managed boundary videos plus independent WYSIWYG text overlays and match-level result fields.
+- `In / Out`: sidebar label for the Intro / Outro pane, which owns project-managed boundary videos plus independent WYSIWYG text overlays and match-level result fields.
 - `Queue`: all-match queue membership/state, intro/outro inclusion, batch processing, combined processing, output reveal, and the live processing log.
 - `Metrics`: metrics workbench, graphs, metrics exports.
 - `ShotML`: ShotML defaults, proposals, and proposal actions.
