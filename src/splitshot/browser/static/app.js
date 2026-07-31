@@ -1366,6 +1366,7 @@ function hasActivePointerInteraction() {
       || overlayBadgeDrag
       || mergePreviewDrag
       || textBoxDrag
+      || popupBubbleDrag
       || draggingShotId
       || waveformPanDrag
       || waveformNavigatorDrag,

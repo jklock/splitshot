@@ -412,6 +412,103 @@ def test_layout_resize_handles_persist_layout_sizes(
         server.shutdown()
 
 
+@pytest.mark.parametrize(
+    ("handle_id", "storage_key", "state_field", "delta_x", "delta_y"),
+    [
+        ("resize-rail", "splitshot.layout.railWidth", "rail_width", 16, 0),
+        (
+            "resize-waveform",
+            "splitshot.layout.waveformHeight",
+            "waveform_height",
+            0,
+            -60,
+        ),
+        (
+            "resize-sidebar",
+            "splitshot.layout.inspectorWidth",
+            "inspector_width",
+            100,
+            0,
+        ),
+    ],
+)
+def test_locked_layout_resize_uses_first_drag_and_survives_reload(
+    handle_id: str,
+    storage_key: str,
+    state_field: str,
+    delta_x: float,
+    delta_y: float,
+) -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.wait_for_function(
+                    "() => localStorage.getItem('splitshot.layoutLocked') === 'true'"
+                )
+                handle_box = page.locator(f"#{handle_id}").bounding_box()
+                assert handle_box is not None
+                before = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
+                cx = handle_box["x"] + handle_box["width"] / 2
+                cy = handle_box["y"] + handle_box["height"] / 2
+                target_x = cx + delta_x
+                target_y = cy + delta_y
+                if handle_id == "resize-waveform":
+                    assert page.evaluate("() => markersWorkbenchShown()") is False
+
+                page.mouse.move(cx, cy)
+                page.mouse.down()
+                page.mouse.move(target_x, target_y, steps=8)
+                preview_size = page.evaluate(
+                    """(field) => ({
+                        size: Number(layoutSizes[field]),
+                        active: activeResize,
+                    })""",
+                    {
+                        "rail_width": "railWidth",
+                        "waveform_height": "waveformHeight",
+                        "inspector_width": "inspectorWidth",
+                    }[state_field],
+                )
+                assert preview_size["size"] != before, preview_size
+                page.mouse.up()
+
+                page.wait_for_function(
+                    """({ key, before }) => {
+                        const stored = Number(localStorage.getItem(key));
+                        return localStorage.getItem('splitshot.layoutLocked') === 'false'
+                            && stored > 0
+                            && stored !== before;
+                    }""",
+                    arg={"key": storage_key, "before": before},
+                )
+                persisted = page.evaluate(
+                    "({ key }) => Number(localStorage.getItem(key))",
+                    {"key": storage_key},
+                )
+                page.wait_for_function(
+                    """({ field, expected }) =>
+                        Number(state?.project?.ui_state?.[field]) === expected""",
+                    arg={"field": state_field, "expected": persisted},
+                )
+                page.wait_for_timeout(450)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function(
+                    """({ key, field, expected }) =>
+                        Number(localStorage.getItem(key)) === expected
+                        && Number(state?.project?.ui_state?.[field]) === expected""",
+                    arg={"key": storage_key, "field": state_field, "expected": persisted},
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(
     synthetic_video_factory,
 ) -> None:

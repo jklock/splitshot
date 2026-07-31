@@ -1001,6 +1001,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function ensureShotQuadrantDefaults()" in js
     assert 'activity("layout.resize.start"' in layout_js
     assert 'activity("layout.resize.commit"' in layout_js
+    assert 'activity("layout.unlock.request"' in layout_js
+    assert 'toggleLayoutLock();\n    }\n    const startSize =' in layout_js
+    assert "[kind]: true," in layout_js
+    assert "|| popupBubbleDrag" in js
     assert "function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {" in js
     assert "function previewLayoutSize(key, value) {" in js
     assert "if (runtime.state && renderWaveformNow) renderWaveform();" in layout_js
@@ -1380,7 +1384,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         'railWidth: clamp(savedNumber("splitshot.layout.railWidth", DEFAULT_LAYOUT_SIZES.railWidth), 84, 104)'
         in js
     )
-    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in layout_js
+    assert (
+        'previewLayoutSize("railWidth", clamp(runtime.activeResize.startSize + deltaX, 84, 104));'
+        in layout_js
+    )
     assert "const parentRect = canvas.parentElement?.getBoundingClientRect();" in js
     assert "parentRect?.width" in js
     assert 'canvas.style.width = "100%";' in js
