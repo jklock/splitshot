@@ -573,6 +573,7 @@ def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: i
     for attempt in range(max_attempts):
         port = desired + attempt
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 sock.bind((host, port))
                 return port

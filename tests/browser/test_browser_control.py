@@ -21,6 +21,7 @@ from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
     display_name_for_path,
+    find_free_port,
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
@@ -499,6 +500,28 @@ def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) 
         assert len(calls) == 1
     finally:
         httpd.server_close()
+
+
+def test_find_free_port_reuses_recently_released_desktop_port(monkeypatch) -> None:
+    options: list[tuple[int, int, int]] = []
+
+    class ReusableSocket:
+        def setsockopt(self, level: int, option: int, value: int) -> None:
+            options.append((level, option, value))
+
+        def bind(self, address: tuple[str, int]) -> None:
+            assert options[-1] == (
+                browser_server_module.socket.SOL_SOCKET,
+                browser_server_module.socket.SO_REUSEADDR,
+                1,
+            )
+            assert address == ("127.0.0.1", 8765)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(browser_server_module.socket, "socket", lambda *_args: ReusableSocket())
+    assert find_free_port("127.0.0.1", 8765) == 8765
 
 
 def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
