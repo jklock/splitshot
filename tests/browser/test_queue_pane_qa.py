@@ -103,7 +103,7 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
             try:
                 create_project(page, str(intro.parent / "intro-pane.ssproj"))
                 page.evaluate(
-                    "(path) => callApi('/api/project/queue/media', { kind: 'intro', path })",
+                    "(path) => callApi('/api/project/in-out/media', { kind: 'intro', path })",
                     str(intro),
                 )
                 page.evaluate(
@@ -111,8 +111,10 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 )
                 intro_nav = page.locator("button[data-tool='intro-outro']")
                 queue_nav = page.locator("button[data-tool='queue']")
+                assert intro_nav.inner_text() == "In / Out"
                 assert intro_nav.evaluate("node => node.compareDocumentPosition(document.querySelector(\"button[data-tool='queue']\")) & Node.DOCUMENT_POSITION_FOLLOWING")
                 intro_nav.click(force=True)
+                assert page.get_by_role("heading", name="In / Out", exact=True).is_visible()
                 page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
                 assert page.get_by_role("button", name="Add Text Box").is_visible()
@@ -122,6 +124,76 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.locator("#queue-include-intro").is_enabled()
                 assert page.locator("#queue-include-intro").is_checked()
                 assert page.locator("#queue-include-outro").is_disabled()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_in_out_video_picker_updates_preview_and_queue_state(
+    synthetic_video_factory,
+) -> None:
+    intro = Path(synthetic_video_factory(name="in-out-picker", beep_ms=250))
+
+    def choose_video(
+        kind: str, current: str | None, default_root: str | None = None
+    ) -> str:
+        assert kind == "in_out_media"
+        return str(intro)
+
+    server = BrowserControlServer(port=0, path_chooser=choose_video)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_page(playwright, server)
+            try:
+                create_project(page, str(intro.parent / "in-out-picker.ssproj"))
+                page.locator("button[data-tool='intro-outro']").click(force=True)
+                page.get_by_role("button", name="Select Video", exact=True).click()
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.intro_clip?.asset?.path)"
+                )
+                assert page.locator(".intro-outro-file").inner_text() == intro.name
+                assert "/media/intro" in page.locator("#primary-video").get_attribute("src")
+                page.locator("button[data-tool='queue']").click(force=True)
+                assert page.locator("#queue-include-intro").is_enabled()
+                assert page.locator("#queue-include-intro").is_checked()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_in_out_video_picker_uses_packaged_native_bridge(
+    synthetic_video_factory,
+) -> None:
+    intro = Path(synthetic_video_factory(name="in-out-native-picker", beep_ms=250))
+
+    def unexpected_browser_picker(
+        kind: str, current: str | None, default_root: str | None = None
+    ) -> str:
+        raise AssertionError(f"Browser path picker should not be used for {kind}")
+
+    server = BrowserControlServer(port=0, path_chooser=unexpected_browser_picker)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.expose_function("pickInOutVideo", lambda: str(intro))
+            page.add_init_script(
+                "window.splitshot = { openInOutVideoDialog: () => window.pickInOutVideo() };"
+            )
+            page.goto(server.url, wait_until="domcontentloaded")
+            try:
+                create_project(page, str(intro.parent / "in-out-native-picker.ssproj"))
+                page.locator("button[data-tool='intro-outro']").click(force=True)
+                page.get_by_role("button", name="Select Video", exact=True).click()
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.intro_clip?.asset?.path)"
+                )
+                assert page.locator(".intro-outro-file").inner_text() == intro.name
+                assert "/media/intro" in page.locator("#primary-video").get_attribute("src")
             finally:
                 browser.close()
     finally:

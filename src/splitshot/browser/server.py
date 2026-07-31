@@ -346,14 +346,21 @@ def choose_local_path(
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary", "queue_media", "popup_image", "practiscore"}:
+        if kind in {
+            "primary",
+            "secondary",
+            "queue_media",
+            "in_out_media",
+            "popup_image",
+            "practiscore",
+        }:
             return filedialog.askopenfilename(
                 title=(
                     "Choose stage video"
                     if kind == "primary"
                     else (
-                        "Choose Queue intro or outro video"
-                        if kind == "queue_media"
+                        "Choose In / Out video"
+                        if kind in {"queue_media", "in_out_media"}
                         else (
                             "Choose secondary angle video"
                             if kind == "secondary"
@@ -402,13 +409,20 @@ def choose_local_path_macos(
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary", "queue_media", "popup_image", "practiscore"}:
+    if kind in {
+        "primary",
+        "secondary",
+        "queue_media",
+        "in_out_media",
+        "popup_image",
+        "practiscore",
+    }:
         prompt = (
             "Choose stage video"
             if kind == "primary"
             else (
-                "Choose Queue intro or outro video"
-                if kind == "queue_media"
+                "Choose In / Out video"
+                if kind in {"queue_media", "in_out_media"}
                 else (
                     "Choose secondary angle video"
                     if kind == "secondary"
@@ -1043,7 +1057,8 @@ class BrowserControlServer:
                     "/api/project/queue/remove": self._remove_from_queue,
                     "/api/project/queue/apply-all": self._apply_settings_to_all,
                     "/api/project/queue/settings": self._set_queue_settings,
-                    "/api/project/queue/media": self._set_queue_boundary_media,
+                    "/api/project/in-out/media": self._set_in_out_media,
+                    "/api/project/queue/media": self._set_in_out_media,
                     "/api/project/intro-outro/overlay": self._set_intro_outro_overlay,
                     "/api/project/queue/process": self._process_queue,
                 }
@@ -2380,11 +2395,12 @@ class BrowserControlServer:
                     ),
                 )
 
-            def _set_queue_boundary_media(self, payload: dict[str, Any]) -> None:
-                controller.set_queue_boundary_media(
+            def _set_in_out_media(self, payload: dict[str, Any]) -> None:
+                controller.set_in_out_media(
                     str(payload.get("kind", "")),
                     str(payload.get("path", "")),
                 )
+                server._bump_media_url_token()
 
             def _set_intro_outro_overlay(self, payload: dict[str, Any]) -> None:
                 controller.set_intro_outro_overlay(

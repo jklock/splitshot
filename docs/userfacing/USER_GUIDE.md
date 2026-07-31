@@ -13,7 +13,7 @@ SplitShot v1.0.7 is a local-first app for turning stage footage into a reviewed,
 
 Every session uses the same workspace:
 
-- The left rail switches between `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Intro / Outro`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
+- The left rail switches between `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 - The top status line reports the active file, analysis state, and sync offset.
 - The center stage shows the primary video, optional added media, overlay badges, markers, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.

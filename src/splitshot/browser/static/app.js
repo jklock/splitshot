@@ -9866,6 +9866,7 @@ mediaPane = createMediaPane({
 
 introOutroPane = createIntroOutroPane({
   $,
+  windowObject: window,
   documentObject: document,
   getState: () => state,
   callApi,

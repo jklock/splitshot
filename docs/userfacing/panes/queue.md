@@ -18,7 +18,7 @@ The Queue pane is the multi-stage export surface. It shows every loaded match st
 | `Queue` / `Requeue` | Queues that row's stage using its current settings. |
 | `Unqueue` | Removes that row's stage from the queue. |
 | Match stage row | Shows one loaded stage, media summary, queue status, and membership action. |
-| `Include intro` / `Include outro` | Adds the selected Intro / Outro clip at the outer edge of a combined output. |
+| `Include In` / `Include Out` | Adds the selected In / Out clip at the outer edge of a combined output. |
 | `Fade in` / `Fade out` | Sets project-level video and audio fades in 0.1-second steps. `0` disables that boundary. |
 | `Show Output Folder` | Opens the configured project output directory. |
 | `Show Log` | Opens the live processing log for the current or latest Queue run. |
@@ -40,7 +40,7 @@ The Queue pane is the multi-stage export surface. It shows every loaded match st
 
 1. Configure one stage fully.
 2. Click `Queue` on every match-stage row to include.
-3. Configure optional boundary media in [intro-outro.md](intro-outro.md), then enable `Include intro` and/or `Include outro` if needed.
+3. Configure optional boundary media in [intro-outro.md](intro-outro.md), then enable `Include In` and/or `Include Out` if needed.
 4. Click `Process Queue` for one file per stage, or `Process as One File` for a stitched output.
 
 ## Notes
