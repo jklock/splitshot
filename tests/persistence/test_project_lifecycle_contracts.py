@@ -3,19 +3,26 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from splitshot.domain.models import ImportedStageScore, MergeSource, Project, ProjectStage, VideoAsset
+from splitshot.domain.models import (
+    ImportedStageScore,
+    MergeSource,
+    Project,
+    ProjectStage,
+    VideoAsset,
+)
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
+    INTRO_OUTRO_DIRNAME,
     MARKERS_DIRNAME,
     OUTPUT_DIRNAME,
     PRACTISCORE_DIRNAME,
     copy_path_to_project_subdir,
     delete_project,
+    load_project,
     missing_required_project_dirs,
     normalize_project_path,
     project_has_metadata,
     save_project,
-    load_project,
 )
 
 
@@ -166,6 +173,7 @@ def test_missing_required_project_dirs_reports_only_missing_entries(tmp_path: Pa
     assert missing_required_project_dirs(project_path) == [
         PRACTISCORE_DIRNAME,
         MARKERS_DIRNAME,
+        INTRO_OUTRO_DIRNAME,
         OUTPUT_DIRNAME,
     ]
 

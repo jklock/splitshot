@@ -25,6 +25,9 @@ The Trim pane creates project-managed media derivatives. Bulk Trim can apply the
 | `Undo` | Restores the previous bulk trim state for every stage included in that action. |
 | `Apply All` | Creates trim derivatives for every video in each selected stage. |
 | `Clear All` | Returns every source in each selected stage to its original. |
+| `Show Log` | Opens the live trim log while ffmpeg processes the selected files. |
+
+Bulk Apply and Clear use the same green aggregate progress bar as Queue. Each primary or added video advances the match-wide percentage, and the bar reaches 100% only after every selected video is terminal.
 
 ## Source Controls
 

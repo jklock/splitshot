@@ -1,6 +1,6 @@
 # Metrics Pane
 
-The Metrics pane is the read-only post-stage dashboard for the current run. It keeps timing graphs, imported competitor-cohort comparisons, the expanded table, scoring context, and CSV/text exports aligned with the same data. Expanded graphs use a responsive multi-column layout so labels remain readable and the detailed table stays visible.
+The Metrics pane is the read-only match dashboard. Match Metrics is visible first. Stage Breakdown is a collapsed tree with one branch per stage; opening a branch reveals that stage's cards, scoring context, graphs, and shot rows.
 
 <img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, six graphs, compact timing table, scoring context, and export buttons beside the live preview" width="960">
 
@@ -18,8 +18,8 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It k
 
 | Control | What it does |
 | --- | --- |
-| Match and Stage Stats | Shows combined match metrics first, followed by one summary row per stage. USPSA totals are labeled `Combined HF`, not official match scoring. |
-| Summary cards | Show active-stage headline values such as draw, raw time, shot count, average split, beep, and result. |
+| Match Metrics | Shows combined headline values. USPSA totals are labeled `Combined HF`, not official match scoring. |
+| Stage Breakdown | Opens one stage at a time to show all stage-specific metrics, graphs, scoring data, and shot rows. |
 | `Shot Breakdown` | Shows timing graphs plus imported Overall, sport-division, and sport-class cohort comparisons when enough source data is available. Division and class labels use the imported acronyms. |
 | Compact timing table | Keeps the row-by-row snapshot in view. The columns are `Shot`, `Split`, `Run`, `Score`, `ShotML`, and `Action`. |
 | Scoring context block | Shows imported `Stage #`, `Competitor`, and `Place` first, followed by ruleset, result, raw/final timing, penalties, and points. |
@@ -46,8 +46,8 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It k
 
 ## How To Use It
 
-1. Read `Match and Stage Stats` for the combined and per-stage view.
-2. Read the active-stage summary cards for draw, raw, shots, average split, beep, and result.
+1. Read `Match Metrics` for the combined result.
+2. Open the required stage under `Stage Breakdown` for its draw, raw, shots, average split, beep, result, graphs, and shot rows.
 3. Start with the compact `Split Timeline` to see split-by-split pace.
 4. Use `Split Distribution` to spot interval outliers and hesitation points.
 5. Use `Shooting vs Non-Shooting Time` to separate shooting cadence from movement and dead time.

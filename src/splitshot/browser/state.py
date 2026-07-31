@@ -47,6 +47,8 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
                 "stage_name": stage.imported_stage_name or stage.label,
                 "metrics": asdict(presentation.metrics),
                 "scoring_summary": dict(presentation.metrics.scoring_summary),
+                "scoring": asdict(stage.scoring),
+                "comparison_competitors": deepcopy(stage.scoring.comparison_competitors),
                 "split_rows": rows,
                 "timing_segments": [asdict(segment) for segment in presentation.timing_segments],
             }
@@ -61,6 +63,8 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
                 "stage_name": imported.get("stage_name") or "Stage 1",
                 "metrics": asdict(presentation.metrics),
                 "scoring_summary": dict(presentation.metrics.scoring_summary),
+                "scoring": asdict(project.scoring),
+                "comparison_competitors": deepcopy(project.scoring.comparison_competitors),
                 "split_rows": [asdict(row) for row in compute_split_rows(project)],
                 "timing_segments": [asdict(segment) for segment in presentation.timing_segments],
             }

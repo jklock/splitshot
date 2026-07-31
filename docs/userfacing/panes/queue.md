@@ -1,29 +1,29 @@
 # Queue Pane
 
-The Queue pane is the multi-stage export surface. It shows queue status, selects which stage Queue is acting on, applies settings across stages, and processes one or many outputs.
+The Queue pane is the multi-stage export surface. It shows every loaded match stage, manages queue membership, and processes individual or combined outputs.
 
 <img src="../../screenshots/QueuePane.png" alt="Queue pane with active-stage selection, queue status rows, settings propagation, and processing actions" width="960">
 
 ## Use This Pane For
 
 - Reviewing queue status across stages.
-- Selecting the active stage from Queue without leaving Queue.
-- Applying one stage's settings to the rest of the queued stages.
+- Reviewing every loaded stage and its queue status without changing the active editing stage.
+- Including the configured intro or outro in a combined output.
 - Processing individual outputs or a combined output.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Queue` / `Requeue` | Queues the active stage. |
-| `Unqueue` | Removes the active stage from the queue. |
-| `Apply Active Stage Settings to Queued` | Copies the active stage settings to the queued stages. |
-| `Stage` | Chooses which stage Queue is acting on. |
-| Queue row | Shows one queued stage with its current queue status. |
+| `Queue` / `Requeue` | Queues that row's stage using its current settings. |
+| `Unqueue` | Removes that row's stage from the queue. |
+| Match stage row | Shows one loaded stage, media summary, queue status, and membership action. |
+| `Include intro` / `Include outro` | Adds the selected Intro / Outro clip at the outer edge of a combined output. |
 | `Fade in` / `Fade out` | Sets project-level video and audio fades in 0.1-second steps. `0` disables that boundary. |
 | `Show Output Folder` | Opens the configured project output directory. |
-| `Process Many` | Exports one output file per queued stage. |
-| `Process Into 1 File` | Renders all queued stages, then concatenates them into one file. |
+| `Show Log` | Opens the live processing log for the current or latest Queue run. |
+| `Process Queue` | Exports one output file per queued stage. |
+| `Process as One File` | Renders all queued stages and enabled boundary clips, then concatenates them into one file. |
 
 ## Status Meanings
 
@@ -39,16 +39,14 @@ The Queue pane is the multi-stage export surface. It shows queue status, selects
 ## Workflow
 
 1. Configure one stage fully.
-2. Select that stage in Queue and click `Queue`.
-3. Use `Apply Active Stage Settings to Queued` when the other queued stages should inherit the same settings.
-4. Review the queue rows and switch the active stage there when another stage needs attention.
-5. Click `Process Many` for one file per stage, or `Process Into 1 File` for a stitched output.
+2. Click `Queue` on every match-stage row to include.
+3. Configure optional boundary media in [intro-outro.md](intro-outro.md), then enable `Include intro` and/or `Include outro` if needed.
+4. Click `Process Queue` for one file per stage, or `Process as One File` for a stitched output.
 
 ## Notes
 
-- Queue does not replace Media. If stage media needs to change, go back to Media after selecting the right stage.
+- Queue does not replace Media and does not change the active editing stage.
 - Queue executes the ffmpeg settings saved in Export; changing settings in Export does not render a file until Queue processing starts.
-- `Apply Active Stage Settings to Queued` copies stage-local editing settings but excludes markers.
 - Queue rows always point back to the underlying stage, not a detached export preset.
 - Queue rows are compact and always visible; they do not have a collapsed state.
 - Queue processing preserves queue order for combined output.

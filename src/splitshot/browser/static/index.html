@@ -24,6 +24,7 @@
           <button class="tool-item" data-tool="overlay" data-short="Ovr" type="button" aria-label="Show overlay tool">Overlay</button>
           <button class="tool-item" data-tool="review" data-short="Rev" type="button" aria-label="Show review tool">Review</button>
           <button class="tool-item" data-tool="export" data-short="Exp" type="button" aria-label="Show export tool">Export</button>
+          <button class="tool-item" data-tool="intro-outro" data-short="I/O" type="button" aria-label="Show intro and outro tool">Intro / Outro</button>
           <button class="tool-item" data-tool="queue" data-short="Que" type="button" aria-label="Show queue tool">Queue</button>
           <button class="tool-item" data-tool="metrics" data-short="Met" type="button" aria-label="Show metrics tool">Metrics</button>
           <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool">ShotML</button>
@@ -143,11 +144,16 @@
 
             <section id="metrics-workbench" class="metrics-workbench" aria-label="Expanded metrics analysis">
               <div class="section-header">
-                <h2>Metrics</h2>
+                <h2>Match Metrics</h2>
                 <button id="collapse-metrics" type="button">Collapse</button>
               </div>
-              <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench" aria-label="Expanded metrics graphs"></div>
-              <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
+              <div id="metrics-workbench-match-summary" class="metrics-summary-grid metrics-match-summary"></div>
+              <section class="metrics-stage-breakdown-section">
+                <div class="section-header"><h3>Stage Breakdown</h3></div>
+                <div id="metrics-workbench-stage-tree" class="metrics-stage-tree metrics-stage-tree-workbench"></div>
+              </section>
+              <div id="metrics-workbench-graphs" hidden></div>
+              <div id="metrics-workbench-table" hidden></div>
             </section>
 
             <section id="scoring-workbench" class="timing-workbench scoring-workbench" aria-label="Expanded scoring editor">
@@ -270,29 +276,20 @@
                 <h3>Metrics</h3>
                 <button id="expand-metrics" type="button">Expand</button>
               </div>
-              <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
-              <div id="metrics-competition-summary" class="metrics-competition-summary" aria-label="Competition placement"></div>
-              <section class="settings-section metrics-section">
-                <div class="section-header"><strong>Match and Stage Stats</strong></div>
+              <section class="settings-section metrics-section metrics-match-section">
+                <div class="section-header"><strong>Match Metrics</strong></div>
+                <div id="metrics-summary-grid" class="metrics-summary-grid metrics-match-summary"></div>
                 <div id="metrics-stage-overview" class="data-table metrics-stage-overview" aria-label="Match and stage metrics"></div>
               </section>
-              <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
-                <div class="section-header sub-section-header">
-                  <h3>Shot Breakdown</h3>
-                </div>
-                <details class="metrics-comparison-details">
-                  <summary>Detailed charts</summary>
-                  <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
-                </details>
-                <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
+              <section class="settings-section metrics-section metrics-stage-breakdown-section">
+                <div class="section-header"><strong>Stage Breakdown</strong></div>
+                <div id="metrics-stage-tree" class="metrics-stage-tree"></div>
               </section>
-              <section class="settings-section metrics-section" data-metrics-section="scoring-context">
-                <div class="section-header sub-section-header">
-                  <h3>Scoring Context</h3>
-                  <span id="metrics-score-status">No scoring data.</span>
-                </div>
-                <dl id="metrics-score-summary" class="details metrics-details"></dl>
-              </section>
+              <div id="metrics-competition-summary" hidden></div>
+              <div id="metrics-graph-list" hidden></div>
+              <div id="metrics-trend-list" hidden></div>
+              <span id="metrics-score-status" hidden></span>
+              <dl id="metrics-score-summary" hidden></dl>
               <div class="button-grid two-up">
                 <button id="metrics-export-csv" type="button">Export CSV</button>
                 <button id="metrics-export-text" type="button">Export Text</button>
@@ -798,10 +795,6 @@
                 <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
 
               </div>
-              <div class="button-grid two-up">
-                <button id="show-export-log" type="button">Show Export Log</button>
-              </div>
-              <p id="export-log-status" class="hint"></p>
             </section>
 
             <section class="tool-pane" data-tool-pane="settings">
@@ -1270,6 +1263,8 @@
               <div id="media-pane"></div>
             </section>
 
+            <section id="intro-outro-pane" class="tool-pane" data-tool-pane="intro-outro"></section>
+
             <section class="tool-pane" data-tool-pane="queue">
               <div id="queue-pane"></div>
             </section>
@@ -1315,7 +1310,7 @@
       <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="export-log-title">
         <div class="modal-header">
           <div>
-            <h2 id="export-log-title">Export Log</h2>
+            <h2 id="export-log-title">Processing Log</h2>
             <p id="export-log-summary"></p>
           </div>
           <button id="close-export-log" type="button">Close</button>
@@ -1323,7 +1318,7 @@
         <div id="export-log-error" class="modal-alert" hidden></div>
         <pre id="export-log-output" class="export-log-output"></pre>
         <div class="modal-actions">
-          <button id="export-export-log" type="button">Export Log</button>
+          <button id="export-export-log" type="button">Save Log</button>
         </div>
       </section>
     </div>

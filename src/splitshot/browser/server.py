@@ -346,18 +346,22 @@ def choose_local_path(
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary", "popup_image", "practiscore"}:
+        if kind in {"primary", "secondary", "queue_media", "popup_image", "practiscore"}:
             return filedialog.askopenfilename(
                 title=(
                     "Choose stage video"
                     if kind == "primary"
                     else (
-                        "Choose secondary angle video"
-                        if kind == "secondary"
+                        "Choose Queue intro or outro video"
+                        if kind == "queue_media"
                         else (
-                            "Choose marker image"
-                            if kind == "popup_image"
-                            else "Choose PractiScore results"
+                            "Choose secondary angle video"
+                            if kind == "secondary"
+                            else (
+                                "Choose marker image"
+                                if kind == "popup_image"
+                                else "Choose PractiScore results"
+                            )
                         )
                     )
                 ),
@@ -398,15 +402,21 @@ def choose_local_path_macos(
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary", "popup_image", "practiscore"}:
+    if kind in {"primary", "secondary", "queue_media", "popup_image", "practiscore"}:
         prompt = (
             "Choose stage video"
             if kind == "primary"
             else (
-                "Choose secondary angle video"
-                if kind == "secondary"
+                "Choose Queue intro or outro video"
+                if kind == "queue_media"
                 else (
-                    "Choose marker image" if kind == "popup_image" else "Choose PractiScore results"
+                    "Choose secondary angle video"
+                    if kind == "secondary"
+                    else (
+                        "Choose marker image"
+                        if kind == "popup_image"
+                        else "Choose PractiScore results"
+                    )
                 )
             )
         )
@@ -894,6 +904,14 @@ class BrowserControlServer:
                         return
                     self._send_media(Path(active_path or fallback_path))
                     return
+                if request_path in {"/media/intro", "/media/outro"}:
+                    kind = request_path.removeprefix("/media/")
+                    boundary_path = getattr(controller.project, f"{kind}_clip").asset.path
+                    if not boundary_path:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_media(Path(boundary_path))
+                    return
                 if request_path.startswith("/media/merge/"):
                     self._send_merge_media(request_path.removeprefix("/media/merge/"))
                     return
@@ -1025,6 +1043,8 @@ class BrowserControlServer:
                     "/api/project/queue/remove": self._remove_from_queue,
                     "/api/project/queue/apply-all": self._apply_settings_to_all,
                     "/api/project/queue/settings": self._set_queue_settings,
+                    "/api/project/queue/media": self._set_queue_boundary_media,
+                    "/api/project/intro-outro/overlay": self._set_intro_outro_overlay,
                     "/api/project/queue/process": self._process_queue,
                 }
                 route = routes.get(self.path)
@@ -2098,6 +2118,10 @@ class BrowserControlServer:
                         keep_before_beep_s=normalized_keep_before_s,
                         keep_after_last_shot_s=normalized_keep_after_s,
                         clear=clear,
+                        progress_callback=lambda detail: activity.log(
+                            "api.trim.progress", **detail
+                        ),
+                        log_callback=lambda line: activity.log("api.process.log", line=line),
                     )
                 else:
                     controller.trim_all_merge_sources(
@@ -2106,6 +2130,10 @@ class BrowserControlServer:
                         keep_before_beep_s=normalized_keep_before_s,
                         keep_after_last_shot_s=normalized_keep_after_s,
                         clear=clear,
+                        progress_callback=lambda detail: activity.log(
+                            "api.trim.progress", **detail
+                        ),
+                        log_callback=lambda line: activity.log("api.process.log", line=line),
                     )
                 server._clear_browser_media_cache()
                 server._bump_media_url_token()
@@ -2344,6 +2372,24 @@ class BrowserControlServer:
                 controller.set_queue_settings(
                     fade_in_s=float(payload.get("fade_in_s", 0.5)),
                     fade_out_s=float(payload.get("fade_out_s", 0.5)),
+                    include_intro=(
+                        None if "include_intro" not in payload else bool(payload["include_intro"])
+                    ),
+                    include_outro=(
+                        None if "include_outro" not in payload else bool(payload["include_outro"])
+                    ),
+                )
+
+            def _set_queue_boundary_media(self, payload: dict[str, Any]) -> None:
+                controller.set_queue_boundary_media(
+                    str(payload.get("kind", "")),
+                    str(payload.get("path", "")),
+                )
+
+            def _set_intro_outro_overlay(self, payload: dict[str, Any]) -> None:
+                controller.set_intro_outro_overlay(
+                    str(payload.get("kind", "")),
+                    payload,
                 )
 
             def _process_queue(self, payload: dict[str, Any]) -> None:

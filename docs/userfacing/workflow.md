@@ -6,7 +6,7 @@ This is the recommended multi-stage workflow.
 
 1. Open [panes/project.md](panes/project.md).
 2. Create or open the project folder.
-   SplitShot creates `Input/`, `CSV/`, `Markers/`, and `Output/`; subsequent pickers start in the matching project folder.
+   SplitShot creates `Input/`, `CSV/`, `Markers/`, `IntroOutro/`, and `Output/`; subsequent pickers start in the matching project folder.
 3. Import the PractiScore CSV/TXT source if stage records are needed.
 4. Select the imported stage, competitor name, and competitor place.
 5. Open [panes/media.md](panes/media.md).
@@ -16,9 +16,9 @@ This is the recommended multi-stage workflow.
 9. Open [panes/trim.md](panes/trim.md), [panes/score.md](panes/score.md), [panes/splits.md](panes/splits.md), [panes/markers.md](panes/markers.md), [panes/overlay.md](panes/overlay.md), [panes/review.md](panes/review.md), and [panes/metrics.md](panes/metrics.md) as needed for the active stage.
 10. Open [panes/export.md](panes/export.md) and configure the active stage output settings.
 11. Open [panes/queue.md](panes/queue.md).
-12. Use `Apply Active Stage Settings to Queued` if the other queued stages should inherit the active stage settings.
-13. Re-select any stage that still needs changes from Media or Queue.
-14. Click `Process Many` for one file per stage, or `Process Into 1 File` for a stitched output.
+12. Queue each required match-stage row.
+13. Re-select any stage that still needs changes from Media.
+14. Click `Process Queue` for one file per stage, or `Process as One File` for a stitched output.
 
 ## Practical Order
 

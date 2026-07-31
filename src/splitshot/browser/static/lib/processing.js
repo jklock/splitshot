@@ -82,7 +82,11 @@ export function createProcessingRuntime({
     runtime.activeProcessingPath = path;
     clearProcessingProgressTimer();
     setProcessingProgress(0, { allowDecrease: true });
-    if (path === "/api/export") return;
+    if (
+      path === "/api/export"
+      || path === "/api/project/queue/process"
+      || path === "/api/merge/source/trim-all"
+    ) return;
     const profile = progressProfileForPath(path);
     runtime.processingProgressTimer = window.setInterval(() => {
       const next = Math.min(profile.ceiling, runtime.processingProgressPercent + profile.step);
@@ -150,7 +154,7 @@ export function createProcessingRuntime({
   function beginProcessing(message, detail = "Working locally", path = null) {
     runtime.busyCount += 1;
     syncProcessingBackbone();
-    if (path === "/api/export") {
+    if (["/api/export", "/api/project/queue/process", "/api/merge/source/trim-all"].includes(path)) {
       clearCurrentExportLogState();
     }
     if (runtime.busyCount === 1) startProcessingProgress(path);
@@ -205,7 +209,7 @@ export function createProcessingRuntime({
       return { message: "Importing media...", detail: "Copying into project Input and adding media" };
     }
     if (path === "/api/merge/source/trim-all") {
-      return { message: "Trimming added media...", detail: "Writing derivative files and refreshing waveform state" };
+      return { message: "Trimming selected videos...", detail: "Video 0 of selected files" };
     }
     if (path === "/api/merge/source/trim") {
       return { message: "Trimming source...", detail: "Writing a derivative file and refreshing preview state" };

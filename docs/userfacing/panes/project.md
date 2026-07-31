@@ -35,7 +35,7 @@ The Project pane owns project metadata, PractiScore import, competitor identity 
 ## Workflow
 
 1. Create or open the project first.
-   Creating a project also creates `Input/`, `CSV/`, `Markers/`, and `Output/`.
+   Creating a project also creates `Input/`, `CSV/`, `Markers/`, `IntroOutro/`, and `Output/`.
 2. Set `Project name` and `Project description`.
 3. Import the PractiScore CSV/TXT file if stage results are needed.
 4. Select the imported stage, competitor name, and competitor place.

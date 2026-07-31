@@ -41,6 +41,7 @@ export function createMetricsPane({
   ensureSectionToggle = () => {},
   metricsTableColumns = [],
 } = {}) {
+  const expandedMetricStageIds = new Set();
   function currentState() {
     return getState() || {};
   }
@@ -223,7 +224,6 @@ export function createMetricsPane({
     if (!table) return;
     const state = currentState();
     const match = state.match_metrics || {};
-    const stages = Array.isArray(state.stage_metrics) ? state.stage_metrics : [];
     const headers = ["Stage", "Draw", "Raw", "Shots", "Avg Split", "Beep", "Result", "Shot Points", "Penalties"];
     table.replaceChildren();
     table.style.gridTemplateColumns = "minmax(130px, 1.3fr) repeat(8, minmax(74px, 1fr))";
@@ -240,12 +240,6 @@ export function createMetricsPane({
         result: `${match.result_label || "Result"} ${match.display_value || "--"}`,
         match: true,
       },
-      ...stages.map((entry) => ({
-        label: `Stage ${entry.stage_number}: ${entry.stage_name || `Stage ${entry.stage_number}`}`,
-        metrics: entry.metrics || {},
-        scoring: entry.scoring_summary || {},
-        result: `${entry.scoring_summary?.display_label || "Result"} ${entry.scoring_summary?.display_value || "--"}`,
-      })),
     ];
     rows.forEach((entry) => {
       const metrics = entry.metrics;
@@ -268,6 +262,138 @@ export function createMetricsPane({
         cell.textContent = value || "--";
         table.appendChild(cell);
       });
+    });
+  }
+
+  function metricCardDefinitions(metrics = {}, scoring = {}, { match = false } = {}) {
+    return [
+      ["Draw", splitSeconds(metrics.draw_ms)],
+      ["Raw", splitSeconds(metrics.raw_time_ms ?? metrics.stage_time_ms)],
+      ["Shots", String(metrics.total_shots || 0)],
+      ["Avg Split", splitSeconds(metrics.average_split_ms)],
+      ["Beep", match ? "—" : splitSeconds(metrics.beep_ms)],
+      [
+        match ? (metrics.result_label || "Result") : (scoring.display_label || "Result"),
+        match ? (metrics.display_value || "--") : (scoring.display_value || "--"),
+      ],
+      ["Shot Points", formatNumber(match ? metrics.shot_points : scoring.shot_points, 2)],
+      ["Penalties", formatNumber(match ? metrics.total_penalties : scoring.total_penalties, 2)],
+    ];
+  }
+
+  function renderMetricCards(container, definitions) {
+    if (!container) return;
+    container.replaceChildren();
+    definitions.forEach(([label, value]) => {
+      const card = documentObject.createElement("article");
+      card.className = "metric-card";
+      const eyebrow = documentObject.createElement("small");
+      eyebrow.textContent = label;
+      const strong = documentObject.createElement("strong");
+      strong.textContent = value || "--";
+      card.append(eyebrow, strong);
+      container.appendChild(card);
+    });
+  }
+
+  function renderStageShotTable(table, rows) {
+    if (!table) return;
+    table.replaceChildren();
+    table.style.gridTemplateColumns = "minmax(0, 1.1fr) repeat(4, minmax(70px, 0.7fr)) minmax(0, 1fr)";
+    ["Shot", "Split", "Run", "Score", "ShotML", "Action"].forEach((label) => {
+      const header = documentObject.createElement("div");
+      header.className = "head";
+      header.textContent = label;
+      table.appendChild(header);
+    });
+    rows.forEach((entry) => {
+      [
+        entry.intervalLabel ? `${entry.label} ${entry.intervalLabel}` : entry.label,
+        splitSeconds(entry.splitMs),
+        splitSeconds(entry.cumulativeMs),
+        entry.scoreLetter || "--",
+        formatConfidenceValue(entry.confidence),
+        entry.actionSummary || "--",
+      ].forEach((value) => {
+        const cell = documentObject.createElement("div");
+        cell.textContent = value || "--";
+        table.appendChild(cell);
+      });
+    });
+  }
+
+  function renderStageMetricsTree(container, { compact = true } = {}) {
+    if (!container) return;
+    const stages = Array.isArray(currentState().stage_metrics) ? currentState().stage_metrics : [];
+    container.replaceChildren();
+    if (stages.length === 0) {
+      const empty = documentObject.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "Stage metrics appear after match stages are loaded.";
+      container.appendChild(empty);
+      return;
+    }
+    stages.forEach((entry) => {
+      const stageId = String(entry.stage_id || entry.stage_number || "");
+      const metrics = entry.metrics || {};
+      const scoring = entry.scoring_summary || {};
+      const rows = metricsRowsForStage(entry);
+      const details = documentObject.createElement("details");
+      details.className = "metrics-stage-tree-item";
+      details.dataset.metricsStageId = stageId;
+      details.open = expandedMetricStageIds.has(stageId);
+      const summary = documentObject.createElement("summary");
+      const title = documentObject.createElement("strong");
+      title.textContent = `Stage ${entry.stage_number}: ${entry.stage_name || `Stage ${entry.stage_number}`}`;
+      const result = documentObject.createElement("span");
+      result.textContent = `${scoring.display_label || "Result"} ${scoring.display_value || "--"}`;
+      summary.append(title, result);
+      const body = documentObject.createElement("div");
+      body.className = "metrics-stage-tree-body";
+      const cards = documentObject.createElement("div");
+      cards.className = "metrics-summary-grid metrics-stage-summary-grid";
+      renderMetricCards(cards, metricCardDefinitions(metrics, scoring));
+      const scoringTitle = documentObject.createElement("h4");
+      scoringTitle.textContent = "Scoring";
+      const scoringDetails = documentObject.createElement("dl");
+      scoringDetails.className = "details metrics-details";
+      metricsScoringDetailRows(scoring).forEach(([label, value]) => {
+        const term = documentObject.createElement("dt");
+        term.textContent = label;
+        const description = documentObject.createElement("dd");
+        description.textContent = value || "--";
+        scoringDetails.append(term, description);
+      });
+      const graphTitle = documentObject.createElement("h4");
+      graphTitle.textContent = "Charts";
+      const graphs = documentObject.createElement("div");
+      graphs.className = compact
+        ? "metrics-graph-list"
+        : "metrics-graph-list metrics-graph-list-workbench";
+      renderMetricsGraphs(
+        graphs,
+        [
+          ...buildMetricsGraphSeries(rows),
+          ...buildCompetitorComparisonGraphs({
+            scoring: entry.scoring || {},
+            importedStage: scoring.imported_stage || {},
+            competitors: entry.comparison_competitors || [],
+          }),
+        ],
+        { compact },
+      );
+      const shotsTitle = documentObject.createElement("h4");
+      shotsTitle.textContent = "Shot Breakdown";
+      const shotTable = documentObject.createElement("div");
+      shotTable.className = "data-table metrics-trend-table metrics-stage-shot-table";
+      renderStageShotTable(shotTable, rows);
+      body.append(cards, scoringTitle, scoringDetails, graphTitle, graphs, shotsTitle, shotTable);
+      details.append(summary, body);
+      details.addEventListener("toggle", () => {
+        if (details.open) expandedMetricStageIds.add(stageId);
+        else expandedMetricStageIds.delete(stageId);
+      });
+      container.appendChild(details);
     });
   }
 
@@ -1148,24 +1274,27 @@ export function createMetricsPane({
     ];
   }
 
-  function buildCompetitorComparisonGraphs() {
+  function buildCompetitorComparisonGraphs(options = {}) {
     const state = currentState();
-    const importedStage = state?.scoring_summary?.imported_stage || {};
-    const comparisonData = Array.isArray(state?.practiscore_options?.comparison_competitors)
-      ? state.practiscore_options.comparison_competitors
-      : [];
+    const scoring = options.scoring || state?.project?.scoring || {};
+    const importedStage = options.importedStage || state?.scoring_summary?.imported_stage || {};
+    const comparisonData = Array.isArray(options.competitors)
+      ? options.competitors
+      : (Array.isArray(state?.practiscore_options?.comparison_competitors)
+        ? state.practiscore_options.comparison_competitors
+        : []);
     const comparison = buildCompetitionComparison({
-      scoring: state?.project?.scoring || {},
+      scoring,
       importedStage,
       competitors: comparisonData,
     });
     const standings = buildFinalStandingsComparison({
-      scoring: state?.project?.scoring || {},
+      scoring,
       importedStage,
       competitors: comparisonData,
     });
     const identityLabels = competitionIdentityLabels({
-      scoring: state?.project?.scoring || {},
+      scoring,
       importedStage,
     });
     const myName = comparison.identity.name;
@@ -1258,33 +1387,20 @@ export function createMetricsPane({
     if (!summaryGrid || !trendList || !scoreStatus) return;
     const state = currentState();
     const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
+    const matchMetrics = state.match_metrics || {};
     const rows = buildMetricsRows();
     const graphs = [...buildMetricsGraphSeries(rows), ...buildCompetitorComparisonGraphs()];
 
-    const summaryCards = [
-      ["Draw", splitSeconds(state.metrics?.draw_ms)],
-      ["Raw", splitSeconds(state.metrics?.raw_time_ms ?? state.metrics?.stage_time_ms)],
-      ["Shots", String(state.metrics?.total_shots || 0)],
-      ["Avg Split", splitSeconds(state.metrics?.average_split_ms)],
-      ["Beep", splitSeconds(state.metrics?.beep_ms)],
-      [scoringSummary.display_label || "Result", scoringSummary.display_value || "--"],
-      ["Shot Points", formatNumber(scoringSummary.shot_points, 2)],
-      ["Penalties", formatNumber(scoringSummary.total_penalties, 2)],
-    ];
-    summaryGrid.innerHTML = "";
-    summaryCards.forEach(([label, value]) => {
-      const card = documentObject.createElement("article");
-      card.className = "metric-card";
-      const eyebrow = documentObject.createElement("small");
-      eyebrow.textContent = label;
-      const strong = documentObject.createElement("strong");
-      strong.textContent = value;
-      card.append(eyebrow, strong);
-      summaryGrid.appendChild(card);
-    });
+    renderMetricCards(summaryGrid, metricCardDefinitions(matchMetrics, {}, { match: true }));
+    renderMetricCards(
+      $("metrics-workbench-match-summary"),
+      metricCardDefinitions(matchMetrics, {}, { match: true }),
+    );
 
     renderCompetitionSummaryCards($("metrics-competition-summary"));
     renderStageMetricsOverview($("metrics-stage-overview"));
+    renderStageMetricsTree($("metrics-stage-tree"), { compact: true });
+    renderStageMetricsTree($("metrics-workbench-stage-tree"), { compact: false });
 
     withPreservedScrollState([trendList], () => renderMetricsTrendTable(trendList));
 

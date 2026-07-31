@@ -692,7 +692,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     )
     assert "error" not in export_state
     assert export_state["project"]["export"]["last_log"] == "Master export log"
-    page.locator("#show-export-log").click()
+    page.locator('[data-tool="queue"]').click()
+    page.locator("#queue-show-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     page.locator("#close-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
@@ -1198,9 +1199,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
                     RELEASE_PROOF_THRESHOLDS_MS["queue_process"],
                 )
                 _open_tool_for_release(
-                    page, "export", timings, artifact_root, "release-20-export-pane-after-queue"
+                    page, "queue", timings, artifact_root, "release-20-queue-pane-after-processing"
                 )
-                page.locator("#show-export-log").click()
+                page.locator("#queue-show-log").click()
                 page.wait_for_function(
                     "() => document.getElementById('export-log-modal')?.hidden === false"
                 )

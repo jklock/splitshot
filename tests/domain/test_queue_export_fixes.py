@@ -3,7 +3,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from splitshot.domain.models import ProjectStage, QueueEntry, QueueStatus
+from splitshot.domain.models import (
+    OverlayTextBox,
+    ProjectStage,
+    QueueEntry,
+    QueueStatus,
+    VideoAsset,
+    project_from_dict,
+    project_to_dict,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -47,3 +55,134 @@ def test_trimmed_derivative_filename_uses_stage_time_date_and_collision_suffix(
     first.touch()
     second = Path(controller._trimmed_derivative_path(tmp_path / "source.mp4"))
     assert second.stem == f"{first.stem}_2"
+
+
+def test_intro_outro_media_overlays_and_queue_choices_round_trip() -> None:
+    controller = ProjectController()
+    controller.project.intro_clip.asset = VideoAsset(path="IntroOutro/intro.mp4", duration_ms=5000)
+    controller.project.intro_clip.overlay.text_boxes = [
+        OverlayTextBox(
+            source="match_summary",
+            summary_metric_ids=["match_result", "stage_count"],
+            text_color="#ffcc00",
+        )
+    ]
+    controller.project.queue_settings.include_intro = True
+    controller.project.queue_settings.include_outro = False
+
+    restored = project_from_dict(project_to_dict(controller.project))
+
+    assert restored.intro_clip.asset.path == "IntroOutro/intro.mp4"
+    assert restored.intro_clip.overlay.text_boxes[0].source == "match_summary"
+    assert restored.intro_clip.overlay.text_boxes[0].summary_metric_ids == [
+        "match_result",
+        "stage_count",
+    ]
+    assert restored.intro_clip.overlay.text_boxes[0].text_color == "#ffcc00"
+    assert restored.queue_settings.include_intro is True
+    assert restored.queue_settings.include_outro is False
+
+
+def test_intro_overlay_uses_export_overlay_renderer_with_match_text(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = ProjectController()
+    controller.project.stages = [ProjectStage(label="Stage 1")]
+    controller.project.active_stage_id = controller.project.stages[0].id
+    controller.project.intro_clip.asset = VideoAsset(
+        path=str(tmp_path / "intro.mp4"), duration_ms=1000, width=640, height=360
+    )
+    controller.project.intro_clip.overlay.text_boxes = [
+        OverlayTextBox(source="match_summary", summary_metric_ids=["stage_count"])
+    ]
+    captured = {}
+
+    def fake_export(project, output_path, **_kwargs) -> None:
+        captured["project"] = project
+        Path(output_path).touch()
+
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+
+    rendered = controller._render_queue_boundary_overlay(
+        "intro", tmp_path / "intro.mp4", tmp_path
+    )
+
+    boundary_project = captured["project"]
+    assert boundary_project.primary_video.path == str(tmp_path / "intro.mp4")
+    assert boundary_project.stages == []
+    assert boundary_project.overlay.text_boxes[0].source == "manual"
+    assert boundary_project.overlay.text_boxes[0].text == "Stages 1"
+    assert rendered.is_file()
+
+
+def test_combined_queue_includes_only_enabled_boundary_media(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller = ProjectController()
+    controller.project_path = tmp_path / "match.ssproj"
+    controller.project_path.mkdir()
+    controller.project.output_root = str(controller.project_path / "Output")
+    primary = controller.project_path / "stage.mp4"
+    intro = controller.project_path / "intro.mp4"
+    outro = controller.project_path / "outro.mp4"
+    for path in (primary, intro, outro):
+        path.touch()
+    stage = ProjectStage(
+        label="Stage 1",
+        order_index=1,
+        primary_media=VideoAsset(path=str(primary), duration_ms=1000),
+    )
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+    controller.project.queue = [QueueEntry(stage_id=stage.id, status=QueueStatus.QUEUED)]
+    controller.project.intro_clip.asset = VideoAsset(path=str(intro), duration_ms=1000)
+    controller.project.outro_clip.asset = VideoAsset(path=str(outro), duration_ms=1000)
+    controller.project.queue_settings.include_intro = True
+    controller.project.queue_settings.include_outro = False
+    rendered_boundaries: list[str] = []
+    concatenated: list[str] = []
+    fade_args: list[tuple[float | None, float | None]] = []
+
+    def fake_export(_project, output_path, progress_callback=None, **_kwargs) -> None:
+        Path(output_path).touch()
+        if progress_callback:
+            progress_callback(1.0)
+
+    def fake_boundary(kind, _source, output_dir, **_kwargs) -> Path:
+        rendered_boundaries.append(kind)
+        path = output_dir / f"{kind}-overlay.mp4"
+        path.touch()
+        return path
+
+    def fake_prepare(_source, _reference, output_dir, kind, **_kwargs) -> Path:
+        path = output_dir / f"{kind}-prepared.mp4"
+        path.touch()
+        return path
+
+    def fake_concat(paths, output_dir) -> Path:
+        concatenated.extend(path.name for path in paths)
+        combined = output_dir / "combined.mp4"
+        combined.touch()
+        return combined
+
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+    monkeypatch.setattr(controller, "_render_queue_boundary_overlay", fake_boundary)
+    monkeypatch.setattr(controller, "_prepare_queue_boundary_clip", fake_prepare)
+    monkeypatch.setattr(controller, "_concat_outputs", fake_concat)
+    monkeypatch.setattr(
+        controller,
+        "_apply_queue_fades_to_file",
+        lambda _path, *, fade_in_s=None, fade_out_s=None, **_kwargs: fade_args.append(
+            (fade_in_s, fade_out_s)
+        ),
+    )
+
+    controller.process_queue("combined")
+
+    assert rendered_boundaries == ["intro"]
+    assert concatenated[0] == "intro-prepared.mp4"
+    assert concatenated[1].endswith("1-stage-1.mp4")
+    assert fade_args == [(0.0, None)]

@@ -207,7 +207,6 @@ def test_export_project_initializes_qt_gui_application_for_headless_runs(
     def fake_ensure_qt_gui_application():
         nonlocal called
         called = True
-        return None
 
     monkeypatch.setattr(
         "splitshot.export.pipeline._ensure_qt_gui_application", fake_ensure_qt_gui_application
@@ -292,6 +291,39 @@ def test_overlay_renderer_score_marks_use_overlay_qfont(
         painter.end()
 
     assert captured == [(default_overlay_font_family(), 28, True, False)]
+
+
+def test_overlay_renderer_uses_text_box_typography(monkeypatch) -> None:
+    project = Project(name="Text Box Style")
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="Match title",
+            style_type="rounded",
+            font_family="Courier New",
+            font_size=22,
+            font_bold=False,
+            font_italic=True,
+        )
+    ]
+    captured: list[tuple[str, int, bool, bool]] = []
+
+    def fake_overlay_qfont(font_family: str, font_size: int, bold: bool, italic: bool):
+        captured.append((font_family, font_size, bold, italic))
+        return _overlay_qfont(font_family, font_size, bold, italic)
+
+    monkeypatch.setattr("splitshot.overlay.render._overlay_qfont", fake_overlay_qfont)
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 320, 180)
+    painter.end()
+
+    assert ("Courier New", 22, False, True) in captured
 
 
 def test_e2e_fixture_contains_detectable_shots() -> None:
@@ -653,8 +685,8 @@ def test_overlay_renderer_shows_imported_summary_custom_box_only_after_final_sho
 
     before_red = 0
     after_red = 0
-    for y in range(0, 120):
-        for x in range(0, 220):
+    for y in range(120):
+        for x in range(220):
             before_color = before.pixelColor(x, y)
             after_color = after.pixelColor(x, y)
             if (
@@ -1171,8 +1203,8 @@ def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
                 and color.red() > color.blue() + 40
             ):
                 center_red += 1
-    for y in range(0, 24):
-        for x in range(0, 70):
+    for y in range(24):
+        for x in range(70):
             color = image.pixelColor(x, y)
             if (
                 color.red() > 120
@@ -1215,8 +1247,8 @@ def test_overlay_renderer_defaults_empty_custom_quadrant_coordinates_to_center()
                 and color.red() > color.blue() + 40
             ):
                 center_red += 1
-    for y in range(0, 24):
-        for x in range(0, 70):
+    for y in range(24):
+        for x in range(70):
             color = image.pixelColor(x, y)
             if (
                 color.red() > 120

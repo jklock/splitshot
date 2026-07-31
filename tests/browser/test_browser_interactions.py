@@ -345,7 +345,10 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
                 notices.extend(dialogs)
-                assert any("missing Input, CSV, Markers, Output" in message for message in notices)
+                assert any(
+                    "missing Input, CSV, Markers, IntroOutro, Output" in message
+                    for message in notices
+                )
             finally:
                 browser.close()
     finally:
@@ -3598,7 +3601,7 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
         server.shutdown()
 
 
-def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path: Path) -> None:
+def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp_path: Path) -> None:
     controller = ProjectController()
     controller.project.export.last_log = "Encoder command:\nffmpeg -i input"
     server = BrowserControlServer(controller=controller, port=0)
@@ -3607,9 +3610,9 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
-                _open_tool(page, "export")
+                _open_tool(page, "queue")
 
-                page.locator("#show-export-log").click(force=True)
+                page.locator("#queue-show-log").click(force=True)
                 modal = page.locator("#export-log-modal")
                 modal.wait_for(state="visible")
                 assert modal.evaluate("element => element.hidden") is False
@@ -3619,7 +3622,7 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
                 with page.expect_download() as download_info:
                     page.locator("#export-export-log").click()
                 download = download_info.value
-                assert download.suggested_filename.endswith("-export-log.txt")
+                assert download.suggested_filename.endswith("-processing-log.txt")
                 download_target = tmp_path / download.suggested_filename
                 download.save_as(str(download_target))
                 assert (
@@ -3632,7 +3635,7 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
                     "() => document.getElementById('export-log-modal')?.hidden === true"
                 )
 
-                page.locator("#show-export-log").click(force=True)
+                page.locator("#queue-show-log").click(force=True)
                 page.wait_for_function(
                     "() => document.getElementById('export-log-modal')?.hidden === false"
                 )

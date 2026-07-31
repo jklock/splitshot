@@ -2,6 +2,7 @@ import { createActivityRuntime } from "./lib/activity.js";
 import { createApiRuntime } from "./lib/api.js";
 import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
 import { createExportPane } from "./panes/export-pane.js";
+import { createIntroOutroPane } from "./panes/intro-outro-pane.js";
 import { createMediaPane } from "./panes/media-pane.js";
 import { createMergePane } from "./panes/merge-pane.js";
 import { createMetricsPane } from "./panes/metrics-pane.js";
@@ -197,6 +198,7 @@ let settingsPane = null;
 let mergePane = null;
 let projectPane = null;
 let queuePane = null;
+let introOutroPane = null;
 let reviewPane = null;
 let timingPane = null;
 let scoringPane = null;
@@ -344,7 +346,7 @@ function normalizeToolId(tool) {
 
 activeTool = normalizeToolId(activeTool);
 
-const VALID_TOOL_IDS = new Set(["project", "media", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "media", "intro-outro", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -4919,6 +4921,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
   if (tool === "media" && mediaPane) mediaPane.render();
+  if (tool === "intro-outro" && introOutroPane) introOutroPane.render();
   if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();
@@ -5062,6 +5065,7 @@ async function refresh() {
     applyRemoteState(data);
     requestRender();
     if (mediaPane) mediaPane.render();
+    if (introOutroPane) introOutroPane.render();
     if (queuePane) queuePane.render();
   } catch (error) {
     setStatus(error.message);
@@ -5606,7 +5610,9 @@ function syncMergePreviewElements(primary) {
 }
 
 function renderVideo() {
-  return videoPlayerComponent?.renderVideo();
+  const result = videoPlayerComponent?.renderVideo();
+  if (activeTool === "intro-outro") introOutroPane?.updatePreview();
+  return result;
 }
 
 let preferredOutputProfileId = "";
@@ -8498,6 +8504,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
 }
 
 function renderLiveOverlay(positionMsOverride = null) {
+  if (activeTool === "intro-outro") return introOutroPane?.updatePreview();
   return overlayPane?.renderLiveOverlay(positionMsOverride);
 }
 
@@ -9437,6 +9444,8 @@ videoPlayerComponent = createVideoPlayerComponent({
   $,
   getState: () => state,
   getSelectedShotId: () => selectedShotId,
+  getActiveTool: () => activeTool,
+  getIntroOutroKind: () => introOutroPane?.selectedKind?.() || "intro",
   maybeApplyRecommendedLayout,
   buildMediaUrl,
   resetMediaElement,
@@ -9855,17 +9864,26 @@ mediaPane = createMediaPane({
   setStatus,
 });
 
+introOutroPane = createIntroOutroPane({
+  $,
+  documentObject: document,
+  getState: () => state,
+  callApi,
+  pickPath,
+  activity,
+  fileName,
+});
+
 queuePane = createQueuePane({
   $,
   documentObject: document,
   windowObject: window,
   getState: () => state,
   setActiveTool,
-  setActiveStageId: (stageId) => {
-    if (state?.project) state.project.active_stage_id = stageId;
-  },
   activity,
   callApi,
+  pickPath,
+  openProcessingLog: () => openExportLogModal(),
   fileName,
   formatNumber,
   renderHeader,
@@ -10050,6 +10068,7 @@ trimSyncPane = createTrimSyncPane({
   withPreservedScrollState,
   activity,
   callApi,
+  openProcessingLog: () => openExportLogModal(),
   scheduleInteractionPreviewRender,
   renderVideo,
   setStatus,

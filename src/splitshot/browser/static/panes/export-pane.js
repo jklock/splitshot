@@ -66,34 +66,26 @@ export function createExportPane({
     const output = $("export-log-output");
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
-    const status = $("export-log-status");
-    const button = $("show-export-log");
+    const buttons = [$("queue-show-log"), $("trim-show-log")].filter(Boolean);
     const exportButton = $("export-export-log");
     if (output) {
       output.textContent = visibleLines.join("\n");
-      if (getActiveProcessingPath() === "/api/export") output.scrollTop = output.scrollHeight;
+      if (getActiveProcessingPath()) output.scrollTop = output.scrollHeight;
     }
     if (summary) {
-      summary.textContent = getActiveProcessingPath() === "/api/export"
-        ? `Export in progress • ${Math.round(getProcessingProgressPercent())}%`
+      summary.textContent = getActiveProcessingPath()
+        ? `Processing in progress • ${Math.round(getProcessingProgressPercent())}%`
         : "";
     }
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
       errorBox.textContent = projectExport.last_error || "";
     }
-    if (status) {
-      status.textContent = projectExport.last_error
-        ? `Latest export failed: ${projectExport.last_error}`
-        : getActiveProcessingPath() === "/api/export"
-          ? `Export log is updating in real time. Current progress: ${Math.round(getProcessingProgressPercent())}%.`
-          : "";
-    }
-    if (button) {
-      button.textContent = getActiveProcessingPath() === "/api/export"
+    buttons.forEach((button) => {
+      button.textContent = getActiveProcessingPath()
         ? `Show Log (${Math.round(getProcessingProgressPercent())}%)`
         : "Show Log";
-    }
+    });
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
 
@@ -121,8 +113,8 @@ export function createExportPane({
       setStatus("");
       return;
     }
-    downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
-    setStatus("Downloaded export log.");
+    downloadTextFile(`${metricsFileStem()}-processing-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
+    setStatus("Downloaded processing log.");
   }
 
   function syncExportPathControl() {

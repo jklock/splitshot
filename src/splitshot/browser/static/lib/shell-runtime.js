@@ -1039,7 +1039,6 @@ export function createShellRuntime({
     ].forEach((id) => {
       $(id).addEventListener("change", scheduleExportSettingsApply);
     });
-    $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);
     $("close-export-log")?.addEventListener("click", closeExportLogModal);
     $("close-color-picker")?.addEventListener("click", () => closeColorPicker({ commit: true }));

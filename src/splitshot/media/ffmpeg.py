@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import json
+import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -75,8 +77,29 @@ def run_ffprobe_json(input_path: Path) -> dict:
     return json.loads(payload)
 
 
-def run_ffmpeg(command: list[str]) -> None:
-    _run(["ffmpeg", "-y", *command])
+def run_ffmpeg(command: list[str], log_callback: Callable[[str], None] | None = None) -> None:
+    if log_callback is None:
+        _run(["ffmpeg", "-y", *command])
+        return
+    resolved_command = ffmpeg_command(command)
+    log_callback(f"FFmpeg command: {shlex.join(resolved_command)}")
+    process = subprocess.Popen(
+        resolved_command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stderr_lines: list[str] = []
+    if process.stderr is not None:
+        for raw_line in process.stderr:
+            line = raw_line.rstrip()
+            if not line:
+                continue
+            stderr_lines.append(line)
+            log_callback(line)
+    return_code = process.wait()
+    if return_code != 0:
+        raise MediaError("\n".join(stderr_lines[-40:]) or "FFmpeg command failed")
 
 
 def ffmpeg_command(command: list[str]) -> list[str]:
@@ -84,7 +107,11 @@ def ffmpeg_command(command: list[str]) -> list[str]:
 
 
 def trim_video(
-    source_path: str, output_path: str, start_s: float | None = None, end_s: float | None = None
+    source_path: str,
+    output_path: str,
+    start_s: float | None = None,
+    end_s: float | None = None,
+    log_callback: Callable[[str], None] | None = None,
 ) -> None:
     if not source_path:
         raise MediaError("source_path is required for trim")
@@ -131,7 +158,7 @@ def trim_video(
         ]
     )
     try:
-        run_ffmpeg(cmd)
+        run_ffmpeg(cmd, log_callback=log_callback)
     except MediaError as exc:
         output_path_obj.unlink(missing_ok=True)
         raise MediaError(f"Trim failed for {source_path} -> {output_path}: {exc}") from exc

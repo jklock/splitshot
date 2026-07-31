@@ -53,6 +53,11 @@ class Badge:
     text_bias: str = "center"
     image_path: str = ""
     image_scale_mode: str = "contain"
+    style_type: str | None = None
+    font_family: str | None = None
+    font_size: int | None = None
+    font_bold: bool | None = None
+    font_italic: bool | None = None
 
 
 _FONT_SIZE = {
@@ -564,6 +569,11 @@ class OverlayRenderer:
                             custom_style,
                             width=text_box.width or None,
                             height=text_box.height or None,
+                            style_type=text_box.style_type,
+                            font_family=text_box.font_family,
+                            font_size=text_box.font_size,
+                            font_bold=text_box.font_bold,
+                            font_italic=text_box.font_italic,
                         )
                     ],
                     project,
@@ -596,6 +606,11 @@ class OverlayRenderer:
                         custom_style,
                         width=text_box.width or None,
                         height=text_box.height or None,
+                        style_type=text_box.style_type,
+                        font_family=text_box.font_family,
+                        font_size=text_box.font_size,
+                        font_bold=text_box.font_bold,
+                        font_italic=text_box.font_italic,
                     )
                 ],
                 project,
@@ -674,14 +689,15 @@ class OverlayRenderer:
         if not badges:
             return []
 
-        font_size = project.overlay.font_size or _FONT_SIZE.get(
+        first_badge = badges[0]
+        font_size = first_badge.font_size or project.overlay.font_size or _FONT_SIZE.get(
             project.overlay.badge_size, _FONT_SIZE[BadgeSize.M]
         )
         font = _overlay_qfont(
-            project.overlay.font_family or default_overlay_font_family(),
+            first_badge.font_family or project.overlay.font_family or default_overlay_font_family(),
             font_size,
-            project.overlay.font_bold,
-            project.overlay.font_italic,
+            project.overlay.font_bold if first_badge.font_bold is None else first_badge.font_bold,
+            project.overlay.font_italic if first_badge.font_italic is None else first_badge.font_italic,
         )
         painter.setFont(font)
         metrics = painter.fontMetrics()
@@ -803,9 +819,10 @@ class OverlayRenderer:
             background.setAlphaF(badge.style.opacity)
             painter.setPen(Qt.NoPen)
             painter.setBrush(background)
-            if project.overlay.style_type == "bubble":
+            style_type = badge.style_type or project.overlay.style_type
+            if style_type == "bubble":
                 radius = rect.height() / 2
-            elif project.overlay.style_type == "rounded":
+            elif style_type == "rounded":
                 radius = 16
             else:
                 radius = 0

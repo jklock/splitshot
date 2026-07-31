@@ -25,6 +25,7 @@ from splitshot.domain.models import (
     MergeSourceAssetPathKind,
     MergeSourceTrimDerivative,
     OverlayPosition,
+    ProjectStage,
     ScoreLetter,
     ShotEvent,
     ShotMLSettings,
@@ -1015,6 +1016,49 @@ def test_trim_selected_stages_processes_only_requested_stages_and_restores_activ
         (third.id, 1.5, 2.5, False),
     ]
     assert controller.project.active_stage_id == second.id
+
+
+def test_trim_selected_stages_reports_aggregate_per_video_progress(monkeypatch) -> None:
+    controller = ProjectController()
+    first = ProjectStage(
+        label="Stage 1",
+        order_index=1,
+        primary_media=VideoAsset(path="/fixtures/stage-1.mp4"),
+        added_media=[MergeSource(asset=VideoAsset(path="/fixtures/stage-1-pov.mp4"))],
+    )
+    second = ProjectStage(
+        label="Stage 2",
+        order_index=2,
+        primary_media=VideoAsset(path="/fixtures/stage-2.mp4"),
+    )
+    controller.project.stages = [first, second]
+    controller.project.active_stage_id = first.id
+    controller._sync_active_stage_to_project()
+
+    def record_trim(*, progress_callback=None, **_kwargs) -> None:
+        stage = controller.project.active_stage
+        assert stage is not None
+        for asset in [stage.primary_media, *(source.asset for source in stage.added_media)]:
+            progress_callback({"phase": "file", "media_label": Path(asset.path).name})
+
+    monkeypatch.setattr(controller, "trim_all_merge_sources", record_trim)
+    progress: list[dict[str, object]] = []
+
+    controller.trim_selected_stages(
+        [first.id, second.id],
+        keep_before_beep_s=1.0,
+        keep_after_last_shot_s=1.0,
+        progress_callback=progress.append,
+    )
+
+    file_events = [event for event in progress if event.get("phase") == "file"]
+    assert [event["file_index"] for event in file_events] == [1, 2, 3]
+    assert all(event["file_count"] == 3 for event in file_events)
+    assert [event["progress"] for event in file_events] == sorted(
+        event["progress"] for event in file_events
+    )
+    assert progress[-1]["phase"] == "complete"
+    assert progress[-1]["progress"] == 1.0
 
 
 def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes(

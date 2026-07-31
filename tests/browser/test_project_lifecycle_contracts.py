@@ -453,4 +453,4 @@ def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder
     assert probed["path"] == str(project_path)
     assert probed["normalized_path"] == str(project_path.resolve())
     assert probed["has_project_file"] is False
-    assert probed["missing_required_dirs"] == ["CSV", "Markers", "Output"]
+    assert probed["missing_required_dirs"] == ["CSV", "Markers", "IntroOutro", "Output"]

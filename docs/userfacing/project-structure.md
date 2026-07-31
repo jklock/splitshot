@@ -10,6 +10,7 @@ My Project/
   Input/
   CSV/
   Markers/
+  IntroOutro/
   Output/
 ```
 
@@ -21,6 +22,7 @@ My Project/
 | `Input/` | Project-managed primary and added stage media, plus generated trim derivatives. |
 | `CSV/` | Project-managed PractiScore CSV/TXT sources. |
 | `Markers/` | Project-managed marker images. |
+| `IntroOutro/` | Optional project-managed match intro and outro videos. |
 | `Output/` | Rendered exports. |
 
 ## File Ownership

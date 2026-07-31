@@ -5,7 +5,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
-
+from splitshot.domain.models import ProjectStage
+from splitshot.ui.controller import ProjectController
 
 METRICS_ROW_WIDTH = 11
 
@@ -169,6 +170,38 @@ def _metrics_graph_snapshot(page) -> list[dict[str, object]]:
             })),
         }))"""
     )
+
+
+def test_metrics_is_match_first_with_collapsed_stage_tree() -> None:
+    controller = ProjectController()
+    controller.project.stages = [
+        ProjectStage(label="Stage 1", order_index=1),
+        ProjectStage(label="Stage 2", order_index=2),
+    ]
+    controller.project.active_stage_id = controller.project.stages[0].id
+    controller._sync_active_stage_to_project()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _activate_tool(page, "metrics")
+                assert page.locator('[data-tool-pane="metrics"]').get_by_text(
+                    "Match Metrics", exact=True
+                ).is_visible()
+                branches = page.locator("#metrics-stage-tree details.metrics-stage-tree-item")
+                assert branches.count() == 2
+                assert branches.evaluate_all("items => items.every((item) => item.open === false)")
+                assert "Stage 1" in branches.nth(0).locator("summary").inner_text()
+                branches.nth(0).locator("summary").click()
+                assert branches.nth(0).evaluate("item => item.open") is True
+                assert branches.nth(0).locator(".metric-card").count() >= 6
+                assert branches.nth(0).locator(".metrics-stage-shot-table").count() == 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_video_factory) -> None:

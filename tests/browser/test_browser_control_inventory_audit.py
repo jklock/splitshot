@@ -78,6 +78,7 @@ data-shotml-setting:weak_onset_support_threshold
 data-shotml-setting:weak_support_penalty
 data-shotml-setting:window_size
 data-tool-pane:export
+data-tool-pane:intro-outro
 data-tool-pane:media
 data-tool-pane:markers
 data-tool-pane:merge
@@ -92,6 +93,7 @@ data-tool-pane:shotml
 data-tool-pane:timing
 data-tool-pane:trim-sync
 data-tool:export
+data-tool:intro-outro
 data-tool:media
 data-tool:markers
 data-tool:merge
@@ -283,7 +285,6 @@ id:settings-use-current-layout
 id:shot-direction
 id:shot-quadrant
 id:show-draw
-id:show-export-log
 id:show-markers
 id:show-overlay
 id:show-pip

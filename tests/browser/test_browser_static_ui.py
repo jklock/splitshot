@@ -478,11 +478,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-action="apply_motion_visible"' not in js
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
-    assert 'class="data-table metrics-trend-table" aria-label="Metrics trend table"' in html
+    assert 'id="metrics-stage-tree" class="metrics-stage-tree"' in html
     assert 'id="metrics-export-csv"' in html
     assert 'id="metrics-export-text"' in html
-    assert 'id="show-export-log"' in html
-    assert ">Show Export Log</button>" in html
+    assert 'id="show-export-log"' not in html
     assert 'id="export-export-log"' in html
     assert 'id="export-log-modal"' in html
     assert 'id="export-log-output"' in html
@@ -738,7 +737,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="audio-bitrate"' in html
     assert 'id="color-space"' in html
     assert 'id="ffmpeg-preset"' in html
-    assert 'id="show-export-log"' in html
+    assert 'id="show-export-log"' not in html
     assert 'id="export-log-output"' in html
     assert 'id="export-log-modal"' in html
     assert "Active stage settings" in html
@@ -1182,7 +1181,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));'
         in js
     )
-    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in js
+    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' not in js
     assert '$("export-export-log")?.addEventListener("click", downloadExportLog);' in js
     assert '$("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));' in js
     assert "function defaultScoreLetter(ruleset = activeScoringRuleset()) {" in js
@@ -1759,7 +1758,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert "ensurePrimaryVideoAudio(secondary);" in video_player_js
     assert 'logPrimaryVideoState("source.attach");' in video_player_js
     assert (
-        'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);'
+        'const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);'
         in video_player_js
     )
     assert (
@@ -1983,7 +1982,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "create-output-profile",
         "save-output-profile",
         "delete-output-profile",
-        "show-export-log",
         "export-export-log",
         "close-export-log",
         "close-color-picker",
@@ -2355,7 +2353,7 @@ def test_browser_app_bootstrap_delegates_shell_components() -> None:
     assert "return statusBarComponent?.renderStats();" in js
     assert "return statusBarComponent?.timingSummaryRows();" in js
     assert "return statusBarComponent?.renderTimingSummary();" in js
-    assert "return videoPlayerComponent?.renderVideo();" in js
+    assert "const result = videoPlayerComponent?.renderVideo();" in js
     assert "statusBarComponent = createStatusBarComponent({" in js
     assert "videoPlayerComponent = createVideoPlayerComponent({" in js
     assert "getState: () => state," in js
@@ -2371,7 +2369,7 @@ def test_browser_app_bootstrap_delegates_shell_components() -> None:
     assert "export function createVideoPlayerComponent({" in video_player
     assert "function renderVideo() {" in video_player
     assert (
-        'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);'
+        'const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);'
         in video_player
     )
     assert "const waveformEnabled = Boolean(state.project.analysis?.shots?.length);" in video_player
@@ -2394,11 +2392,11 @@ def test_badge_alpha_control_reserves_space_for_number_spinner_and_suffix() -> N
     css = _read_split_css()
     selector = "#badge-style-grid .badge-style-card .opacity-percent-input"
     within = css[css.index(selector) : css.index(selector) + 650]
-    assert "min-width: 4.75rem;" in within
-    assert "padding: var(--space-1) 1.75rem var(--space-1) 0.55rem;" in within
-    assert "width: 4.75rem;" in within
+    assert "min-width: 0;" in within
+    assert "padding: var(--space-1) 2.75rem var(--space-1) 0.75rem;" in within
+    assert "width: 100%;" in within
     suffix = css.index("#badge-style-grid .badge-style-card .opacity-percent-suffix")
-    assert "margin-left: var(--space-1);" in css[suffix : suffix + 400]
+    assert "margin-left: 0;" in css[suffix : suffix + 400]
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

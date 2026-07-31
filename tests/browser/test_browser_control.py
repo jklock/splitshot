@@ -433,6 +433,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
         keep_before_beep_s=None,
         keep_after_last_shot_s=None,
         clear=False,
+        progress_callback=None,
+        log_callback=None,
     ) -> None:
         captured.update(
             {
@@ -442,6 +444,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
                 "keep_before_beep_s": keep_before_beep_s,
                 "keep_after_last_shot_s": keep_after_last_shot_s,
                 "clear": clear,
+                "has_progress_callback": callable(progress_callback),
+                "has_log_callback": callable(log_callback),
             }
         )
 
@@ -468,6 +472,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
         "keep_before_beep_s": 1.5,
         "keep_after_last_shot_s": 2.5,
         "clear": False,
+        "has_progress_callback": True,
+        "has_log_callback": True,
     }
 
 
@@ -1710,7 +1716,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": False,
-            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
 
         (project_path / "project.json").write_text("{}", encoding="utf-8")
@@ -1722,7 +1728,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": True,
-            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
     finally:
         server.shutdown()

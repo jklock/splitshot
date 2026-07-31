@@ -99,7 +99,7 @@ export function createActivityRuntime({
       const seq = Number(entry.seq || 0);
       if (seq > runtime.activityCursor) runtime.activityCursor = seq;
       if (entry.event === "/api/activity/poll") return;
-      if (entry.event === "api.export.log") {
+      if (entry.event === "api.export.log" || entry.event === "api.process.log") {
         appendExportLogLine(entry.line);
         exportLogChanged = true;
         return;
@@ -126,6 +126,24 @@ export function createActivityRuntime({
           detail.textContent = entry.phase === "combine"
             ? "Concatenating, fading, and validating"
             : `Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
+        }
+        return;
+      }
+      if (entry.event === "api.trim.progress") {
+        const nextProgress = Number(entry.progress);
+        if (Number.isFinite(nextProgress)) setProcessingProgress(nextProgress * 100);
+        const message = document.getElementById("processing-message");
+        const detail = document.getElementById("processing-detail");
+        const verb = entry.action === "clear" ? "Clearing" : "Trimming";
+        if (message) {
+          message.textContent = entry.phase === "complete"
+            ? "Trim complete"
+            : `${verb} ${entry.media_label || "selected videos"}...`;
+        }
+        if (detail) {
+          detail.textContent = entry.phase === "complete"
+            ? `${entry.file_count || 0} videos processed`
+            : `Video ${entry.file_index || 0} of ${entry.file_count || 0} · Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
         }
         return;
       }

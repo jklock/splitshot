@@ -14,7 +14,8 @@ Audit basis: the v1.0.7 browser shell/backend wiring and the code-first pane fun
 - `Overlay`: overlay styling, placement, drag, and preview controls.
 - `Review`: review playback state, review visibility state, and imported summary presentation.
 - `Export`: stage-local export settings only; no direct render execution surface.
-- `Queue`: queue state review, queue membership/state, active-stage selection from queue controls, batch processing, and combined processing.
+- `Intro / Outro`: project-managed boundary videos plus independent WYSIWYG text overlays and match-level result fields.
+- `Queue`: all-match queue membership/state, intro/outro inclusion, batch processing, combined processing, output reveal, and the live processing log.
 - `Metrics`: metrics workbench, graphs, metrics exports.
 - `ShotML`: ShotML defaults, proposals, and proposal actions.
 - `Settings`: settings sections, settings summaries, and section save/reset payload building.
@@ -40,7 +41,7 @@ Pane-owned summaries and section-owned settings payloads should stay out of the 
 
 ## File And Output Ownership
 
-- Project creation owns the `Input/`, `CSV/`, `Markers/`, and `Output/` directory structure.
+- Project creation owns the `Input/`, `CSV/`, `Markers/`, `IntroOutro/`, and `Output/` directory structure.
 - `Media` imports copy external selections into `Input/`; `Project` imports copy PractiScore sources into `CSV/`; marker-image imports copy into `Markers/`.
 - Native pickers start at the applicable project-owned root on macOS, Windows, and Linux. Picker navigation outside that root is allowed because the import boundary copies the selection back into the project.
 - Save/autosave owns metadata persistence and relative path normalization for all stages. It does not copy media.

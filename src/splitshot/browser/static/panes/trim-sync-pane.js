@@ -5,6 +5,7 @@ export function createTrimSyncPane({
   withPreservedScrollState = (_elements, callback) => callback(),
   activity = () => {},
   callApi = async () => null,
+  openProcessingLog = async () => {},
   scheduleInteractionPreviewRender = () => {},
   renderVideo = () => {},
   setStatus = () => {},
@@ -582,6 +583,7 @@ export function createTrimSyncPane({
     $("trim-global-clear")?.addEventListener("click", () => trimAll(true));
     $("trim-global-undo")?.addEventListener("click", () => undoLastTrimChange());
     $("trim-global-defaults-btn")?.addEventListener("click", applyGlobalDefaults);
+    $("trim-show-log")?.addEventListener("click", openProcessingLog);
     $("trim-stage-select-all")?.addEventListener("click", () => {
       trimmableStages().forEach((stage) => selectedTrimStageIds.add(String(stage.id || "")));
       documentObject.querySelectorAll("[data-trim-stage-id]").forEach((input) => {
@@ -719,6 +721,7 @@ export function createTrimSyncPane({
                 <button id="trim-global-apply" type="button" class="btn btn-primary">Apply All</button>
                 <button id="trim-global-clear" type="button" class="btn btn-secondary">Clear All</button>
               </div>
+              <button id="trim-show-log" type="button" class="btn btn-secondary">Show Log</button>
             </div>
             </div>
           </div>
