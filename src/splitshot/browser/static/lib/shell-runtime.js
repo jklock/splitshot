@@ -479,6 +479,42 @@ export function createShellRuntime({
       if (result) setActiveTool("media");
       event.target.value = "";
     });
+    const mediaDropSurface = (target) => target instanceof windowObject.Element
+      ? target.closest('[data-tool-pane="media"], [data-tool-pane="merge"], #video-stage')
+      : null;
+    documentObject.addEventListener("dragover", (event) => {
+      const transferTypes = Array.from(event.dataTransfer?.types || []);
+      if (!mediaDropSurface(event.target) || !transferTypes.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      $("cockpit-root")?.classList.add("media-drop-active");
+    });
+    documentObject.addEventListener("dragleave", (event) => {
+      if (event.relatedTarget instanceof windowObject.Node && documentObject.contains(event.relatedTarget)) return;
+      $("cockpit-root")?.classList.remove("media-drop-active");
+    });
+    documentObject.addEventListener("drop", async (event) => {
+      const surface = mediaDropSurface(event.target);
+      if (!surface || !event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      $("cockpit-root")?.classList.remove("media-drop-active");
+      if (!hasActiveProject()) {
+        setStatus(gatedProjectActionMessage());
+        return;
+      }
+      const files = Array.from(event.dataTransfer.files || []);
+      const state = getState();
+      const needsPrimary = surface.matches('[data-tool-pane="media"], #video-stage')
+        && !String(state?.project?.primary_video?.path || "").trim();
+      let result = null;
+      if (needsPrimary && files.length > 0) {
+        await flushPendingProjectDrafts({ primaryImport: true });
+        result = await postFile("/api/files/primary", files.shift());
+        if (!result) return;
+      }
+      if (files.length > 0) result = await postFiles("/api/files/merge", files) || result;
+      if (result) setActiveTool("media");
+    });
     $("import-practiscore").addEventListener("click", async () => {
       if (!hasActiveProject()) {
         setStatus(gatedProjectActionMessage());

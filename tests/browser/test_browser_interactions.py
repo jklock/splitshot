@@ -429,6 +429,105 @@ def test_reordered_cross_domain_response_cannot_overwrite_newer_single_click(
         server.shutdown()
 
 
+@pytest.mark.parametrize(
+    ("browser_name", "launch_options"),
+    [
+        pytest.param("chromium", {}, id="chromium"),
+        pytest.param("chromium", {"channel": "chrome"}, id="chrome"),
+        pytest.param("firefox", {}, id="firefox"),
+        pytest.param("webkit", {}, id="webkit"),
+    ],
+)
+def test_media_drop_routes_each_file_once_and_persists(
+    tmp_path: Path,
+    synthetic_video_factory,
+    browser_name: str,
+    launch_options: dict[str, str],
+) -> None:
+    project_path = tmp_path / "media-drop.ssproj"
+    primary_path = Path(synthetic_video_factory(name="drop-primary"))
+    secondary_path = Path(synthetic_video_factory(name="drop-secondary"))
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser_type = getattr(playwright, browser_name)
+            browser = browser_type.launch(headless=True, **launch_options)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(server.url, wait_until="domcontentloaded")
+            try:
+                page.evaluate("path => createNewProject(path)", str(project_path))
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "media")
+                mutations: list[str] = []
+                page.on(
+                    "request",
+                    lambda request: mutations.append(request.url.split("?", 1)[0])
+                    if request.method == "POST"
+                    and request.url.split("?", 1)[0].endswith(
+                        ("/api/files/primary", "/api/files/merge")
+                    )
+                    else None,
+                )
+
+                def drop_file(path: Path, target: str) -> None:
+                    page.evaluate(
+                        """() => {
+                          const oldInput = document.getElementById('audit-drop-file');
+                          oldInput?.remove();
+                          const input = document.createElement('input');
+                          input.id = 'audit-drop-file';
+                          input.type = 'file';
+                          document.body.append(input);
+                        }"""
+                    )
+                    page.locator("#audit-drop-file").set_input_files(str(path))
+                    page.evaluate(
+                        """(targetSelector) => {
+                          const transfer = new DataTransfer();
+                          transfer.items.add(document.getElementById('audit-drop-file').files[0]);
+                          const target = document.querySelector(targetSelector);
+                          target.dispatchEvent(new DragEvent('dragover', {
+                            bubbles: true, cancelable: true, dataTransfer: transfer,
+                          }));
+                          if (!document.getElementById('cockpit-root').classList.contains('media-drop-active')) {
+                            throw new Error('Drop target did not show active feedback');
+                          }
+                          target.dispatchEvent(new DragEvent('drop', {
+                            bubbles: true, cancelable: true, dataTransfer: transfer,
+                          }));
+                        }""",
+                        target,
+                    )
+
+                drop_file(primary_path, '[data-tool-pane="media"]')
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_video?.path)"
+                )
+                assert page.evaluate(
+                    "!document.getElementById('cockpit-root').classList.contains('media-drop-active')"
+                )
+                assert sum(url.endswith("/api/files/primary") for url in mutations) == 1
+
+                drop_file(secondary_path, "#video-stage")
+                page.wait_for_function(
+                    "() => (state?.project?.merge_sources || []).length === 1"
+                )
+                assert sum(url.endswith("/api/files/merge") for url in mutations) == 1
+
+                stored = json.loads((project_path / "project.json").read_text())
+                assert Path(stored["primary_video"]["path"]).name == primary_path.name
+                assert len(stored["merge_sources"]) == 1
+                assert (
+                    Path(stored["merge_sources"][0]["asset"]["path"]).name
+                    == secondary_path.name
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_project_controls_enable_and_media_stays_stage_gated_after_project_create(
     tmp_path: Path,
 ) -> None:
