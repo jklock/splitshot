@@ -7,6 +7,8 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import OverlayTextBox
+from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.video_test_helpers import create_project
 
 
@@ -292,6 +294,63 @@ def test_in_out_control_inventory_uses_one_interaction_and_preserves_node(
                         assert reopened.is_checked() is expected
                     else:
                         assert reopened.input_value() == str(input_value)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> None:
+    controller = ProjectController()
+    source = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+    controller.set_practiscore_context(
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.project.intro_clip.overlay.text_boxes = [
+        OverlayTextBox(source="match_summary")
+    ]
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_page(playwright, server)
+            try:
+                page.locator("button[data-tool='intro-outro']").click(force=True)
+                assert page.locator(".intro-outro-preview-badge").inner_text().splitlines() == [
+                    "Final 83.01",
+                    "Points Down 11",
+                    "Penalties 2",
+                    "Division CO",
+                    "Class UN",
+                    "Overall 4",
+                ]
+                labels = page.locator(".intro-outro-metrics .check-row").all_inner_texts()
+                assert labels == [
+                    "Score / Time",
+                    "Raw Time",
+                    "Points Down",
+                    "Penalties",
+                    "Division",
+                    "Class",
+                    "Overall",
+                ]
+                match = page.evaluate("state.match_metrics")
+                assert match["spreadsheet_authoritative"] is True
+                assert match["result_value"] == 83.01
+                assert match["points_down"] == 11.0
+                assert match["total_penalties"] == 2.0
+                csv_lines = page.evaluate("buildMetricsCsv()").splitlines()
+                match_section = csv_lines.index("# match_stats")
+                headers = csv_lines[match_section + 1].split(",")
+                values = csv_lines[match_section + 2].split(",")
+                match_row = dict(zip(headers, values, strict=True))
+                assert match_row["result_value"] == "83.01"
+                assert match_row["points_label"] == "Points Down"
+                assert match_row["points_value"] == "11"
+                assert match_row["points_down"] == "11"
+                assert match_row["penalties"] == "2"
             finally:
                 browser.close()
     finally:

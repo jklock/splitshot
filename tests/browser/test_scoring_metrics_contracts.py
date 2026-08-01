@@ -58,6 +58,50 @@ def test_browser_state_exposes_per_stage_and_combined_match_metrics() -> None:
     assert payload["match_metrics"]["result_label"] == "Combined HF"
 
 
+def test_browser_state_uses_spreadsheet_match_totals_instead_of_partial_stage_sums() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.imported_stage = ImportedStageScore(
+        source_name="IDPA.csv",
+        match_type="idpa",
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+        division="CO",
+        classification="UN",
+        stage_number=2,
+        raw_seconds=29.83,
+        aggregate_points=5.0,
+        final_time=39.83,
+        match_final_time=83.01,
+        match_points_down=11.0,
+        match_penalties=2.0,
+        match_stage_count=4,
+        match_penalty_counts={"non_threats": 1.0, "procedural_errors": 1.0},
+    )
+
+    payload = browser_state(project, "Ready.")
+    match = payload["match_metrics"]
+
+    assert match["spreadsheet_authoritative"] is True
+    assert match["stage_count"] == 4
+    assert match["result_label"] == "Final"
+    assert match["result_value"] == 83.01
+    assert match["display_value"] == "83.01"
+    assert match["raw_time_ms"] is None
+    assert match["score_label"] == "Points Down"
+    assert match["score_value"] == 11.0
+    assert match["points_down"] == 11.0
+    assert match["total_penalties"] == 2.0
+    assert match["penalty_counts"] == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
+    assert match["overall_place"] == 4
+    assert match["division"] == "CO"
+    assert match["classification"] == "UN"
+
+
 def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows() -> None:
     project = Project()
     project.scoring.enabled = True
@@ -202,6 +246,8 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert "const viewHeight = timeline ? (compact ? 84 : 110)" in metrics_pane_js
     assert 'name: "match_stats"' in metrics_pane_js
     assert 'name: "stage_metrics"' in metrics_pane_js
+    assert 'metrics.score_label || "Shot Points"' in metrics_pane_js
+    assert 'match.points_down ?? ""' in metrics_pane_js
 
 
 def test_bulk_trim_omits_redundant_timing_summary() -> None:

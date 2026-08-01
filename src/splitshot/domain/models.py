@@ -675,6 +675,11 @@ class ImportedStageScore:
     stage_points: float | None = None
     stage_place: int | None = None
     score_counts: dict[str, float] = field(default_factory=dict)
+    match_final_time: float | None = None
+    match_points_down: float | None = None
+    match_penalties: float | None = None
+    match_stage_count: int | None = None
+    match_penalty_counts: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -1916,6 +1921,10 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
     hit_factor = data.get("hit_factor")
     final_time = data.get("final_time")
     stage_points = data.get("stage_points")
+    match_final_time = data.get("match_final_time")
+    match_points_down = data.get("match_points_down")
+    match_penalties = data.get("match_penalties")
+    match_stage_count = data.get("match_stage_count")
     return ImportedStageScore(
         source_name=str(data.get("source_name", "")),
         source_path=str(data.get("source_path", "")),
@@ -1937,6 +1946,22 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
         stage_place=None if stage_place in {None, ""} else int(stage_place),
         score_counts={
             str(key): float(value) for key, value in data.get("score_counts", {}).items()
+        },
+        match_final_time=(
+            None if match_final_time in {None, ""} else float(match_final_time)
+        ),
+        match_points_down=(
+            None if match_points_down in {None, ""} else float(match_points_down)
+        ),
+        match_penalties=(
+            None if match_penalties in {None, ""} else float(match_penalties)
+        ),
+        match_stage_count=(
+            None if match_stage_count in {None, ""} else int(match_stage_count)
+        ),
+        match_penalty_counts={
+            str(key): float(value)
+            for key, value in data.get("match_penalty_counts", {}).items()
         },
     )
 

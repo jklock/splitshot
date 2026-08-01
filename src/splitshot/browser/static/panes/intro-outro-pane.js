@@ -1,25 +1,36 @@
 const MATCH_METRICS = Object.freeze([
-  ["match_result", "Final Match Result"],
+  ["score_time", "Score / Time"],
   ["raw_time", "Raw Time"],
-  ["stage_count", "Stages"],
-  ["total_shots", "Shots"],
-  ["shot_points", "Shot Points"],
+  ["points_down", "Points Down"],
   ["penalties", "Penalties"],
-  ["competitor", "Competitor"],
-  ["division", "Division"],
-  ["classification", "Class"],
-  ["overall_place", "Overall Place"],
+  ["division_placement", "Division"],
+  ["class_placement", "Class"],
+  ["overall_placement", "Overall"],
 ]);
 
 const DEFAULT_MATCH_METRICS = Object.freeze([
-  "match_result",
+  "score_time",
   "raw_time",
-  "stage_count",
-  "total_shots",
+  "points_down",
   "penalties",
-  "division",
-  "classification",
-  "overall_place",
+  "division_placement",
+  "class_placement",
+  "overall_placement",
+]);
+
+const LEGACY_MATCH_METRIC_IDS = Object.freeze({
+  match_result: "score_time",
+  shot_points: "points_down",
+  division: "division_placement",
+  classification: "class_placement",
+  overall_place: "overall_placement",
+});
+
+const MATCH_RENDER_METRICS = Object.freeze([
+  ...MATCH_METRICS,
+  ["stage_count", "Stages"],
+  ["total_shots", "Shots"],
+  ["competitor", "Competitor"],
 ]);
 
 export function createIntroOutroPane({
@@ -72,29 +83,33 @@ export function createIntroOutroPane({
     const metrics = state().match_metrics || {};
     const scoring = project().scoring || {};
     const values = {
-      match_result: metrics.display_value || "",
+      score_time: metrics.display_value || "",
       raw_time: metrics.raw_time_ms == null ? "" : `${(Number(metrics.raw_time_ms) / 1000).toFixed(2)}s`,
       stage_count: metrics.stage_count || "",
       total_shots: metrics.total_shots || "",
-      shot_points: Number(metrics.shot_points || 0).toString(),
+      points_down: Number(metrics.points_down || 0).toString(),
       penalties: Number(metrics.total_penalties || 0).toString(),
-      competitor: scoring.competitor_name || "",
-      division: scoring.division || "",
-      classification: scoring.classification || "",
-      overall_place: scoring.competitor_place || "",
+      competitor: metrics.competitor || scoring.competitor_name || "",
+      division_placement: metrics.division || scoring.division || "",
+      class_placement: metrics.classification || scoring.classification || "",
+      overall_placement: metrics.overall_place || scoring.competitor_place || "",
     };
     return String(values[metricId] ?? "");
+  }
+
+  function normalizedMatchMetricIds(metricIds = []) {
+    return [...new Set(metricIds.map((id) => LEGACY_MATCH_METRIC_IDS[id] || id))];
   }
 
   function boxDisplayText(box) {
     if (box.source !== "match_summary") return String(box.text || "");
     const requested = Array.isArray(box.summary_metric_ids) && box.summary_metric_ids.length
-      ? box.summary_metric_ids
+      ? normalizedMatchMetricIds(box.summary_metric_ids)
       : DEFAULT_MATCH_METRICS;
     const resultLabel = String(state().match_metrics?.result_label || "Final");
-    return MATCH_METRICS
+    return MATCH_RENDER_METRICS
       .filter(([id]) => requested.includes(id) && matchValue(id))
-      .map(([id, label]) => `${id === "match_result" ? resultLabel : label} ${matchValue(id)}`)
+      .map(([id, label]) => `${id === "score_time" ? resultLabel : label} ${matchValue(id)}`)
       .join("\n");
   }
 
@@ -258,7 +273,9 @@ export function createIntroOutroPane({
 
   function metricChecklist(box, index) {
     if (box.source !== "match_summary") return "";
-    const selected = box.summary_metric_ids?.length ? box.summary_metric_ids : DEFAULT_MATCH_METRICS;
+    const selected = box.summary_metric_ids?.length
+      ? normalizedMatchMetricIds(box.summary_metric_ids)
+      : DEFAULT_MATCH_METRICS;
     return `<fieldset class="intro-outro-metrics"><legend>Match data</legend>${MATCH_METRICS.map(([id, label]) => `
       <label class="check-row"><input type="checkbox" data-box-index="${index}" data-metric-id="${id}" ${selected.includes(id) ? "checked" : ""} /> ${label}</label>
     `).join("")}</fieldset>`;

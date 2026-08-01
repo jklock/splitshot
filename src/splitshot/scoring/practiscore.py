@@ -420,6 +420,25 @@ def _import_idpa(
         last_name_key="Last Name",
     )
     stage_prefix = f"Stage {stage_number}"
+    match_penalty_counts = {
+        key: value
+        for key, value in {
+            "non_threats": _float_or_zero(row.get("Hits on Non-Threat")),
+            "procedural_errors": _float_or_zero(row.get("Procedural Error")),
+            "failures_to_do_right": _float_or_zero(row.get("Failure to Do Right")),
+            "flagrant_penalties": _float_or_zero(row.get("Flagrant")),
+            "finger_pe": _float_or_zero(row.get("Finger PE")),
+        }.items()
+        if value
+    }
+    match_stage_count = len(
+        {
+            match.group(1)
+            for header in row
+            for match in [re.fullmatch(r"Stage (\d+) Time", str(header or "").strip())]
+            if match is not None
+        }
+    )
     stage_time = _required_float(row.get(f"{stage_prefix} Time"), f"{stage_prefix} Time")
     points_down = _float_or_zero(row.get(f"{stage_prefix} PD"))
     non_threats = _float_or_zero(row.get(f"{stage_prefix} Hits on Non-Threat"))
@@ -470,6 +489,11 @@ def _import_idpa(
         shot_penalties=0.0,
         final_time=final_time,
         score_counts=score_counts,
+        match_final_time=_float_or_none(row.get("Total Score")),
+        match_points_down=_float_or_none(row.get("Total PD")),
+        match_penalties=sum(match_penalty_counts.values()),
+        match_stage_count=match_stage_count or None,
+        match_penalty_counts=match_penalty_counts,
     )
     comparison_competitors = []
     for other_row in rows:

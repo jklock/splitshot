@@ -91,6 +91,45 @@ def test_intro_outro_media_overlays_and_queue_choices_round_trip() -> None:
     assert restored.queue_settings.include_outro is False
 
 
+def test_match_results_overlay_uses_final_spreadsheet_match_values() -> None:
+    controller = ProjectController()
+    source = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+    controller.set_practiscore_context(
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+
+    text = controller._match_summary_overlay_text(
+        [
+            "score_time",
+            "raw_time",
+            "points_down",
+            "penalties",
+            "division_placement",
+            "class_placement",
+            "overall_placement",
+        ]
+    )
+
+    assert text.splitlines() == [
+        "Final 83.01",
+        "Points Down 11",
+        "Penalties 2",
+        "Division CO",
+        "Class UN",
+        "Overall 4",
+    ]
+    assert controller._match_summary_overlay_text(
+        ["match_result", "shot_points", "penalties", "overall_place"]
+    ).splitlines() == [
+        "Final 83.01",
+        "Points Down 11",
+        "Penalties 2",
+        "Overall 4",
+    ]
+
+
 def test_intro_outro_clip_fades_drive_video_and_audio_filters(
     tmp_path: Path, monkeypatch
 ) -> None:

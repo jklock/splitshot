@@ -97,9 +97,21 @@ def _build_match_metrics(stage_metrics: list[dict[str, Any]]) -> dict[str, Any]:
         if summary.get("final_time") is not None
     ]
     first_summary = next((summary for summary in summaries if summary), {})
+    imported_match = next(
+        (
+            summary.get("imported_stage", {})
+            for summary in summaries
+            if (summary.get("imported_stage") or {}).get("match_final_time") is not None
+        ),
+        {},
+    )
     mode = str(first_summary.get("mode") or "")
     raw_seconds = sum(raw_values) / 1000.0
-    if mode == "hit_factor":
+    if imported_match:
+        result_value = float(imported_match["match_final_time"])
+        result_label = "Final"
+        display_value = f"{result_value:.2f}"
+    elif mode == "hit_factor":
         adjusted_points = max(0.0, shot_points - total_penalties)
         result_value = None if raw_seconds <= 0 else adjusted_points / raw_seconds
         result_label = "Combined HF"
@@ -108,22 +120,47 @@ def _build_match_metrics(stage_metrics: list[dict[str, Any]]) -> dict[str, Any]:
         result_value = sum(final_times) if final_times else None
         result_label = "Final"
         display_value = "--" if result_value is None else f"{result_value:.2f}"
+    points_down = (
+        float(imported_match.get("match_points_down") or 0.0)
+        if imported_match
+        else sum(
+            float((summary.get("imported_stage") or {}).get("aggregate_points") or 0.0)
+            for summary in summaries
+            if (summary.get("imported_stage") or {}).get("match_type") == "idpa"
+        )
+    )
+    direct_penalties = (
+        float(imported_match.get("match_penalties") or 0.0) if imported_match else None
+    )
+    score_label = "Points Down" if imported_match.get("match_type") == "idpa" else "Shot Points"
+    score_value = points_down if score_label == "Points Down" else shot_points
     return {
-        "stage_count": len(stage_metrics),
+        "stage_count": int(imported_match.get("match_stage_count") or len(stage_metrics)),
         "draw_ms": None if not draws else round(sum(draws) / len(draws)),
-        "raw_time_ms": None if not raw_values else round(sum(raw_values)),
+        "raw_time_ms": (
+            None if imported_match else (None if not raw_values else round(sum(raw_values)))
+        ),
         "total_shots": sum(int(metrics.get("total_shots") or 0) for metrics in metric_rows),
         "average_split_ms": (
             None if not split_values else round(sum(split_values) / len(split_values))
         ),
         "beep_ms": None,
         "shot_points": shot_points,
-        "total_penalties": total_penalties,
+        "points_down": points_down,
+        "score_label": score_label,
+        "score_value": score_value,
+        "total_penalties": total_penalties if direct_penalties is None else direct_penalties,
+        "penalty_counts": dict(imported_match.get("match_penalty_counts") or {}),
         "result_label": result_label,
         "result_value": result_value,
         "display_value": display_value,
         "ruleset": first_summary.get("ruleset", ""),
         "sport": first_summary.get("sport", ""),
+        "spreadsheet_authoritative": bool(imported_match),
+        "competitor": imported_match.get("competitor_name", ""),
+        "division": imported_match.get("division", ""),
+        "classification": imported_match.get("classification", ""),
+        "overall_place": imported_match.get("competitor_place"),
     }
 
 

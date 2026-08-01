@@ -224,7 +224,8 @@ export function createMetricsPane({
     if (!table) return;
     const state = currentState();
     const match = state.match_metrics || {};
-    const headers = ["Stage", "Draw", "Raw", "Shots", "Avg Split", "Beep", "Result", "Shot Points", "Penalties"];
+    const scoreLabel = match.score_label || "Shot Points";
+    const headers = ["Stage", "Draw", "Raw", "Shots", "Avg Split", "Beep", "Result", scoreLabel, "Penalties"];
     table.replaceChildren();
     table.style.gridTemplateColumns = "minmax(130px, 1.3fr) repeat(8, minmax(74px, 1fr))";
     headers.forEach((label) => {
@@ -252,7 +253,7 @@ export function createMetricsPane({
         splitSeconds(metrics.average_split_ms),
         entry.match ? "—" : splitSeconds(metrics.beep_ms),
         entry.result,
-        formatNumber(entry.match ? metrics.shot_points : scoring.shot_points, 2),
+        formatNumber(entry.match ? metrics.score_value : scoring.shot_points, 2),
         formatNumber(entry.match ? metrics.total_penalties : scoring.total_penalties, 2),
       ];
       values.forEach((value, index) => {
@@ -276,7 +277,10 @@ export function createMetricsPane({
         match ? (metrics.result_label || "Result") : (scoring.display_label || "Result"),
         match ? (metrics.display_value || "--") : (scoring.display_value || "--"),
       ],
-      ["Shot Points", formatNumber(match ? metrics.shot_points : scoring.shot_points, 2)],
+      [
+        match ? (metrics.score_label || "Shot Points") : "Shot Points",
+        formatNumber(match ? metrics.score_value : scoring.shot_points, 2),
+      ],
       ["Penalties", formatNumber(match ? metrics.total_penalties : scoring.total_penalties, 2)],
     ];
   }
@@ -1477,7 +1481,7 @@ export function createMetricsPane({
     const sections = [
       {
         name: "match_stats",
-        headers: ["stage_count", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "shot_points", "penalties"],
+        headers: ["stage_count", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "points_label", "points_value", "points_down", "shot_points", "penalties"],
         rows: [[
           match.stage_count ?? 0,
           match.draw_ms == null ? "" : precise(match.draw_ms),
@@ -1487,6 +1491,9 @@ export function createMetricsPane({
           "",
           match.result_label || "",
           match.result_value ?? "",
+          match.score_label || "",
+          match.score_value ?? "",
+          match.points_down ?? "",
           match.shot_points ?? "",
           match.total_penalties ?? "",
         ]],
@@ -1696,7 +1703,7 @@ export function createMetricsPane({
     const lines = [
       state.project?.name || "Untitled Project",
       "Match Stats",
-      `- Raw: ${splitSeconds(match.raw_time_ms)} | Shots: ${match.total_shots || 0} | Avg Split: ${splitSeconds(match.average_split_ms)} | ${match.result_label || "Result"}: ${match.display_value || "--"} | Shot Points: ${formatNumber(match.shot_points, 2)} | Penalties: ${formatNumber(match.total_penalties, 2)}`,
+      `- Raw: ${splitSeconds(match.raw_time_ms)} | Shots: ${match.total_shots || 0} | Avg Split: ${splitSeconds(match.average_split_ms)} | ${match.result_label || "Result"}: ${match.display_value || "--"} | ${match.score_label || "Shot Points"}: ${formatNumber(match.score_value, 2)} | Penalties: ${formatNumber(match.total_penalties, 2)}`,
       "",
       "Stage Stats",
       ...stages.map((stage) => {

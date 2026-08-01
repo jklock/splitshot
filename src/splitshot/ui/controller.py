@@ -3557,8 +3557,16 @@ class ProjectController(QObject):
 
         metrics = _build_match_metrics(_build_stage_metrics(self.project))
         scoring = self.project.scoring
+        aliases = {
+            "match_result": "score_time",
+            "shot_points": "points_down",
+            "division": "division_placement",
+            "classification": "class_placement",
+            "overall_place": "overall_placement",
+        }
+        requested = list(dict.fromkeys(aliases.get(metric_id, metric_id) for metric_id in metric_ids))
         values = {
-            "match_result": str(metrics.get("display_value") or ""),
+            "score_time": str(metrics.get("display_value") or ""),
             "raw_time": (
                 ""
                 if metrics.get("raw_time_ms") is None
@@ -3566,30 +3574,32 @@ class ProjectController(QObject):
             ),
             "stage_count": str(metrics.get("stage_count") or ""),
             "total_shots": str(metrics.get("total_shots") or ""),
-            "shot_points": f"{float(metrics.get('shot_points') or 0):g}",
+            "points_down": f"{float(metrics.get('points_down') or 0):g}",
             "penalties": f"{float(metrics.get('total_penalties') or 0):g}",
-            "competitor": scoring.competitor_name,
-            "division": scoring.division,
-            "classification": scoring.classification,
-            "overall_place": (
-                "" if scoring.competitor_place is None else str(scoring.competitor_place)
+            "competitor": str(metrics.get("competitor") or scoring.competitor_name),
+            "division_placement": str(metrics.get("division") or scoring.division),
+            "class_placement": str(metrics.get("classification") or scoring.classification),
+            "overall_placement": (
+                ""
+                if (metrics.get("overall_place") or scoring.competitor_place) is None
+                else str(metrics.get("overall_place") or scoring.competitor_place)
             ),
         }
         labels = {
-            "match_result": str(metrics.get("result_label") or "Final"),
+            "score_time": str(metrics.get("result_label") or "Final"),
             "raw_time": "Raw Time",
             "stage_count": "Stages",
             "total_shots": "Shots",
-            "shot_points": "Shot Points",
+            "points_down": "Points Down",
             "penalties": "Penalties",
             "competitor": "Competitor",
-            "division": "Division",
-            "classification": "Class",
-            "overall_place": "Overall",
+            "division_placement": "Division",
+            "class_placement": "Class",
+            "overall_placement": "Overall",
         }
         return "\n".join(
             f"{labels[metric_id]} {values[metric_id]}"
-            for metric_id in metric_ids
+            for metric_id in requested
             if values.get(metric_id)
         )
 

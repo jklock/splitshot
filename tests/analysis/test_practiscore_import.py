@@ -4,10 +4,9 @@ from pathlib import Path
 
 from splitshot.scoring.practiscore import (
     describe_practiscore_file,
-    infer_practiscore_context,
     import_practiscore_stage,
+    infer_practiscore_context,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -96,6 +95,14 @@ def test_import_idpa_stage_results_from_csv() -> None:
     assert result.imported_stage.aggregate_points == 5.0
     assert result.imported_stage.final_time == 39.83
     assert result.imported_stage.score_counts == {"Points Down": 5.0, "Non-Threat": 1.0}
+    assert result.imported_stage.match_final_time == 83.01
+    assert result.imported_stage.match_points_down == 11.0
+    assert result.imported_stage.match_penalties == 2.0
+    assert result.imported_stage.match_stage_count == 4
+    assert result.imported_stage.match_penalty_counts == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
 
 
 def test_import_idpa_stage_time_is_treated_as_raw_time() -> None:

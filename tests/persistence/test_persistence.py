@@ -10,9 +10,9 @@ from splitshot.domain.models import (
     ExportPreset,
     ImportedStageScore,
     MergeLayout,
+    MergeSource,
     OverlayPosition,
     OverlayTextBox,
-    MergeSource,
     PopupBubble,
     PopupMotionPoint,
     Project,
@@ -27,7 +27,6 @@ from splitshot.domain.models import (
     project_to_dict,
 )
 from splitshot.persistence.projects import load_project, save_project
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -114,6 +113,11 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
         aggregate_points=5.0,
         final_time=39.83,
         score_counts={"Points Down": 5.0},
+        match_final_time=83.01,
+        match_points_down=11.0,
+        match_penalties=2.0,
+        match_stage_count=4,
+        match_penalty_counts={"non_threats": 1.0, "procedural_errors": 1.0},
     )
     project.overlay.position = OverlayPosition.TOP
     project.overlay.style_type = "rounded"
@@ -261,6 +265,14 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.scoring.imported_stage.stage_number == 2
     assert loaded.scoring.imported_stage.aggregate_points == 5.0
     assert loaded.scoring.imported_stage.final_time == 39.83
+    assert loaded.scoring.imported_stage.match_final_time == 83.01
+    assert loaded.scoring.imported_stage.match_points_down == 11.0
+    assert loaded.scoring.imported_stage.match_penalties == 2.0
+    assert loaded.scoring.imported_stage.match_stage_count == 4
+    assert loaded.scoring.imported_stage.match_penalty_counts == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
     assert loaded.overlay.position == OverlayPosition.TOP
     assert loaded.overlay.style_type == "rounded"
     assert loaded.overlay.spacing == 6
