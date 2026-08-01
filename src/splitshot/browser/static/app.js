@@ -4921,7 +4921,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
   if (tool === "media" && mediaPane) mediaPane.render();
-  if (tool === "intro-outro" && introOutroPane) introOutroPane.render();
+  if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
   if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();

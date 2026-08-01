@@ -161,9 +161,15 @@ export function createIntroOutroPane({
   }
 
   async function saveBoxes(nextBoxes, kind = selectedKind) {
+    const currentBoxes = boxes(kind).map(normalizedBox);
     const normalizedBoxes = nextBoxes.map(normalizedBox);
+    const controlsChanged = currentBoxes.length !== normalizedBoxes.length
+      || currentBoxes.some((box, index) => box.source !== normalizedBoxes[index]?.source);
     setDraftBoxes(kind, normalizedBoxes);
-    if (kind === selectedKind) updatePreview();
+    if (kind === selectedKind) {
+      if (controlsChanged) render({ force: true });
+      else updatePreview();
+    }
     activity("intro-outro.overlay.update", { kind, count: normalizedBoxes.length });
     await queueSave(kind, "/api/project/intro-outro/overlay", {
       kind,
@@ -277,14 +283,19 @@ export function createIntroOutroPane({
   function render({ force = false } = {}) {
     const pane = $("intro-outro-pane");
     if (!pane) return;
+    const selectedClip = clip();
+    const shell = pane.querySelector(".intro-outro-shell");
+    if (!force && shell?.dataset.renderedBoundaryKind === selectedKind) {
+      updatePreview();
+      return;
+    }
     const focused = documentObject.activeElement;
     if (!force && focused instanceof HTMLElement && pane.contains(focused) && focused.matches("input, select, textarea")) {
       updatePreview();
       return;
     }
-    const selectedClip = clip();
     const path = selectedClip?.asset?.path || "";
-    pane.innerHTML = `<div class="pane-section intro-outro-shell">
+    pane.innerHTML = `<div class="pane-section intro-outro-shell" data-rendered-boundary-kind="${selectedKind}">
       <div class="section-header pane-title-row"><h3>Intro / Outro</h3><span class="pane-status-text">Match media</span></div>
       <div class="button-grid two-up intro-outro-kind-tabs"><button type="button" data-boundary-kind="intro" class="${selectedKind === "intro" ? "active" : ""}">Intro</button><button type="button" data-boundary-kind="outro" class="${selectedKind === "outro" ? "active" : ""}">Outro</button></div>
       <section class="settings-section"><div class="section-header"><strong>${selectedKind === "intro" ? "Intro" : "Outro"} Video</strong></div><button id="intro-outro-select-video" class="btn btn-primary" type="button">${path ? "Replace Video" : "Select Video"}</button><small class="intro-outro-file">${path ? escapeHtml(fileName(path)) : "No video selected"}</small><div class="control-grid"><label>Fade in (seconds)<input id="intro-outro-fade-in" type="number" min="0" step="0.1" value="${Number(selectedClip.fade_in_s ?? 0.5)}" /></label><label>Fade out (seconds)<input id="intro-outro-fade-out" type="number" min="0" step="0.1" value="${Number(selectedClip.fade_out_s ?? 0.5)}" /></label></div></section>
@@ -348,11 +359,6 @@ export function createIntroOutroPane({
       next[index][field] = value;
       setDraftBoxes(selectedKind, next);
       updatePreview();
-    };
-    pane.onfocusout = () => {
-      windowObject.setTimeout(() => {
-        if (!pane.contains(documentObject.activeElement)) render({ force: true });
-      }, 0);
     };
   }
 

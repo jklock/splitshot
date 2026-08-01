@@ -150,7 +150,10 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 card.locator('[data-box-field="text"]').fill("Stable intro title")
                 card.locator('[data-box-field="text"]').dispatch_event("change")
                 card.locator('[data-box-field="quadrant"]').select_option("custom")
-                card.locator('[data-box-field="style_type"]').select_option("rounded")
+                shape_control = card.locator('[data-box-field="style_type"]')
+                shape_element = shape_control.element_handle()
+                assert shape_element is not None
+                shape_control.select_option("rounded")
                 card.locator('[data-box-field="x"]').fill("0.21")
                 page.wait_for_timeout(300)
                 card.locator('[data-box-field="y"]').fill("0.73")
@@ -165,8 +168,12 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     control = card.locator(f'[data-box-field="{field}"]')
                     control.fill(value)
                     control.dispatch_event("change")
-                card.locator('[data-box-field="font_bold"]').uncheck()
-                card.locator('[data-box-field="font_italic"]').check()
+                bold_control = card.locator('[data-box-field="font_bold"]')
+                italic_control = card.locator('[data-box-field="font_italic"]')
+                bold_control.click(force=True)
+                assert bold_control.is_checked() is False
+                italic_control.click(force=True)
+                assert italic_control.is_checked() is True
                 page.wait_for_function(
                     """() => {
                         const box = state?.project?.intro_clip?.overlay?.text_boxes?.[0];
@@ -184,6 +191,7 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     }"""
                 )
                 page.wait_for_timeout(500)
+                assert shape_element.evaluate("element => element.isConnected") is True
                 assert card.locator('[data-box-field="text"]').input_value() == "Stable intro title"
                 assert card.locator('[data-box-field="x"]').input_value() == "0.21"
                 assert card.locator('[data-box-field="y"]').input_value() == "0.73"
