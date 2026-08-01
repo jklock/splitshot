@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
@@ -25,6 +27,60 @@ def _prepare_stage(page, primary_path: Path, project_path: Path) -> str:
     )
     page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
     return page.evaluate("state.project.active_stage_id")
+
+
+IN_OUT_SINGLE_INTERACTION_CASES = [
+    ("fade_in_s", "#intro-outro-fade-in", "0.7", 0.7, "number", "fades"),
+    ("fade_out_s", "#intro-outro-fade-out", "0.9", 0.9, "number", "fades"),
+    ("enabled", '[data-box-field="enabled"]', None, False, "checkbox", "overlay"),
+    ("text", '[data-box-field="text"]', "One action", "One action", "text", "overlay"),
+    ("quadrant", '[data-box-field="quadrant"]', "custom", "custom", "select", "overlay"),
+    ("style_type", '[data-box-field="style_type"]', "rounded", "rounded", "select", "overlay"),
+    ("x", '[data-box-field="x"]', "0.22", 0.22, "number", "overlay"),
+    ("y", '[data-box-field="y"]', "0.71", 0.71, "number", "overlay"),
+    ("width", '[data-box-field="width"]', "321", 321, "number", "overlay"),
+    ("height", '[data-box-field="height"]', "97", 97, "number", "overlay"),
+    ("font_family", '[data-box-field="font_family"]', "Georgia", "Georgia", "text", "overlay"),
+    ("font_size", '[data-box-field="font_size"]', "35", 35, "number", "overlay"),
+    ("background_color", '[data-box-field="background_color"]', "#123456", "#123456", "color", "overlay"),
+    ("text_color", '[data-box-field="text_color"]', "#abcdef", "#abcdef", "color", "overlay"),
+    ("opacity", '[data-box-field="opacity"]', "61", 0.61, "number", "overlay"),
+    ("font_bold", '[data-box-field="font_bold"]', None, False, "checkbox", "overlay"),
+    ("font_italic", '[data-box-field="font_italic"]', None, True, "checkbox", "overlay"),
+]
+
+
+def _dispatch_one_control_interaction(page, selector: str, value: str | None, kind: str):
+    return page.evaluate(
+        """({ selector, value, kind }) => {
+          const control = document.querySelector(selector);
+          if (!(control instanceof HTMLInputElement)
+              && !(control instanceof HTMLSelectElement)
+              && !(control instanceof HTMLTextAreaElement)) {
+            throw new Error(`Control not found: ${selector}`);
+          }
+          const events = { input: 0, change: 0, click: 0 };
+          control.addEventListener('input', () => { events.input += 1; });
+          control.addEventListener('change', () => { events.change += 1; });
+          control.addEventListener('click', () => { events.click += 1; });
+          window.__inOutAuditNode = control;
+          window.__inOutAuditEvents = events;
+          control.focus();
+          if (kind === 'checkbox') {
+            control.click();
+          } else {
+            control.value = String(value);
+            if (kind !== 'select') control.dispatchEvent(new Event('input', { bubbles: true }));
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          return {
+            value: control.type === 'checkbox' ? control.checked : control.value,
+            connected: control.isConnected,
+            events: { ...events },
+          };
+        }""",
+        {"selector": selector, "value": value, "kind": kind},
+    )
 
 
 def test_queue_pane_membership_and_status_are_visible(synthetic_video_factory) -> None:
@@ -85,6 +141,157 @@ def test_queue_uses_flat_og_controls_without_apply_settings_ui(synthetic_video_f
                 ) == "rgb(57, 208, 111)"
                 assert page.locator("#queue-fade-in").input_value() == "0.5"
                 assert page.locator("#queue-fade-out").input_value() == "0.5"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("field", "selector", "input_value", "expected", "control_kind", "route_kind"),
+    IN_OUT_SINGLE_INTERACTION_CASES,
+    ids=[case[0] for case in IN_OUT_SINGLE_INTERACTION_CASES],
+)
+def test_in_out_control_inventory_uses_one_interaction_and_preserves_node(
+    synthetic_video_factory,
+    tmp_path: Path,
+    field: str,
+    selector: str,
+    input_value: str | None,
+    expected,
+    control_kind: str,
+    route_kind: str,
+) -> None:
+    intro = Path(synthetic_video_factory(name=f"in-out-single-{field}", beep_ms=250))
+    project_path = tmp_path / f"in-out-single-{field}.ssproj"
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_page(playwright, server)
+            try:
+                create_project(page, str(project_path))
+                page.evaluate(
+                    "(path) => callApi('/api/project/in-out/media', { kind: 'intro', path })",
+                    str(intro),
+                )
+                page.evaluate(
+                    """() => callApi('/api/project/intro-outro/overlay', {
+                      kind: 'intro',
+                      text_boxes: [{
+                        enabled: true,
+                        source: 'manual',
+                        text: 'Seed',
+                        quadrant: 'top_right',
+                        background_color: '#000000',
+                        text_color: '#ffffff',
+                        opacity: 0.9,
+                        font_size: 28,
+                        font_bold: true,
+                        font_italic: false,
+                      }],
+                    })"""
+                )
+                page.locator("button[data-tool='intro-outro']").click(force=True)
+                page.wait_for_selector(selector)
+                activity_before = server.activity.snapshot()["cursor"]
+                primary_node = page.locator(selector).element_handle()
+                assert primary_node is not None
+
+                immediate = _dispatch_one_control_interaction(
+                    page, selector, input_value, control_kind
+                )
+                assert immediate["connected"] is True
+                if control_kind == "checkbox":
+                    assert immediate["events"] == {"input": 1, "change": 1, "click": 1}
+                elif control_kind == "select":
+                    assert immediate["events"] == {"input": 0, "change": 1, "click": 0}
+                else:
+                    assert immediate["events"] == {"input": 1, "change": 1, "click": 0}
+
+                second_selector = (
+                    "#intro-outro-fade-in"
+                    if selector == "#intro-outro-fade-out"
+                    else "#intro-outro-fade-out"
+                )
+                second_value = "1.2" if second_selector.endswith("fade-out") else "1.1"
+                second_node = page.locator(second_selector).element_handle()
+                assert second_node is not None
+                second = _dispatch_one_control_interaction(
+                    page, second_selector, second_value, "number"
+                )
+                assert second == {
+                    "value": second_value,
+                    "connected": True,
+                    "events": {"input": 1, "change": 1, "click": 0},
+                }
+
+                if route_kind == "fades":
+                    page.wait_for_function(
+                        """({ field, expected }) =>
+                          Number(state?.project?.intro_clip?.[field]) === Number(expected)""",
+                        arg={"field": field, "expected": expected},
+                    )
+                else:
+                    page.wait_for_function(
+                        """({ field, expected }) => {
+                          const value = state?.project?.intro_clip?.overlay?.text_boxes?.[0]?.[field];
+                          return typeof expected === 'number'
+                            ? Number(value) === Number(expected)
+                            : value === expected;
+                        }""",
+                        arg={"field": field, "expected": expected},
+                    )
+                page.wait_for_function(
+                    """({ field, expected }) =>
+                      Number(state?.project?.intro_clip?.[field]) === Number(expected)""",
+                    arg={
+                        "field": "fade_out_s" if second_selector.endswith("fade-out") else "fade_in_s",
+                        "expected": second_value,
+                    },
+                )
+                page.wait_for_timeout(350)
+
+                assert primary_node.evaluate("element => element.isConnected") is True
+                assert second_node.evaluate("element => element.isConnected") is True
+
+                entries = server.activity.snapshot(after_seq=activity_before)["entries"]
+                expected_route = (
+                    "/api/project/intro-outro/fades"
+                    if route_kind == "fades"
+                    else "/api/project/intro-outro/overlay"
+                )
+                expected_route_mutations = 2 if route_kind == "fades" else 1
+                assert len(
+                    [
+                        entry
+                        for entry in entries
+                        if entry.get("event") == "api.success"
+                        and entry.get("path") == expected_route
+                    ]
+                ) == expected_route_mutations
+
+                stored = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+                if route_kind == "fades":
+                    assert stored["intro_clip"][field] == expected
+                else:
+                    assert stored["intro_clip"]["overlay"]["text_boxes"][0][field] == expected
+
+                page.locator("button[data-tool='queue']").click(force=True)
+                page.locator("button[data-tool='intro-outro']").click(force=True)
+                assert page.locator(selector).count() == 1
+                page.get_by_role("button", name="Outro", exact=True).click()
+                page.get_by_role("button", name="Intro", exact=True).click()
+                page.evaluate("path => useProjectFolder(path)", str(project_path))
+                page.wait_for_function("() => Boolean(state?.project?.intro_clip?.asset?.path)")
+                if route_kind == "fades":
+                    assert float(page.locator(selector).input_value()) == expected
+                else:
+                    reopened = page.locator(selector)
+                    if control_kind == "checkbox":
+                        assert reopened.is_checked() is expected
+                    else:
+                        assert reopened.input_value() == str(input_value)
             finally:
                 browser.close()
     finally:

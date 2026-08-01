@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 MODULE_PATH = (
     Path(__file__).resolve().parents[2]
@@ -19,6 +18,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 PANE_FILES = MODULE.PANE_FILES
 build_audit = MODULE.build_audit
+control_trace_rows = MODULE._control_trace_rows
 
 
 def test_pane_function_audit_inventories_every_pane_function() -> None:
@@ -58,3 +58,19 @@ def test_pane_function_audit_keeps_mutating_rows_out_of_unproved_state() -> None
         if row.mutates_persisted_project_state and row.proof_strength == "unproved"
     ]
     assert not unproved, f"Mutating pane functions are unproved: {unproved}"
+
+
+def test_control_interaction_trace_maps_every_discovered_control_to_proof() -> None:
+    traces = control_trace_rows(build_audit().rows)
+
+    assert len(traces) >= 300
+    assert not [row for row in traces if not row["proof_sources"]]
+    in_out = [row for row in traces if row["pane_owner"] == "In / Out"]
+    assert len(in_out) >= 30
+    assert any(row["control"] == "#intro-outro-fade-in" for row in in_out)
+    assert any(
+        "/api/project/intro-outro/fades" in row["api_routes"] for row in in_out
+    )
+    assert any(
+        "/api/project/intro-outro/overlay" in row["api_routes"] for row in in_out
+    )

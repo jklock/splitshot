@@ -167,6 +167,18 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/primary/trim": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
+    "/api/project/in-out/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/queue/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/fades": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/overlay": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
 }
 
 PROJECT_LIFECYCLE_POST_ROUTES = {
@@ -2308,6 +2320,32 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert len(saved["analysis"]["shots"]) == len(
             uploaded_primary["project"]["analysis"]["shots"]
         )
+
+        _post_json(
+            f"{server.url}api/project/in-out/media",
+            {"kind": "intro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/queue/media",
+            {"kind": "outro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/fades",
+            {"kind": "intro", "fade_in_s": 0.7, "fade_out_s": 0.9},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/overlay",
+            {"kind": "intro", "show_timer": True, "show_shots": False},
+        )
+        saved = _read_project_json(project_path)
+        assert Path(saved["queue_settings"]["intro_path"]).parent.name == "IntroOutro"
+        assert Path(saved["queue_settings"]["outro_path"]).parent.name == "IntroOutro"
+        assert saved["queue_settings"]["include_intro"] is True
+        assert saved["queue_settings"]["include_outro"] is True
+        assert saved["intro_clip"]["fade_in_s"] == pytest.approx(0.7)
+        assert saved["intro_clip"]["fade_out_s"] == pytest.approx(0.9)
+        assert saved["intro_clip"]["overlay"]["show_timer"] is True
+        assert saved["intro_clip"]["overlay"]["show_shots"] is False
 
         uploaded_secondary = _post_multipart(
             f"{server.url}api/files/secondary",

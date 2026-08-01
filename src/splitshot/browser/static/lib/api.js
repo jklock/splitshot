@@ -103,18 +103,22 @@ export function createApiRuntime({
 
   let apiRequestSequence = 0;
   const latestApiRequestSequenceByDomain = new Map();
+  let latestRemoteStateRequestSequence = 0;
 
   function beginTrackedApiRequest(path) {
     const domain = apiRequestDomain(path);
     apiRequestSequence += 1;
     const request = { path, domain, sequence: apiRequestSequence };
     latestApiRequestSequenceByDomain.set(domain, request.sequence);
+    if (apiResponseOwnsRemoteState(path)) latestRemoteStateRequestSequence = request.sequence;
     return request;
   }
 
   function isTrackedApiRequestStale(request) {
     if (!request) return false;
-    return latestApiRequestSequenceByDomain.get(request.domain) !== request.sequence;
+    if (latestApiRequestSequenceByDomain.get(request.domain) !== request.sequence) return true;
+    return apiResponseOwnsRemoteState(request.path)
+      && request.sequence !== latestRemoteStateRequestSequence;
   }
 
   async function api(path, payload = null) {
@@ -170,6 +174,11 @@ export function createApiRuntime({
         return null;
       }
       if (finishProcessing) finishProcessing(error.message || "Request failed.");
+      try {
+        await refresh();
+      } catch {
+        // Preserve the original mutation error when reconciliation is unavailable.
+      }
       throw error;
     }
   }

@@ -511,7 +511,6 @@ function mergeMergeDraft(project) {
     if (Object.is(value, savedValue)) {
       delete mergeDraft[key];
     } else {
-      if (key === 'layout') console.log(`[DEBUG mergeMergeDraft] key=${key} draft=${value} saved=${mergeState[key]}`);
       mergeState[key] = value;
     }
   });
@@ -4235,14 +4234,50 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
       anchor_mode: "anchor_mode",
       shot_id: "shot_id",
     }[field] || field;
-    const eventName = control.type === "checkbox" ? "change" : "input";
-    if (field === "shot_id" || field === "anchor_mode") {
-      control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-      return;
+    const syncDependentControls = () => {
+      const updatedBubble = popupBubbles().find((item) => item.id === bubble.id);
+      if (!updatedBubble) return;
+      if (field === "follow_motion") {
+        syncPopupBubbleMotionModeControls(card, updatedBubble);
+        renderPopupBubbleMotionGuide(card, updatedBubble);
+      }
+      if (field === "content_type") {
+        const showText = updatedBubble.content_type !== "image";
+        const showImage = updatedBubble.content_type !== "text";
+        card.querySelector('[data-popup-section="text"]')?.toggleAttribute("hidden", !showText);
+        card.querySelectorAll("[data-popup-media-field]").forEach((element) => {
+          element.toggleAttribute("hidden", !showImage);
+        });
+      }
+      if (field === "anchor_mode" || field === "shot_id") {
+        const anchorControl = card.querySelector('[data-popup-field="anchor_mode"]');
+        const shotControl = card.querySelector('[data-popup-field="shot_id"]');
+        const timeControl = card.querySelector('[data-popup-field="time_s"]');
+        if (anchorControl instanceof HTMLSelectElement) syncControlValue(anchorControl, updatedBubble.anchor_mode);
+        if (shotControl instanceof HTMLSelectElement) syncControlValue(shotControl, updatedBubble.shot_id || "");
+        if (timeControl instanceof HTMLInputElement) timeControl.disabled = updatedBubble.anchor_mode === "shot";
+        if (shotControl instanceof HTMLSelectElement) shotControl.disabled = updatedBubble.anchor_mode !== "shot" || shots.length === 0;
+      }
+      if (field === "duration_s") renderPopupBubbleMotionGuide(card, updatedBubble);
+    };
+    const serializeValue = () => JSON.stringify(readValue());
+    let lastCommittedValue = serializeValue();
+    const updateDraft = () => {
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false });
+      syncDependentControls();
+    };
+    const commitOnce = () => {
+      const nextValue = serializeValue();
+      if (nextValue === lastCommittedValue) return;
+      lastCommittedValue = nextValue;
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: false });
+      syncDependentControls();
+    };
+    if (control.type !== "checkbox" && field !== "shot_id" && field !== "anchor_mode") {
+      control.addEventListener("input", updateDraft);
     }
-    control.addEventListener(eventName, () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false }));
-    control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-    control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+    control.addEventListener("change", commitOnce);
+    control.addEventListener("blur", commitOnce);
   });
   const xInput = card.querySelector('[data-popup-field="x"]');
   const yInput = card.querySelector('[data-popup-field="y"]');
@@ -4690,6 +4725,12 @@ function stepShotLinkedPopupBubble(direction) {
 function renderPopupEditors() {
   const markerList = $("popup-marker-list");
   if (!markerList) return;
+  const activeControl = document.activeElement;
+  if (
+    activeControl instanceof HTMLElement
+      && activeControl.closest("#markers-workbench-editor")
+      && activeControl.matches("input, select, textarea")
+  ) return;
   const bubbles = popupBubbles();
   const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));

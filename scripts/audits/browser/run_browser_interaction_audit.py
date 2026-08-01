@@ -6,25 +6,27 @@ import argparse
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from _media_fixtures import ensure_stage_video
 from playwright.sync_api import (
     Browser,
     BrowserType,
     Page,
     Playwright,
-    TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
 )
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
-from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
@@ -197,6 +199,31 @@ def open_page(
     return browser, page
 
 
+def click_checkbox_once(page: Page, selector: str, checked: bool = True) -> dict[str, Any]:
+    result = page.evaluate(
+        """({ selector, checked }) => {
+          const control = document.querySelector(selector);
+          if (!(control instanceof HTMLInputElement) || control.type !== 'checkbox') {
+            return { error: `Checkbox not found: ${selector}` };
+          }
+          const before = control.checked;
+          const events = { click: 0, change: 0 };
+          control.addEventListener('click', () => { events.click += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          if (before !== checked) control.click();
+          return { before, after: control.checked, connected: control.isConnected, performed: before !== checked, events };
+        }""",
+        {"selector": selector, "checked": checked},
+    )
+    if result.get("error"):
+        raise AssertionError(result["error"])
+    if result["after"] is not checked or result["connected"] is not True:
+        raise AssertionError(f"Single checkbox interaction failed for {selector}: {result}")
+    if result["performed"] and result["events"] != {"click": 1, "change": 1}:
+        raise AssertionError(f"Unexpected checkbox event count for {selector}: {result}")
+    return result
+
+
 def _activity_snapshot(base_url: str, after_cursor: int = 0, limit: int = 1000) -> dict[str, Any]:
     query = urlencode({"after": after_cursor, "limit": limit})
     with urlopen(f"{base_url}api/activity/poll?{query}", timeout=30) as response:
@@ -351,6 +378,113 @@ def import_primary_video(
         "primary_import_round_trip",
         "Primary file import should hit the real upload route and produce detected shots for the browser UI.",
         {"result": result, "activity_entries": entries},
+    )
+
+
+def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
+    page.evaluate(
+        """() => {
+          const originalFetch = window.fetch.bind(window);
+          let releaseHeldResponse;
+          const heldResponse = new Promise((resolve) => { releaseHeldResponse = resolve; });
+          window.__auditReleaseHeldShotMLResponse = releaseHeldResponse;
+          window.__auditHeldShotMLResponseStarted = false;
+          window.fetch = async (...args) => {
+            const requestPath = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+            const response = await originalFetch(...args);
+            if (requestPath === '/api/analysis/shotml-settings'
+                && !window.__auditHeldShotMLResponseStarted) {
+              window.__auditHeldShotMLResponseStarted = true;
+              await heldResponse;
+            }
+            return response;
+          };
+        }"""
+    )
+    page.locator("[data-tool='shotml']").click()
+    threshold_before = float(page.locator("#threshold").input_value())
+    threshold_after = 0.41 if abs(threshold_before - 0.41) > 0.001 else 0.42
+    immediate_threshold = page.evaluate(
+        """(value) => {
+          const control = document.getElementById('threshold');
+          const events = { input: 0, change: 0 };
+          control.addEventListener('input', () => { events.input += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          control.focus();
+          control.value = String(value);
+          control.dispatchEvent(new Event('input', { bubbles: true }));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+          return { value: Number(control.value), connected: control.isConnected, events };
+        }""",
+        threshold_after,
+    )
+    page.wait_for_function("() => window.__auditHeldShotMLResponseStarted === true")
+    page.locator("[data-tool='scoring']").click()
+    scoring_before = page.locator("#scoring-enabled").is_checked()
+    scoring_after = not scoring_before
+    immediate_scoring = page.evaluate(
+        """() => {
+          const control = document.getElementById('scoring-enabled');
+          window.__auditScoringNode = control;
+          window.__auditScoringEvents = { click: 0, change: 0 };
+          control.addEventListener('click', () => { window.__auditScoringEvents.click += 1; });
+          control.addEventListener('change', () => { window.__auditScoringEvents.change += 1; });
+          control.click();
+          return { checked: control.checked, connected: control.isConnected, events: { ...window.__auditScoringEvents } };
+        }"""
+    )
+    page.wait_for_function(
+        "expected => state?.project?.scoring?.enabled === expected",
+        arg=scoring_after,
+    )
+    page.evaluate("window.__auditReleaseHeldShotMLResponse()")
+    page.wait_for_timeout(600)
+    settled = page.evaluate(
+        """() => ({
+          checked: window.__auditScoringNode.checked,
+          connected: window.__auditScoringNode.isConnected,
+          events: { ...window.__auditScoringEvents },
+          state_enabled: state?.project?.scoring?.enabled,
+          project_path: state?.project?.path || '',
+        })"""
+    )
+    stored_enabled = None
+    project_file = Path(settled["project_path"]) / "project.json"
+    if project_file.is_file():
+        stored_enabled = bool(json.loads(project_file.read_text(encoding="utf-8"))["scoring"]["enabled"])
+    page.locator("[data-tool='export']").click()
+    page.locator("[data-tool='scoring']").click()
+    after_navigation = page.locator("#scoring-enabled").is_checked()
+    page.evaluate("path => useProjectFolder(path)", settled["project_path"])
+    page.wait_for_function(
+        "expected => state?.project?.scoring?.enabled === expected",
+        arg=scoring_after,
+    )
+    after_reopen = page.locator("#scoring-enabled").is_checked()
+    return expect(
+        immediate_threshold == {"value": threshold_after, "connected": True, "events": {"input": 1, "change": 1}}
+        and immediate_scoring == {"checked": scoring_after, "connected": True, "events": {"click": 1, "change": 1}}
+        and settled["checked"] is scoring_after
+        and settled["connected"] is True
+        and settled["events"] == {"click": 1, "change": 1}
+        and settled["state_enabled"] is scoring_after
+        and (stored_enabled is None or stored_enabled is scoring_after)
+        and after_navigation is scoring_after
+        and after_reopen is scoring_after,
+        "reordered_response_preserves_newer_control",
+        "A deliberately delayed older ShotML response must not replace or overwrite a newer single-click Score change.",
+        {
+            "threshold": {"before": threshold_before, "after": immediate_threshold},
+            "scoring": {
+                "before": scoring_before,
+                "expected": scoring_after,
+                "immediate": immediate_scoring,
+                "settled": settled,
+                "stored_enabled": stored_enabled,
+                "after_navigation": after_navigation,
+                "after_reopen": after_reopen,
+            },
+        },
     )
 
 
@@ -522,7 +656,7 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
     page.locator("[data-tool='overlay']").click()
     if not page.locator("#show-overlay").is_checked():
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#show-overlay").check()
+        click_checkbox_once(page, "#show-overlay")
         wait_for_activity(
             activity_source,
             enable_cursor,
@@ -531,7 +665,7 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
         )
     if not page.locator("#show-timer").is_checked():
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#show-timer").check()
+        click_checkbox_once(page, "#show-timer")
         wait_for_activity(
             activity_source,
             enable_cursor,
@@ -1138,7 +1272,7 @@ def drag_merge_preview_persists(
     layout_cursor = activity_cursor(activity_source)
     if page.locator("#merge-enabled").is_checked() is False:
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#merge-enabled").check()
+        click_checkbox_once(page, "#merge-enabled")
         wait_for_activity(
             activity_source,
             enable_cursor,
@@ -1354,7 +1488,7 @@ def drag_merge_size_slider_commits(
     page.locator("[data-tool='merge']").click()
     if page.locator("#merge-enabled").is_checked() is False:
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#merge-enabled").check()
+        click_checkbox_once(page, "#merge-enabled")
         wait_for_activity(
             activity_source,
             enable_cursor,
@@ -1564,6 +1698,7 @@ def run_browser_audit(
 
         checks = [
             import_primary_video(page, activity_source, primary_video),
+            reordered_response_preserves_newer_control(page),
             drag_waveform_viewport(page, activity_source),
             drag_waveform_shot(page, activity_source),
             drag_timer_badge(page, activity_source),

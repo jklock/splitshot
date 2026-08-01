@@ -66,3 +66,12 @@ The main loop is:
 - The browser shell depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 - When adding a new pane, create a `panes/<name>-pane.js` module, import it in `app.js`, create its HTML section in `index.html`, and register it in the global compat bridge if needed.
+
+## Rendering and persistence rules
+
+- Ordinary value commits update existing controls in place whenever pane structure is unchanged.
+- Structural actions rebuild only their owned component. Full synchronization is reserved for pane entry, project load, stage switch, and explicit reset.
+- Pointer interactions defer server-driven rendering until the gesture commits or cancels; the active control remains connected throughout the gesture.
+- Every complete-state API response is ordered against all other complete-state mutations, not only its route family. An older response cannot overwrite a newer interaction.
+- Draft state protects active edits until the server confirms the same value. Successful server state remains authoritative without interrupting the active interaction.
+- Stage presentation defaults waterfall only into later stages that still inherit that field; directly customized stage values remain owned by that stage.
