@@ -90,9 +90,15 @@ export function createIntroOutroPane({
       points_down: Number(metrics.points_down || 0).toString(),
       penalties: Number(metrics.total_penalties || 0).toString(),
       competitor: metrics.competitor || scoring.competitor_name || "",
-      division_placement: metrics.division || scoring.division || "",
-      class_placement: metrics.classification || scoring.classification || "",
-      overall_placement: metrics.overall_place || scoring.competitor_place || "",
+      division_placement: [
+        metrics.division || scoring.division || "",
+        metrics.division_placement || "",
+      ].filter(Boolean).join(" - "),
+      class_placement: [
+        metrics.classification || scoring.classification || "",
+        metrics.class_placement || "",
+      ].filter(Boolean).join(" - "),
+      overall_placement: metrics.overall_placement || "",
     };
     return String(values[metricId] ?? "");
   }

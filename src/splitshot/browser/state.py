@@ -9,6 +9,7 @@ from splitshot.domain.models import Project, project_to_dict
 from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
+    competition_placement,
     normalize_penalty_counts_for_ruleset,
     normalize_score_letter_for_ruleset,
     scoring_presets_for_api,
@@ -72,7 +73,9 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
     return result
 
 
-def _build_match_metrics(stage_metrics: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_match_metrics(
+    stage_metrics: list[dict[str, Any]], project: Project | None = None
+) -> dict[str, Any]:
     metric_rows = [entry.get("metrics", {}) for entry in stage_metrics]
     summaries = [entry.get("scoring_summary", {}) for entry in stage_metrics]
     draws = [
@@ -161,6 +164,13 @@ def _build_match_metrics(stage_metrics: list[dict[str, Any]]) -> dict[str, Any]:
         "division": imported_match.get("division", ""),
         "classification": imported_match.get("classification", ""),
         "overall_place": imported_match.get("competitor_place"),
+        "division_placement": (
+            competition_placement(project, dimension="division") if project else ""
+        ),
+        "class_placement": (
+            competition_placement(project, dimension="classification") if project else ""
+        ),
+        "overall_placement": competition_placement(project) if project else "",
     }
 
 
@@ -327,7 +337,7 @@ def browser_state(
     }
     presentation = build_stage_presentation(project)
     stage_metrics = _build_stage_metrics(project)
-    match_metrics = _build_match_metrics(stage_metrics)
+    match_metrics = _build_match_metrics(stage_metrics, project)
     scoring_summary = dict(presentation.metrics.scoring_summary)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
     practiscore_payload = deepcopy(practiscore_options or {})

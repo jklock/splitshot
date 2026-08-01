@@ -538,7 +538,7 @@ def _class_codes(project: Project) -> dict[str, str]:
     return _IDPA_CLASS_CODES if match_type == "idpa" else _USPSA_CLASS_CODES
 
 
-def _review_placement(
+def competition_placement(
     project: Project,
     *,
     dimension: str | None = None,
@@ -631,9 +631,9 @@ def format_review_summary_overlay_text(
         ),
         "points_down": "" if points_down is None else _format_overlay_stat(float(points_down)),
         "penalties": _format_overlay_stat(float(summary.get("total_penalties", 0.0))),
-        "division_placement": _review_placement(project, dimension="division"),
-        "class_placement": _review_placement(project, dimension="classification"),
-        "overall_placement": _review_placement(project),
+        "division_placement": competition_placement(project, dimension="division"),
+        "class_placement": competition_placement(project, dimension="classification"),
+        "overall_placement": competition_placement(project),
     }
     labels = {
         "division_placement": division_label or "Division",

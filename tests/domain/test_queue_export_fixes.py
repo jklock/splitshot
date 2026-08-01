@@ -116,9 +116,9 @@ def test_match_results_overlay_uses_final_spreadsheet_match_values() -> None:
         "Final 83.01",
         "Points Down 11",
         "Penalties 2",
-        "Division CO",
-        "Class UN",
-        "Overall 4",
+        "Division CO - 2/12",
+        "Class UN - 1/7",
+        "Overall 4/26",
     ]
     assert controller._match_summary_overlay_text(
         ["match_result", "shot_points", "penalties", "overall_place"]
@@ -126,7 +126,7 @@ def test_match_results_overlay_uses_final_spreadsheet_match_values() -> None:
         "Final 83.01",
         "Points Down 11",
         "Penalties 2",
-        "Overall 4",
+        "Overall 4/26",
     ]
 
 

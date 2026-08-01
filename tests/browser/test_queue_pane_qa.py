@@ -322,9 +322,9 @@ def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> No
                     "Final 83.01",
                     "Points Down 11",
                     "Penalties 2",
-                    "Division CO",
-                    "Class UN",
-                    "Overall 4",
+                    "Division CO - 2/12",
+                    "Class UN - 1/7",
+                    "Overall 4/26",
                 ]
                 labels = page.locator(".intro-outro-metrics .check-row").all_inner_texts()
                 assert labels == [
@@ -351,6 +351,11 @@ def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> No
                 assert match_row["points_value"] == "11"
                 assert match_row["points_down"] == "11"
                 assert match_row["penalties"] == "2"
+                assert match_row["division"] == "CO"
+                assert match_row["division_placement"] == "2/12"
+                assert match_row["class"] == "UN"
+                assert match_row["class_placement"] == "1/7"
+                assert match_row["overall_placement"] == "4/26"
             finally:
                 browser.close()
     finally:

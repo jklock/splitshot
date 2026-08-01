@@ -79,6 +79,11 @@ def test_browser_state_uses_spreadsheet_match_totals_instead_of_partial_stage_su
         match_stage_count=4,
         match_penalty_counts={"non_threats": 1.0, "procedural_errors": 1.0},
     )
+    project.scoring.comparison_competitors = [
+        {"name": "Division leader", "place": 1, "division": "CO", "classification": "SS"},
+        {"name": "Class peer", "place": 2, "division": "PCC", "classification": "UN"},
+        {"name": "Other", "place": 3, "division": "PCC", "classification": "SS"},
+    ]
 
     payload = browser_state(project, "Ready.")
     match = payload["match_metrics"]
@@ -100,6 +105,9 @@ def test_browser_state_uses_spreadsheet_match_totals_instead_of_partial_stage_su
     assert match["overall_place"] == 4
     assert match["division"] == "CO"
     assert match["classification"] == "UN"
+    assert match["division_placement"] == "2/2"
+    assert match["class_placement"] == "2/2"
+    assert match["overall_placement"] == "4/4"
 
 
 def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows() -> None:

@@ -3555,7 +3555,7 @@ class ProjectController(QObject):
     def _match_summary_overlay_text(self, metric_ids: list[str]) -> str:
         from splitshot.browser.state import _build_match_metrics, _build_stage_metrics
 
-        metrics = _build_match_metrics(_build_stage_metrics(self.project))
+        metrics = _build_match_metrics(_build_stage_metrics(self.project), self.project)
         scoring = self.project.scoring
         aliases = {
             "match_result": "score_time",
@@ -3577,13 +3577,23 @@ class ProjectController(QObject):
             "points_down": f"{float(metrics.get('points_down') or 0):g}",
             "penalties": f"{float(metrics.get('total_penalties') or 0):g}",
             "competitor": str(metrics.get("competitor") or scoring.competitor_name),
-            "division_placement": str(metrics.get("division") or scoring.division),
-            "class_placement": str(metrics.get("classification") or scoring.classification),
-            "overall_placement": (
-                ""
-                if (metrics.get("overall_place") or scoring.competitor_place) is None
-                else str(metrics.get("overall_place") or scoring.competitor_place)
+            "division_placement": " - ".join(
+                part
+                for part in (
+                    str(metrics.get("division") or scoring.division),
+                    str(metrics.get("division_placement") or ""),
+                )
+                if part
             ),
+            "class_placement": " - ".join(
+                part
+                for part in (
+                    str(metrics.get("classification") or scoring.classification),
+                    str(metrics.get("class_placement") or ""),
+                )
+                if part
+            ),
+            "overall_placement": str(metrics.get("overall_placement") or ""),
         }
         labels = {
             "score_time": str(metrics.get("result_label") or "Final"),

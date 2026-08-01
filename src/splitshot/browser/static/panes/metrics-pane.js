@@ -1481,7 +1481,7 @@ export function createMetricsPane({
     const sections = [
       {
         name: "match_stats",
-        headers: ["stage_count", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "points_label", "points_value", "points_down", "shot_points", "penalties"],
+        headers: ["stage_count", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "points_label", "points_value", "points_down", "shot_points", "penalties", "division", "division_placement", "class", "class_placement", "overall_placement"],
         rows: [[
           match.stage_count ?? 0,
           match.draw_ms == null ? "" : precise(match.draw_ms),
@@ -1496,6 +1496,11 @@ export function createMetricsPane({
           match.points_down ?? "",
           match.shot_points ?? "",
           match.total_penalties ?? "",
+          match.division || "",
+          match.division_placement || "",
+          match.classification || "",
+          match.class_placement || "",
+          match.overall_placement || "",
         ]],
       },
       {
