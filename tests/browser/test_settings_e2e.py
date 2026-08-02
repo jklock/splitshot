@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
+import splitshot.config as splitshot_config
 from splitshot.browser.server import BrowserControlServer
-
+from splitshot.ui.controller import ProjectController
 
 SETTINGS_SECTION_IDS = [
     "global-template",
@@ -346,7 +350,17 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
         server.shutdown()
 
 
-def test_settings_layout_section_captures_current_layout_and_resets() -> None:
+def _assert_saved_layout(controller: ProjectController) -> None:
+    assert controller.project.ui_state.layout_locked is False
+    assert controller.project.ui_state.rail_width == 96
+    assert controller.project.ui_state.inspector_width == 620
+    assert controller.project.ui_state.waveform_height == 240
+
+
+def test_settings_layout_section_captures_current_layout_and_resets(tmp_path: Path) -> None:
+    assert tmp_path in splitshot_config.SETTINGS_PATH.parents
+    first_project = tmp_path / "saved-layout-first"
+    second_project = tmp_path / "saved-layout-second"
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -364,14 +378,88 @@ def test_settings_layout_section_captures_current_layout_and_resets() -> None:
                     }"""
                 )
 
-                page.locator("#settings-use-current-layout").click()
+                page.evaluate(
+                    """() => {
+                        const button = document.getElementById("settings-use-current-layout");
+                        window.__layoutSaveProof = {
+                            button,
+                            clicks: 0,
+                            settingsRequests: [],
+                        };
+                        button.addEventListener("click", () => {
+                            window.__layoutSaveProof.clicks += 1;
+                        }, { capture: true });
+                        const originalFetch = window.fetch.bind(window);
+                        window.fetch = (input, init = {}) => {
+                            const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
+                            if (url.pathname === "/api/settings" && init.method === "POST") {
+                                window.__layoutSaveProof.settingsRequests.push(JSON.parse(init.body || "{}"));
+                            }
+                            return originalFetch(input, init);
+                        };
+                        button.click();
+                    }"""
+                )
+                assert page.evaluate("() => window.__layoutSaveProof.clicks") == 1
+                assert page.evaluate("() => window.__layoutSaveProof.button.isConnected") is True
                 page.wait_for_function(
                     """() => state?.settings?.layout_locked === false
                       && state?.settings?.layout_rail_width === 96
                       && state?.settings?.layout_inspector_width === 620
                       && state?.settings?.layout_waveform_height === 240"""
                 )
+                page.wait_for_function("() => window.__layoutSaveProof.settingsRequests.length === 1")
+                request_payload = page.evaluate(
+                    "() => window.__layoutSaveProof.settingsRequests[0]"
+                )
+                assert request_payload == {
+                    "scope": "app",
+                    "section": "layout",
+                    "project_defaults": True,
+                    "settings": {
+                        "layout_locked": False,
+                        "layout_rail_width": 96,
+                        "layout_inspector_width": 620,
+                        "layout_waveform_height": 240,
+                    },
+                }
+                assert page.evaluate("() => window.__layoutSaveProof.button.isConnected") is True
+                assert page.evaluate("() => layoutSizes.inspectorWidth") == 620
+                assert page.evaluate(
+                    "() => getComputedStyle(document.documentElement).getPropertyValue('--inspector-width').trim()"
+                ) == "614px"
 
+                disk_settings = json.loads(splitshot_config.SETTINGS_PATH.read_text())
+                assert disk_settings["layout_locked"] is False
+                assert disk_settings["layout_rail_width"] == 96
+                assert disk_settings["layout_inspector_width"] == 620
+                assert disk_settings["layout_waveform_height"] == 240
+
+                page.evaluate("(path) => createNewProject(path)", str(first_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(first_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                page.evaluate("(path) => createNewProject(path)", str(second_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(second_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                page.evaluate("(path) => useProjectFolder(path)", str(first_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(first_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                restarted = ProjectController()
+                _assert_saved_layout(restarted)
+                restarted.open_project(str(first_project))
+                _assert_saved_layout(restarted)
+
+                _open_settings(page)
+                _expand_settings_section(page, "layout")
                 page.locator("#settings-release-layout").click()
                 page.wait_for_function(
                     """() => state?.settings?.layout_locked === null

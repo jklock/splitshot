@@ -155,6 +155,7 @@ export function createShellRuntime({
   popupBubbles = () => [],
   readPopupTemplatePayload = () => ({}),
   scheduleSettingsDefaultsApply = () => {},
+  readSettingsDefaultsPayload = () => ({}),
   applySettingsDefaults = () => {},
   toggleLayoutLock = () => {},
   resetLayout = () => {},
@@ -191,6 +192,19 @@ export function createShellRuntime({
 } = {}) {
   function currentState() {
     return getState() || {};
+  }
+
+  async function saveCurrentSettings(section = null) {
+    const options = {
+      projectDefaults: true,
+      ...(section ? { section } : {}),
+    };
+    // Capture layout and other client-owned values before flushing project drafts.
+    // Each flush response refreshes remote state and may legitimately synchronize
+    // the project snapshot, but it must not replace the values from this click.
+    const payload = readSettingsDefaultsPayload(options);
+    await flushPendingProjectDrafts();
+    await applySettingsDefaults({ ...options, payload });
   }
 
   function renderStyleControls() {
@@ -829,8 +843,7 @@ export function createShellRuntime({
     });
 
     $("settings-import-current")?.addEventListener("click", async () => {
-      await flushPendingProjectDrafts();
-      await applySettingsDefaults({ projectDefaults: true });
+      await saveCurrentSettings();
     });
     $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
     [
@@ -906,8 +919,7 @@ export function createShellRuntime({
       await callApi("/api/settings/reset-defaults", {});
     });
     $("settings-use-current-layout")?.addEventListener("click", async () => {
-      await flushPendingProjectDrafts();
-      await applySettingsDefaults({ projectDefaults: true, section: "layout" });
+      await saveCurrentSettings("layout");
     });
     $("settings-release-layout")?.addEventListener("click", async () => {
       documentObject.activeElement?.blur?.();
@@ -920,8 +932,7 @@ export function createShellRuntime({
     documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
       button.addEventListener("click", async () => {
         const section = button.getAttribute("data-settings-save-section") || "";
-        await flushPendingProjectDrafts();
-        await applySettingsDefaults({ projectDefaults: true, section });
+        await saveCurrentSettings(section);
       });
     });
     documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {

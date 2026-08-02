@@ -559,7 +559,6 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
-            text_box_auto_size = _auto_badge_size((text_value,), metrics, line_height=line_height)
             if text_box.lock_to_stack and text_box.quadrant != _ABOVE_FINAL_TEXT_BOX_QUADRANT:
                 rects = self._paint_badges(
                     painter,
@@ -582,7 +581,6 @@ class OverlayRenderer:
                     quadrant=project.overlay.shot_quadrant,
                     anchor_rect=None,
                     after_rect=stack_terminal_rect,
-                    auto_badge_size=text_box_auto_size,
                     use_project_bubble_size=False,
                 )
                 if rects:
@@ -620,7 +618,6 @@ class OverlayRenderer:
                 custom_x=text_box.x,
                 custom_y=text_box.y,
                 anchor_rect=anchor_rect,
-                auto_badge_size=text_box_auto_size,
                 use_project_bubble_size=False,
             )
         for popup in project.popups:

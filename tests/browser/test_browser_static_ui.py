@@ -780,7 +780,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert "const INSPECTOR_COMPACT_WIDTH = 700;" in js
     assert (
-        'shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);'
+        'shell.classList.toggle("inspector-compact", renderedLayoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);'
         in layout_js
     )
     assert (
@@ -943,7 +943,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return null;" in js
     assert "lastSubmittedProjectUiStatePayloadKey = payloadKey;" in js
     assert "function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {" in js
-    assert "await applyProjectUiStatePayload();" in project_pane
+    assert "await applyProjectUiStatePayload(captured.projectUiState);" in project_pane
     assert "sendProjectUiStateKeepalive();" in project_pane
     assert "function scheduleOverlayApply()" in js
     assert "function scheduleMergeApply()" in js

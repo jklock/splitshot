@@ -8874,7 +8874,7 @@ async function applySettingsDefaults(options = {}) {
       // Ignore prior failure; continue with the latest update.
     }
   }
-  const payload = readSettingsDefaultsPayload(options);
+  const payload = options.payload || readSettingsDefaultsPayload(options);
   const promise = callApi("/api/settings", payload);
   const finalPromise = promise.then((result) => {
     if (result && !options.scheduled) {
@@ -9859,6 +9859,7 @@ projectPane = createProjectPane({
   controlIsActive,
   normalizeToolId,
   setActiveTool,
+  readProjectUiStatePayload,
   applyProjectUiStatePayload,
   cancelPendingExportDrafts,
   flushPendingSettingsDefaults,
@@ -10277,6 +10278,7 @@ shellRuntime = createShellRuntime({
   popupBubbles,
   readPopupTemplatePayload,
   scheduleSettingsDefaultsApply,
+  readSettingsDefaultsPayload,
   applySettingsDefaults,
   toggleLayoutLock,
   resetLayout,

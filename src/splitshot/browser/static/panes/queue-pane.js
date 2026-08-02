@@ -10,6 +10,8 @@ export function createQueuePane({
   setStatus = () => {},
   sendKeepaliveJson = () => false,
 } = {}) {
+  let queueSettingsSavePromise = Promise.resolve();
+
   function currentState() {
     return getState() || {};
   }
@@ -85,6 +87,17 @@ export function createQueuePane({
     if (status === "stale" || status === "failed" || status === "complete") return "Requeue";
     if (status === "processing") return "Processing";
     return "Unqueue";
+  }
+
+  function saveQueueSettings(payload) {
+    project().queue_settings = {
+      ...(project().queue_settings || {}),
+      ...payload,
+    };
+    queueSettingsSavePromise = queueSettingsSavePromise
+      .catch(() => null)
+      .then(() => callApi("/api/project/queue/settings", payload));
+    return queueSettingsSavePromise;
   }
 
   async function updateQueueMembership(stageId) {
@@ -166,6 +179,46 @@ export function createQueuePane({
     `;
   }
 
+  function renderStructureKey() {
+    const queueSettings = project()?.queue_settings || {};
+    return JSON.stringify({
+      combined_output: combinedOutputPath(),
+      has_intro: Boolean(project()?.intro_clip?.asset?.path || queueSettings.intro_path),
+      has_outro: Boolean(project()?.outro_clip?.asset?.path || queueSettings.outro_path),
+      has_output_root: Boolean(project()?.output_root),
+      stages: stages().map((stage) => {
+        const entry = findQueueEntry(stage.id);
+        return {
+          id: stage.id,
+          label: stageLabel(stage),
+          primary: stage?.primary_media?.path || "",
+          added: (stage?.added_media || []).map((asset) => asset?.path || ""),
+          status: entry?.status || stage?.queue_status || "not_queued",
+        };
+      }),
+    });
+  }
+
+  function syncScalarControls(pane) {
+    const queueSettings = project()?.queue_settings || {};
+    const syncValue = (id, value) => {
+      const control = $(id);
+      if (!control || documentObject.activeElement === control) return;
+      control.value = String(value);
+    };
+    const syncChecked = (id, checked) => {
+      const control = $(id);
+      if (!control || documentObject.activeElement === control) return;
+      control.checked = Boolean(checked);
+    };
+    syncValue("queue-fade-in", Number(queueSettings.fade_in_s ?? 0.5));
+    syncValue("queue-fade-out", Number(queueSettings.fade_out_s ?? 0.5));
+    syncChecked("queue-include-intro", queueSettings.include_intro);
+    syncChecked("queue-include-outro", queueSettings.include_outro);
+    const status = pane.querySelector(".pane-status-text");
+    if (status) status.textContent = `${queuedCount()} queued`;
+  }
+
   function bindEvents(pane) {
     if (!(pane instanceof HTMLElement)) return;
     pane.onclick = (event) => {
@@ -198,7 +251,7 @@ export function createQueuePane({
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
       if (["queue-fade-in", "queue-fade-out", "queue-include-intro", "queue-include-outro"].includes(target.id)) {
-        callApi("/api/project/queue/settings", {
+        saveQueueSettings({
           fade_in_s: Math.max(0, Number($("queue-fade-in")?.value || 0)),
           fade_out_s: Math.max(0, Number($("queue-fade-out")?.value || 0)),
           include_intro: Boolean($("queue-include-intro")?.checked),
@@ -211,6 +264,11 @@ export function createQueuePane({
   function render() {
     const pane = $("queue-pane");
     if (!pane) return;
+    const structureKey = renderStructureKey();
+    if (pane.dataset.renderStructureKey === structureKey && pane.querySelector(".queue-pane-shell")) {
+      syncScalarControls(pane);
+      return;
+    }
     const count = queuedCount();
     pane.innerHTML = `
       <div class="pane-section queue-pane-shell">
@@ -251,6 +309,7 @@ export function createQueuePane({
         </section>
       </div>
     `;
+    pane.dataset.renderStructureKey = structureKey;
     bindEvents(pane);
   }
 

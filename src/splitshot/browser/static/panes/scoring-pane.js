@@ -456,8 +456,10 @@ export function createScoringPane({
 
   async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset")?.value || "") {
     const previousRuleset = currentState().project?.scoring?.ruleset;
-    if (ruleset !== previousRuleset) scoringPayload.penalty_counts = {};
-    await callApi("/api/scoring/profile", { ruleset });
+    if (ruleset !== previousRuleset) {
+      scoringPayload.penalty_counts = {};
+      await callApi("/api/scoring/profile", { ruleset });
+    }
     await callApi("/api/scoring", scoringPayload);
   }
 

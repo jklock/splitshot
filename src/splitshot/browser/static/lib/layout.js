@@ -170,21 +170,21 @@ export function createLayoutRuntime({
   function applyLayoutState() {
     const viewportHeight = layoutViewportHeight();
     setCssPixels("--app-height", viewportHeight);
-    runtime.layoutSizes = {
+    const renderedLayoutSizes = {
       railWidth: clamp(runtime.layoutSizes.railWidth, 84, 104),
       inspectorWidth: clamp(runtime.layoutSizes.inspectorWidth, 280, Math.max(280, window.innerWidth * 0.48)),
       waveformHeight: clamp(runtime.layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
     };
-    setCssPixels("--rail-width", runtime.railCollapsed ? 48 : runtime.layoutSizes.railWidth);
-    setCssPixels("--inspector-width", runtime.layoutSizes.inspectorWidth);
-    setCssPixels("--waveform-height", runtime.layoutSizes.waveformHeight);
+    setCssPixels("--rail-width", runtime.railCollapsed ? 48 : renderedLayoutSizes.railWidth);
+    setCssPixels("--inspector-width", renderedLayoutSizes.inspectorWidth);
+    setCssPixels("--waveform-height", renderedLayoutSizes.waveformHeight);
     setCssPixels("--markers-workbench-height", popupWorkbenchTargetHeight(viewportHeight));
     const shell = document.querySelector(".cockpit-shell");
     if (shell) {
       shell.classList.toggle("layout-locked", runtime.layoutLocked);
       shell.classList.toggle("layout-unlocked", !runtime.layoutLocked);
       shell.classList.toggle("resizing-layout", runtime.activeResize !== null);
-      shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
+      shell.classList.toggle("inspector-compact", renderedLayoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
       shell.classList.toggle("rail-collapsed", runtime.railCollapsed);
     }
     const railToggle = $("toggle-rail");

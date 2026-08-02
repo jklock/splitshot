@@ -497,6 +497,37 @@ export function createMergePane({
     [...currentMergeSourceExpansion().keys()].forEach((sourceId) => {
       if (sourceId !== pipDefaultsSectionId && !validSourceIds.has(sourceId)) currentMergeSourceExpansion().delete(sourceId);
     });
+    const existingCards = [...list.querySelectorAll(":scope > .merge-media-card")];
+    const canPreserveCards = existingCards.length === mergeSources.length && mergeSources.every((source, index) => {
+      const sourceId = sourceIdentifier(source, String(index));
+      const card = existingCards[index];
+      return card?.dataset.sourceId === sourceId
+        && card.classList.contains("collapsed") === !isMergeSourceExpanded(sourceId);
+    });
+    if (canPreserveCards) {
+      mergeSources.forEach((source, index) => {
+        const asset = source.asset || source;
+        const sourceId = sourceIdentifier(source, String(index));
+        const card = existingCards[index];
+        const title = card.querySelector(".merge-media-card-copy strong");
+        const meta = card.querySelector(".merge-media-card-meta");
+        if (title) title.textContent = source?.active_display_name || fileName(source?.effective_media_path || asset.path || "");
+        if (meta) {
+          const mediaType = asset.is_still_image ? "Image" : "Video";
+          const dimensions = asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : "";
+          meta.textContent = `${mediaType}${dimensions}`;
+        }
+        syncMergeSourceControls(
+          sourceId,
+          normalizedCoordinateValue(source.pip_x),
+          normalizedCoordinateValue(source.pip_y),
+          currentPipSizePercent(source),
+          currentSourceSyncOffsetMs(source),
+          currentSourceOpacity(source),
+        );
+      });
+      return;
+    }
     withPreservedScrollState([list], () => {
       list.innerHTML = "";
       if (mergeSources.length === 0) {

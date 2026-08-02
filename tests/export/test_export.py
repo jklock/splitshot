@@ -54,6 +54,7 @@ from splitshot.overlay.render import (
 )
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
+from splitshot.ui.controller import ProjectController
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
@@ -324,6 +325,103 @@ def test_overlay_renderer_uses_text_box_typography(monkeypatch) -> None:
     painter.end()
 
     assert ("Courier New", 22, False, True) in captured
+
+
+def test_overlay_renderer_auto_sizes_text_box_with_its_own_typography() -> None:
+    project = Project(name="Auto-sized Text Box")
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.font_size = 14
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="WIDE INTRO TITLE\nSECOND LINE",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=52,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+
+    image = QImage(640, 360, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#101010"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 640, 360)
+    painter.end()
+
+    red_pixels = [
+        (x, y)
+        for y in range(image.height())
+        for x in range(image.width())
+        if (color := image.pixelColor(x, y)).red() > 150
+        and color.red() > color.green() * 1.5
+        and color.red() > color.blue() * 1.5
+    ]
+    assert red_pixels
+    box_width = max(x for x, _y in red_pixels) - min(x for x, _y in red_pixels) + 1
+    box_height = max(y for _x, y in red_pixels) - min(y for _x, y in red_pixels) + 1
+    assert box_width > 400
+    assert box_height >= 110
+
+
+@pytest.mark.parametrize("kind", ["intro", "outro"])
+def test_encoded_intro_outro_frame_auto_sizes_text_box(
+    kind: str,
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    source = synthetic_video_factory(
+        name=f"{kind}-text-box-source",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(640, 360),
+    )
+    controller = ProjectController()
+    clip = getattr(controller.project, f"{kind}_clip")
+    clip.asset = probe_video(source)
+    clip.overlay.show_timer = False
+    clip.overlay.show_draw = False
+    clip.overlay.show_shots = False
+    clip.overlay.show_score = False
+    clip.overlay.font_size = 14
+    clip.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text=f"WIDE {kind.upper()} TITLE\nSECOND LINE",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=52,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+    controller.project.export.target_width = 640
+    controller.project.export.target_height = 360
+    controller.project.export.video_bitrate_mbps = 1
+    controller.project.export.ffmpeg_preset = "ultrafast"
+
+    output = controller._render_queue_boundary_overlay(kind, source, tmp_path)
+    frame = _frame_rgb(output, 0.1)
+    red_mask = (
+        (frame[:, :, 0] > 140)
+        & (frame[:, :, 0] > frame[:, :, 1] * 1.5)
+        & (frame[:, :, 0] > frame[:, :, 2] * 1.5)
+    )
+    ys, xs = np.where(red_mask)
+
+    assert xs.size > 0
+    assert int(xs.max() - xs.min() + 1) > 350
+    assert int(ys.max() - ys.min() + 1) >= 105
 
 
 def test_e2e_fixture_contains_detectable_shots() -> None:
