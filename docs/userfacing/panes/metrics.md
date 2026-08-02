@@ -18,8 +18,8 @@ The Metrics pane is the read-only match dashboard. Match Metrics is visible firs
 
 | Control | What it does |
 | --- | --- |
-| Match Metrics | Shows combined headline values. USPSA totals are labeled `Combined HF`, not official match scoring. |
-| Stage Breakdown | Opens one stage at a time to show all stage-specific metrics, graphs, scoring data, and shot rows. |
+| Match Metrics | Shows final spreadsheet match result, Points Down, penalties, and final Class, Division, and Overall place out of each full match cohort. |
+| Stage Breakdown | Opens one stage at a time to show that stage's spreadsheet result, Points Down, penalties, and stage-specific Class, Division, and Overall place out of each stage cohort, followed by graphs, scoring data, and shot rows. |
 | `Shot Breakdown` | Shows timing graphs plus imported Overall, sport-division, and sport-class cohort comparisons when enough source data is available. Division and class labels use the imported acronyms. |
 | Compact timing table | Keeps the row-by-row snapshot in view. The columns are `Shot`, `Split`, `Run`, `Score`, `ShotML`, and `Action`. |
 | Scoring context block | Shows imported `Stage #`, `Competitor`, and `Place` first, followed by ruleset, result, raw/final timing, penalties, and points. |
@@ -51,7 +51,7 @@ The Metrics pane is the read-only match dashboard. Match Metrics is visible firs
 3. Start with the compact `Split Timeline` to see split-by-split pace.
 4. Use `Split Distribution` to spot interval outliers and hesitation points.
 5. Use `Shooting vs Non-Shooting Time` to separate shooting cadence from movement and dead time.
-6. Check the Overall, division-acronym, and class-acronym cohort comparisons when imported match data is available. These are three separate cohorts; there is no combined division-and-class cohort.
+6. Check the Overall, division-acronym, and class-acronym cohort comparisons when imported match data is available. Stage branches rank the selected competitor from that stage's official result; Match Metrics uses the final match standings. These are three separate cohorts; there is no combined division-and-class cohort.
 7. Review the compact timing table for the row-by-row details.
 8. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details. The context is a two-column table so long names wrap instead of clipping.
 9. Click `Expand` for the dense table view.

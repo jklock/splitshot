@@ -990,7 +990,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         in js
     )
     assert "return (state.split_rows || []).map((row) => {" in js
-    assert "const ACTIVITY_POLL_INTERVAL_MS = 1000;" in js
+    assert "const ACTIVITY_POLL_INTERVAL_MS = 250;" in js
+    assert "Show Log (${Math.round" not in (STATIC_ROOT / "panes" / "export-pane.js").read_text()
+    finish_index = api_js.index('finishProcessing(data.status || "Ready.")')
+    assert finish_index < api_js.index("requestRender();", finish_index)
+    assert "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines" in export_pane
     assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}`)" in activity_js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js

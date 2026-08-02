@@ -8,6 +8,6 @@ Each clip has its own `Fade in (seconds)` and `Fade out (seconds)` controls, def
 
 Use the Intro and Outro buttons to switch which clip is shown in the main preview. `Add Text Box` creates custom copy. `Add Match Results` creates an automatically populated box whose selectable fields include the combined match result, raw time, stage and shot totals, points, penalties, competitor, division, class, and overall place.
 
-These boxes use the same overlay data model and frame renderer as stage Review boxes, so color, opacity, typography, size, and placement are burned into the combined output as previewed. Match values are resolved again when Queue processes the file so late scoring changes are included.
+These boxes use the same overlay data model and frame renderer as stage Review boxes, so color, opacity, typography, size, and placement are burned into the combined output as previewed. Queue first normalizes boundary media to the final output dimensions and then paints the text, so the selected font size and measured box are not scaled a second time. Match values are resolved again when Queue processes the file so late scoring changes are included.
 
 Queue has separate `Include intro` and `Include outro` choices. A selected file is not part of individual stage outputs. In `Process as One File`, enabled clips are placed outside the stage sequence and receive the configured fade-in and fade-out.

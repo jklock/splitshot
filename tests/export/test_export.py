@@ -424,6 +424,78 @@ def test_encoded_intro_outro_frame_auto_sizes_text_box(
     assert int(ys.max() - ys.min() + 1) >= 105
 
 
+def test_intro_font_size_is_painted_after_boundary_matches_final_dimensions(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    source = synthetic_video_factory(
+        name="square-intro-font-source",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(640, 640),
+    )
+    reference = synthetic_video_factory(
+        name="landscape-stage-reference",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(320, 180),
+    )
+    controller = ProjectController()
+    controller.project.export.target_width = 320
+    controller.project.export.target_height = 180
+    controller.project.export.video_bitrate_mbps = 1
+    controller.project.export.ffmpeg_preset = "ultrafast"
+    clip = controller.project.intro_clip
+    clip.asset = probe_video(source)
+    clip.fade_in_s = 0
+    clip.fade_out_s = 0
+    clip.overlay.show_timer = False
+    clip.overlay.show_draw = False
+    clip.overlay.show_shots = False
+    clip.overlay.show_score = False
+    clip.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="INTRO",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=40,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+
+    normalized = controller._prepare_queue_boundary_clip(
+        source,
+        reference,
+        tmp_path,
+        "intro",
+        apply_fades=False,
+    )
+    overlay = controller._render_queue_boundary_overlay("intro", normalized, tmp_path)
+    output = controller._prepare_queue_boundary_clip(
+        overlay,
+        reference,
+        tmp_path,
+        "intro",
+    )
+    frame = _frame_rgb(output, 0.2)
+    red_mask = (
+        (frame[:, :, 0] > 140)
+        & (frame[:, :, 0] > frame[:, :, 1] * 1.5)
+        & (frame[:, :, 0] > frame[:, :, 2] * 1.5)
+    )
+    ys, xs = np.where(red_mask)
+
+    assert xs.size > 0
+    assert int(ys.max() - ys.min() + 1) >= 42
+
+
 def test_e2e_fixture_contains_detectable_shots() -> None:
     analysis = analyze_video_audio(E2E_VIDEO, threshold=0.35)
 

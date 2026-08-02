@@ -267,7 +267,7 @@ export function createMetricsPane({
   }
 
   function metricCardDefinitions(metrics = {}, scoring = {}, { match = false } = {}) {
-    return [
+    const definitions = [
       ["Draw", splitSeconds(metrics.draw_ms)],
       ["Raw", splitSeconds(metrics.raw_time_ms ?? metrics.stage_time_ms)],
       ["Shots", String(metrics.total_shots || 0)],
@@ -282,6 +282,30 @@ export function createMetricsPane({
         formatNumber(match ? metrics.score_value : scoring.shot_points, 2),
       ],
       ["Penalties", formatNumber(match ? metrics.total_penalties : scoring.total_penalties, 2)],
+    ];
+    if (match) {
+      definitions.push(
+        [`Division${metrics.division ? ` ${metrics.division}` : ""}`, metrics.division_placement || "--"],
+        [`Class${metrics.classification ? ` ${metrics.classification}` : ""}`, metrics.class_placement || "--"],
+        ["Overall", metrics.overall_placement || "--"],
+      );
+    }
+    return definitions;
+  }
+
+  function stageMetricCardDefinitions(entry = {}) {
+    const metrics = entry.metrics || {};
+    const scoring = entry.scoring_summary || {};
+    const official = entry.official_metrics || {};
+    return [
+      ["Draw", splitSeconds(metrics.draw_ms)],
+      ["Raw", splitSeconds(official.raw_time_ms ?? metrics.raw_time_ms ?? metrics.stage_time_ms)],
+      ["Shots", String(metrics.total_shots || 0)],
+      ["Avg Split", splitSeconds(metrics.average_split_ms)],
+      ["Beep", splitSeconds(metrics.beep_ms)],
+      [official.result_label || scoring.display_label || "Result", official.display_value || scoring.display_value || "--"],
+      [official.score_label || "Shot Points", formatNumber(official.score_value ?? scoring.shot_points, 2)],
+      ["Penalties", formatNumber(official.penalties ?? scoring.total_penalties, 2)],
     ];
   }
 
@@ -356,7 +380,17 @@ export function createMetricsPane({
       body.className = "metrics-stage-tree-body";
       const cards = documentObject.createElement("div");
       cards.className = "metrics-summary-grid metrics-stage-summary-grid";
-      renderMetricCards(cards, metricCardDefinitions(metrics, scoring));
+      renderMetricCards(cards, stageMetricCardDefinitions(entry));
+      const placementTitle = documentObject.createElement("h4");
+      placementTitle.textContent = "Stage Placement";
+      const placements = documentObject.createElement("div");
+      placements.className = "metrics-placement-grid";
+      renderCompetitionSummaryCards(placements, {
+        mode: "stage",
+        scoring: entry.scoring || {},
+        importedStage: scoring.imported_stage || {},
+        competitors: entry.comparison_competitors || [],
+      });
       const scoringTitle = documentObject.createElement("h4");
       scoringTitle.textContent = "Scoring";
       const scoringDetails = documentObject.createElement("dl");
@@ -391,7 +425,7 @@ export function createMetricsPane({
       const shotTable = documentObject.createElement("div");
       shotTable.className = "data-table metrics-trend-table metrics-stage-shot-table";
       renderStageShotTable(shotTable, rows);
-      body.append(cards, scoringTitle, scoringDetails, graphTitle, graphs, shotsTitle, shotTable);
+      body.append(cards, placementTitle, placements, scoringTitle, scoringDetails, graphTitle, graphs, shotsTitle, shotTable);
       details.append(summary, body);
       details.addEventListener("toggle", () => {
         if (details.open) expandedMetricStageIds.add(stageId);
@@ -1292,11 +1326,6 @@ export function createMetricsPane({
       importedStage,
       competitors: comparisonData,
     });
-    const standings = buildFinalStandingsComparison({
-      scoring,
-      importedStage,
-      competitors: comparisonData,
-    });
     const identityLabels = competitionIdentityLabels({
       scoring,
       importedStage,
@@ -1319,13 +1348,13 @@ export function createMetricsPane({
     }
     const graphs = [];
     [
-      ["division", comparison.division, standings.division, identityLabels.division || "Division"],
-      ["classification", comparison.classification, standings.classification, identityLabels.classification || "Class"],
-      ["overall", comparison.overall, standings.overall, "Overall"],
-    ].forEach(([id, cohort, standing, label]) => {
+      ["division", comparison.division, identityLabels.division || "Division"],
+      ["classification", comparison.classification, identityLabels.classification || "Class"],
+      ["overall", comparison.overall, "Overall"],
+    ].forEach(([id, cohort, label]) => {
       if (cohort.count >= 2 && cohort.current) {
-        const title = standing.current && standing.place !== null
-          ? `${label} - ${standing.place}/${standing.count}`
+        const title = cohort.place !== null
+          ? `${label} - ${cohort.place}/${cohort.count}`
           : label;
         graphs.push({
           id: `competitor_${id}_placement`, type: "bars", title, subtitle: "", unit,
@@ -1340,24 +1369,22 @@ export function createMetricsPane({
     return graphs;
   }
 
-  function currentFinalStandingsComparison() {
-    const state = currentState();
-    return buildFinalStandingsComparison({
-      scoring: state?.project?.scoring || {},
-      importedStage: state?.scoring_summary?.imported_stage || {},
-      competitors: Array.isArray(state?.practiscore_options?.comparison_competitors)
-        ? state.practiscore_options.comparison_competitors
-        : [],
-    });
-  }
-
-  function renderCompetitionSummaryCards(container) {
+  function renderCompetitionSummaryCards(container, options = {}) {
     if (!container) return;
-    const comparison = currentFinalStandingsComparison();
     const state = currentState();
+    const scoring = options.scoring || state?.project?.scoring || {};
+    const importedStage = options.importedStage || state?.scoring_summary?.imported_stage || {};
+    const competitors = Array.isArray(options.competitors)
+      ? options.competitors
+      : (Array.isArray(state?.practiscore_options?.comparison_competitors)
+        ? state.practiscore_options.comparison_competitors
+        : []);
+    const comparison = options.mode === "stage"
+      ? buildCompetitionComparison({ scoring, importedStage, competitors })
+      : buildFinalStandingsComparison({ scoring, importedStage, competitors });
     const labels = competitionIdentityLabels({
-      scoring: state?.project?.scoring || {},
-      importedStage: state?.scoring_summary?.imported_stage || {},
+      scoring,
+      importedStage,
     });
     const definitions = [
       [labels.division || "Division", comparison.division, labels.division ? "Division" : "Division not selected"],
@@ -1393,7 +1420,7 @@ export function createMetricsPane({
     const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
     const matchMetrics = state.match_metrics || {};
     const rows = buildMetricsRows();
-    const graphs = [...buildMetricsGraphSeries(rows), ...buildCompetitorComparisonGraphs()];
+    const graphs = buildMetricsGraphSeries(rows);
 
     renderMetricCards(summaryGrid, metricCardDefinitions(matchMetrics, {}, { match: true }));
     renderMetricCards(
@@ -1505,23 +1532,31 @@ export function createMetricsPane({
       },
       {
         name: "stage_metrics",
-        headers: ["stage_id", "stage_number", "stage_name", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "shot_points", "penalties"],
+        headers: ["stage_id", "stage_number", "stage_name", "draw_s", "raw_s", "shots", "average_split_s", "beep_s", "result_label", "result_value", "points_label", "points_value", "points_down", "penalties", "division", "division_placement", "class", "class_placement", "overall_placement"],
         rows: stageEntries.map((stage) => {
           const metrics = stage.metrics || {};
           const scoring = stage.scoring_summary || {};
+          const official = stage.official_metrics || {};
           return [
             stage.stage_id,
             stage.stage_number,
             stage.stage_name,
             metrics.draw_ms == null ? "" : precise(metrics.draw_ms),
-            metrics.raw_time_ms == null ? "" : precise(metrics.raw_time_ms),
+            (official.raw_time_ms ?? metrics.raw_time_ms) == null ? "" : precise(official.raw_time_ms ?? metrics.raw_time_ms),
             metrics.total_shots ?? 0,
             metrics.average_split_ms == null ? "" : precise(metrics.average_split_ms),
             metrics.beep_ms == null ? "" : precise(metrics.beep_ms),
-            scoring.display_label || "",
-            scoring.display_value || "",
-            scoring.shot_points ?? "",
-            scoring.total_penalties ?? "",
+            official.result_label || scoring.display_label || "",
+            official.result_value ?? scoring.display_value ?? "",
+            official.score_label || "Shot Points",
+            official.score_value ?? scoring.shot_points ?? "",
+            official.points_down ?? "",
+            official.penalties ?? scoring.total_penalties ?? "",
+            official.division || "",
+            official.division_placement || "",
+            official.classification || "",
+            official.class_placement || "",
+            official.overall_placement || "",
           ];
         }),
       },

@@ -155,10 +155,10 @@ export function createApiRuntime({
       }
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
       if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);
+      if (finishProcessing) finishProcessing(data.status || "Ready.");
       requestRender();
       emitBackbone(backbone, "api.response", { path, status: data.status, shots: data.metrics?.total_shots });
       activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
-      if (finishProcessing) finishProcessing(data.status || "Ready.");
       return data;
     } catch (error) {
       if (isTrackedApiRequestStale(request)) {

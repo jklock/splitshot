@@ -16,7 +16,7 @@ export function createActivityRuntime({
   setProcessingProgress = () => {},
   ACTIVITY_FLUSH_DELAY_MS = 160,
   ACTIVITY_BATCH_SIZE = 48,
-  ACTIVITY_POLL_INTERVAL_MS = 1000,
+  ACTIVITY_POLL_INTERVAL_MS = 250,
 } = {}) {
   function syncActivityBackbone() {
     patchBackboneStore(backbone, {
@@ -127,6 +127,9 @@ export function createActivityRuntime({
             ? "Concatenating, fading, and validating"
             : `Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
         }
+        if (entry.phase === "complete" || entry.phase === "failed") {
+          exportLogChanged = true;
+        }
         return;
       }
       if (entry.event === "api.trim.progress") {
@@ -144,6 +147,9 @@ export function createActivityRuntime({
           detail.textContent = entry.phase === "complete"
             ? `${entry.file_count || 0} videos processed`
             : `Video ${entry.file_index || 0} of ${entry.file_count || 0} · Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
+        }
+        if (entry.phase === "complete" || entry.phase === "failed") {
+          exportLogChanged = true;
         }
         return;
       }

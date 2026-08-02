@@ -590,6 +590,93 @@ def competition_placement(
     return "" if selected_rank is None else f"{selected_rank}/{len(ranked)}"
 
 
+def stage_competition_placement(
+    project: Project,
+    *,
+    dimension: str | None = None,
+) -> str:
+    """Return the selected competitor's rank for this stage, not match standings."""
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    selected_name = str(
+        project.scoring.competitor_name or imported.competitor_name or ""
+    ).strip()
+    if not selected_name:
+        return ""
+    match_type = str(project.scoring.match_type or imported.match_type).casefold()
+    result_key = "final_time" if match_type == "idpa" else "hit_factor"
+    ascending = match_type == "idpa"
+    selected = {
+        "name": selected_name,
+        "division": project.scoring.division or imported.division,
+        "classification": project.scoring.classification or imported.classification,
+        result_key: getattr(imported, result_key),
+    }
+    competitors = [selected, *project.scoring.comparison_competitors]
+    deduplicated: dict[str, dict[str, object]] = {}
+    for competitor in competitors:
+        name = str(competitor.get("name") or competitor.get("competitor_name") or "").strip()
+        key = name.casefold()
+        if not key or key in deduplicated:
+            continue
+        deduplicated[key] = {**competitor, "name": name}
+    cohort = list(deduplicated.values())
+    if dimension:
+        aliases = _DIVISION_CODES if dimension == "division" else _class_codes(project)
+        selected_value = _competition_code(selected.get(dimension), aliases).casefold()
+        cohort = [
+            competitor
+            for competitor in cohort
+            if _competition_code(competitor.get(dimension), aliases).casefold()
+            == selected_value
+        ]
+    ranked = []
+    for competitor in cohort:
+        raw_result = competitor.get(result_key)
+        if raw_result in {None, ""}:
+            continue
+        try:
+            result = float(raw_result)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(result):
+            continue
+        ranked.append((result, str(competitor["name"]).casefold()))
+    ranked.sort(key=lambda item: item[0], reverse=not ascending)
+    selected_key = selected_name.casefold()
+    selected_result = next(
+        (result for result, name in ranked if name == selected_key),
+        None,
+    )
+    if selected_result is None:
+        return ""
+    selected_rank = next(
+        index + 1 for index, (result, _name) in enumerate(ranked) if result == selected_result
+    )
+    return f"{selected_rank}/{len(ranked)}"
+
+
+def imported_stage_penalty_count(project: Project) -> float:
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return 0.0
+    if str(imported.match_type).casefold() != "idpa":
+        return float(calculate_scoring_summary(project).get("total_penalties") or 0.0)
+    penalty_labels = {
+        "Non-Threat",
+        "Procedural Error",
+        "Failure To Do Right",
+        "Flagrant Penalty",
+        "Finger PE",
+    }
+    return sum(
+        float(value or 0.0)
+        for label, value in imported.score_counts.items()
+        if label in penalty_labels
+    )
+
+
 def format_review_summary_overlay_text(
     project: Project,
     metric_ids: list[str] | tuple[str, ...] | None = None,
@@ -616,24 +703,20 @@ def format_review_summary_overlay_text(
     )
     values = {
         "score_time": (
-            str(summary.get("display_value") or "")
-            if summary.get("display_value") != "--"
-            else (
-                f"{float(imported.final_time):.2f}"
-                if imported.final_time is not None
-                else ""
-            )
+            f"{float(imported.final_time):.2f}"
+            if imported.final_time is not None
+            else str(summary.get("display_value") or "").replace("--", "")
         ),
         "raw_time": (
-            f"{float(summary['raw_seconds']):.2f}s"
-            if summary.get("raw_seconds") is not None
+            f"{float(imported.raw_seconds):.2f}s"
+            if imported.raw_seconds is not None
             else ""
         ),
         "points_down": "" if points_down is None else _format_overlay_stat(float(points_down)),
-        "penalties": _format_overlay_stat(float(summary.get("total_penalties", 0.0))),
-        "division_placement": competition_placement(project, dimension="division"),
-        "class_placement": competition_placement(project, dimension="classification"),
-        "overall_placement": competition_placement(project),
+        "penalties": _format_overlay_stat(imported_stage_penalty_count(project)),
+        "division_placement": stage_competition_placement(project, dimension="division"),
+        "class_placement": stage_competition_placement(project, dimension="classification"),
+        "overall_placement": stage_competition_placement(project),
     }
     labels = {
         "division_placement": division_label or "Division",

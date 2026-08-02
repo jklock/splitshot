@@ -111,8 +111,6 @@ from splitshot.scoring.logic import (
     calculate_hit_factor,
     default_score_mark_for_ruleset,
     ensure_default_shot_scores,
-    format_imported_stage_overlay_text,
-    format_review_summary_overlay_text,
 )
 from splitshot.scoring.practiscore import (
     PractiScoreCompetitorOption,
@@ -2054,6 +2052,10 @@ class ProjectController(QObject):
         self._practiscore_source_path = resolved_path
         self._practiscore_source_name = display_name
         self._practiscore_options = options
+        comparison_changed = self._refresh_practiscore_comparisons_for_all_stages(
+            resolved_path,
+            display_name,
+        )
         summary_metrics_changed = False
         for stage in self.project.stages:
             imported_box = next(
@@ -2133,7 +2135,7 @@ class ProjectController(QObject):
             )
         except ValueError:
             self._practiscore_comparison_competitors = []
-        return changed or recovered_from_folder
+        return changed or recovered_from_folder or comparison_changed
 
     def _project_input_candidates(self) -> list[tuple[Path, VideoAsset]]:
         if self.project_path is None:
@@ -2349,7 +2351,18 @@ class ProjectController(QObject):
     def _set_practiscore_comparison_competitors(
         self, competitors: Iterable[PractiScoreCompetitorOption]
     ) -> None:
-        self._practiscore_comparison_competitors = [
+        self._practiscore_comparison_competitors = self._comparison_competitor_payloads(
+            competitors
+        )
+        self.project.scoring.comparison_competitors = deepcopy(
+            self._practiscore_comparison_competitors
+        )
+
+    @staticmethod
+    def _comparison_competitor_payloads(
+        competitors: Iterable[PractiScoreCompetitorOption],
+    ) -> list[dict[str, object]]:
+        return [
             {
                 "name": c.name,
                 "place": c.place,
@@ -2366,9 +2379,46 @@ class ProjectController(QObject):
             }
             for c in competitors
         ]
-        self.project.scoring.comparison_competitors = deepcopy(
-            self._practiscore_comparison_competitors
-        )
+
+    def _refresh_practiscore_comparisons_for_all_stages(
+        self,
+        path: Path,
+        source_name: str,
+    ) -> bool:
+        changed = False
+        active_payloads: list[dict[str, object]] = []
+        for stage in self.project.stages:
+            scoring = stage.scoring
+            imported = scoring.imported_stage
+            if imported is None:
+                continue
+            try:
+                normalized = normalize_downloaded_practiscore_artifact(
+                    path,
+                    source_name=source_name,
+                    match_type=scoring.match_type or imported.match_type or None,
+                    stage_number=imported.stage_number or stage.imported_stage_number,
+                    competitor_name=scoring.competitor_name or imported.competitor_name or None,
+                    competitor_place=scoring.competitor_place or imported.competitor_place,
+                    classification=scoring.classification or imported.classification or None,
+                    division=scoring.division or imported.division or None,
+                )
+            except ValueError:
+                continue
+            payloads = self._comparison_competitor_payloads(
+                normalized.stage_import.comparison_competitors
+            )
+            if scoring.comparison_competitors != payloads:
+                scoring.comparison_competitors = deepcopy(payloads)
+                changed = True
+            if stage.id == self.project.active_stage_id:
+                active_payloads = payloads
+        if active_payloads:
+            self._practiscore_comparison_competitors = deepcopy(active_payloads)
+            if self.project.scoring.comparison_competitors != active_payloads:
+                self.project.scoring.comparison_competitors = deepcopy(active_payloads)
+                changed = True
+        return changed
 
     def _import_practiscore_source(
         self,
@@ -3302,40 +3352,52 @@ class ProjectController(QObject):
                 sequence_results = list(results)
                 try:
                     for boundary_index, (label, source_path) in enumerate(boundary_media):
-                        overlay_path = self._render_queue_boundary_overlay(
-                            label.lower(),
+                        normalized_path = self._prepare_queue_boundary_clip(
                             source_path,
+                            results[0],
                             output_dir,
-                            progress_callback=(
-                                None
-                                if progress_callback is None
-                                else lambda value, boundary_index=boundary_index, label=label: progress_callback(
-                                    {
-                                        "progress": min(
-                                            0.999,
-                                            (len(queued) + boundary_index + value) / total_units,
-                                        ),
-                                        "stage_progress": value,
-                                        "stage_index": len(queued),
-                                        "stage_count": len(queued),
-                                        "stage_label": label,
-                                        "mode": mode,
-                                        "phase": "boundary",
-                                    }
-                                )
-                            ),
+                            label.lower(),
+                            apply_fades=False,
                             log_callback=log_callback,
                         )
                         try:
-                            prepared_path = self._prepare_queue_boundary_clip(
-                                overlay_path,
-                                results[0],
-                                output_dir,
+                            overlay_path = self._render_queue_boundary_overlay(
                                 label.lower(),
+                                normalized_path,
+                                output_dir,
+                                progress_callback=(
+                                    None
+                                    if progress_callback is None
+                                    else lambda value, boundary_index=boundary_index, label=label: progress_callback(
+                                        {
+                                            "progress": min(
+                                                0.999,
+                                                (len(queued) + boundary_index + value)
+                                                / total_units,
+                                            ),
+                                            "stage_progress": value,
+                                            "stage_index": len(queued),
+                                            "stage_count": len(queued),
+                                            "stage_label": label,
+                                            "mode": mode,
+                                            "phase": "boundary",
+                                        }
+                                    )
+                                ),
                                 log_callback=log_callback,
                             )
+                            try:
+                                prepared_path = self._prepare_queue_boundary_clip(
+                                    overlay_path,
+                                    results[0],
+                                    output_dir,
+                                    label.lower(),
+                                    log_callback=log_callback,
+                                )
+                            finally:
+                                overlay_path.unlink(missing_ok=True)
                         finally:
-                            overlay_path.unlink(missing_ok=True)
+                            normalized_path.unlink(missing_ok=True)
                         prepared_boundary_paths.append(prepared_path)
                         if label == "Intro":
                             sequence_results.insert(0, prepared_path)
@@ -3626,8 +3688,7 @@ class ProjectController(QObject):
         boundary_project = deepcopy(self.project)
         boundary_project.stages = []
         boundary_project.active_stage_id = ""
-        boundary_project.primary_video = deepcopy(clip.asset)
-        boundary_project.primary_video.path = str(source_path)
+        boundary_project.primary_video = probe_video(source_path)
         boundary_project.primary_trim_derivative = MergeSourceTrimDerivative()
         boundary_project.secondary_video = None
         boundary_project.merge_sources = []
@@ -3664,6 +3725,7 @@ class ProjectController(QObject):
         output_dir: Path,
         kind: str,
         *,
+        apply_fades: bool = True,
         log_callback: Callable[[str], None] | None = None,
     ) -> Path:
         source_info = run_ffprobe_json(source_path)
@@ -3700,10 +3762,14 @@ class ProjectController(QObject):
         clip = getattr(self.project, f"{kind}_clip", None)
         if clip is None:
             raise ValueError("Queue boundary kind must be intro or outro.")
-        fade_in_s, fade_out_s = _normalized_output_fades(
-            clip.fade_in_s,
-            clip.fade_out_s,
-            source_duration_s,
+        fade_in_s, fade_out_s = (
+            _normalized_output_fades(
+                clip.fade_in_s,
+                clip.fade_out_s,
+                source_duration_s,
+            )
+            if apply_fades
+            else (0.0, 0.0)
         )
         video_filters = [
             f"scale={width}:{height}:force_original_aspect_ratio=decrease",
@@ -5406,17 +5472,8 @@ class ProjectController(QObject):
                         box.x = 0.5
                     if box.y is None:
                         box.y = 0.5
-                if box.source == "imported_summary" and box.text.strip():
-                    auto_texts = {
-                        format_imported_stage_overlay_text(
-                            self.project.scoring.imported_stage
-                        ).strip(),
-                        format_review_summary_overlay_text(
-                            self.project, box.summary_metric_ids
-                        ).strip(),
-                    }
-                    if box.text.strip() in auto_texts:
-                        box.text = ""
+                if box.source in {"imported_summary", "match_summary"}:
+                    box.text = ""
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)

@@ -13,8 +13,11 @@ from splitshot.domain.models import (
     ShotEvent,
 )
 from splitshot.scoring.logic import apply_scoring_preset
+from splitshot.persistence.projects import save_project
+from splitshot.ui.controller import ProjectController
 
 STATIC_ROOT = Path("src/splitshot/browser/static")
+EXAMPLE_IDPA = Path("example_data/IDPA/IDPA.csv")
 
 
 def test_browser_state_exposes_per_stage_and_combined_match_metrics() -> None:
@@ -108,6 +111,82 @@ def test_browser_state_uses_spreadsheet_match_totals_instead_of_partial_stage_su
     assert match["division_placement"] == "2/2"
     assert match["class_placement"] == "2/2"
     assert match["overall_placement"] == "4/4"
+
+
+def test_browser_state_exposes_official_stage_metrics_and_stage_placements() -> None:
+    project = Project()
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.scoring.competitor_name = "Selected Shooter"
+    project.scoring.division = "CO"
+    project.scoring.classification = "SS"
+    project.scoring.imported_stage = ImportedStageScore(
+        source_name="IDPA.csv",
+        match_type="idpa",
+        competitor_name="Selected Shooter",
+        competitor_place=4,
+        stage_number=2,
+        division="CO",
+        classification="SS",
+        raw_seconds=29.44,
+        aggregate_points=3.0,
+        final_time=32.44,
+        score_counts={"Points Down": 3.0, "Non-Threat": 1.0},
+    )
+    project.scoring.comparison_competitors = [
+        {"name": "CO Peer", "place": 1, "division": "CO", "classification": "MA", "final_time": 31.0},
+        {"name": "SS Peer", "place": 2, "division": "PCC", "classification": "SS", "final_time": 33.0},
+    ]
+    stage = ProjectStage(
+        id="stage-2",
+        label="Stage 2",
+        order_index=1,
+        imported_stage_number=2,
+        scoring=deepcopy(project.scoring),
+    )
+    project.stages = [stage]
+    project.active_stage_id = stage.id
+
+    official = browser_state(project, "Ready.")["stage_metrics"][0]["official_metrics"]
+
+    assert official == {
+        "raw_time_ms": 29440,
+        "result_label": "Final",
+        "result_value": 32.44,
+        "display_value": "32.44",
+        "score_label": "Points Down",
+        "score_value": 3.0,
+        "points_down": 3.0,
+        "penalties": 1.0,
+        "division": "CO",
+        "classification": "SS",
+        "division_placement": "2/2",
+        "class_placement": "1/2",
+        "overall_placement": "2/3",
+        "spreadsheet_authoritative": True,
+    }
+
+
+def test_project_open_rehydrates_comparison_rows_for_every_imported_stage(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "comparison-rehydrate.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.import_practiscore_file(str(EXAMPLE_IDPA), source_name="IDPA.csv")
+    for stage in controller.project.stages:
+        stage.scoring.comparison_competitors = []
+    controller.project.scoring.comparison_competitors = []
+    save_project(controller.project, project_path)
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    imported_stages = [
+        stage for stage in reopened.project.stages if stage.scoring.imported_stage is not None
+    ]
+    assert imported_stages
+    assert all(len(stage.scoring.comparison_competitors) > 0 for stage in imported_stages)
 
 
 def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows() -> None:
@@ -256,6 +335,9 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert 'name: "stage_metrics"' in metrics_pane_js
     assert 'metrics.score_label || "Shot Points"' in metrics_pane_js
     assert 'match.points_down ?? ""' in metrics_pane_js
+    assert "metrics.division_placement" in metrics_pane_js
+    assert "metrics.class_placement" in metrics_pane_js
+    assert "metrics.overall_placement" in metrics_pane_js
 
 
 def test_bulk_trim_omits_redundant_timing_summary() -> None:

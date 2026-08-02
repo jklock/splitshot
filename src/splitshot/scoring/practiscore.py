@@ -504,9 +504,18 @@ def _import_idpa(
         other_pd = _float_or_zero(other_row.get(f"{stage_prefix} PD"))
         other_nt = _float_or_zero(other_row.get(f"{stage_prefix} Hits on Non-Threat"))
         other_pe = _float_or_zero(other_row.get(f"{stage_prefix} Procedural Error"))
+        other_ftdr = _float_or_zero(other_row.get(f"{stage_prefix} Failure to Do Right"))
+        other_flagrant = _float_or_zero(other_row.get(f"{stage_prefix} Flagrant"))
+        other_finger = _float_or_zero(other_row.get(f"{stage_prefix} Finger PE"))
         other_penalty_sum = sum(
             IDPA_PENALTY_SECONDS[k] * v
-            for k, v in {"non_threats": other_nt, "procedural_errors": other_pe}.items()
+            for k, v in {
+                "non_threats": other_nt,
+                "procedural_errors": other_pe,
+                "failures_to_do_right": other_ftdr,
+                "flagrant_penalties": other_flagrant,
+                "finger_pe": other_finger,
+            }.items()
             if v
         )
         comparison_competitors.append(

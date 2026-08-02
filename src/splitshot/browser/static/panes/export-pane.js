@@ -24,7 +24,9 @@ export function createExportPane({
 
   function visibleExportLogLines() {
     const visibleLines = getExportLogLines() || [];
-    return visibleLines.length > 0 ? visibleLines : persistedExportLogLines();
+    const persistedLines = persistedExportLogLines();
+    if (getActiveProcessingPath()) return visibleLines.length > 0 ? visibleLines : persistedLines;
+    return persistedLines.length >= visibleLines.length ? persistedLines : visibleLines;
   }
 
   function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = currentState()?.project?.export?.preset) {
@@ -66,7 +68,6 @@ export function createExportPane({
     const output = $("export-log-output");
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
-    const buttons = [$("queue-show-log"), $("trim-show-log")].filter(Boolean);
     const exportButton = $("export-export-log");
     if (output) {
       output.textContent = visibleLines.join("\n");
@@ -81,11 +82,6 @@ export function createExportPane({
       errorBox.hidden = !projectExport.last_error;
       errorBox.textContent = projectExport.last_error || "";
     }
-    buttons.forEach((button) => {
-      button.textContent = getActiveProcessingPath()
-        ? `Show Log (${Math.round(getProcessingProgressPercent())}%)`
-        : "Show Log";
-    });
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
 

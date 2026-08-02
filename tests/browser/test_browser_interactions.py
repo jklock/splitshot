@@ -3869,6 +3869,25 @@ def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp
                 assert "Encoder command:" in page.locator("#export-log-output").text_content()
                 assert page.locator("#export-export-log").is_disabled() is False
 
+                page.evaluate(
+                    """() => {
+                      activeProcessingPath = '/api/project/queue/process';
+                      setProcessingProgress(37, { allowDecrease: true });
+                      renderExportLog();
+                    }"""
+                )
+                assert page.locator("#queue-show-log").text_content() == "Show Log"
+                assert page.locator("#export-log-summary").text_content() == "Processing in progress • 37%"
+                page.evaluate(
+                    """() => {
+                      state.project.export.last_log = 'Encoder command:\\nffmpeg -i input\\nQueue complete';
+                      activeProcessingPath = null;
+                      renderExportLog();
+                    }"""
+                )
+                assert page.locator("#export-log-summary").text_content() == ""
+                assert page.locator("#export-log-output").text_content().endswith("Queue complete")
+
                 with page.expect_download() as download_info:
                     page.locator("#export-export-log").click()
                 download = download_info.value
@@ -3877,7 +3896,7 @@ def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp
                 download.save_as(str(download_target))
                 assert (
                     download_target.read_text(encoding="utf-8")
-                    == "Encoder command:\nffmpeg -i input\n"
+                    == "Encoder command:\nffmpeg -i input\nQueue complete\n"
                 )
 
                 page.locator("#close-export-log").click()

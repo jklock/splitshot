@@ -21,7 +21,7 @@ The Queue pane is the multi-stage export surface. It shows every loaded match st
 | `Include intro` / `Include outro` | Adds the selected Intro / Outro clip at the outer edge of a combined output. |
 | `Fade in` / `Fade out` | Sets project-level video and audio fades in 0.1-second steps. `0` disables that boundary. |
 | `Show Output Folder` | Opens the configured project output directory. |
-| `Show Log` | Opens the live processing log for the current or latest Queue run. |
+| `Show Log` | Opens the live processing log for the current or latest Queue run. Its label stays static while progress is reported inside the log dialog and status bar. |
 | `Process Queue` | Exports one output file per queued stage. |
 | `Process as One File` | Renders all queued stages and enabled boundary clips, then concatenates them into one file. |
 
@@ -53,6 +53,7 @@ The Queue pane is the multi-stage export surface. It shows every loaded match st
 - Presentation edits made on a stage waterfall to later, unedited stages. A directly edited later stage keeps its own configuration. Stage timing, scoring, and Review Summary values always remain stage-specific.
 - Queue output is WYSIWYG with the video preview: enabled overlay badges, Review boxes, metric selections, styles, sizes, and positions are rendered into the file.
 - The green processing bar tracks the whole queue and reaches 100% only after every stage has been attempted and any combined file has been faded and validated.
+- Queue progress refreshes four times per second. An open log dialog continues following the live run and switches to the complete persisted log when processing finishes.
 - Individual mode fades each stage output. One-file mode fades only the outer boundaries of the combined file. Short clips automatically scale overlapping fade requests.
 
 ## Related Guides

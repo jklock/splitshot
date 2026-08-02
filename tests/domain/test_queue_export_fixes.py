@@ -223,6 +223,10 @@ def test_intro_overlay_uses_export_overlay_renderer_with_match_text(
         Path(output_path).touch()
 
     monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
+    monkeypatch.setattr(
+        "splitshot.ui.controller.probe_video",
+        lambda path: VideoAsset(path=str(path), duration_ms=1000, width=640, height=360),
+    )
     monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
 
     rendered = controller._render_queue_boundary_overlay(
@@ -263,6 +267,7 @@ def test_combined_queue_includes_only_enabled_boundary_media(
     controller.project.queue_settings.include_intro = True
     controller.project.queue_settings.include_outro = False
     rendered_boundaries: list[str] = []
+    boundary_steps: list[tuple[str, bool | None]] = []
     concatenated: list[str] = []
     fade_args: list[tuple[float | None, float | None]] = []
 
@@ -273,11 +278,13 @@ def test_combined_queue_includes_only_enabled_boundary_media(
 
     def fake_boundary(kind, _source, output_dir, **_kwargs) -> Path:
         rendered_boundaries.append(kind)
+        boundary_steps.append(("overlay", None))
         path = output_dir / f"{kind}-overlay.mp4"
         path.touch()
         return path
 
-    def fake_prepare(_source, _reference, output_dir, kind, **_kwargs) -> Path:
+    def fake_prepare(_source, _reference, output_dir, kind, **kwargs) -> Path:
+        boundary_steps.append(("prepare", kwargs.get("apply_fades", True)))
         path = output_dir / f"{kind}-prepared.mp4"
         path.touch()
         return path
@@ -304,6 +311,11 @@ def test_combined_queue_includes_only_enabled_boundary_media(
     controller.process_queue("combined")
 
     assert rendered_boundaries == ["intro"]
+    assert boundary_steps == [
+        ("prepare", False),
+        ("overlay", None),
+        ("prepare", True),
+    ]
     assert concatenated[0] == "intro-prepared.mp4"
     assert concatenated[1].endswith("1-stage-1.mp4")
     assert fade_args == [(0.0, None)]

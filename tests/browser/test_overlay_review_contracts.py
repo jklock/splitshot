@@ -166,6 +166,25 @@ def test_overlay_api_does_not_persist_generated_review_text_as_an_override() -> 
     assert controller.project.overlay.text_boxes[0].text == ""
 
 
+def test_intro_outro_api_does_not_persist_generated_match_text_as_an_override() -> None:
+    controller = ProjectController()
+    controller.set_intro_outro_overlay(
+        "intro",
+        {
+            "text_boxes": [
+                {
+                    "id": "match-summary",
+                    "source": "match_summary",
+                    "text": "Final 12.34\nOverall 1/20",
+                    "summary_metric_ids": ["result", "overall_place"],
+                }
+            ]
+        },
+    )
+
+    assert controller.project.intro_clip.overlay.text_boxes[0].text == ""
+
+
 @pytest.mark.parametrize(
     ("payload", "expected_x", "expected_y"),
     [

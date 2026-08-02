@@ -10,9 +10,11 @@ from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
     competition_placement,
+    imported_stage_penalty_count,
     normalize_penalty_counts_for_ruleset,
     normalize_score_letter_for_ruleset,
     scoring_presets_for_api,
+    stage_competition_placement,
 )
 from splitshot.timeline.model import compute_split_rows
 
@@ -40,6 +42,42 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
     for stage in stages:
         view = _project_view_for_stage(project, stage)
         presentation = build_stage_presentation(view)
+        scoring_summary = dict(presentation.metrics.scoring_summary)
+        imported = scoring_summary.get("imported_stage") or {}
+        is_idpa = str(imported.get("match_type") or "").casefold() == "idpa"
+        official_result = (
+            imported.get("final_time")
+            if is_idpa
+            else imported.get("hit_factor")
+        )
+        official_metrics = {
+            "raw_time_ms": (
+                None
+                if imported.get("raw_seconds") is None
+                else round(float(imported["raw_seconds"]) * 1000)
+            ),
+            "result_label": "Final" if is_idpa else scoring_summary.get("display_label", "Result"),
+            "result_value": official_result,
+            "display_value": (
+                "--" if official_result is None else f"{float(official_result):.2f}"
+            ),
+            "score_label": "Points Down" if is_idpa else "Shot Points",
+            "score_value": (
+                imported.get("aggregate_points")
+                if is_idpa
+                else scoring_summary.get("shot_points")
+            ),
+            "points_down": imported.get("aggregate_points") if is_idpa else None,
+            "penalties": imported_stage_penalty_count(view),
+            "division": imported.get("division") or stage.scoring.division,
+            "classification": imported.get("classification") or stage.scoring.classification,
+            "division_placement": stage_competition_placement(view, dimension="division"),
+            "class_placement": stage_competition_placement(
+                view, dimension="classification"
+            ),
+            "overall_placement": stage_competition_placement(view),
+            "spreadsheet_authoritative": bool(imported),
+        }
         rows = [asdict(row) for row in compute_split_rows(view)]
         result.append(
             {
@@ -47,7 +85,8 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
                 "stage_number": stage.imported_stage_number or stage.order_index,
                 "stage_name": stage.imported_stage_name or stage.label,
                 "metrics": asdict(presentation.metrics),
-                "scoring_summary": dict(presentation.metrics.scoring_summary),
+                "scoring_summary": scoring_summary,
+                "official_metrics": official_metrics,
                 "scoring": asdict(stage.scoring),
                 "comparison_competitors": deepcopy(stage.scoring.comparison_competitors),
                 "split_rows": rows,

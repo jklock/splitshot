@@ -527,3 +527,26 @@ def test_save_project_does_not_copy_external_practiscore_source(tmp_path: Path) 
     assert loaded.scoring.practiscore_source_path == str(report_path)
     assert not any((bundle / "CSV").iterdir())
     assert Path(loaded.scoring.practiscore_source_path).read_text() == report_path.read_text()
+
+
+def test_interrupted_project_replace_keeps_previous_project_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = save_project(Project(name="Before"), tmp_path / "atomic-project")
+    metadata_path = bundle / "project.json"
+    original = metadata_path.read_text(encoding="utf-8")
+    real_replace = Path.replace
+
+    def interrupted_replace(source: Path, target: Path) -> Path:
+        if source.parent == bundle and source.name.startswith(".project.json."):
+            raise OSError("simulated shutdown during atomic replace")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", interrupted_replace)
+
+    with pytest.raises(OSError, match="simulated shutdown"):
+        save_project(Project(name="After"), bundle)
+
+    assert metadata_path.read_text(encoding="utf-8") == original
+    assert not list(bundle.glob(".project.json.*.part"))
