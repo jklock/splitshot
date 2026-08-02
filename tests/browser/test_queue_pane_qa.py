@@ -472,7 +472,10 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 stage_box = page.locator("#video-stage").bounding_box()
                 assert badge_box is not None
                 assert stage_box is not None
-                drag_x = min(stage_box["x"] + stage_box["width"] - 40, badge_box["x"] + 90)
+                page.evaluate(
+                    "() => { window.__introDragNode = document.querySelector('.intro-outro-preview-badge'); }"
+                )
+                drag_x = stage_box["x"] + stage_box["width"] + 40
                 drag_y = max(stage_box["y"] + 40, badge_box["y"] - 70)
                 page.mouse.move(
                     badge_box["x"] + (badge_box["width"] / 2),
@@ -487,6 +490,17 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                         return box?.quadrant === 'custom' && box?.x !== 0.21 && box?.y !== 0.73;
                     }"""
                 )
+                assert page.evaluate(
+                    """() => ({
+                        sameNode: window.__introDragNode === document.querySelector('.intro-outro-preview-badge'),
+                        connected: window.__introDragNode?.isConnected,
+                        dragging: document.getElementById('custom-overlay')?.classList.contains('dragging'),
+                    })"""
+                ) == {"sameNode": True, "connected": True, "dragging": False}
+                page.locator('[data-boundary-kind="outro"]').click()
+                assert page.locator(".intro-outro-kind-tabs .active").inner_text() == "Outro"
+                page.locator('[data-boundary-kind="intro"]').click()
+                assert page.locator(".intro-outro-kind-tabs .active").inner_text() == "Intro"
 
                 queue_nav.click(force=True)
                 assert page.locator("#queue-include-intro").is_enabled()

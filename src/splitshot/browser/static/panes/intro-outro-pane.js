@@ -242,11 +242,26 @@ export function createIntroOutroPane({
     if (liveOverlay) liveOverlay.innerHTML = "";
     const overlay = $("custom-overlay");
     if (!overlay) return;
-    overlay.innerHTML = "";
-    boxes().map((box, index) => ({ box, index })).filter(({ box }) => box.enabled && boxDisplayText(box).trim()).forEach(({ box, index }) => {
-      const badge = documentObject.createElement("div");
-      badge.className = "overlay-badge intro-outro-preview-badge";
-      badge.dataset.introOutroBoxDrag = "true";
+    const visibleBoxes = boxes()
+      .map((box, index) => ({ box, index }))
+      .filter(({ box }) => box.enabled && boxDisplayText(box).trim());
+    const structureKey = visibleBoxes
+      .map(({ box }) => `${selectedKind}:${normalizedBox(box).id}`)
+      .join("|");
+    if (overlay.dataset.introOutroStructureKey !== structureKey) {
+      overlay.innerHTML = "";
+      visibleBoxes.forEach(() => {
+        const badge = documentObject.createElement("div");
+        badge.className = "overlay-badge intro-outro-preview-badge";
+        badge.dataset.introOutroBoxDrag = "true";
+        badge.addEventListener("pointerdown", beginBoundaryDrag);
+        overlay.appendChild(badge);
+      });
+      overlay.dataset.introOutroStructureKey = structureKey;
+    }
+    visibleBoxes.forEach(({ box, index }, visibleIndex) => {
+      const badge = overlay.children[visibleIndex];
+      if (!(badge instanceof HTMLElement)) return;
       badge.dataset.boxIndex = String(index);
       badge.dataset.boundaryKind = selectedKind;
       badge.textContent = boxDisplayText(box);
@@ -271,8 +286,6 @@ export function createIntroOutroPane({
       badge.style.left = left;
       badge.style.top = top;
       badge.style.transform = `translate(${left === "4%" ? "0" : left === "96%" ? "-100%" : "-50%"}, ${top === "6%" ? "0" : top === "94%" ? "-100%" : "-50%"})`;
-      badge.addEventListener("pointerdown", beginBoundaryDrag);
-      overlay.appendChild(badge);
     });
     overlay.classList.toggle("has-badge", overlay.childElementCount > 0);
   }
@@ -411,6 +424,7 @@ export function createIntroOutroPane({
       startClientY: event.clientY,
       startX: Math.max(0, Math.min(1, (badgeRect.left - rect.left + (badgeRect.width / 2)) / rect.width)),
       startY: Math.max(0, Math.min(1, (badgeRect.top - rect.top + (badgeRect.height / 2)) / rect.height)),
+      badge,
     };
     badge.setPointerCapture?.(event.pointerId);
     $("custom-overlay")?.classList.add("dragging");
@@ -432,8 +446,9 @@ export function createIntroOutroPane({
 
   function endBoundaryDrag(event) {
     if (!boundaryDrag || (event.pointerId !== undefined && event.pointerId !== boundaryDrag.pointerId)) return;
-    const { kind } = boundaryDrag;
+    const { kind, pointerId, badge } = boundaryDrag;
     boundaryDrag = null;
+    if (badge?.hasPointerCapture?.(pointerId)) badge.releasePointerCapture(pointerId);
     $("custom-overlay")?.classList.remove("dragging");
     void saveBoxes(boxes(kind), kind);
   }
@@ -441,6 +456,7 @@ export function createIntroOutroPane({
   documentObject.addEventListener("pointermove", moveBoundaryDrag);
   documentObject.addEventListener("pointerup", endBoundaryDrag);
   documentObject.addEventListener("pointercancel", endBoundaryDrag);
+  windowObject.addEventListener("blur", endBoundaryDrag);
 
   return Object.freeze({ render, updatePreview, selectedKind: () => selectedKind });
 }
