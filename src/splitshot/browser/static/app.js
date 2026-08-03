@@ -509,7 +509,6 @@ function mergeMergeDraft(project) {
     if (Object.is(value, savedValue)) {
       delete mergeDraft[key];
     } else {
-      if (key === 'layout') console.log(`[DEBUG mergeMergeDraft] key=${key} draft=${value} saved=${mergeState[key]}`);
       mergeState[key] = value;
     }
   });
@@ -1366,6 +1365,7 @@ function hasActivePointerInteraction() {
       || overlayBadgeDrag
       || mergePreviewDrag
       || textBoxDrag
+      || popupBubbleDrag
       || draggingShotId
       || waveformPanDrag
       || waveformNavigatorDrag,

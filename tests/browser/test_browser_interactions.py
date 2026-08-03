@@ -1662,6 +1662,102 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
         server.shutdown()
 
 
+def test_marker_badge_drag_survives_api_render_and_release_outside_element(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-badge-inflight-render-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+                _import_shot_linked_markers(page)
+                popup_id = page.evaluate("selectedPopupBubbleId")
+                assert popup_id is not None
+
+                badge = page.locator(
+                    f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]'
+                )
+                badge.wait_for(state="visible")
+                badge_handle = badge.element_handle()
+                assert badge_handle is not None
+                before = page.evaluate(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      const badge = document.querySelector(`#popup-overlay [data-popup-id="${popupId}"]`);
+                      const rect = badge?.getBoundingClientRect();
+                      window.__popupAuditEvents = { pointerdown: 0 };
+                      badge?.addEventListener('pointerdown', () => { window.__popupAuditEvents.pointerdown += 1; });
+                      return bubble && rect ? {
+                        x: bubble.x,
+                        y: bubble.y,
+                        start_x: rect.left + (rect.width / 2),
+                        start_y: rect.top + (rect.height / 2),
+                      } : null;
+                    }""",
+                    popup_id,
+                )
+                assert before is not None
+                activity_before = server.activity.snapshot()["cursor"]
+
+                page.mouse.move(before["start_x"], before["start_y"])
+                page.mouse.down()
+                page.wait_for_function("() => Boolean(popupBubbleDrag)")
+                assert page.evaluate("window.__popupAuditEvents.pointerdown") == 1
+
+                page.evaluate(
+                    """async () => {
+                      await callApi('/api/project/ui-state', readProjectUiStatePayload());
+                    }"""
+                )
+                assert badge_handle.evaluate("element => element.isConnected") is True
+
+                page.mouse.move(before["start_x"] + 150, before["start_y"] + 90, steps=8)
+                page.mouse.move(4, 4, steps=2)
+                page.mouse.up()
+                page.wait_for_function("() => popupBubbleDrag === null")
+                page.wait_for_function(
+                    """(payload) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === payload.popupId);
+                      return Boolean(bubble)
+                        && (Math.abs((bubble.x || 0) - payload.x) > 0.01
+                          || Math.abs((bubble.y || 0) - payload.y) > 0.01);
+                    }""",
+                    arg={"popupId": popup_id, "x": before["x"], "y": before["y"]},
+                )
+                page.wait_for_timeout(500)
+
+                entries = server.activity.snapshot(after_seq=activity_before)["entries"]
+                starts = [
+                    entry
+                    for entry in entries
+                    if entry.get("event") == "browser.activity"
+                    and entry.get("browser_event") == "popup.drag.start"
+                ]
+                commits = [
+                    entry
+                    for entry in entries
+                    if entry.get("event") == "browser.activity"
+                    and entry.get("browser_event") == "popup.drag.commit"
+                ]
+                mutations = [
+                    entry
+                    for entry in entries
+                    if entry.get("event") == "api.success"
+                    and entry.get("path") == "/api/popups"
+                ]
+                assert len(starts) == 1
+                assert len(commits) == 1
+                assert len(mutations) == 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(
     synthetic_video_factory,
 ) -> None:
@@ -1741,6 +1837,127 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(
                     popup_id,
                 )
                 assert motion_after == motion_before
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_reordered_cross_domain_response_cannot_overwrite_newer_single_click(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "reordered-response.ssproj"
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate("path => createNewProject(path)", str(project_path))
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                page.evaluate(
+                    """() => {
+                      const originalFetch = window.fetch.bind(window);
+                      let releaseHeldResponse;
+                      const heldResponse = new Promise((resolve) => { releaseHeldResponse = resolve; });
+                      window.__releaseHeldShotMLResponse = releaseHeldResponse;
+                      window.__heldShotMLResponseStarted = false;
+                      window.fetch = async (...args) => {
+                        const requestPath = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+                        const response = await originalFetch(...args);
+                        if (requestPath === '/api/analysis/shotml-settings'
+                            && !window.__heldShotMLResponseStarted) {
+                          window.__heldShotMLResponseStarted = true;
+                          await heldResponse;
+                        }
+                        return response;
+                      };
+                    }"""
+                )
+
+                _open_tool(page, "shotml")
+                threshold_before = float(page.locator("#threshold").input_value())
+                threshold_after = 0.41 if abs(threshold_before - 0.41) > 0.001 else 0.42
+                page.evaluate(
+                    """(value) => {
+                      const control = document.getElementById('threshold');
+                      window.__thresholdEvents = { input: 0, change: 0 };
+                      control.addEventListener('input', () => { window.__thresholdEvents.input += 1; });
+                      control.addEventListener('change', () => { window.__thresholdEvents.change += 1; });
+                      control.focus();
+                      control.value = String(value);
+                      control.dispatchEvent(new Event('input', { bubbles: true }));
+                      control.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    threshold_after,
+                )
+                assert page.evaluate("document.getElementById('threshold').value") == str(
+                    threshold_after
+                )
+                assert page.evaluate("window.__thresholdEvents") == {"input": 1, "change": 1}
+                page.wait_for_function("() => window.__heldShotMLResponseStarted === true")
+
+                _open_tool(page, "scoring")
+                scoring_before = page.locator("#scoring-enabled").is_checked()
+                scoring_after = not scoring_before
+                page.evaluate(
+                    """() => {
+                      const control = document.getElementById('scoring-enabled');
+                      window.__scoringEnabledNode = control;
+                      window.__scoringEvents = { click: 0, change: 0 };
+                      control.addEventListener('click', () => { window.__scoringEvents.click += 1; });
+                      control.addEventListener('change', () => { window.__scoringEvents.change += 1; });
+                      control.click();
+                    }"""
+                )
+                immediate = page.evaluate(
+                    """() => ({
+                      checked: window.__scoringEnabledNode.checked,
+                      connected: window.__scoringEnabledNode.isConnected,
+                      events: window.__scoringEvents,
+                    })"""
+                )
+                assert immediate == {
+                    "checked": scoring_after,
+                    "connected": True,
+                    "events": {"click": 1, "change": 1},
+                }
+                page.wait_for_function(
+                    "expected => state?.project?.scoring?.enabled === expected",
+                    arg=scoring_after,
+                )
+                assert controller.project.scoring.enabled is scoring_after
+
+                page.evaluate("window.__releaseHeldShotMLResponse()")
+                page.wait_for_timeout(600)
+                final = page.evaluate(
+                    """() => ({
+                      checked: window.__scoringEnabledNode.checked,
+                      connected: window.__scoringEnabledNode.isConnected,
+                      events: window.__scoringEvents,
+                      state_enabled: state?.project?.scoring?.enabled,
+                    })"""
+                )
+                assert final == {
+                    "checked": scoring_after,
+                    "connected": True,
+                    "events": {"click": 1, "change": 1},
+                    "state_enabled": scoring_after,
+                }
+
+                stored = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+                assert stored["scoring"]["enabled"] is scoring_after
+                _open_tool(page, "export")
+                _open_tool(page, "scoring")
+                assert page.locator("#scoring-enabled").is_checked() is scoring_after
+
+                page.evaluate("path => useProjectFolder(path)", str(project_path))
+                page.wait_for_function(
+                    "expected => state?.project?.scoring?.enabled === expected",
+                    arg=scoring_after,
+                )
+                assert page.locator("#scoring-enabled").is_checked() is scoring_after
             finally:
                 browser.close()
     finally:

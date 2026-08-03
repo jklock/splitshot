@@ -1001,6 +1001,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function ensureShotQuadrantDefaults()" in js
     assert 'activity("layout.resize.start"' in layout_js
     assert 'activity("layout.resize.commit"' in layout_js
+    assert 'activity("layout.unlock.request"' in layout_js
+    assert 'toggleLayoutLock();\n    }\n    const startSize =' in layout_js
+    assert "[kind]: true," in layout_js
+    assert "|| popupBubbleDrag" in js
     assert "function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {" in js
     assert "function previewLayoutSize(key, value) {" in js
     assert "if (runtime.state && renderWaveformNow) renderWaveform();" in layout_js
@@ -1380,7 +1384,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         'railWidth: clamp(savedNumber("splitshot.layout.railWidth", DEFAULT_LAYOUT_SIZES.railWidth), 84, 104)'
         in js
     )
-    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in layout_js
+    assert (
+        'previewLayoutSize("railWidth", clamp(runtime.activeResize.startSize + deltaX, 84, 104));'
+        in layout_js
+    )
     assert "const parentRect = canvas.parentElement?.getBoundingClientRect();" in js
     assert "parentRect?.width" in js
     assert 'canvas.style.width = "100%";' in js
@@ -2386,11 +2393,11 @@ def test_badge_alpha_control_reserves_space_for_number_spinner_and_suffix() -> N
     css = _read_split_css()
     selector = "#badge-style-grid .badge-style-card .opacity-percent-input"
     within = css[css.index(selector) : css.index(selector) + 650]
-    assert "min-width: 4.75rem;" in within
-    assert "padding: var(--space-1) 1.75rem var(--space-1) 0.55rem;" in within
-    assert "width: 4.75rem;" in within
+    assert "min-width: 0;" in within
+    assert "padding: var(--space-1) 2.75rem var(--space-1) 0.75rem;" in within
+    assert "width: 100%;" in within
     suffix = css.index("#badge-style-grid .badge-style-card .opacity-percent-suffix")
-    assert "margin-left: var(--space-1);" in css[suffix : suffix + 400]
+    assert "margin-left: 0;" in css[suffix : suffix + 400]
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

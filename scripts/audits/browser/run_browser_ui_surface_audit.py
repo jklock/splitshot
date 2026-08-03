@@ -199,6 +199,31 @@ def open_page(
     return browser, page
 
 
+def click_checkbox_once(page: Page, selector: str, checked: bool = True) -> dict[str, Any]:
+    result = page.evaluate(
+        """({ selector, checked }) => {
+          const control = document.querySelector(selector);
+          if (!(control instanceof HTMLInputElement) || control.type !== 'checkbox') {
+            return { error: `Checkbox not found: ${selector}` };
+          }
+          const before = control.checked;
+          const events = { click: 0, change: 0 };
+          control.addEventListener('click', () => { events.click += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          if (before !== checked) control.click();
+          return { before, after: control.checked, connected: control.isConnected, performed: before !== checked, events };
+        }""",
+        {"selector": selector, "checked": checked},
+    )
+    if result.get("error"):
+        raise AssertionError(result["error"])
+    if result["after"] is not checked or result["connected"] is not True:
+        raise AssertionError(f"Single checkbox interaction failed for {selector}: {result}")
+    if result["performed"] and result["events"] != {"click": 1, "change": 1}:
+        raise AssertionError(f"Unexpected checkbox event count for {selector}: {result}")
+    return result
+
+
 def show_project_tool(page: Page) -> None:
     page.locator("[data-tool='project']").click()
     page.wait_for_selector("#primary-file-input", state="attached")
@@ -619,7 +644,7 @@ def audit_waveform_drag(page: Page) -> CheckResult:
 def audit_layout_resize_persists(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     lock_btn = page.locator("#toggle-layout-lock-video")
-    if "Unlock" in (lock_btn.get_attribute("aria-label") or ""):
+    if "Lock" in (lock_btn.get_attribute("aria-label") or ""):
         lock_btn.click()
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
@@ -670,7 +695,7 @@ def audit_layout_resize_persists(page: Page) -> CheckResult:
         and result["layout_locked"] == "false"
         and result["resizing_class_present"] is False,
         "layout_resize_persists",
-        "Dragging the inspector resize handle should persist the new layout width and release the resize state.",
+        "A first drag on a locked inspector should unlock, persist the new width, and release the resize state.",
         {"before": before, "after": result},
     )
 
@@ -940,9 +965,10 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         """
     )
     page.wait_for_timeout(150)
-    page.locator(
-        "#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']"
-    ).check()
+    click_checkbox_once(
+        page,
+        "#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']",
+    )
     page.wait_for_timeout(150)
     page.evaluate(
         """

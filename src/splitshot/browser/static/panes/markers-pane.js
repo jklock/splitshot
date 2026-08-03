@@ -1089,7 +1089,6 @@ export function createMarkersPane({
       setSelectedPopupPlacementMode("base");
     }
     renderPopupEditors();
-    renderLiveOverlay();
     const stage = $("video-stage");
     const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
     const currentPositionMs = overlayRenderPositionMs($("primary-video"));

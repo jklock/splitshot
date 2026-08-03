@@ -275,9 +275,24 @@ export function createLayoutRuntime({
       emitBackbone(backbone, "layout.unlock.request", { kind });
       activity("layout.unlock.request", { kind });
       toggleLayoutLock();
-      return;
     }
-    runtime.activeResize = { kind, pointerId: event.pointerId, target: event.currentTarget };
+    const startSize = kind === "waveformHeight" && markersWorkbenchShown()
+      ? popupWorkbenchTargetHeight()
+      : runtime.layoutSizes[kind];
+    if (!(kind === "waveformHeight" && markersWorkbenchShown())) {
+      runtime.layoutSizePinned = {
+        ...runtime.layoutSizePinned,
+        [kind]: true,
+      };
+    }
+    runtime.activeResize = {
+      kind,
+      pointerId: event.pointerId,
+      target: event.currentTarget,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startSize,
+    };
     capturePointer(runtime.activeResize.target, event.pointerId);
     document.body.classList.add("resizing-layout");
     emitBackbone(backbone, "layout.resize.start", { kind });
@@ -290,25 +305,29 @@ export function createLayoutRuntime({
     if (!runtime.activeResize) return;
     if (event.pointerId !== undefined && runtime.activeResize.pointerId !== undefined && event.pointerId !== runtime.activeResize.pointerId) return;
     const kind = runtime.activeResize.kind;
+    const deltaX = event.clientX - runtime.activeResize.startClientX;
+    const deltaY = event.clientY - runtime.activeResize.startClientY;
     if (kind === "railWidth") {
-      previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));
+      previewLayoutSize("railWidth", clamp(runtime.activeResize.startSize + deltaX, 84, 104));
     } else if (kind === "inspectorWidth") {
-      const grid = document.querySelector(".review-grid");
-      const right = grid?.getBoundingClientRect().right || window.innerWidth;
-      previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 280, Math.max(280, window.innerWidth * 0.48)));
+      previewLayoutSize(
+        "inspectorWidth",
+        clamp(runtime.activeResize.startSize - deltaX, 280, Math.max(280, window.innerWidth * 0.48)),
+      );
     } else if (kind === "waveformHeight") {
-      const stack = document.querySelector(".review-stack");
-      const rect = stack?.getBoundingClientRect();
-      if (rect) {
-        const nextHeight = clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48));
-        if (markersWorkbenchShown()) {
-          runtime.popupWorkbenchHeight = nextHeight;
-          applyLayoutState();
-          scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
-          syncLayoutBackbone();
-        } else {
-          previewLayoutSize("waveformHeight", nextHeight);
-        }
+      const viewportHeight = layoutViewportHeight();
+      const nextHeight = clamp(
+        runtime.activeResize.startSize - deltaY,
+        112,
+        Math.max(112, viewportHeight * 0.42),
+      );
+      if (markersWorkbenchShown()) {
+        runtime.popupWorkbenchHeight = nextHeight;
+        applyLayoutState();
+        scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
+        syncLayoutBackbone();
+      } else {
+        previewLayoutSize("waveformHeight", nextHeight);
       }
     }
   }
