@@ -4875,6 +4875,7 @@ function endLayoutResize(event) {
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
   tool = normalizeToolId(tool);
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
+  const previousTool = activeTool;
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
   const hadExpandedLayout = root?.classList.contains("waveform-expanded")
@@ -4975,6 +4976,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   }
   if (tool === "media" && mediaPane) mediaPane.render();
   if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
+  if (changed && previousTool === "intro-outro" && tool !== "intro-outro") renderVideo();
   if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();

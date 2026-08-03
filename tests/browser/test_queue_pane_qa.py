@@ -366,6 +366,7 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
     synthetic_video_factory,
 ) -> None:
     intro = Path(synthetic_video_factory(name="intro-pane-preview", beep_ms=250))
+    primary = Path(synthetic_video_factory(name="intro-pane-primary", beep_ms=400))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -373,6 +374,8 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
             browser, page = _open_page(playwright, server)
             try:
                 create_project(page, str(intro.parent / "intro-pane.ssproj"))
+                page.locator("#primary-file-input").set_input_files(str(primary))
+                page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
                 page.evaluate(
                     "(path) => callApi('/api/project/in-out/media', { kind: 'intro', path })",
                     str(intro),
@@ -409,12 +412,24 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.locator("#intro-outro-fade-in").input_value() == "0.7"
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.9"
                 page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
+                assert page.locator("#primary-video").evaluate(
+                    "node => node.dataset.sourcePath === state.project.intro_clip.asset.path"
+                )
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
                 assert page.locator(".intro-outro-preview-badge").get_attribute(
                     "data-intro-outro-box-drag"
                 ) == "true"
                 assert page.get_by_role("button", name="Add Text Box").is_visible()
                 assert page.get_by_role("button", name="Add Match Results").is_visible()
+
+                queue_nav.click(force=True)
+                page.wait_for_function(
+                    "() => document.querySelector('#primary-video').src.includes('/media/primary')"
+                )
+                assert page.locator("#primary-video").evaluate(
+                    "node => node.dataset.sourcePath === state.media.primary_active_path"
+                )
+                intro_nav.click(force=True)
 
                 card = page.locator(".intro-outro-box").first
                 card.locator('[data-box-field="source"]').select_option("manual")

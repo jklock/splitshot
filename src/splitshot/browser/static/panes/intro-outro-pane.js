@@ -232,8 +232,13 @@ export function createIntroOutroPane({
     const video = $("primary-video");
     const path = clip()?.asset?.path || "";
     if (video && path) {
-      const expected = `${window.location.origin}/media/${selectedKind}`;
-      if (!String(video.src || "").startsWith(expected)) video.src = `/media/${selectedKind}?v=${encodeURIComponent(state().media?.cache_token || "")}`;
+      const mediaUrl = `/media/${selectedKind}?v=${encodeURIComponent(state().media?.cache_token || "")}`;
+      if (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== mediaUrl) {
+        video.dataset.sourcePath = path;
+        video.dataset.mediaUrl = mediaUrl;
+        video.src = mediaUrl;
+        video.load();
+      }
     }
     if (video) video.hidden = !path;
     $("secondary-video")?.setAttribute("hidden", "");
