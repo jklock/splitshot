@@ -210,7 +210,7 @@ def test_four_panes_hold_og_spacing_at_supported_inspector_widths(
                     )].filter((button) => getComputedStyle(button).backgroundColor === 'rgb(57, 208, 111)')
                       .map((button) => button.textContent.trim()).sort()"""
                 )
-                assert green_buttons == ["Add Media", "Add Stage"]
+                assert green_buttons == ["Add Media", "Add Stage", "Process as One File"]
             finally:
                 browser.close()
     finally:

@@ -8,9 +8,7 @@ import pytest
 
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 from tests.browser.helpers.export_verifier import assert_video_file
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -53,7 +51,6 @@ def test_practiscore_import_to_export_full_pipeline(
     practiscore_path = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
 
     controller = ProjectController()
-    controller.load_primary_video(str(primary_path))
     controller.import_practiscore_file(str(practiscore_path), source_name=practiscore_path.name)
     controller.set_practiscore_context(
         match_type="idpa",
@@ -63,6 +60,7 @@ def test_practiscore_import_to_export_full_pipeline(
         classification="UN",
         division="CO",
     )
+    controller.load_primary_video(str(primary_path))
 
     assert controller.project.scoring.classification == "UN"
     assert controller.project.scoring.division == "CO"
@@ -200,7 +198,6 @@ def test_export_combined_practiscore_merge_overlay(synthetic_video_factory, tmp_
     practiscore_path = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
 
     controller = ProjectController()
-    controller.load_primary_video(str(primary_path))
     controller.import_practiscore_file(str(practiscore_path), source_name=practiscore_path.name)
     controller.set_practiscore_context(
         match_type="idpa",
@@ -210,6 +207,7 @@ def test_export_combined_practiscore_merge_overlay(synthetic_video_factory, tmp_
         classification="UN",
         division="CO",
     )
+    controller.load_primary_video(str(primary_path))
     controller.add_merge_source(str(merge_path))
     controller.set_merge_enabled(True)
     controller.project.merge.layout = "pip"

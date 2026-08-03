@@ -190,21 +190,31 @@ export function createShellRuntime({
   activity = () => {},
   DEFAULT_PROJECT_UI_STATE = {},
 } = {}) {
+  let settingsMutationQueue = Promise.resolve();
+
+  function enqueueSettingsMutation(action) {
+    const pending = settingsMutationQueue.then(action, action);
+    settingsMutationQueue = pending.catch(() => {});
+    return pending;
+  }
+
   function currentState() {
     return getState() || {};
   }
 
   async function saveCurrentSettings(section = null) {
-    const options = {
-      projectDefaults: true,
-      ...(section ? { section } : {}),
-    };
-    // Capture layout and other client-owned values before flushing project drafts.
-    // Each flush response refreshes remote state and may legitimately synchronize
-    // the project snapshot, but it must not replace the values from this click.
-    const payload = readSettingsDefaultsPayload(options);
-    await flushPendingProjectDrafts();
-    await applySettingsDefaults({ ...options, payload });
+    return enqueueSettingsMutation(async () => {
+      const options = {
+        projectDefaults: true,
+        ...(section ? { section } : {}),
+      };
+      // Capture layout and other client-owned values before flushing project drafts.
+      // Each flush response refreshes remote state and may legitimately synchronize
+      // the project snapshot, but it must not replace the values from this click.
+      const payload = readSettingsDefaultsPayload(options);
+      await flushPendingProjectDrafts();
+      await applySettingsDefaults({ ...options, payload });
+    });
   }
 
   function renderStyleControls() {
@@ -911,22 +921,26 @@ export function createShellRuntime({
       scheduleSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
-      documentObject.activeElement?.blur?.();
-      resetMergeDraft();
-      resetExportDraft();
-      cancelPendingExportDrafts();
-      await flushPendingSettingsDefaults();
-      await callApi("/api/settings/reset-defaults", {});
+      await enqueueSettingsMutation(async () => {
+        documentObject.activeElement?.blur?.();
+        resetMergeDraft();
+        resetExportDraft();
+        cancelPendingExportDrafts();
+        await flushPendingSettingsDefaults();
+        await callApi("/api/settings/reset-defaults", {});
+      });
     });
     $("settings-use-current-layout")?.addEventListener("click", async () => {
       await saveCurrentSettings("layout");
     });
     $("settings-release-layout")?.addEventListener("click", async () => {
-      documentObject.activeElement?.blur?.();
-      await flushPendingSettingsDefaults();
-      await callApi("/api/settings/reset-defaults", {
-        scope: $("settings-scope")?.value || "app",
-        section: "layout",
+      await enqueueSettingsMutation(async () => {
+        documentObject.activeElement?.blur?.();
+        await flushPendingSettingsDefaults();
+        await callApi("/api/settings/reset-defaults", {
+          scope: $("settings-scope")?.value || "app",
+          section: "layout",
+        });
       });
     });
     documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
@@ -937,12 +951,14 @@ export function createShellRuntime({
     });
     documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {
       button.addEventListener("click", async () => {
-        documentObject.activeElement?.blur?.();
-        const section = button.getAttribute("data-settings-reset-section") || "";
-        await flushPendingSettingsDefaults();
-        await callApi("/api/settings/reset-defaults", {
-          scope: $("settings-scope")?.value || "app",
-          section,
+        await enqueueSettingsMutation(async () => {
+          documentObject.activeElement?.blur?.();
+          const section = button.getAttribute("data-settings-reset-section") || "";
+          await flushPendingSettingsDefaults();
+          await callApi("/api/settings/reset-defaults", {
+            scope: $("settings-scope")?.value || "app",
+            section,
+          });
         });
       });
     });

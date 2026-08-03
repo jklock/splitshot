@@ -2,45 +2,53 @@ from __future__ import annotations
 
 from playwright.sync_api import sync_playwright
 
+from splitshot.domain.models import QueueStatus
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
-    ensure_project_with_primary_and_merge,
+    create_project,
     navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 
 
+def _prepare_queueable_stage(page, primary_path, project_name: str) -> str:
+    page.set_default_timeout(30000)
+    create_project(page, str(primary_path.parent / project_name))
+    page.evaluate("() => callApi('/api/project/stage/create', {})")
+    page.wait_for_function("() => Boolean(state?.project?.active_stage_id)")
+    stage_id = page.evaluate("state.project.active_stage_id")
+    page.evaluate(
+        "(path) => callApi('/api/project/stage/import-primary', { stage_id: state.project.active_stage_id, path })",
+        str(primary_path),
+    )
+    page.wait_for_function(
+        """stageId => Boolean((state?.project?.stages || []).find((stage) => stage.id === stageId)?.primary_media?.path)""",
+        arg=stage_id,
+    )
+    return stage_id
+
+
 def test_queue_add_logs_event(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, tracker, primary_path, _merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "queue-add-primary"},
+        merge_kwargs={"name": "queue-add-merge"},
+    )
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
             try:
-                ensure_project_with_primary_and_merge(
-                    page, primary_path, merge_path, "queue-add.ssproj"
-                )
-                page.evaluate("""() => {
-                    if (!state.project.stages) state.project.stages = [];
-                    state.project.stages.push({
-                        id: 'test-stage-1',
-                        label: 'Test Stage',
-                        order_index: 0,
-                        primary_media: null,
-                        added_media: [],
-                    });
-                    state.project.active_stage_id = 'test-stage-1';
-                }""")
-                page.wait_for_timeout(100)
+                stage_id = _prepare_queueable_stage(page, primary_path, "queue-add.ssproj")
                 navigate_to_tool(page, "queue")
-                page.wait_for_timeout(300)
-
-                queue_btn = page.locator("button.queue-membership-btn").first
-                if queue_btn.count():
-                    queue_btn.click()
-                    page.wait_for_timeout(500)
-                    tracker.assert_activity("queue.add")
-                else:
-                    tracker.assert_no_activity("queue.add")
+                queue_btn = page.locator(
+                    f'button.queue-membership-btn[data-stage-id="{stage_id}"]'
+                )
+                queue_btn.click()
+                page.wait_for_function(
+                    "stageId => (state?.project?.queue || []).some((entry) => entry.stage_id === stageId)",
+                    arg=stage_id,
+                )
+                tracker.assert_activity("queue.add")
             finally:
                 browser.close()
     finally:
@@ -48,38 +56,31 @@ def test_queue_add_logs_event(synthetic_video_factory) -> None:
 
 
 def test_queue_remove_logs_event(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, tracker, primary_path, _merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "queue-remove-primary"},
+        merge_kwargs={"name": "queue-remove-merge"},
+    )
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
             try:
-                ensure_project_with_primary_and_merge(
-                    page, primary_path, merge_path, "queue-remove.ssproj"
-                )
-                page.evaluate("""() => {
-                    if (!state.project.stages) state.project.stages = [];
-                    state.project.stages.push({
-                        id: 'test-stage-2',
-                        label: 'Remove Stage',
-                        order_index: 0,
-                        primary_media: null,
-                        added_media: [],
-                    });
-                    state.project.active_stage_id = 'test-stage-2';
-                    if (!state.project.queue) state.project.queue = [];
-                    state.project.queue.push({ stage_id: 'test-stage-2', status: 'queued' });
-                }""")
-                page.wait_for_timeout(100)
+                stage_id = _prepare_queueable_stage(page, primary_path, "queue-remove.ssproj")
                 navigate_to_tool(page, "queue")
-                page.wait_for_timeout(300)
-
-                unqueue_btn = page.locator("button.queue-membership-btn").first
-                if unqueue_btn.count():
-                    unqueue_btn.click()
-                    page.wait_for_timeout(500)
-                    tracker.assert_activity("queue.remove")
-                else:
-                    tracker.assert_no_activity("queue.remove")
+                membership_btn = page.locator(
+                    f'button.queue-membership-btn[data-stage-id="{stage_id}"]'
+                )
+                membership_btn.click()
+                page.wait_for_function(
+                    "stageId => (state?.project?.queue || []).some((entry) => entry.stage_id === stageId)",
+                    arg=stage_id,
+                )
+                membership_btn.click()
+                page.wait_for_function(
+                    "stageId => !(state?.project?.queue || []).some((entry) => entry.stage_id === stageId)",
+                    arg=stage_id,
+                )
+                tracker.assert_activity("queue.remove")
             finally:
                 browser.close()
     finally:
@@ -87,38 +88,44 @@ def test_queue_remove_logs_event(synthetic_video_factory) -> None:
 
 
 def test_requeue_logs_event(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, tracker, primary_path, _merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "queue-requeue-primary"},
+        merge_kwargs={"name": "queue-requeue-merge"},
+    )
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
             try:
-                ensure_project_with_primary_and_merge(
-                    page, primary_path, merge_path, "requeue.ssproj"
-                )
-                page.evaluate("""() => {
-                    if (!state.project.stages) state.project.stages = [];
-                    state.project.stages.push({
-                        id: 'test-stage-3',
-                        label: 'Requeue Stage',
-                        order_index: 0,
-                        primary_media: null,
-                        added_media: [],
-                    });
-                    state.project.active_stage_id = 'test-stage-3';
-                    if (!state.project.queue) state.project.queue = [];
-                    state.project.queue.push({ stage_id: 'test-stage-3', status: 'complete' });
-                }""")
-                page.wait_for_timeout(100)
+                stage_id = _prepare_queueable_stage(page, primary_path, "requeue.ssproj")
                 navigate_to_tool(page, "queue")
-                page.wait_for_timeout(300)
-
-                requeue_btn = page.locator("button.queue-membership-btn").first
-                if requeue_btn.count():
-                    requeue_btn.click()
-                    page.wait_for_timeout(500)
-                    tracker.assert_activity("queue.add")
-                else:
-                    tracker.assert_no_activity("queue.add")
+                requeue_btn = page.locator(
+                    f'button.queue-membership-btn[data-stage-id="{stage_id}"]'
+                )
+                requeue_btn.click()
+                page.wait_for_function(
+                    "stageId => (state?.project?.queue || []).some((entry) => entry.stage_id === stageId)",
+                    arg=stage_id,
+                )
+                queue_entry = next(
+                    entry for entry in server.controller.project.queue if entry.stage_id == stage_id
+                )
+                stage = next(
+                    item for item in server.controller.project.stages if item.id == stage_id
+                )
+                queue_entry.status = QueueStatus.COMPLETE
+                stage.queue_status = QueueStatus.COMPLETE
+                page.evaluate("() => refresh()")
+                page.wait_for_function(
+                    "stageId => document.querySelector(`button.queue-membership-btn[data-stage-id=\"${stageId}\"]`)?.textContent === 'Requeue'",
+                    arg=stage_id,
+                )
+                requeue_btn.click()
+                page.wait_for_function(
+                    "stageId => (state?.project?.queue || []).find((entry) => entry.stage_id === stageId)?.status === 'queued'",
+                    arg=stage_id,
+                )
+                tracker.assert_activity("queue.add")
             finally:
                 browser.close()
     finally:

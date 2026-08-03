@@ -3463,6 +3463,7 @@ function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
   setSelectedPopupKeyframeOffset(offsetMs);
   setPopupMotionGeneratedOffsets(bubble.id, [...popupMotionGeneratedOffsetsForBubbleId(bubble.id)].filter((value) => value !== offsetMs));
   setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
+  syncPopupBubbleMotionGuideForBubble(bubbleId);
   seekPopupBubbleMotionPoint(bubbleId, offsetMs);
   return true;
 }
@@ -3501,6 +3502,7 @@ function jumpPopupBubbleKeyframe(bubbleId, direction) {
   setSelectedPopupKeyframeOffset(offsetMs);
   seekPopupBubbleMotionPoint(bubbleId, offsetMs);
   renderPopupEditors();
+  syncPopupBubbleMotionGuideForBubble(bubbleId);
   return true;
 }
 
@@ -3988,6 +3990,15 @@ function renderPopupBubbleMotionGuide(card, bubble) {
     });
     guidedList.appendChild(row);
   });
+}
+
+function syncPopupBubbleMotionGuideForBubble(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  const card = document.querySelector(
+    `#markers-workbench-editor .popup-bubble-card[data-popup-id="${bubbleId}"]`,
+  );
+  if (!(card instanceof HTMLElement) || !bubble) return;
+  renderPopupBubbleMotionGuide(card, bubble);
 }
 
 function buildPopupBubbleCard(bubble, index, options = {}) {
@@ -4722,12 +4733,13 @@ function stepShotLinkedPopupBubble(direction) {
   return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
 }
 
-function renderPopupEditors() {
+function renderPopupEditors({ force = false } = {}) {
   const markerList = $("popup-marker-list");
   if (!markerList) return;
   const activeControl = document.activeElement;
   if (
-    activeControl instanceof HTMLElement
+    !force
+      && activeControl instanceof HTMLElement
       && activeControl.closest("#markers-workbench-editor")
       && activeControl.matches("input, select, textarea")
   ) return;
@@ -5115,7 +5127,7 @@ async function refresh() {
   }
 }
 
-function applyRemoteState(nextState) {
+function applyRemoteState(nextState, options = {}) {
   const shouldApplyBootstrapLandingTool = !initialProjectUiStateApplied
     && !pendingBootstrapProjectUiStateOverride
     && Boolean(String(nextState?.project?.path || "").trim());
@@ -5135,7 +5147,7 @@ function applyRemoteState(nextState) {
       },
     };
   }
-  return apiRuntime.applyRemoteState(nextState);
+  return apiRuntime.applyRemoteState(nextState, options);
 }
 
 function hasCompleteProjectState(nextState) {

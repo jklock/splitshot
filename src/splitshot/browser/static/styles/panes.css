@@ -2349,7 +2349,7 @@
 
 .metrics-graph-list-workbench {
   align-content: start;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: var(--space-3);
   min-height: 0;
   overflow-y: auto;
@@ -3137,7 +3137,7 @@
 .cockpit-shell.inspector-compact #badge-style-grid .badge-style-card .opacity-percent-field {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(76px, 1fr) auto;
   width: 100%;
 }
 
@@ -3369,7 +3369,7 @@
 .metrics-workbench {
   background: var(--surface);
   display: none;
-  grid-template-rows: auto minmax(300px, 2fr) minmax(180px, 1fr);
+  grid-template-rows: auto auto minmax(0, 0.7fr) minmax(0, 1.5fr) minmax(180px, 0.8fr);
   min-height: 0;
   overflow: hidden;
 }

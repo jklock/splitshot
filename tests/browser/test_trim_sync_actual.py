@@ -17,7 +17,11 @@ from tests.browser.helpers.video_test_helpers import (
 
 
 def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, tracker, primary_path, merge_path = setup_server_and_browser(
+        synthetic_video_factory,
+        primary_kwargs={"name": "trim-apply-all-primary"},
+        merge_kwargs={"name": "trim-apply-all-merge"},
+    )
     project_name = "trim-apply-all"
     try:
         with sync_playwright() as playwright:
@@ -31,9 +35,13 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
                 page.fill("#trim-global-end", "3.0")
                 page.click("#trim-global-apply")
                 page.wait_for_function(
-                    "() => !document.querySelector('#status')?.textContent?.startsWith('Trimming ')"
+                    "() => document.querySelector('#status')?.textContent?.startsWith('Trimming ')",
                 )
                 tracker.assert_activity("trim.apply-all")
+                page.wait_for_function(
+                    "() => document.querySelector('#status')?.textContent === 'Trimmed 1 selected stage.'",
+                    timeout=30000,
+                )
                 assert_status(page, "Trimmed 1 selected stage")
             finally:
                 browser.close()

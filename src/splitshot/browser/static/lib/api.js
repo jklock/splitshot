@@ -87,6 +87,15 @@ export function createApiRuntime({
     return true;
   }
 
+  function apiResponseNeedsRender(path) {
+    const normalizedPath = String(path || "");
+    // These routes commit state that the client has already rendered
+    // optimistically. Rendering their responses again replaces active marker
+    // and drag nodes during an ordinary save.
+    return normalizedPath !== "/api/project/ui-state"
+      && normalizedPath !== "/api/popups";
+  }
+
   async function parseJsonResponse(response, path) {
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
     const bodyText = await response.text();
@@ -154,9 +163,11 @@ export function createApiRuntime({
         return null;
       }
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-      if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);
+      if (apiResponseOwnsRemoteState(path)) {
+        applyRemoteState(data, { preserveActiveInteraction: !apiResponseNeedsRender(path) });
+      }
       if (finishProcessing) finishProcessing(data.status || "Ready.");
-      requestRender();
+      if (apiResponseNeedsRender(path)) requestRender();
       emitBackbone(backbone, "api.response", { path, status: data.status, shots: data.metrics?.total_shots });
       activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
       return data;
@@ -251,7 +262,7 @@ export function createApiRuntime({
     }
   }
 
-  function applyRemoteState(nextState) {
+  function applyRemoteState(nextState, { preserveActiveInteraction = false } = {}) {
     if (!hasCompleteProjectState(nextState)) {
       throw new Error("Received invalid project state from the local server.");
     }
@@ -287,7 +298,7 @@ export function createApiRuntime({
     }
     runtime.currentProjectId = nextProjectId;
     setStateValue(nextState);
-    applyProjectUiState(nextUiState);
+    if (!preserveActiveInteraction) applyProjectUiState(nextUiState);
     runtime.initialProjectUiStateApplied = true;
     runtime.pendingBootstrapProjectUiStateOverride = false;
     if (!stateHasShot(runtime.state, runtime.selectedShotId)) {

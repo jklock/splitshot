@@ -148,7 +148,7 @@ def test_media_pane_uses_flat_og_sections():
     assert "media-section-toggle" in source
     assert "sectionExpanded" in source
     assert "Active Stage" not in source
-    assert "<strong>Stage</strong>" in source
+    assert "<strong>${stageLabel(stage)}</strong>" in source
     assert "<strong>Primary</strong>" in source
     assert "<strong>Added Media</strong>" in source
 
@@ -396,7 +396,7 @@ def test_badge_alpha_field_reserves_stepper_space_and_suffix_gap():
     within = source[start : start + 1200]
     assert "padding: var(--space-1) 2.75rem" in within
     assert "text-align: left" in within
-    assert "grid-template-columns: minmax(0, 1fr) auto" in within
+    assert "grid-template-columns: minmax(76px, 1fr) auto" in within
     assert "gap: 12px" in within
 
 
@@ -406,8 +406,8 @@ def test_queue_uses_compact_stage_cards():
     assert "queue-status-text" in source
     assert "queue-status-pill" not in source
     assert "Queue Controls" not in source
-    assert "<strong>Stage</strong>" in source
-    assert "Queued Stages" in source
+    assert "<strong>${stageLabel(stage)}</strong>" in source
+    assert "Match Stages" in source
 
 
 def test_queue_owns_membership_actions_without_edit_or_remove():

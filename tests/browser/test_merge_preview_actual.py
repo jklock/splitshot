@@ -4,15 +4,15 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
     navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 
 
 def test_merge_preview_renders_pip_elements(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "mp-pip-p"},
         merge_kwargs={"name": "mp-pip-m"},
@@ -47,7 +47,7 @@ def test_merge_preview_renders_pip_elements(synthetic_video_factory) -> None:
 
 
 def test_merge_preview_syncs_to_primary_time(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "mp-sync-p"},
         merge_kwargs={"name": "mp-sync-m"},
@@ -203,7 +203,7 @@ def test_merge_preview_drag_survives_pending_merge_auto_apply(
 
 
 def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "mp-trim-p"},
         merge_kwargs={"name": "mp-trim-m"},
@@ -251,12 +251,12 @@ def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
                 navigate_to_tool(page, "merge")
                 page.wait_for_timeout(500)
                 page.wait_for_function(
-                    """(sid) => {
-                        const media = document.querySelector(`#merge-preview-layer .merge-preview-item[data-source-id="${sid}"] video`);
+                    """(payload) => {
+                        const media = document.querySelector(`#merge-preview-layer .merge-preview-item[data-source-id="${payload.sid}"] video`);
                         return Boolean(media?.dataset?.sourcePath)
-                            && media.dataset.sourcePath.includes('_trim');
+                            && media.dataset.sourcePath.endsWith(payload.trimmedName);
                     }""",
-                    arg=source_id,
+                    arg={"sid": source_id, "trimmedName": trimmed_name},
                     timeout=10000,
                 )
                 bound_path = page.evaluate(

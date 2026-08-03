@@ -219,7 +219,7 @@ export function createMarkersPane({
       }
     }
     if (activateTool) setActiveTool("markers");
-    if (rerender) renderPopupEditors();
+    if (rerender) renderPopupEditors({ force: previousBubbleId !== bubble.id });
     if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
     if (reveal) windowObject.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
     return true;
@@ -1276,6 +1276,22 @@ export function createMarkersPane({
       return;
     }
     popupOverlay.hidden = false;
+    const activeDrag = popupBubbleDrag();
+    if (activeDrag) {
+      popupOverlay.style.left = `${frameRect.left}px`;
+      popupOverlay.style.top = `${frameRect.top}px`;
+      popupOverlay.style.width = `${frameRect.width}px`;
+      popupOverlay.style.height = `${frameRect.height}px`;
+      const bubble = popupBubbles().find((item) => item.id === activeDrag.bubbleId);
+      const badge = popupOverlay.querySelector(`[data-popup-id="${activeDrag.bubbleId}"]`);
+      if (bubble && badge instanceof HTMLElement) {
+        const point = activeDrag.kind === "keyframe" && activeDrag.motionOffsetMs > 0
+          ? popupKeyframePoint(bubble, activeDrag.motionOffsetMs)
+          : popupKeyframePoint(bubble, 0);
+        placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
+      }
+      return;
+    }
     popupOverlay.innerHTML = "";
     popupOverlay.style.left = `${frameRect.left}px`;
     popupOverlay.style.top = `${frameRect.top}px`;
