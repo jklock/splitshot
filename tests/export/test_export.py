@@ -29,20 +29,15 @@ from splitshot.domain.models import (
     VideoAsset,
 )
 from splitshot.export.pipeline import (
+    _encoder_command,
     _is_expected_decoder_pipe_shutdown,
     _merged_duration_ms,
+    _normalized_output_fades,
     _prune_expected_decoder_pipe_shutdown_lines,
     export_project,
 )
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import (
-    OverlayRenderer,
-    _auto_badge_size,
-    _combined_rect,
-    _overlay_qfont,
-    _standard_badge_texts,
-)
 from splitshot.overlay.font_policy import (
     WINDOWS_MONO_FONT_FAMILIES,
     WINDOWS_SANS_FONT_FAMILIES,
@@ -50,12 +45,73 @@ from splitshot.overlay.font_policy import (
     default_overlay_font_family,
     resolve_overlay_font_family,
 )
+from splitshot.overlay.render import (
+    OverlayRenderer,
+    _auto_badge_size,
+    _combined_rect,
+    _overlay_qfont,
+    _standard_badge_texts,
+)
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
-
+from splitshot.ui.controller import ProjectController
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
+
+
+def test_output_fades_scale_to_short_clip_and_emit_video_audio_filters(tmp_path: Path) -> None:
+    assert _normalized_output_fades(0.5, 0.5, 0.6) == pytest.approx((0.3, 0.3))
+    project = Project()
+    project.primary_video.path = "source.mp4"
+
+    command = _encoder_command(
+        project,
+        1920,
+        1080,
+        30.0,
+        tmp_path / "output.mp4",
+        fade_in_s=0.5,
+        fade_out_s=0.5,
+        duration_s=10.0,
+        fade_audio=True,
+    )
+
+    assert command[command.index("-vf") + 1] == (
+        "fade=t=in:st=0:d=0.500:color=black,fade=t=out:st=9.500:d=0.500:color=black"
+    )
+    assert command[command.index("-af") + 1] == (
+        "afade=t=in:st=0:d=0.500,afade=t=out:st=9.500:d=0.500"
+    )
+
+
+def test_export_with_audio_fade_enabled_handles_silent_video(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
+    source_with_audio = synthetic_video_factory(
+        name="silent-fade",
+        duration_ms=700,
+        beep_ms=200,
+        shot_times_ms=[400],
+        resolution=(160, 90),
+    )
+    silent_source = source_with_audio.with_name("silent-fade-video-only.mp4")
+    project = Project(name="Silent Fade")
+    project.primary_video = probe_video(silent_source)
+    project.export.target_width = 160
+    project.export.target_height = 90
+
+    output = export_project(
+        project,
+        tmp_path / "silent-fade-output.mp4",
+        fade_in_s=0.2,
+        fade_out_s=0.2,
+        fade_audio=True,
+    )
+
+    streams = _ffprobe_json(output)["streams"]
+    assert any(stream["codec_type"] == "video" for stream in streams)
+    assert not any(stream["codec_type"] == "audio" for stream in streams)
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -152,7 +208,6 @@ def test_export_project_initializes_qt_gui_application_for_headless_runs(
     def fake_ensure_qt_gui_application():
         nonlocal called
         called = True
-        return None
 
     monkeypatch.setattr(
         "splitshot.export.pipeline._ensure_qt_gui_application", fake_ensure_qt_gui_application
@@ -237,6 +292,208 @@ def test_overlay_renderer_score_marks_use_overlay_qfont(
         painter.end()
 
     assert captured == [(default_overlay_font_family(), 28, True, False)]
+
+
+def test_overlay_renderer_uses_text_box_typography(monkeypatch) -> None:
+    project = Project(name="Text Box Style")
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="Match title",
+            style_type="rounded",
+            font_family="Courier New",
+            font_size=22,
+            font_bold=False,
+            font_italic=True,
+        )
+    ]
+    captured: list[tuple[str, int, bool, bool]] = []
+
+    def fake_overlay_qfont(font_family: str, font_size: int, bold: bool, italic: bool):
+        captured.append((font_family, font_size, bold, italic))
+        return _overlay_qfont(font_family, font_size, bold, italic)
+
+    monkeypatch.setattr("splitshot.overlay.render._overlay_qfont", fake_overlay_qfont)
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 320, 180)
+    painter.end()
+
+    assert ("Courier New", 22, False, True) in captured
+
+
+def test_overlay_renderer_auto_sizes_text_box_with_its_own_typography() -> None:
+    project = Project(name="Auto-sized Text Box")
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.font_size = 14
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="WIDE INTRO TITLE\nSECOND LINE",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=52,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+
+    image = QImage(640, 360, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#101010"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 640, 360)
+    painter.end()
+
+    red_pixels = [
+        (x, y)
+        for y in range(image.height())
+        for x in range(image.width())
+        if (color := image.pixelColor(x, y)).red() > 150
+        and color.red() > color.green() * 1.5
+        and color.red() > color.blue() * 1.5
+    ]
+    assert red_pixels
+    box_width = max(x for x, _y in red_pixels) - min(x for x, _y in red_pixels) + 1
+    box_height = max(y for _x, y in red_pixels) - min(y for _x, y in red_pixels) + 1
+    assert box_width > 400
+    assert box_height >= 110
+
+
+@pytest.mark.parametrize("kind", ["intro", "outro"])
+def test_encoded_intro_outro_frame_auto_sizes_text_box(
+    kind: str,
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    source = synthetic_video_factory(
+        name=f"{kind}-text-box-source",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(640, 360),
+    )
+    controller = ProjectController()
+    clip = getattr(controller.project, f"{kind}_clip")
+    clip.asset = probe_video(source)
+    clip.overlay.show_timer = False
+    clip.overlay.show_draw = False
+    clip.overlay.show_shots = False
+    clip.overlay.show_score = False
+    clip.overlay.font_size = 14
+    clip.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text=f"WIDE {kind.upper()} TITLE\nSECOND LINE",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=52,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+    controller.project.export.target_width = 640
+    controller.project.export.target_height = 360
+    controller.project.export.video_bitrate_mbps = 1
+    controller.project.export.ffmpeg_preset = "ultrafast"
+
+    output = controller._render_queue_boundary_overlay(kind, source, tmp_path)
+    frame = _frame_rgb(output, 0.1)
+    red_mask = (
+        (frame[:, :, 0] > 140)
+        & (frame[:, :, 0] > frame[:, :, 1] * 1.5)
+        & (frame[:, :, 0] > frame[:, :, 2] * 1.5)
+    )
+    ys, xs = np.where(red_mask)
+
+    assert xs.size > 0
+    assert int(xs.max() - xs.min() + 1) > 350
+    assert int(ys.max() - ys.min() + 1) >= 105
+
+
+def test_intro_font_size_is_painted_after_boundary_matches_final_dimensions(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    source = synthetic_video_factory(
+        name="square-intro-font-source",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(640, 640),
+    )
+    reference = synthetic_video_factory(
+        name="landscape-stage-reference",
+        duration_ms=400,
+        beep_ms=100,
+        shot_times_ms=[250],
+        resolution=(320, 180),
+    )
+    controller = ProjectController()
+    controller.project.export.target_width = 320
+    controller.project.export.target_height = 180
+    controller.project.export.video_bitrate_mbps = 1
+    controller.project.export.ffmpeg_preset = "ultrafast"
+    clip = controller.project.intro_clip
+    clip.asset = probe_video(source)
+    clip.fade_in_s = 0
+    clip.fade_out_s = 0
+    clip.overlay.show_timer = False
+    clip.overlay.show_draw = False
+    clip.overlay.show_shots = False
+    clip.overlay.show_score = False
+    clip.overlay.text_boxes = [
+        OverlayTextBox(
+            source="manual",
+            text="INTRO",
+            quadrant="middle_middle",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            font_family="Arial",
+            font_size=40,
+            font_bold=True,
+            width=0,
+            height=0,
+        )
+    ]
+
+    normalized = controller._prepare_queue_boundary_clip(
+        source,
+        reference,
+        tmp_path,
+        "intro",
+        apply_fades=False,
+    )
+    overlay = controller._render_queue_boundary_overlay("intro", normalized, tmp_path)
+    output = controller._prepare_queue_boundary_clip(
+        overlay,
+        reference,
+        tmp_path,
+        "intro",
+    )
+    frame = _frame_rgb(output, 0.2)
+    red_mask = (
+        (frame[:, :, 0] > 140)
+        & (frame[:, :, 0] > frame[:, :, 1] * 1.5)
+        & (frame[:, :, 0] > frame[:, :, 2] * 1.5)
+    )
+    ys, xs = np.where(red_mask)
+
+    assert xs.size > 0
+    assert int(ys.max() - ys.min() + 1) >= 42
 
 
 def test_e2e_fixture_contains_detectable_shots() -> None:
@@ -598,8 +855,8 @@ def test_overlay_renderer_shows_imported_summary_custom_box_only_after_final_sho
 
     before_red = 0
     after_red = 0
-    for y in range(0, 120):
-        for x in range(0, 220):
+    for y in range(120):
+        for x in range(220):
             before_color = before.pixelColor(x, y)
             after_color = after.pixelColor(x, y)
             if (
@@ -676,10 +933,11 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     project.overlay.show_shots = False
     project.overlay.show_score = True
     project.overlay.text_boxes = [
-        OverlayTextBox(
-            enabled=True,
-            source="imported_summary",
-            quadrant="above_final",
+            OverlayTextBox(
+                enabled=True,
+                source="imported_summary",
+                text="Geometry\nRaw 13.05\nPD 4\nFinal 17.05",
+                quadrant="above_final",
             background_color="#ff7b22",
             text_color="#ffffff",
             opacity=1.0,
@@ -826,6 +1084,80 @@ def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot()
     )
 
 
+def test_overlay_renderer_uses_review_metric_configuration_and_stage_data() -> None:
+    project = Project(name="WYSIWYG Review Summary")
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=26500, score=ScoreMark(letter=ScoreLetter.DOWN_3))
+    ]
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.scoring.competitor_name = "Shooter"
+    project.scoring.competitor_place = 5
+    project.scoring.division = "Carry Optics"
+    project.scoring.classification = "Sharpshooter"
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        competitor_name="Shooter",
+        competitor_place=5,
+        division="Carry Optics",
+        classification="Sharpshooter",
+        raw_seconds=21.71,
+        final_time=23.71,
+        aggregate_points=3,
+        score_counts={"Points Down": 3},
+    )
+    project.scoring.comparison_competitors = [
+        {
+            "name": f"Shooter {index}",
+            "place": index,
+            "division": "Carry Optics" if index <= 11 else "Stock Service Pistol",
+            "classification": "Sharpshooter" if index <= 8 else "Marksman",
+            "final_time": 18.0 + index,
+        }
+        for index in range(1, 28)
+        if index != 5
+    ]
+
+    assert OverlayRenderer._text_box_text(
+        project,
+        26500,
+        "imported_summary",
+        "",
+        True,
+        [
+            "score_time",
+            "raw_time",
+            "points_down",
+            "penalties",
+            "division_placement",
+            "class_placement",
+            "overall_placement",
+        ],
+    ) == (
+        "Score / Time 23.71\n"
+        "Raw Time 21.71s\n"
+        "Points Down 3\n"
+        "Penalties 0\n"
+        "CO - 5/11\n"
+        "SS - 5/8\n"
+        "Overall - 5/27"
+    )
+    assert OverlayRenderer._text_box_text(
+        project,
+        26500,
+        "imported_summary",
+        "Summary\nRaw 21.71\nPD 3\nFinal 23.71",
+        True,
+        ["score_time", "raw_time", "points_down", "penalties"],
+    ) == (
+        "Score / Time 23.71\n"
+        "Raw Time 21.71s\n"
+        "Points Down 3\n"
+        "Penalties 0"
+    )
+
+
 def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
     project = Project(name="Imported Summary Browser Line Height")
     project.analysis.beep_time_ms_primary = 100
@@ -838,10 +1170,11 @@ def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_sum
     project.overlay.show_score = False
     project.overlay.font_size = 14
     project.overlay.text_boxes = [
-        OverlayTextBox(
-            enabled=True,
-            source="imported_summary",
-            quadrant="top_left",
+            OverlayTextBox(
+                enabled=True,
+                source="imported_summary",
+                text="Geometry\nRaw 23.24\nPoints 101\nHF 4.3460",
+                quadrant="top_left",
             background_color="#ff0000",
             text_color="#ffffff",
             opacity=1.0,
@@ -1041,8 +1374,8 @@ def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
                 and color.red() > color.blue() + 40
             ):
                 center_red += 1
-    for y in range(0, 24):
-        for x in range(0, 70):
+    for y in range(24):
+        for x in range(70):
             color = image.pixelColor(x, y)
             if (
                 color.red() > 120
@@ -1085,8 +1418,8 @@ def test_overlay_renderer_defaults_empty_custom_quadrant_coordinates_to_center()
                 and color.red() > color.blue() + 40
             ):
                 center_red += 1
-    for y in range(0, 24):
-        for x in range(0, 70):
+    for y in range(24):
+        for x in range(70):
             color = image.pixelColor(x, y)
             if (
                 color.red() > 120

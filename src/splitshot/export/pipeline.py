@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import shlex
-import json
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 from PySide6.QtCore import Qt
@@ -27,14 +28,13 @@ from splitshot.domain.models import (
     MergePlacementMode,
     MergePlacementSlot,
     MergeSource,
-    Project,
     MergeSourceAssetPathKind,
+    Project,
 )
-from splitshot.media.ffmpeg import ffmpeg_command
+from splitshot.media.ffmpeg import ffmpeg_command, run_ffprobe_json
 from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import calculate_hit_factor
-
 
 _QT_GUI_APP: QGuiApplication | None = None
 _SUPPORTED_EXPORT_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4"}
@@ -711,6 +711,10 @@ def _encoder_command(
     pass_number: int | None = None,
     passlogfile: Path | None = None,
     first_pass: bool = False,
+    fade_in_s: float = 0.0,
+    fade_out_s: float = 0.0,
+    duration_s: float = 0.0,
+    fade_audio: bool = False,
 ) -> list[str]:
     video_bitrate = f"{project.export.video_bitrate_mbps:g}M"
     audio_bitrate = f"{project.export.audio_bitrate_kbps}k"
@@ -740,7 +744,22 @@ def _encoder_command(
             "1:a:0?",
         ]
     )
+    normalized_fade_in, normalized_fade_out = _normalized_output_fades(
+        fade_in_s, fade_out_s, duration_s
+    )
+    video_filters: list[str] = []
+    audio_filters: list[str] = []
+    if normalized_fade_in > 0:
+        video_filters.append(f"fade=t=in:st=0:d={normalized_fade_in:.3f}:color=black")
+        audio_filters.append(f"afade=t=in:st=0:d={normalized_fade_in:.3f}")
+    if normalized_fade_out > 0:
+        fade_out_start = max(0.0, duration_s - normalized_fade_out)
+        video_filters.append(
+            f"fade=t=out:st={fade_out_start:.3f}:d={normalized_fade_out:.3f}:color=black"
+        )
+        audio_filters.append(f"afade=t=out:st={fade_out_start:.3f}:d={normalized_fade_out:.3f}")
     encode_args = [
+        *([] if not video_filters else ["-vf", ",".join(video_filters)]),
         "-c:v",
         _codec_name(project.export.video_codec),
         "-preset",
@@ -765,6 +784,7 @@ def _encoder_command(
         ["-an"]
         if first_pass
         else [
+            *([] if not fade_audio or not audio_filters else ["-af", ",".join(audio_filters)]),
             "-c:a",
             project.export.audio_codec.value,
             "-ar",
@@ -790,6 +810,27 @@ def _encoder_command(
         [*input_args, *audio_args, *encode_args, *audio_encode_args, *output_args]
     )
     return command
+
+
+def _normalized_output_fades(
+    fade_in_s: float, fade_out_s: float, duration_s: float
+) -> tuple[float, float]:
+    duration = max(0.0, float(duration_s or 0.0))
+    fade_in = max(0.0, float(fade_in_s or 0.0))
+    fade_out = max(0.0, float(fade_out_s or 0.0))
+    total = fade_in + fade_out
+    if duration <= 0 or total <= duration:
+        return fade_in, fade_out
+    scale = duration / total
+    return fade_in * scale, fade_out * scale
+
+
+def _input_has_audio(path: str | Path) -> bool:
+    try:
+        info = run_ffprobe_json(Path(path))
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
 
 
 def _read_exact(pipe: Any, n: int) -> bytes:  # noqa: ANN401
@@ -955,6 +996,9 @@ def export_project(
     progress_callback: Callable[[float], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
     frame_profile: str | None = None,
+    fade_in_s: float = 0.0,
+    fade_out_s: float = 0.0,
+    fade_audio: bool = False,
 ) -> Path:
     original_project = project
     project = _active_export_project(project)
@@ -980,6 +1024,8 @@ def export_project(
         project.export.crop_center_y,
     )
     output_width, output_height = _target_dimensions(project, crop_width, crop_height)
+    duration_s = max(0.0, plan.duration_ms / 1000.0)
+    fade_audio = fade_audio and _input_has_audio(project.primary_video.path)
 
     output_target = _normalize_output_target(output_path)
     output_target.parent.mkdir(parents=True, exist_ok=True)
@@ -1015,6 +1061,9 @@ def export_project(
                     pass_number=1,
                     passlogfile=passlogfile,
                     first_pass=True,
+                    fade_in_s=fade_in_s,
+                    fade_out_s=fade_out_s,
+                    duration_s=duration_s,
                 )
                 pass_two_command = _encoder_command(
                     project,
@@ -1025,6 +1074,10 @@ def export_project(
                     pass_number=2,
                     passlogfile=passlogfile,
                     first_pass=False,
+                    fade_in_s=fade_in_s,
+                    fade_out_s=fade_out_s,
+                    duration_s=duration_s,
+                    fade_audio=fade_audio,
                 )
                 log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
                 log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
@@ -1057,7 +1110,15 @@ def export_project(
                 )
         else:
             encoder_command = _encoder_command(
-                project, output_width, output_height, plan.fps, output_target
+                project,
+                output_width,
+                output_height,
+                plan.fps,
+                output_target,
+                fade_in_s=fade_in_s,
+                fade_out_s=fade_out_s,
+                duration_s=duration_s,
+                fade_audio=fade_audio,
             )
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
             project.export.last_log = "\n".join(log_lines[-400:])

@@ -24,7 +24,9 @@ export function createExportPane({
 
   function visibleExportLogLines() {
     const visibleLines = getExportLogLines() || [];
-    return visibleLines.length > 0 ? visibleLines : persistedExportLogLines();
+    const persistedLines = persistedExportLogLines();
+    if (getActiveProcessingPath()) return visibleLines.length > 0 ? visibleLines : persistedLines;
+    return persistedLines.length >= visibleLines.length ? persistedLines : visibleLines;
   }
 
   function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = currentState()?.project?.export?.preset) {
@@ -46,13 +48,17 @@ export function createExportPane({
     if (descriptionId) {
       const preset = (currentState().export_presets || []).find((item) => item.id === select.value);
       let description = $(descriptionId);
+      if (!preset?.description) {
+        description?.remove();
+        return;
+      }
       if (!description) {
         description = document.createElement("div");
         description.id = descriptionId;
         description.className = "hint export-preset-description";
         select.closest("label")?.insertAdjacentElement("afterend", description);
       }
-      if (description) description.textContent = preset ? preset.description : "";
+      if (description) description.textContent = preset.description;
     }
   }
 
@@ -62,33 +68,19 @@ export function createExportPane({
     const output = $("export-log-output");
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
-    const status = $("export-log-status");
-    const button = $("show-export-log");
     const exportButton = $("export-export-log");
     if (output) {
       output.textContent = visibleLines.join("\n");
-      if (getActiveProcessingPath() === "/api/export") output.scrollTop = output.scrollHeight;
+      if (getActiveProcessingPath()) output.scrollTop = output.scrollHeight;
     }
     if (summary) {
-      summary.textContent = getActiveProcessingPath() === "/api/export"
-        ? `Export in progress • ${Math.round(getProcessingProgressPercent())}%`
+      summary.textContent = getActiveProcessingPath()
+        ? `Processing in progress • ${Math.round(getProcessingProgressPercent())}%`
         : "";
     }
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
       errorBox.textContent = projectExport.last_error || "";
-    }
-    if (status) {
-      status.textContent = projectExport.last_error
-        ? `Latest export failed: ${projectExport.last_error}`
-        : getActiveProcessingPath() === "/api/export"
-          ? `Export log is updating in real time. Current progress: ${Math.round(getProcessingProgressPercent())}%.`
-          : "";
-    }
-    if (button) {
-      button.textContent = getActiveProcessingPath() === "/api/export"
-        ? `Show Log (${Math.round(getProcessingProgressPercent())}%)`
-        : "Show Log";
     }
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
@@ -117,8 +109,8 @@ export function createExportPane({
       setStatus("");
       return;
     }
-    downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
-    setStatus("Downloaded export log.");
+    downloadTextFile(`${metricsFileStem()}-processing-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
+    setStatus("Downloaded processing log.");
   }
 
   function syncExportPathControl() {

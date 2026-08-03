@@ -39,7 +39,7 @@ EXPORT_PRESETS: dict[str, ExportPresetDefinition] = {
     ExportPreset.SOURCE.value: ExportPresetDefinition(
         id=ExportPreset.SOURCE.value,
         name="Source MP4",
-        description="H.264 MP4 using source dimensions and source frame rate.",
+        description="",
         quality=ExportQuality.HIGH,
         aspect_ratio=AspectRatio.ORIGINAL,
         target_width=None,

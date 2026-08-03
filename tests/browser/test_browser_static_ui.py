@@ -365,7 +365,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
         "shotml",
     ]:
         assert f'data-settings-section="{section_id}"' in html
-    assert 'id="open-project"' not in html
+    assert '<button id="open-project" type="button">Open Project</button>' in html
+    assert 'id="open-project-folder"' not in html
     assert "Open PiP" not in html
     assert "Open Score" not in html
     assert "Open Splits" not in html
@@ -477,11 +478,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-action="apply_motion_visible"' not in js
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
-    assert 'class="data-table metrics-trend-table" aria-label="Metrics trend table"' in html
+    assert 'id="metrics-stage-tree" class="metrics-stage-tree"' in html
     assert 'id="metrics-export-csv"' in html
     assert 'id="metrics-export-text"' in html
-    assert 'id="show-export-log"' in html
-    assert ">Show Export Log</button>" in html
+    assert 'id="show-export-log"' not in html
     assert 'id="export-export-log"' in html
     assert 'id="export-log-modal"' in html
     assert 'id="export-log-output"' in html
@@ -720,8 +720,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-x"' in html
     assert 'id="score-y"' in html
     assert 'id="browse-project-path"' in html
-    assert 'id="open-project-folder"' in html
-    assert 'callApi("/api/project/reveal", {})' in js
+    assert '$("open-project").addEventListener("click", browseProjectPath);' in shell_runtime_js
     assert 'id="browse-project-output-root"' in html
     assert 'id="browse-primary-path"' not in html
     assert 'id="browse-secondary-path"' not in html
@@ -738,7 +737,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="audio-bitrate"' in html
     assert 'id="color-space"' in html
     assert 'id="ffmpeg-preset"' in html
-    assert 'id="show-export-log"' in html
+    assert 'id="show-export-log"' not in html
     assert 'id="export-log-output"' in html
     assert 'id="export-log-modal"' in html
     assert "Active stage settings" in html
@@ -781,7 +780,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert "const INSPECTOR_COMPACT_WIDTH = 700;" in js
     assert (
-        'shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);'
+        'shell.classList.toggle("inspector-compact", renderedLayoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);'
         in layout_js
     )
     assert (
@@ -944,7 +943,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return null;" in js
     assert "lastSubmittedProjectUiStatePayloadKey = payloadKey;" in js
     assert "function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {" in js
-    assert "await applyProjectUiStatePayload();" in project_pane
+    assert "await applyProjectUiStatePayload(captured.projectUiState);" in project_pane
     assert "sendProjectUiStateKeepalive();" in project_pane
     assert "function scheduleOverlayApply()" in js
     assert "function scheduleMergeApply()" in js
@@ -991,7 +990,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         in js
     )
     assert "return (state.split_rows || []).map((row) => {" in js
-    assert "const ACTIVITY_POLL_INTERVAL_MS = 1000;" in js
+    assert "const ACTIVITY_POLL_INTERVAL_MS = 250;" in js
+    assert "Show Log (${Math.round" not in (STATIC_ROOT / "panes" / "export-pane.js").read_text()
+    finish_index = api_js.index('finishProcessing(data.status || "Ready.")')
+    assert finish_index < api_js.index("requestRender();", finish_index)
+    assert "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines" in export_pane
     assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}`)" in activity_js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
@@ -1182,7 +1185,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));'
         in js
     )
-    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in js
+    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' not in js
     assert '$("export-export-log")?.addEventListener("click", downloadExportLog);' in js
     assert '$("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));' in js
     assert "function defaultScoreLetter(ruleset = activeScoringRuleset()) {" in js
@@ -1759,7 +1762,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert "ensurePrimaryVideoAudio(secondary);" in video_player_js
     assert 'logPrimaryVideoState("source.attach");' in video_player_js
     assert (
-        'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);'
+        'const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);'
         in video_player_js
     )
     assert (
@@ -1969,8 +1972,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "expand-timing",
         "browse-project-output-root",
         "new-project",
-            "browse-project-path",
-            "open-project-folder",
+        "browse-project-path",
+        "open-project",
         "open-practiscore-dashboard",
         "import-practiscore",
         "save-project",
@@ -1981,8 +1984,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "review-set-source",
         "export-badges",
         "create-output-profile",
+        "save-output-profile",
         "delete-output-profile",
-        "show-export-log",
         "export-export-log",
         "close-export-log",
         "close-color-picker",
@@ -2354,7 +2357,7 @@ def test_browser_app_bootstrap_delegates_shell_components() -> None:
     assert "return statusBarComponent?.renderStats();" in js
     assert "return statusBarComponent?.timingSummaryRows();" in js
     assert "return statusBarComponent?.renderTimingSummary();" in js
-    assert "return videoPlayerComponent?.renderVideo();" in js
+    assert "const result = videoPlayerComponent?.renderVideo();" in js
     assert "statusBarComponent = createStatusBarComponent({" in js
     assert "videoPlayerComponent = createVideoPlayerComponent({" in js
     assert "getState: () => state," in js
@@ -2370,7 +2373,7 @@ def test_browser_app_bootstrap_delegates_shell_components() -> None:
     assert "export function createVideoPlayerComponent({" in video_player
     assert "function renderVideo() {" in video_player
     assert (
-        'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);'
+        'const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);'
         in video_player
     )
     assert "const waveformEnabled = Boolean(state.project.analysis?.shots?.length);" in video_player

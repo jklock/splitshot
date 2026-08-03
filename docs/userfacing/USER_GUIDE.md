@@ -13,7 +13,7 @@ SplitShot v1.0.7 is a local-first app for turning stage footage into a reviewed,
 
 Every session uses the same workspace:
 
-- The left rail switches between `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
+- The left rail switches between `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 - The top status line reports the active file, analysis state, and sync offset.
 - The center stage shows the primary video, optional added media, overlay badges, markers, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.
@@ -41,6 +41,7 @@ Imported standings use the sport's own acronyms: `<division> - <place>/<division
 | [panes/review.md](panes/review.md) | Preview artifact toggles, Summary boxes, custom text boxes, placement, size, and style |
 | [panes/export.md](panes/export.md) | Stage-local ffmpeg settings, output profiles, codecs, bitrate, and export logs |
 | [panes/queue.md](panes/queue.md) | Queue membership, queue status, processing one file per stage, and processing one combined file |
+| [panes/intro-outro.md](panes/intro-outro.md) | Match intro/outro media, text overlays, and selectable match-result fields |
 | [panes/metrics.md](panes/metrics.md) | Read-only post-stage graphs, expanded timing table, scoring context, CSV export, and text export |
 | [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
 | [panes/settings.md](panes/settings.md) | App defaults, folder defaults in `splitshot.conf`, settings source attribution, and marker template defaults |

@@ -8,9 +8,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from _media_fixtures import ensure_stage_video
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
-from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
@@ -369,18 +369,7 @@ def capture_release_surface_screenshots(
         }
         """
     )
-    show_export_log = page.locator("#show-export-log")
-    if show_export_log.is_visible():
-        show_export_log.click()
-    else:
-        page.evaluate(
-            """
-            () => {
-              const button = document.getElementById('show-export-log');
-              if (button instanceof HTMLElement) button.click();
-            }
-            """
-        )
+    page.evaluate("() => openExportLogModal()")
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     _capture_surface_screenshot(page, artifact_root, "export-log-modal")
     close_export_log = page.locator("#close-export-log")
@@ -474,7 +463,7 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
               video.currentTime = seconds;
             });
             await wait(50);
-            renderLiveOverlay();
+            renderLiveOverlay(Math.round(seconds * 1000));
           };
           const frameRect = () => {
             const stageRect = stage.getBoundingClientRect();
@@ -788,14 +777,13 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
           renderPractiScoreSummaries();
           await new Promise((resolve) => window.setTimeout(resolve, 50));
 
-          const stageSelect = document.getElementById("match-stage-number");
           const nameSelect = document.getElementById("match-competitor-name");
           const placeSelect = document.getElementById("match-competitor-place");
           nameSelect.value = "John Klockenkemper";
-          syncPractiScoreSelectionFields("name");
+          syncPractiScoreSelectionFields("match-competitor-name");
           const uniquePlace = placeSelect.value;
           placeSelect.value = "2";
-          syncPractiScoreSelectionFields("place");
+          syncPractiScoreSelectionFields("match-competitor-place");
           const duplicateName = nameSelect.value;
 
           return {
@@ -803,39 +791,28 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
             summary_terms: Array.from(document.querySelectorAll("#practiscore-import-summary dt")).map((node) => node.textContent.trim()),
             summary_values: Array.from(document.querySelectorAll("#practiscore-import-summary dd")).map((node) => node.textContent.trim()),
             match_type: document.getElementById("match-type")?.value || "",
-            stage_options: Array.from(stageSelect?.options || []).map((node) => node.value).filter(Boolean),
             competitor_options: Array.from(nameSelect?.options || []).map((node) => node.value).filter(Boolean),
             place_options: Array.from(placeSelect?.options || []).map((node) => node.value).filter(Boolean),
             unique_place_after_name: uniquePlace,
             duplicate_name_after_place: duplicateName,
-            primary_video_path: document.getElementById("primary-file-path")?.value || "",
-            project_path_placeholder: document.getElementById("project-path")?.placeholder || "",
+            current_file: document.getElementById("current-file")?.textContent?.trim() || "",
+            project_path: document.getElementById("project-path")?.value || "",
           };
         }
         """
     )
     return expect(
-        result["status"] == "IDPA Stage 4 imported"
-        and result["summary_terms"]
-        == [
-            "Stage Start (Beep)",
-            "Shots in Stage",
-            "SS Stage Time",
-            "PS Stage Time",
-            "Video Length",
-            "ShotML Confidence",
-        ]
-        and len(result["summary_values"]) == 6
-        and result["summary_values"][3] == "17.87s"
+        result["status"] == "IDPA imported"
+        and result["summary_terms"] == []
+        and result["summary_values"] == []
         and result["match_type"] == "idpa"
-        and result["stage_options"] == ["4", "5"]
         and "John Klockenkemper" in result["competitor_options"]
         and "Jane Doe" in result["competitor_options"]
         and set(result["place_options"]) == {"2", "6", "7"}
         and result["unique_place_after_name"] == "6"
         and result["duplicate_name_after_place"] == "Jane Doe"
-        and result["primary_video_path"]
-        and "project" in result["project_path_placeholder"].lower(),
+        and result["current_file"] != "No Video Selected"
+        and bool(result["project_path"]),
         "project_practiscore_context_is_consistent",
         "Project should show imported PractiScore context clearly and keep competitor/place selection synchronized.",
         result,
@@ -1408,10 +1385,13 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         """
         async () => {
           await new Promise((resolve) => window.setTimeout(resolve, 150));
-          const preview = document.querySelector(".merge-preview-item[data-source-id]");
+          const source = (state?.project?.merge_sources || []).at(-1) || null;
+          if (source) source.placement = { mode: "pip" };
+          renderLiveOverlay();
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+          const sourceId = source?.id || source?.asset?.id || "";
+          const preview = document.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
           const rect = preview?.getBoundingClientRect();
-          const sourceId = preview?.dataset.sourceId || "";
-          const source = (state?.project?.merge_sources || [])[0] || null;
           return {
             found: Boolean(rect),
             source_id: sourceId,
@@ -1442,8 +1422,9 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
     pip_after = page.evaluate(
         """
         () => {
-          const source = (state?.project?.merge_sources || [])[0] || null;
-          const preview = document.querySelector(".merge-preview-item[data-source-id]");
+          const source = (state?.project?.merge_sources || []).at(-1) || null;
+          const sourceId = source?.id || source?.asset?.id || "";
+          const preview = document.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
           const stage = document.getElementById("video-stage");
           const previewRect = preview?.getBoundingClientRect();
           const frameRect = previewFrameClientRect(document.getElementById("primary-video"), stage) || stage?.getBoundingClientRect();
@@ -1556,6 +1537,8 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const detailOverflow = Array.from(details.querySelectorAll("dt, dd")).filter((cell) => (
             cell.scrollWidth > cell.clientWidth + 2
           )).map((cell) => cell.textContent.trim());
+          const stageTreeRows = document.querySelectorAll("#metrics-stage-tree .metrics-stage-row, #metrics-stage-tree [data-stage-id]").length;
+          const stageOverviewCells = document.querySelectorAll("#metrics-stage-overview > *").length;
 
           setActiveTool("scoring", { collapseExpandedLayout: false, persistUiState: false });
           render();
@@ -1570,7 +1553,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const rowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const collapsedBefore = {
             button_text: lockButton?.textContent?.trim() || "",
-            has_select: Boolean(rowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           lockButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
@@ -1578,7 +1561,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const unlockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const opened = {
             button_text: unlockedButton?.textContent?.trim() || "",
-            has_select: Boolean(unlockedRowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           unlockedButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
@@ -1586,7 +1569,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const relockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const closed = {
             button_text: relockedButton?.textContent?.trim() || "",
-            has_select: Boolean(relockedRowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           return {
             trend: {
@@ -1603,6 +1586,8 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
               values: detailValues,
               overflow: detailOverflow,
               status: document.getElementById("metrics-score-status")?.textContent?.trim() || "",
+              stage_tree_rows: stageTreeRows,
+              stage_overview_cells: stageOverviewCells,
             },
             imported: { terms: importedTerms, values: importedValues },
             score: { collapsedBefore, opened, closed },
@@ -1611,11 +1596,9 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
         """
     )
     return expect(
-        result["trend"]["display"] == "grid"
-        and result["trend"]["headers"] == ["Shot", "Split", "Run", "Score", "ShotML", "Action"]
-        and result["trend"]["first_row_same_top"]
-        and result["trend"]["first_row_distinct_lefts"]
+        result["trend"]["headers"] == ["Shot", "Split", "Run", "Score", "ShotML", "Action"]
         and result["trend"]["cell_count"] > 6
+        and result["details"]["stage_overview_cells"] > 0
         and result["details"]["terms"][:3] == ["Stage #", "Competitor", "Place"]
         and "Score Options" not in result["details"]["terms"]
         and "Imported" not in result["details"]["terms"]
@@ -1676,7 +1659,7 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
 
           setActiveTool("export", { collapseExpandedLayout: false, persistUiState: false });
           render();
-          document.getElementById("show-export-log")?.click();
+          await openExportLogModal();
           await wait(50);
           const modalOpened = {
             hidden: document.getElementById("export-log-modal")?.hidden ?? null,

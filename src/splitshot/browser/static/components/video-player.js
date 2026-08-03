@@ -2,6 +2,8 @@ export function createVideoPlayerComponent({
   $ = (id) => document.getElementById(id),
   getState = () => null,
   getSelectedShotId = () => null,
+  getActiveTool = () => "project",
+  getIntroOutroKind = () => "intro",
   maybeApplyRecommendedLayout = () => {},
   buildMediaUrl = (url) => url,
   resetMediaElement = () => {},
@@ -77,11 +79,14 @@ export function createVideoPlayerComponent({
     const secondaryImage = $("secondary-image");
     const mergePreviewLayer = $("merge-preview-layer");
     const stage = $("video-stage");
-    const merge = state.project.merge;
-    const mergeSources = state?.project?.merge_sources || [];
-    const path = state.media.primary_active_path || state.project.primary_video.effective_media_path || state.project.primary_video.path || "";
-    const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);
-    if (state.media.primary_available && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
+    const boundaryKind = getActiveTool() === "intro-outro" ? getIntroOutroKind() : "";
+    const boundaryPath = boundaryKind ? state.project?.[`${boundaryKind}_clip`]?.asset?.path || "" : "";
+    const merge = boundaryKind ? { enabled: false } : state.project.merge;
+    const mergeSources = boundaryKind ? [] : (state?.project?.merge_sources || []);
+    const path = boundaryPath || state.media.primary_active_path || state.project.primary_video.effective_media_path || state.project.primary_video.path || "";
+    const primaryAvailable = boundaryKind ? Boolean(boundaryPath) : state.media.primary_available;
+    const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);
+    if (primaryAvailable && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
       video.dataset.sourcePath = path;
       video.dataset.mediaUrl = primaryMediaPath;
       video.src = primaryMediaPath;
@@ -89,7 +94,7 @@ export function createVideoPlayerComponent({
       scheduleVideoFramePrime(video, primaryMediaPath);
       logPrimaryVideoState("source.attach");
     }
-    if (!state.media.primary_available) {
+    if (!primaryAvailable) {
       resetMediaElement(video);
     }
 

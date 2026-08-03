@@ -11,7 +11,6 @@ from playwright.sync_api import sync_playwright
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
-
 TOOL_IDS = [
     "project",
     "media",
@@ -621,18 +620,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         arg=second_source_id,
     )
     if had_active_stage:
-        page.evaluate(
-            """async () => { await callApi('/api/project/stage/create', { label: 'Stage 1' }); }"""
-        )
-        page.wait_for_function(
-            """() => {
-                const project = state?.project;
-                return (project?.stages || []).length >= 1
-                    && Boolean(project?.active_stage_id)
-                    && Boolean(project?.primary_video?.path)
-                    && (project?.merge_sources || []).length === 1;
-            }"""
-        )
+        assert page.evaluate("() => Boolean(state?.project?.active_stage_id)")
 
     _open_tool(page, "export")
     page.locator("#quality").select_option(_alternate_select_value(page.locator("#quality")))
@@ -692,7 +680,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     )
     assert "error" not in export_state
     assert export_state["project"]["export"]["last_log"] == "Master export log"
-    page.locator("#show-export-log").click()
+    page.locator('[data-tool="queue"]').click()
+    page.locator("#queue-show-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     page.locator("#close-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
@@ -1007,7 +996,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
     controller.import_stage_added(stage.id, str(secondary_path))
     controller.import_stage_added(stage.id, str(tertiary_path))
 
-    def fake_export_project(project, destination, progress_callback=None, log_callback=None):
+    def fake_export_project(
+        project, destination, progress_callback=None, log_callback=None, **_kwargs
+    ):
         captured_exports.append(
             {
                 "output_path": str(destination),
@@ -1198,9 +1189,9 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(
                     RELEASE_PROOF_THRESHOLDS_MS["queue_process"],
                 )
                 _open_tool_for_release(
-                    page, "export", timings, artifact_root, "release-20-export-pane-after-queue"
+                    page, "queue", timings, artifact_root, "release-20-queue-pane-after-processing"
                 )
-                page.locator("#show-export-log").click()
+                page.locator("#queue-show-log").click()
                 page.wait_for_function(
                     "() => document.getElementById('export-log-modal')?.hidden === false"
                 )

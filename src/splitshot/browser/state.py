@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +9,208 @@ from splitshot.domain.models import Project, project_to_dict
 from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
+    competition_placement,
+    imported_stage_penalty_count,
     normalize_penalty_counts_for_ruleset,
     normalize_score_letter_for_ruleset,
     scoring_presets_for_api,
+    stage_competition_placement,
 )
 from splitshot.timeline.model import compute_split_rows
+
+
+def _project_view_for_stage(project: Project, stage) -> Project:
+    view = deepcopy(project)
+    view.active_stage_id = stage.id
+    view.primary_video = deepcopy(stage.primary_media)
+    view.primary_trim_derivative = deepcopy(stage.primary_trim_derivative)
+    view.secondary_video = None
+    view.merge_sources = deepcopy(stage.added_media)
+    view.analysis = deepcopy(stage.analysis)
+    view.scoring = deepcopy(stage.scoring)
+    view.overlay = deepcopy(stage.overlay)
+    view.popups = deepcopy(stage.popups)
+    view.popup_template = deepcopy(stage.popup_template)
+    view.merge = deepcopy(stage.merge)
+    view.export = deepcopy(stage.export)
+    return view
+
+
+def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    stages = sorted(project.stages, key=lambda item: item.order_index)
+    for stage in stages:
+        view = _project_view_for_stage(project, stage)
+        presentation = build_stage_presentation(view)
+        scoring_summary = dict(presentation.metrics.scoring_summary)
+        imported = scoring_summary.get("imported_stage") or {}
+        is_idpa = str(imported.get("match_type") or "").casefold() == "idpa"
+        official_result = (
+            imported.get("final_time")
+            if is_idpa
+            else imported.get("hit_factor")
+        )
+        official_metrics = {
+            "raw_time_ms": (
+                None
+                if imported.get("raw_seconds") is None
+                else round(float(imported["raw_seconds"]) * 1000)
+            ),
+            "result_label": "Final" if is_idpa else scoring_summary.get("display_label", "Result"),
+            "result_value": official_result,
+            "display_value": (
+                "--" if official_result is None else f"{float(official_result):.2f}"
+            ),
+            "score_label": "Points Down" if is_idpa else "Shot Points",
+            "score_value": (
+                imported.get("aggregate_points")
+                if is_idpa
+                else scoring_summary.get("shot_points")
+            ),
+            "points_down": imported.get("aggregate_points") if is_idpa else None,
+            "penalties": imported_stage_penalty_count(view),
+            "division": imported.get("division") or stage.scoring.division,
+            "classification": imported.get("classification") or stage.scoring.classification,
+            "division_placement": stage_competition_placement(view, dimension="division"),
+            "class_placement": stage_competition_placement(
+                view, dimension="classification"
+            ),
+            "overall_placement": stage_competition_placement(view),
+            "spreadsheet_authoritative": bool(imported),
+        }
+        rows = [asdict(row) for row in compute_split_rows(view)]
+        result.append(
+            {
+                "stage_id": stage.id,
+                "stage_number": stage.imported_stage_number or stage.order_index,
+                "stage_name": stage.imported_stage_name or stage.label,
+                "metrics": asdict(presentation.metrics),
+                "scoring_summary": scoring_summary,
+                "official_metrics": official_metrics,
+                "scoring": asdict(stage.scoring),
+                "comparison_competitors": deepcopy(stage.scoring.comparison_competitors),
+                "split_rows": rows,
+                "timing_segments": [asdict(segment) for segment in presentation.timing_segments],
+            }
+        )
+    if not result:
+        presentation = build_stage_presentation(project)
+        imported = presentation.metrics.scoring_summary.get("imported_stage") or {}
+        result.append(
+            {
+                "stage_id": project.active_stage_id or "active-stage",
+                "stage_number": imported.get("stage_number") or project.scoring.stage_number or 1,
+                "stage_name": imported.get("stage_name") or "Stage 1",
+                "metrics": asdict(presentation.metrics),
+                "scoring_summary": dict(presentation.metrics.scoring_summary),
+                "scoring": asdict(project.scoring),
+                "comparison_competitors": deepcopy(project.scoring.comparison_competitors),
+                "split_rows": [asdict(row) for row in compute_split_rows(project)],
+                "timing_segments": [asdict(segment) for segment in presentation.timing_segments],
+            }
+        )
+    return result
+
+
+def _build_match_metrics(
+    stage_metrics: list[dict[str, Any]], project: Project | None = None
+) -> dict[str, Any]:
+    metric_rows = [entry.get("metrics", {}) for entry in stage_metrics]
+    summaries = [entry.get("scoring_summary", {}) for entry in stage_metrics]
+    draws = [
+        float(metrics["draw_ms"]) for metrics in metric_rows if metrics.get("draw_ms") is not None
+    ]
+    split_values = [
+        float(row["split_ms"])
+        for entry in stage_metrics
+        for row in entry.get("split_rows", [])
+        if row.get("shot_id") and row.get("split_ms") is not None
+    ]
+    raw_values = [
+        float(metrics["raw_time_ms"])
+        for metrics in metric_rows
+        if metrics.get("raw_time_ms") is not None
+    ]
+    shot_points = sum(float(summary.get("shot_points") or 0.0) for summary in summaries)
+    total_penalties = sum(float(summary.get("total_penalties") or 0.0) for summary in summaries)
+    final_times = [
+        float(summary["final_time"])
+        for summary in summaries
+        if summary.get("final_time") is not None
+    ]
+    first_summary = next((summary for summary in summaries if summary), {})
+    imported_match = next(
+        (
+            summary.get("imported_stage", {})
+            for summary in summaries
+            if (summary.get("imported_stage") or {}).get("match_final_time") is not None
+        ),
+        {},
+    )
+    mode = str(first_summary.get("mode") or "")
+    raw_seconds = sum(raw_values) / 1000.0
+    if imported_match:
+        result_value = float(imported_match["match_final_time"])
+        result_label = "Final"
+        display_value = f"{result_value:.2f}"
+    elif mode == "hit_factor":
+        adjusted_points = max(0.0, shot_points - total_penalties)
+        result_value = None if raw_seconds <= 0 else adjusted_points / raw_seconds
+        result_label = "Combined HF"
+        display_value = "--" if result_value is None else f"{result_value:.2f}"
+    else:
+        result_value = sum(final_times) if final_times else None
+        result_label = "Final"
+        display_value = "--" if result_value is None else f"{result_value:.2f}"
+    points_down = (
+        float(imported_match.get("match_points_down") or 0.0)
+        if imported_match
+        else sum(
+            float((summary.get("imported_stage") or {}).get("aggregate_points") or 0.0)
+            for summary in summaries
+            if (summary.get("imported_stage") or {}).get("match_type") == "idpa"
+        )
+    )
+    direct_penalties = (
+        float(imported_match.get("match_penalties") or 0.0) if imported_match else None
+    )
+    score_label = "Points Down" if imported_match.get("match_type") == "idpa" else "Shot Points"
+    score_value = points_down if score_label == "Points Down" else shot_points
+    return {
+        "stage_count": int(imported_match.get("match_stage_count") or len(stage_metrics)),
+        "draw_ms": None if not draws else round(sum(draws) / len(draws)),
+        "raw_time_ms": (
+            None if imported_match else (None if not raw_values else round(sum(raw_values)))
+        ),
+        "total_shots": sum(int(metrics.get("total_shots") or 0) for metrics in metric_rows),
+        "average_split_ms": (
+            None if not split_values else round(sum(split_values) / len(split_values))
+        ),
+        "beep_ms": None,
+        "shot_points": shot_points,
+        "points_down": points_down,
+        "score_label": score_label,
+        "score_value": score_value,
+        "total_penalties": total_penalties if direct_penalties is None else direct_penalties,
+        "penalty_counts": dict(imported_match.get("match_penalty_counts") or {}),
+        "result_label": result_label,
+        "result_value": result_value,
+        "display_value": display_value,
+        "ruleset": first_summary.get("ruleset", ""),
+        "sport": first_summary.get("sport", ""),
+        "spreadsheet_authoritative": bool(imported_match),
+        "competitor": imported_match.get("competitor_name", ""),
+        "division": imported_match.get("division", ""),
+        "classification": imported_match.get("classification", ""),
+        "overall_place": imported_match.get("competitor_place"),
+        "division_placement": (
+            competition_placement(project, dimension="division") if project else ""
+        ),
+        "class_placement": (
+            competition_placement(project, dimension="classification") if project else ""
+        ),
+        "overall_placement": competition_placement(project) if project else "",
+    }
 
 
 def _trim_payload_is_active(trim_payload: dict[str, Any] | None) -> bool:
@@ -178,6 +375,8 @@ def browser_state(
         row.shot_id: row for row in compute_split_rows(shotml_project) if row.shot_id is not None
     }
     presentation = build_stage_presentation(project)
+    stage_metrics = _build_stage_metrics(project)
+    match_metrics = _build_match_metrics(stage_metrics, project)
     scoring_summary = dict(presentation.metrics.scoring_summary)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
     practiscore_payload = deepcopy(practiscore_options or {})
@@ -344,6 +543,8 @@ def browser_state(
         "settings": settings or {},
         "settings_layers": settings_layers or {},
         "metrics": asdict(presentation.metrics),
+        "stage_metrics": stage_metrics,
+        "match_metrics": match_metrics,
         "timing_segments": timing_segments_payload,
         "split_rows": split_rows_payload,
         "scoring_summary": scoring_summary,

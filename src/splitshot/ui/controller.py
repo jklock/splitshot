@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import UTC, datetime
@@ -49,6 +50,7 @@ from splitshot.domain.models import (
     OutputProfile,
     OutputProfileKind,
     OverlayPosition,
+    OverlaySettings,
     OverlayTextBox,
     PipSize,
     PopupBubble,
@@ -67,11 +69,20 @@ from splitshot.domain.models import (
     TimingEvent,
     UIState,
     VideoAsset,
+    _combined_export_settings_from_dict,
     _deserialize_output_profiles,
+    _export_from_dict,
+    _intro_outro_clip_from_dict,
+    _merge_from_dict,
     _merge_source_from_dict,
     _normalize_frame_profile,
+    _normalize_output_profile_export_settings,
+    _overlay_from_dict,
     _popup_bubble_from_dict,
+    _popup_template_from_dict,
+    _queue_settings_from_dict,
     _serialize_output_profiles,
+    _shotml_settings_from_dict,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
@@ -79,10 +90,11 @@ from splitshot.domain.models import (
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
-from splitshot.media.ffmpeg import MediaError, trim_video
+from splitshot.media.ffmpeg import MediaError, run_ffmpeg, run_ffprobe_json, trim_video
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
+    INTRO_OUTRO_DIRNAME,
     POPUP_DIRNAME,
     PRACTISCORE_DIRNAME,
     copy_path_to_project_subdir,
@@ -2040,6 +2052,10 @@ class ProjectController(QObject):
         self._practiscore_source_path = resolved_path
         self._practiscore_source_name = display_name
         self._practiscore_options = options
+        comparison_changed = self._refresh_practiscore_comparisons_for_all_stages(
+            resolved_path,
+            display_name,
+        )
         summary_metrics_changed = False
         for stage in self.project.stages:
             imported_box = next(
@@ -2119,7 +2135,7 @@ class ProjectController(QObject):
             )
         except ValueError:
             self._practiscore_comparison_competitors = []
-        return changed or recovered_from_folder
+        return changed or recovered_from_folder or comparison_changed
 
     def _project_input_candidates(self) -> list[tuple[Path, VideoAsset]]:
         if self.project_path is None:
@@ -2261,6 +2277,7 @@ class ProjectController(QObject):
     def _refresh_practiscore_comparison_for_active_stage(self) -> None:
         if self._practiscore_source_path is None:
             self._practiscore_comparison_competitors = []
+            self.project.scoring.comparison_competitors = []
             return
         try:
             normalized = normalize_downloaded_practiscore_artifact(
@@ -2270,6 +2287,7 @@ class ProjectController(QObject):
             )
         except ValueError:
             self._practiscore_comparison_competitors = []
+            self.project.scoring.comparison_competitors = []
             return
         self._set_practiscore_comparison_competitors(normalized.stage_import.comparison_competitors)
 
@@ -2333,7 +2351,18 @@ class ProjectController(QObject):
     def _set_practiscore_comparison_competitors(
         self, competitors: Iterable[PractiScoreCompetitorOption]
     ) -> None:
-        self._practiscore_comparison_competitors = [
+        self._practiscore_comparison_competitors = self._comparison_competitor_payloads(
+            competitors
+        )
+        self.project.scoring.comparison_competitors = deepcopy(
+            self._practiscore_comparison_competitors
+        )
+
+    @staticmethod
+    def _comparison_competitor_payloads(
+        competitors: Iterable[PractiScoreCompetitorOption],
+    ) -> list[dict[str, object]]:
+        return [
             {
                 "name": c.name,
                 "place": c.place,
@@ -2350,6 +2379,46 @@ class ProjectController(QObject):
             }
             for c in competitors
         ]
+
+    def _refresh_practiscore_comparisons_for_all_stages(
+        self,
+        path: Path,
+        source_name: str,
+    ) -> bool:
+        changed = False
+        active_payloads: list[dict[str, object]] = []
+        for stage in self.project.stages:
+            scoring = stage.scoring
+            imported = scoring.imported_stage
+            if imported is None:
+                continue
+            try:
+                normalized = normalize_downloaded_practiscore_artifact(
+                    path,
+                    source_name=source_name,
+                    match_type=scoring.match_type or imported.match_type or None,
+                    stage_number=imported.stage_number or stage.imported_stage_number,
+                    competitor_name=scoring.competitor_name or imported.competitor_name or None,
+                    competitor_place=scoring.competitor_place or imported.competitor_place,
+                    classification=scoring.classification or imported.classification or None,
+                    division=scoring.division or imported.division or None,
+                )
+            except ValueError:
+                continue
+            payloads = self._comparison_competitor_payloads(
+                normalized.stage_import.comparison_competitors
+            )
+            if scoring.comparison_competitors != payloads:
+                scoring.comparison_competitors = deepcopy(payloads)
+                changed = True
+            if stage.id == self.project.active_stage_id:
+                active_payloads = payloads
+        if active_payloads:
+            self._practiscore_comparison_competitors = deepcopy(active_payloads)
+            if self.project.scoring.comparison_competitors != active_payloads:
+                self.project.scoring.comparison_competitors = deepcopy(active_payloads)
+                changed = True
+        return changed
 
     def _import_practiscore_source(
         self,
@@ -2686,6 +2755,27 @@ class ProjectController(QObject):
         stage.merge = deepcopy(self.project.merge)
         stage.export = deepcopy(self.project.export)
 
+    def _cascade_active_presentation_settings(self) -> None:
+        """Waterfall video presentation settings to later stages without overrides."""
+        active = self.project.active_stage
+        if active is None:
+            return
+        self._sync_project_to_active_stage()
+        active.presentation_overridden = True
+        for stage in self.project.stages:
+            if stage.order_index <= active.order_index or stage.presentation_overridden:
+                continue
+            stage.overlay = deepcopy(active.overlay)
+            stage.popups = deepcopy(active.popups)
+            stage.popup_template = deepcopy(active.popup_template)
+            stage.merge = deepcopy(active.merge)
+            stage.export = deepcopy(active.export)
+            stage.export.output_path = None
+            stage.export.last_log = ""
+            stage.export.last_error = None
+            self._mark_stage_queue_stale(stage.id)
+        self._mark_stage_queue_stale(active.id)
+
     def _active_stage_label(self) -> str:
         stage = self.project.active_stage
         return stage.label if stage else "?"
@@ -2969,6 +3059,61 @@ class ProjectController(QObject):
 
     # --- Queue management ---
 
+    def set_queue_settings(
+        self,
+        *,
+        fade_in_s: float,
+        fade_out_s: float,
+        include_intro: bool | None = None,
+        include_outro: bool | None = None,
+    ) -> None:
+        values = (float(fade_in_s), float(fade_out_s))
+        if any(value < 0 or not math.isfinite(value) for value in values):
+            raise ValueError("Fade durations must be finite nonnegative seconds.")
+        self.project.queue_settings.fade_in_s = values[0]
+        self.project.queue_settings.fade_out_s = values[1]
+        if include_intro is not None:
+            self.project.queue_settings.include_intro = bool(include_intro)
+        if include_outro is not None:
+            self.project.queue_settings.include_outro = bool(include_outro)
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_in_out_media(self, kind: str, path: str) -> str:
+        normalized_kind = str(kind or "").strip().lower()
+        if normalized_kind not in {"intro", "outro"}:
+            raise ValueError("Intro / Outro media kind must be intro or outro.")
+        if self.project_path is None:
+            raise ValueError("Create or open a project before selecting Intro / Outro media.")
+        source_path = str(path or "").strip()
+        if not source_path:
+            setattr(self.project.queue_settings, f"{normalized_kind}_path", "")
+            getattr(self.project, f"{normalized_kind}_clip").asset = VideoAsset()
+            setattr(self.project.queue_settings, f"include_{normalized_kind}", False)
+            self.project.touch()
+            self.project_changed.emit()
+            return ""
+        asset = probe_video(source_path)
+        if asset.is_still_image or asset.media_kind == "animated_gif":
+            raise ValueError("Queue intro and outro files must be videos.")
+        staged_path = copy_path_to_project_subdir(
+            self.project_path,
+            source_path,
+            INTRO_OUTRO_DIRNAME,
+        )
+        setattr(self.project.queue_settings, f"{normalized_kind}_path", staged_path)
+        getattr(self.project, f"{normalized_kind}_clip").asset = probe_video(staged_path)
+        setattr(self.project.queue_settings, f"include_{normalized_kind}", True)
+        label = "Intro" if normalized_kind == "intro" else "Outro"
+        self._set_status(f"Selected {label} video: {Path(staged_path).name}")
+        self.project.touch()
+        self.project_changed.emit()
+        return staged_path
+
+    def set_queue_boundary_media(self, kind: str, path: str) -> str:
+        """Compatibility alias for projects and callers using the former Queue ownership."""
+        return self.set_in_out_media(kind, path)
+
     def add_stage_to_queue(self, stage_id: str) -> None:
         stage = self._stage_by_id(stage_id)
         if stage is None:
@@ -3047,7 +3192,12 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def process_queue(self, mode: str = "individual") -> None:
+    def process_queue(
+        self,
+        mode: str = "individual",
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
         if mode not in ("individual", "combined"):
             raise ValueError("Mode must be 'individual' or 'combined'")
         queued = [
@@ -3062,6 +3212,53 @@ class ProjectController(QObject):
         output_dir = self._ensure_output_dir()
         results: list[Path] = []
         self.project.last_combined_output_path = ""
+        boundary_media = [
+            (kind, Path(path))
+            for kind, path, included in (
+                (
+                    "Intro",
+                    self.project.intro_clip.asset.path or self.project.queue_settings.intro_path,
+                    self.project.queue_settings.include_intro,
+                ),
+                (
+                    "Outro",
+                    self.project.outro_clip.asset.path or self.project.queue_settings.outro_path,
+                    self.project.queue_settings.include_outro,
+                ),
+            )
+            if mode == "combined" and included and str(path or "").strip()
+        ]
+        for label, path in boundary_media:
+            if not path.is_file():
+                raise ValueError(f"Queue {label.lower()} file is missing: {path}")
+        total_units = len(queued) + (len(boundary_media) if mode == "combined" else 0) + (
+            1 if mode == "combined" else 0
+        )
+
+        def report_progress(
+            *,
+            stage_progress: float,
+            stage_index: int,
+            stage_label: str,
+            phase: str = "render",
+        ) -> None:
+            if progress_callback is None:
+                return
+            overall = min(
+                0.999,
+                max(0.0, (stage_index + max(0.0, min(1.0, stage_progress))) / total_units),
+            )
+            progress_callback(
+                {
+                    "progress": overall,
+                    "stage_progress": max(0.0, min(1.0, stage_progress)),
+                    "stage_index": stage_index + 1,
+                    "stage_count": len(queued),
+                    "stage_label": stage_label,
+                    "mode": mode,
+                    "phase": phase,
+                }
+            )
 
         try:
             for idx, entry in enumerate(
@@ -3072,15 +3269,30 @@ class ProjectController(QObject):
                 if stage is None:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = "Stage not found"
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=f"Stage {idx + 1}",
+                        phase="failed",
+                    )
                     continue
                 if not stage.primary_media.path:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = "No primary media"
+                    stage.queue_status = QueueStatus.FAILED
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                        phase="failed",
+                    )
                     continue
                 stage.queue_status = QueueStatus.PROCESSING
                 self._set_status(f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}...")
                 self.project.active_stage_id = stage.id
                 self._sync_active_stage_to_project()
+                self._refresh_practiscore_comparison_for_active_stage()
+                self._sync_project_to_active_stage()
                 slug = self._stage_slug(stage)
                 output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
                 render_path = self._temporary_output_path(output_path)
@@ -3090,8 +3302,19 @@ class ProjectController(QObject):
                     export_project(
                         self.project,
                         str(render_path),
-                        progress_callback=None,
-                        log_callback=None,
+                        progress_callback=lambda value, idx=idx, label=stage.label: report_progress(
+                            stage_progress=value,
+                            stage_index=idx,
+                            stage_label=label,
+                        ),
+                        log_callback=log_callback,
+                        fade_in_s=(
+                            self.project.queue_settings.fade_in_s if mode == "individual" else 0.0
+                        ),
+                        fade_out_s=(
+                            self.project.queue_settings.fade_out_s if mode == "individual" else 0.0
+                        ),
+                        fade_audio=mode == "individual",
                     )
                     self._validate_rendered_output(render_path)
                     render_path.replace(output_path)
@@ -3104,6 +3327,11 @@ class ProjectController(QObject):
                     stage.last_processed_at = entry.processed_at
                     self._sync_project_to_active_stage()
                     results.append(output_path)
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                    )
                     self._set_status(f"Completed stage {idx + 1}/{len(queued)}: {stage.label}")
                 except Exception as exc:  # noqa: BLE001 - isolate failures per queued stage.
                     render_path.unlink(missing_ok=True)
@@ -3111,15 +3339,151 @@ class ProjectController(QObject):
                     entry.error_message = str(exc)
                     stage.queue_status = QueueStatus.FAILED
                     self._sync_project_to_active_stage()
+                    report_progress(
+                        stage_progress=1.0,
+                        stage_index=idx,
+                        stage_label=stage.label,
+                        phase="failed",
+                    )
                     self._set_status(f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}")
 
             if mode == "combined" and len(results) >= 1:
-                combined_path = self._concat_outputs(results, output_dir)
+                prepared_boundary_paths: list[Path] = []
+                sequence_results = list(results)
+                try:
+                    for boundary_index, (label, source_path) in enumerate(boundary_media):
+                        normalized_path = self._prepare_queue_boundary_clip(
+                            source_path,
+                            results[0],
+                            output_dir,
+                            label.lower(),
+                            apply_fades=False,
+                            log_callback=log_callback,
+                        )
+                        try:
+                            overlay_path = self._render_queue_boundary_overlay(
+                                label.lower(),
+                                normalized_path,
+                                output_dir,
+                                progress_callback=(
+                                    None
+                                    if progress_callback is None
+                                    else lambda value, boundary_index=boundary_index, label=label: progress_callback(
+                                        {
+                                            "progress": min(
+                                                0.999,
+                                                (len(queued) + boundary_index + value)
+                                                / total_units,
+                                            ),
+                                            "stage_progress": value,
+                                            "stage_index": len(queued),
+                                            "stage_count": len(queued),
+                                            "stage_label": label,
+                                            "mode": mode,
+                                            "phase": "boundary",
+                                        }
+                                    )
+                                ),
+                                log_callback=log_callback,
+                            )
+                            try:
+                                prepared_path = self._prepare_queue_boundary_clip(
+                                    overlay_path,
+                                    results[0],
+                                    output_dir,
+                                    label.lower(),
+                                    log_callback=log_callback,
+                                )
+                            finally:
+                                overlay_path.unlink(missing_ok=True)
+                        finally:
+                            normalized_path.unlink(missing_ok=True)
+                        prepared_boundary_paths.append(prepared_path)
+                        if label == "Intro":
+                            sequence_results.insert(0, prepared_path)
+                        else:
+                            sequence_results.append(prepared_path)
+                        if progress_callback is not None:
+                            completed_units = len(queued) + boundary_index + 1
+                            progress_callback(
+                                {
+                                    "progress": min(0.999, completed_units / total_units),
+                                    "stage_progress": 1.0,
+                                    "stage_index": len(queued),
+                                    "stage_count": len(queued),
+                                    "stage_label": label,
+                                    "mode": mode,
+                                    "phase": "boundary",
+                                }
+                            )
+                    report_progress(
+                        stage_progress=0.0,
+                        stage_index=len(queued),
+                        stage_label="Combined output",
+                        phase="combine",
+                    )
+                    combined_path = self._concat_outputs(sequence_results, output_dir)
+                    report_progress(
+                        stage_progress=0.55,
+                        stage_index=len(queued),
+                        stage_label="Combined output",
+                        phase="combine",
+                    )
+                    self._apply_queue_fades_to_file(
+                        combined_path,
+                        fade_in_s=(
+                            0.0
+                            if self.project.queue_settings.include_intro
+                            and self.project.intro_clip.asset.path
+                            else None
+                        ),
+                        fade_out_s=(
+                            0.0
+                            if self.project.queue_settings.include_outro
+                            and self.project.outro_clip.asset.path
+                            else None
+                        ),
+                        log_callback=log_callback,
+                    )
+                finally:
+                    for prepared_path in prepared_boundary_paths:
+                        prepared_path.unlink(missing_ok=True)
                 self._validate_rendered_output(combined_path)
                 self.project.last_combined_output_path = str(combined_path)
-                self._set_status(f"Combined export complete: {combined_path}")
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "progress": 1.0,
+                            "stage_progress": 1.0,
+                            "stage_index": len(queued),
+                            "stage_count": len(queued),
+                            "stage_label": "Combined output",
+                            "mode": mode,
+                            "phase": "complete",
+                        }
+                    )
+                failed_count = sum(1 for entry in queued if entry.status == QueueStatus.FAILED)
+                self._set_status(
+                    f"Combined export complete: {combined_path} "
+                    f"({len(results)} succeeded, {failed_count} failed)."
+                )
             else:
-                self._set_status(f"Processed {len(results)} stage(s).")
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "progress": 1.0,
+                            "stage_progress": 1.0,
+                            "stage_index": len(queued),
+                            "stage_count": len(queued),
+                            "stage_label": "Queue",
+                            "mode": mode,
+                            "phase": "complete",
+                        }
+                    )
+                failed_count = sum(1 for entry in queued if entry.status == QueueStatus.FAILED)
+                self._set_status(
+                    f"Queue finished: {len(results)} succeeded, {failed_count} failed."
+                )
         finally:
             self.project.active_stage_id = original_active_stage_id
             if self.project.active_stage:
@@ -3160,6 +3524,334 @@ class ProjectController(QObject):
             return combined_path
         except Exception:
             temp_combined_path.unlink(missing_ok=True)
+            raise
+
+    def _apply_queue_fades_to_file(
+        self,
+        output_path: Path,
+        *,
+        fade_in_s: float | None = None,
+        fade_out_s: float | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        fade_in_s = (
+            self.project.queue_settings.fade_in_s if fade_in_s is None else float(fade_in_s)
+        )
+        fade_out_s = (
+            self.project.queue_settings.fade_out_s if fade_out_s is None else float(fade_out_s)
+        )
+        if fade_in_s <= 0 and fade_out_s <= 0:
+            return
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        info = json.loads(probe.stdout)
+        duration_s = float(info.get("format", {}).get("duration") or 0.0)
+        from splitshot.export.pipeline import _normalized_output_fades
+
+        fade_in_s, fade_out_s = _normalized_output_fades(fade_in_s, fade_out_s, duration_s)
+        video_filters: list[str] = []
+        audio_filters: list[str] = []
+        if fade_in_s > 0:
+            video_filters.append(f"fade=t=in:st=0:d={fade_in_s:.3f}:color=black")
+            audio_filters.append(f"afade=t=in:st=0:d={fade_in_s:.3f}")
+        if fade_out_s > 0:
+            start_s = max(0.0, duration_s - fade_out_s)
+            video_filters.append(f"fade=t=out:st={start_s:.3f}:d={fade_out_s:.3f}:color=black")
+            audio_filters.append(f"afade=t=out:st={start_s:.3f}:d={fade_out_s:.3f}")
+        has_audio = any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
+        faded_path = self._temporary_output_path(output_path)
+        codec = "libx265" if self.project.export.video_codec == ExportVideoCodec.HEVC else "libx264"
+        command = [
+            "-i",
+            str(output_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-vf",
+            ",".join(video_filters),
+            "-c:v",
+            codec,
+            "-preset",
+            self.project.export.ffmpeg_preset,
+            "-b:v",
+            f"{self.project.export.video_bitrate_mbps:g}M",
+        ]
+        if has_audio:
+            command.extend(
+                [
+                    "-af",
+                    ",".join(audio_filters),
+                    "-c:a",
+                    self.project.export.audio_codec.value,
+                    "-ar",
+                    str(self.project.export.audio_sample_rate),
+                    "-b:a",
+                    f"{self.project.export.audio_bitrate_kbps}k",
+                ]
+            )
+        else:
+            command.append("-an")
+        command.extend(["-movflags", "+faststart", str(faded_path)])
+        try:
+            run_ffmpeg(command, log_callback=log_callback)
+            self._validate_rendered_output(faded_path)
+            faded_path.replace(output_path)
+        finally:
+            faded_path.unlink(missing_ok=True)
+
+    def _match_summary_overlay_text(self, metric_ids: list[str]) -> str:
+        from splitshot.browser.state import _build_match_metrics, _build_stage_metrics
+
+        metrics = _build_match_metrics(_build_stage_metrics(self.project), self.project)
+        scoring = self.project.scoring
+        aliases = {
+            "match_result": "score_time",
+            "shot_points": "points_down",
+            "division": "division_placement",
+            "classification": "class_placement",
+            "overall_place": "overall_placement",
+        }
+        requested = list(dict.fromkeys(aliases.get(metric_id, metric_id) for metric_id in metric_ids))
+        values = {
+            "score_time": str(metrics.get("display_value") or ""),
+            "raw_time": (
+                ""
+                if metrics.get("raw_time_ms") is None
+                else f"{float(metrics['raw_time_ms']) / 1000.0:.2f}s"
+            ),
+            "stage_count": str(metrics.get("stage_count") or ""),
+            "total_shots": str(metrics.get("total_shots") or ""),
+            "points_down": f"{float(metrics.get('points_down') or 0):g}",
+            "penalties": f"{float(metrics.get('total_penalties') or 0):g}",
+            "competitor": str(metrics.get("competitor") or scoring.competitor_name),
+            "division_placement": " - ".join(
+                part
+                for part in (
+                    str(metrics.get("division") or scoring.division),
+                    str(metrics.get("division_placement") or ""),
+                )
+                if part
+            ),
+            "class_placement": " - ".join(
+                part
+                for part in (
+                    str(metrics.get("classification") or scoring.classification),
+                    str(metrics.get("class_placement") or ""),
+                )
+                if part
+            ),
+            "overall_placement": str(metrics.get("overall_placement") or ""),
+        }
+        labels = {
+            "score_time": str(metrics.get("result_label") or "Final"),
+            "raw_time": "Raw Time",
+            "stage_count": "Stages",
+            "total_shots": "Shots",
+            "points_down": "Points Down",
+            "penalties": "Penalties",
+            "competitor": "Competitor",
+            "division_placement": "Division",
+            "class_placement": "Class",
+            "overall_placement": "Overall",
+        }
+        return "\n".join(
+            f"{labels[metric_id]} {values[metric_id]}"
+            for metric_id in requested
+            if values.get(metric_id)
+        )
+
+    def _render_queue_boundary_overlay(
+        self,
+        kind: str,
+        source_path: Path,
+        output_dir: Path,
+        *,
+        progress_callback: Callable[[float], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> Path:
+        clip = getattr(self.project, f"{kind}_clip")
+        boundary_project = deepcopy(self.project)
+        boundary_project.stages = []
+        boundary_project.active_stage_id = ""
+        boundary_project.primary_video = probe_video(source_path)
+        boundary_project.primary_trim_derivative = MergeSourceTrimDerivative()
+        boundary_project.secondary_video = None
+        boundary_project.merge_sources = []
+        boundary_project.analysis = AnalysisState()
+        boundary_project.scoring.enabled = False
+        boundary_project.overlay = deepcopy(clip.overlay)
+        boundary_project.popups = []
+        boundary_project.merge.enabled = False
+        for box in boundary_project.overlay.text_boxes:
+            if box.source != "match_summary":
+                continue
+            box.text = self._match_summary_overlay_text(box.summary_metric_ids)
+            box.source = "manual"
+        rendered_path = self._temporary_output_path(output_dir / f"queue-{kind}-overlay.mp4")
+        from splitshot.export.pipeline import export_project
+
+        try:
+            export_project(
+                boundary_project,
+                str(rendered_path),
+                progress_callback=progress_callback,
+                log_callback=log_callback,
+            )
+            self._validate_rendered_output(rendered_path)
+            return rendered_path
+        except Exception:
+            rendered_path.unlink(missing_ok=True)
+            raise
+
+    def _prepare_queue_boundary_clip(
+        self,
+        source_path: Path,
+        reference_path: Path,
+        output_dir: Path,
+        kind: str,
+        *,
+        apply_fades: bool = True,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> Path:
+        source_info = run_ffprobe_json(source_path)
+        reference_info = run_ffprobe_json(reference_path)
+        source_duration_s = float(source_info.get("format", {}).get("duration") or 0.0)
+        if source_duration_s <= 0:
+            raise RuntimeError(f"Queue {kind} has no measurable duration: {source_path}")
+        reference_video = next(
+            (
+                stream
+                for stream in reference_info.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            None,
+        )
+        if reference_video is None:
+            raise RuntimeError(f"Queue reference output has no video: {reference_path}")
+        width = max(2, int(reference_video.get("width") or 0))
+        height = max(2, int(reference_video.get("height") or 0))
+        frame_rate = str(reference_video.get("avg_frame_rate") or "30/1")
+        source_has_audio = any(
+            stream.get("codec_type") == "audio" for stream in source_info.get("streams", [])
+        )
+        reference_audio = next(
+            (
+                stream
+                for stream in reference_info.get("streams", [])
+                if stream.get("codec_type") == "audio"
+            ),
+            None,
+        )
+        from splitshot.export.pipeline import _normalized_output_fades
+
+        clip = getattr(self.project, f"{kind}_clip", None)
+        if clip is None:
+            raise ValueError("Queue boundary kind must be intro or outro.")
+        fade_in_s, fade_out_s = (
+            _normalized_output_fades(
+                clip.fade_in_s,
+                clip.fade_out_s,
+                source_duration_s,
+            )
+            if apply_fades
+            else (0.0, 0.0)
+        )
+        video_filters = [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black",
+            "setsar=1",
+            f"fps={frame_rate}",
+            "format=yuv420p",
+        ]
+        audio_filters: list[str] = []
+        if fade_in_s > 0:
+            video_filters.append(f"fade=t=in:st=0:d={fade_in_s:.3f}:color=black")
+            audio_filters.append(f"afade=t=in:st=0:d={fade_in_s:.3f}")
+        if fade_out_s > 0:
+            fade_out_start = max(0.0, source_duration_s - fade_out_s)
+            video_filters.append(
+                f"fade=t=out:st={fade_out_start:.3f}:d={fade_out_s:.3f}:color=black"
+            )
+            audio_filters.append(f"afade=t=out:st={fade_out_start:.3f}:d={fade_out_s:.3f}")
+        sample_rate = int((reference_audio or {}).get("sample_rate") or 48000)
+        channel_layout = str((reference_audio or {}).get("channel_layout") or "stereo")
+        prepared_path = self._temporary_output_path(output_dir / f"queue-{kind}.mp4")
+        codec = "libx265" if self.project.export.video_codec == ExportVideoCodec.HEVC else "libx264"
+        command = ["-i", str(source_path)]
+        if reference_audio is not None and not source_has_audio:
+            command.extend(
+                [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"anullsrc=r={sample_rate}:cl={channel_layout}",
+                ]
+            )
+        command.extend(
+            [
+                "-map",
+                "0:v:0",
+                "-vf",
+                ",".join(video_filters),
+                "-c:v",
+                codec,
+                "-preset",
+                self.project.export.ffmpeg_preset,
+                "-b:v",
+                f"{self.project.export.video_bitrate_mbps:g}M",
+            ]
+        )
+        if reference_audio is not None:
+            command.extend(["-map", "0:a:0" if source_has_audio else "1:a:0"])
+            normalized_audio_filters = [
+                f"aresample={sample_rate}",
+                f"aformat=sample_rates={sample_rate}:channel_layouts={channel_layout}",
+                *audio_filters,
+            ]
+            command.extend(
+                [
+                    "-af",
+                    ",".join(normalized_audio_filters),
+                    "-c:a",
+                    self.project.export.audio_codec.value,
+                    "-ar",
+                    str(sample_rate),
+                    "-b:a",
+                    f"{self.project.export.audio_bitrate_kbps}k",
+                ]
+            )
+        else:
+            command.append("-an")
+        command.extend(
+            [
+                "-t",
+                f"{source_duration_s:.3f}",
+                "-movflags",
+                "+faststart",
+                str(prepared_path),
+            ]
+        )
+        try:
+            run_ffmpeg(command, log_callback=log_callback)
+            self._validate_rendered_output(prepared_path)
+            return prepared_path
+        except Exception:
+            prepared_path.unlink(missing_ok=True)
             raise
 
     def _validate_rendered_output(self, output_path: Path) -> None:
@@ -3367,12 +4059,30 @@ class ProjectController(QObject):
         derivative_dir.mkdir(parents=True, exist_ok=True)
         return derivative_dir
 
+    def _trimmed_derivative_path(self, source_file: Path) -> str:
+        stage = self.project.active_stage
+        stage_number = (
+            stage.imported_stage_number
+            if stage is not None and stage.imported_stage_number is not None
+            else (stage.order_index if stage is not None else 1)
+        )
+        timestamp = datetime.now().astimezone()
+        stem = f"Trim_Stage{stage_number}_{timestamp:%H-%M-%S}_{timestamp:%Y-%m-%d}"
+        directory = self._trimmed_media_dir() or source_file.parent
+        candidate = directory / f"{stem}.mp4"
+        suffix = 2
+        while candidate.exists():
+            candidate = directory / f"{stem}_{suffix}.mp4"
+            suffix += 1
+        return str(candidate)
+
     def _apply_primary_trim(
         self,
         *,
         start_s: float | None = None,
         end_s: float | None = None,
         clear: bool = False,
+        log_callback: Callable[[str], None] | None = None,
     ) -> None:
         if clear:
             self.project.primary_trim_derivative = MergeSourceTrimDerivative(
@@ -3391,14 +4101,15 @@ class ProjectController(QObject):
         if not source_path:
             raise ValueError("Primary video has no asset path")
         source_file = Path(source_path)
-        derivative_dir = self._trimmed_media_dir()
-        derivative_path = (
-            str(derivative_dir / f"primary_trim_{uuid4().hex}.mp4")
-            if derivative_dir is not None
-            else str(source_file.with_name(f"{source_file.stem}_primary_trim_{uuid4().hex}.mp4"))
-        )
+        derivative_path = self._trimmed_derivative_path(source_file)
         try:
-            trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+            trim_video(
+                source_path,
+                derivative_path,
+                start_s=start_s,
+                end_s=end_s,
+                log_callback=log_callback,
+            )
             derivative_asset = probe_video(derivative_path)
         except Exception as exc:
             Path(derivative_path).unlink(missing_ok=True)
@@ -3419,6 +4130,7 @@ class ProjectController(QObject):
         start_s: float | None = None,
         end_s: float | None = None,
         clear: bool = False,
+        log_callback: Callable[[str], None] | None = None,
     ) -> None:
         if clear:
             source.trim_derivative = MergeSourceTrimDerivative(original_path=source.asset.path)
@@ -3432,16 +4144,15 @@ class ProjectController(QObject):
         if not source_path:
             raise ValueError("Merge source has no asset path")
         source_file = Path(source_path)
-        derivative_dir = self._trimmed_media_dir()
-        derivative_path = (
-            str(derivative_dir / f"{source.id}_trim_{uuid4().hex}.mp4")
-            if derivative_dir is not None
-            else str(
-                source_file.with_name(f"{source_file.stem}_{source.id}_trim_{uuid4().hex}.mp4")
-            )
-        )
+        derivative_path = self._trimmed_derivative_path(source_file)
         try:
-            trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+            trim_video(
+                source_path,
+                derivative_path,
+                start_s=start_s,
+                end_s=end_s,
+                log_callback=log_callback,
+            )
             derivative_asset = probe_video(derivative_path)
         except Exception as exc:
             Path(derivative_path).unlink(missing_ok=True)
@@ -3576,11 +4287,60 @@ class ProjectController(QObject):
         keep_before_beep_s: float | None = None,
         keep_after_last_shot_s: float | None = None,
         clear: bool = False,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
     ) -> None:
-        primary_source_count = 1 if self.project.primary_video.path else 0
-        total_source_count = primary_source_count + len(self.project.merge_sources)
+        primary_is_trimmable = bool(
+            self.project.primary_video.path
+            and not self.project.primary_video.is_still_image
+            and self.project.primary_video.media_kind != "animated_gif"
+        )
+        trimmable_sources = [
+            source
+            for source in self.project.merge_sources
+            if clear or _source_supports_secondary_analysis(source)
+        ]
+        primary_source_count = 1 if primary_is_trimmable else 0
+        total_source_count = primary_source_count + len(trimmable_sources)
         if total_source_count == 0:
             return
+        stage = self.project.active_stage
+        stage_label = stage.label if stage is not None else "Active stage"
+        completed_count = 0
+
+        def report_file(path: str) -> None:
+            nonlocal completed_count
+            completed_count += 1
+            if progress_callback is None:
+                return
+            progress_callback(
+                {
+                    "progress": min(0.99, completed_count / total_source_count),
+                    "file_index": completed_count,
+                    "file_count": total_source_count,
+                    "stage_index": 1,
+                    "stage_count": 1,
+                    "stage_label": stage_label,
+                    "media_label": Path(path).name,
+                    "phase": "file",
+                    "action": "clear" if clear else "trim",
+                }
+            )
+
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "progress": 0.0,
+                    "file_index": 0,
+                    "file_count": total_source_count,
+                    "stage_index": 1,
+                    "stage_count": 1,
+                    "stage_label": stage_label,
+                    "media_label": "",
+                    "phase": "start",
+                    "action": "clear" if clear else "trim",
+                }
+            )
         self._set_status(
             "Clearing trim derivatives..."
             if clear
@@ -3593,20 +4353,15 @@ class ProjectController(QObject):
                 keep_before_beep_s=keep_before_beep_s,
                 keep_after_last_shot_s=keep_after_last_shot_s,
             )
-        primary_is_trimmable = bool(
-            self.project.primary_video.path
-            and not self.project.primary_video.is_still_image
-            and self.project.primary_video.media_kind != "animated_gif"
-        )
         if primary_is_trimmable:
             self._apply_primary_trim(
                 start_s=primary_start_s,
                 end_s=primary_end_s,
                 clear=clear,
+                log_callback=log_callback,
             )
-        for source in self.project.merge_sources:
-            if not _source_supports_secondary_analysis(source) and not clear:
-                continue
+            report_file(self.project.primary_video.path)
+        for source in trimmable_sources:
             next_start_s = start_s
             next_end_s = end_s
             if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):
@@ -3620,7 +4375,9 @@ class ProjectController(QObject):
                 start_s=next_start_s,
                 end_s=next_end_s,
                 clear=clear,
+                log_callback=log_callback,
             )
+            report_file(source.asset.path)
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
         if self.project.primary_video.path:
@@ -3634,6 +4391,20 @@ class ProjectController(QObject):
         )
         self.project.touch()
         self.project_changed.emit()
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "progress": 1.0,
+                    "file_index": total_source_count,
+                    "file_count": total_source_count,
+                    "stage_index": 1,
+                    "stage_count": 1,
+                    "stage_label": stage_label,
+                    "media_label": "",
+                    "phase": "complete",
+                    "action": "clear" if clear else "trim",
+                }
+            )
 
     def trim_selected_stages(
         self,
@@ -3644,6 +4415,8 @@ class ProjectController(QObject):
         keep_before_beep_s: float | None = None,
         keep_after_last_shot_s: float | None = None,
         clear: bool = False,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
     ) -> None:
         requested_ids = list(dict.fromkeys(str(stage_id) for stage_id in stage_ids))
         selected_stages = [
@@ -3657,16 +4430,76 @@ class ProjectController(QObject):
         self._sync_project_to_active_stage()
         original_active_stage_id = self.project.active_stage_id
         processed_count = 0
+        total_file_count = sum(
+            (
+                1
+                if stage.primary_media.path
+                and not stage.primary_media.is_still_image
+                and stage.primary_media.media_kind != "animated_gif"
+                else 0
+            )
+            + sum(
+                1
+                for source in stage.added_media
+                if clear or _source_supports_secondary_analysis(source)
+            )
+            for stage in selected_stages
+        )
+        completed_file_count = 0
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "progress": 0.0,
+                    "file_index": 0,
+                    "file_count": total_file_count,
+                    "stage_index": 0,
+                    "stage_count": len(selected_stages),
+                    "stage_label": "",
+                    "media_label": "",
+                    "phase": "start",
+                    "action": "clear" if clear else "trim",
+                }
+            )
         try:
-            for stage in selected_stages:
+            for stage_index, stage in enumerate(selected_stages, start=1):
                 self.project.active_stage_id = stage.id
                 self._sync_active_stage_to_project()
+
+                def report_stage_file(
+                    detail: dict[str, Any],
+                    *,
+                    current_stage_index: int = stage_index,
+                    current_stage: ProjectStage = stage,
+                ) -> None:
+                    nonlocal completed_file_count
+                    if detail.get("phase") != "file":
+                        return
+                    completed_file_count += 1
+                    if progress_callback is None:
+                        return
+                    progress_callback(
+                        {
+                            **detail,
+                            "progress": min(
+                                0.99,
+                                completed_file_count / max(1, total_file_count),
+                            ),
+                            "file_index": completed_file_count,
+                            "file_count": total_file_count,
+                            "stage_index": current_stage_index,
+                            "stage_count": len(selected_stages),
+                            "stage_label": current_stage.label,
+                        }
+                    )
+
                 self.trim_all_merge_sources(
                     start_s=start_s,
                     end_s=end_s,
                     keep_before_beep_s=keep_before_beep_s,
                     keep_after_last_shot_s=keep_after_last_shot_s,
                     clear=clear,
+                    progress_callback=report_stage_file,
+                    log_callback=log_callback,
                 )
                 processed_count += 1
         finally:
@@ -3683,6 +4516,20 @@ class ProjectController(QObject):
         )
         self.project.touch()
         self.project_changed.emit()
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "progress": 1.0,
+                    "file_index": total_file_count,
+                    "file_count": total_file_count,
+                    "stage_index": len(selected_stages),
+                    "stage_count": len(selected_stages),
+                    "stage_label": "",
+                    "media_label": "",
+                    "phase": "complete",
+                    "action": "clear" if clear else "trim",
+                }
+            )
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
@@ -4426,6 +5273,7 @@ class ProjectController(QObject):
         self.settings.overlay_position = position
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4436,6 +5284,7 @@ class ProjectController(QObject):
         self.settings.badge_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4445,11 +5294,41 @@ class ProjectController(QObject):
         )
         self.project.overlay.spacing = max(0, min(40, int(spacing)))
         self.project.overlay.margin = max(0, min(40, int(margin)))
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def set_overlay_display_options(self, payload: dict[str, object]) -> None:
-        overlay = self.project.overlay
+        self._set_overlay_display_options(payload, self.project.overlay, cascade=True)
+
+    def set_intro_outro_overlay(self, kind: str, payload: dict[str, object]) -> None:
+        normalized_kind = str(kind or "").strip().lower()
+        if normalized_kind not in {"intro", "outro"}:
+            raise ValueError("Intro/Outro overlay kind must be intro or outro.")
+        clip = getattr(self.project, f"{normalized_kind}_clip")
+        self._set_overlay_display_options(payload, clip.overlay, cascade=False)
+
+    def set_intro_outro_fades(
+        self, kind: str, *, fade_in_s: float, fade_out_s: float
+    ) -> None:
+        normalized_kind = str(kind or "").strip().lower()
+        if normalized_kind not in {"intro", "outro"}:
+            raise ValueError("Intro / Outro fade kind must be intro or outro.")
+        values = (float(fade_in_s), float(fade_out_s))
+        if any(value < 0 or not math.isfinite(value) for value in values):
+            raise ValueError("Fade durations must be finite nonnegative seconds.")
+        clip = getattr(self.project, f"{normalized_kind}_clip")
+        clip.fade_in_s, clip.fade_out_s = values
+        self.project.touch()
+        self.project_changed.emit()
+
+    def _set_overlay_display_options(
+        self,
+        payload: dict[str, object],
+        overlay: OverlaySettings,
+        *,
+        cascade: bool,
+    ) -> None:
         existing_text_boxes = list(overlay.text_boxes)
         valid_quadrants = {
             "above_final",
@@ -4466,7 +5345,7 @@ class ProjectController(QObject):
         valid_shot_quadrants = {*valid_quadrants, "custom"}
         valid_custom_box_quadrants = {*valid_quadrants, "custom"}
         valid_directions = {"right", "left", "down", "up"}
-        valid_custom_box_modes = {"manual", "imported_summary"}
+        valid_custom_box_modes = {"manual", "imported_summary", "match_summary"}
         if "max_visible_shots" in payload:
             overlay.max_visible_shots = max(1, min(40, int(payload["max_visible_shots"])))
         if "shot_quadrant" in payload:
@@ -4593,6 +5472,8 @@ class ProjectController(QObject):
                         box.x = 0.5
                     if box.y is None:
                         box.y = 0.5
+                if box.source in {"imported_summary", "match_summary"}:
+                    box.text = ""
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)
@@ -4618,6 +5499,8 @@ class ProjectController(QObject):
                 normalized_color = str(color or "").strip()
                 if normalized_score_key and normalized_color:
                     overlay.scoring_colors[normalized_score_key] = normalized_color
+        if cascade:
+            self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4638,12 +5521,13 @@ class ProjectController(QObject):
         template_payload = payload.get("popup_template")
         if isinstance(template_payload, dict):
             _popup_template_from_payload(self.project.popup_template, template_payload)
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def set_merge_enabled(self, enabled: bool) -> None:
         self.project.merge.enabled = enabled
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4652,7 +5536,7 @@ class ProjectController(QObject):
         self.settings.merge_layout = layout
         save_settings(self.settings)
         self.settings_changed.emit()
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4662,13 +5546,13 @@ class ProjectController(QObject):
         self.settings.pip_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def set_pip_size_percent(self, percent: int) -> None:
         self.project.merge.pip_size_percent = max(1, min(95, int(percent)))
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4677,7 +5561,7 @@ class ProjectController(QObject):
             self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
         if pip_y is not None:
             self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -4743,7 +5627,7 @@ class ProjectController(QObject):
     def reset_merge_defaults(self) -> None:
         self.project.merge.enabled = False
         _reset_project_merge_defaults(self.project)
-        self._sync_project_to_active_stage()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self._set_status("Restored PiP defaults.")
         self.project_changed.emit()
@@ -4796,12 +5680,14 @@ class ProjectController(QObject):
         self.settings.export_quality = quality
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
     def apply_export_preset(self, preset: str) -> None:
         if preset == ExportPreset.CUSTOM.value:
             self.project.export.preset = ExportPreset.CUSTOM
+            self._cascade_active_presentation_settings()
             self.project.touch()
             self.project_changed.emit()
             return
@@ -4809,6 +5695,7 @@ class ProjectController(QObject):
         self.settings.export_quality = self.project.export.quality
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._cascade_active_presentation_settings()
         self.project_changed.emit()
 
     def set_export_settings(self, payload: dict[str, object]) -> None:
@@ -4877,6 +5764,7 @@ class ProjectController(QObject):
                 export.output_path = None
         if manual_override_keys.intersection(payload):
             export.preset = ExportPreset.CUSTOM
+        self._cascade_active_presentation_settings()
         self.project.touch()
         self.project_changed.emit()
 
@@ -5065,7 +5953,65 @@ class ProjectController(QObject):
             },
         }
 
-    def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
+    def _capture_current_project_defaults(
+        self,
+        existing: dict[str, object],
+        *,
+        section: str | None,
+    ) -> dict[str, object]:
+        """Snapshot every persistent control owned by the requested Settings section."""
+        captured = deepcopy(existing)
+        project_payload = project_to_dict(self.project)
+        section_name = str(section or "all").strip().lower()
+
+        if section_name in {"all", "overlay"}:
+            captured["overlay"] = deepcopy(project_payload.get("overlay", {}))
+        if section_name in {"all", "pip"}:
+            captured["merge"] = deepcopy(project_payload.get("merge", {}))
+        if section_name in {"all", "markers"}:
+            captured["popup_template"] = deepcopy(project_payload.get("popup_template", {}))
+        if section_name in {"all", "export"}:
+            export = deepcopy(project_payload.get("export", {}))
+            if isinstance(export, dict):
+                for runtime_key in ("output_path", "last_log", "last_error"):
+                    export.pop(runtime_key, None)
+                captured["export"] = export
+        if section_name in {"all", "shotml"}:
+            analysis = project_payload.get("analysis", {})
+            if isinstance(analysis, dict):
+                captured["shotml_settings"] = deepcopy(analysis.get("shotml_settings", {}))
+        if section_name == "all":
+            queue_settings = deepcopy(project_payload.get("queue_settings", {}))
+            if isinstance(queue_settings, dict):
+                for media_key in (
+                    "intro_path",
+                    "outro_path",
+                    "include_intro",
+                    "include_outro",
+                ):
+                    queue_settings.pop(media_key, None)
+                captured["queue_settings"] = queue_settings
+            captured["combined_export_settings"] = deepcopy(
+                project_payload.get("combined_export_settings", {})
+            )
+            for kind in ("intro", "outro"):
+                clip = project_payload.get(f"{kind}_clip", {})
+                if isinstance(clip, dict):
+                    captured[f"{kind}_clip_settings"] = {
+                        "fade_in_s": clip.get("fade_in_s", 0.5),
+                        "fade_out_s": clip.get("fade_out_s", 0.5),
+                        "overlay": deepcopy(clip.get("overlay", {})),
+                    }
+        return captured
+
+    def set_settings_defaults(
+        self,
+        payload: dict[str, object],
+        *,
+        scope: str = "app",
+        section: str | None = None,
+        capture_current_project: bool = False,
+    ) -> None:
         template_action = str(payload.get("template_action") or "").strip().lower()
         if template_action:
             template_name = (
@@ -5101,6 +6047,11 @@ class ProjectController(QObject):
             else self.settings
         )
         target = AppSettings.from_dict(base.to_dict())
+        if capture_current_project:
+            target.project_defaults = self._capture_current_project_defaults(
+                target.project_defaults,
+                section=section,
+            )
         if "default_match_type" in payload:
             default_match_type = str(payload["default_match_type"] or "").strip().lower()
             if default_match_type:
@@ -5310,6 +6261,21 @@ class ProjectController(QObject):
         if keys is None:
             raise ValueError("Unknown settings section.")
         rebuild_with_updates({key: fallback_config.get(key) for key in keys})
+        project_defaults_key = {
+            "pip": "merge",
+            "overlay": "overlay",
+            "markers": "popup_template",
+            "export": "export",
+            "shotml": "shotml_settings",
+        }.get(section_name)
+        if project_defaults_key:
+            fallback_project_defaults = fallback.project_defaults
+            if scope == "folder" and project_defaults_key in fallback_project_defaults:
+                target.project_defaults[project_defaults_key] = deepcopy(
+                    fallback_project_defaults[project_defaults_key]
+                )
+            else:
+                target.project_defaults.pop(project_defaults_key, None)
 
         if scope == "folder":
             if self.project_path is None:
@@ -5449,7 +6415,10 @@ class ProjectController(QObject):
         return [output_profile_to_dict(p) for p in self._output_profiles]
 
     def create_output_profile(
-        self, profile_name: str, profile_kind: str = "stage_output"
+        self,
+        profile_name: str,
+        profile_kind: str = "stage_output",
+        export_settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         from splitshot.domain.models import OutputProfileKind, output_profile_to_dict
 
@@ -5463,6 +6432,9 @@ class ProjectController(QObject):
             scope_id=Path(self.project_path or "").name,
             profile_name=profile_name or "New Profile",
             profile_kind=kind,
+            export_settings=_normalize_output_profile_export_settings(
+                export_settings if export_settings is not None else asdict(self.project.export)
+            ),
         )
         self._output_profiles.append(profile)
         self._sync_output_profiles_to_disk()
@@ -5497,7 +6469,34 @@ class ProjectController(QObject):
                 profile.review_source_id = str(value)
             elif key == "last_rendered_at":
                 profile.last_rendered_at = str(value)
+            elif key == "export_settings":
+                profile.export_settings = _normalize_output_profile_export_settings(value)
         self._sync_output_profiles_to_disk()
+        return output_profile_to_dict(profile)
+
+    def apply_output_profile(self, output_id: str) -> dict[str, Any]:
+        from splitshot.domain.models import output_profile_to_dict
+
+        profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
+        if profile is None:
+            raise ValueError(f"Output profile {output_id} not found")
+        if profile.export_settings:
+            self.set_export_settings(profile.export_settings)
+            preset = profile.export_settings.get("preset")
+            if preset is not None:
+                self.project.export.preset = ExportPreset(str(preset))
+        frame_aspect = {
+            "16:9": AspectRatio.LANDSCAPE,
+            "9:16": AspectRatio.PORTRAIT,
+            "1:1": AspectRatio.SQUARE,
+            "4:5": AspectRatio.PORTRAIT_45,
+        }.get(profile.frame_profile)
+        if frame_aspect is not None:
+            self.project.export.aspect_ratio = frame_aspect
+        self._cascade_active_presentation_settings()
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Applied output profile {profile.profile_name}.")
         return output_profile_to_dict(profile)
 
     def delete_output_profile(self, output_id: str) -> bool:
@@ -5634,6 +6633,47 @@ class ProjectController(QObject):
         project.overlay.text_boxes = [
             OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
         ]
+        saved_project_defaults = effective.project_defaults
+        saved_overlay = saved_project_defaults.get("overlay")
+        if isinstance(saved_overlay, dict):
+            project.overlay = _overlay_from_dict(saved_overlay)
+        saved_merge = saved_project_defaults.get("merge")
+        if isinstance(saved_merge, dict):
+            project.merge = _merge_from_dict(saved_merge)
+        saved_export = saved_project_defaults.get("export")
+        if isinstance(saved_export, dict):
+            project.export = _export_from_dict(saved_export)
+            project.export.output_path = None
+            project.export.last_log = ""
+            project.export.last_error = None
+        saved_popup_template = saved_project_defaults.get("popup_template")
+        if isinstance(saved_popup_template, dict):
+            project.popup_template = _popup_template_from_dict(saved_popup_template)
+        saved_shotml = saved_project_defaults.get("shotml_settings")
+        if isinstance(saved_shotml, dict):
+            project.analysis.shotml_settings = _shotml_settings_from_dict(saved_shotml)
+            project.analysis.detection_threshold = (
+                project.analysis.shotml_settings.detection_threshold
+            )
+        saved_queue_settings = saved_project_defaults.get("queue_settings")
+        if isinstance(saved_queue_settings, dict):
+            project.queue_settings = _queue_settings_from_dict(saved_queue_settings)
+            project.queue_settings.intro_path = ""
+            project.queue_settings.outro_path = ""
+            project.queue_settings.include_intro = False
+            project.queue_settings.include_outro = False
+        saved_combined_export = saved_project_defaults.get("combined_export_settings")
+        if isinstance(saved_combined_export, dict):
+            project.combined_export_settings = _combined_export_settings_from_dict(
+                saved_combined_export
+            )
+        for kind in ("intro", "outro"):
+            saved_clip = saved_project_defaults.get(f"{kind}_clip_settings")
+            if not isinstance(saved_clip, dict):
+                continue
+            clip = _intro_outro_clip_from_dict(saved_clip, "")
+            clip.asset = VideoAsset()
+            setattr(project, f"{kind}_clip", clip)
         if effective.layout_locked is not None:
             project.ui_state.layout_locked = bool(effective.layout_locked)
         if effective.layout_rail_width is not None:
@@ -5693,6 +6733,9 @@ class ProjectController(QObject):
         output_dir.mkdir(parents=True, exist_ok=True)
         self.project.output_root = str(output_dir)
         return output_dir
+
+    def output_dir(self) -> Path:
+        return self._ensure_output_dir()
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

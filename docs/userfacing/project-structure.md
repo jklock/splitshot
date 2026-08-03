@@ -10,6 +10,7 @@ My Project/
   Input/
   CSV/
   Markers/
+  IntroOutro/
   Output/
 ```
 
@@ -21,6 +22,7 @@ My Project/
 | `Input/` | Project-managed primary and added stage media, plus generated trim derivatives. |
 | `CSV/` | Project-managed PractiScore CSV/TXT sources. |
 | `Markers/` | Project-managed marker images. |
+| `IntroOutro/` | Optional project-managed match intro and outro videos. |
 | `Output/` | Rendered exports. |
 
 ## File Ownership
@@ -35,7 +37,7 @@ My Project/
 
 The complete project folder can therefore be moved or archived as one portable unit.
 
-These rules are platform-independent. Windows paths, macOS paths, and Linux paths are normalized when saved; the project metadata stores project-relative paths rather than operating-system-specific absolute paths. `Open Project Folder` uses File Explorer on Windows, Finder on macOS, and the configured file manager on Linux.
+These rules are platform-independent. Windows paths, macOS paths, and Linux paths are normalized when saved; the project metadata stores project-relative paths rather than operating-system-specific absolute paths. `Open Project` selects an existing SplitShot project directory through the platform folder picker.
 
 ## Multi-Stage Notes
 

@@ -31,7 +31,7 @@ The frontend has been modularized into ES modules with clear boundaries:
 
 `index.html` is organized into these major regions:
 
-- the left rail with Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, Queue, Metrics, ShotML, and Settings tools
+- the left rail with Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, In / Out, Queue, Metrics, ShotML, and Settings tools
 - the persistent top status bar that shows the selected video name or \`No Video Selected\` and keeps the shared layout lock in the upper-right corner
 - the review grid with the stage preview, waveform, timing workbench, and inspector
 - inspector panes for project metadata, stage media, composition, trimming, scoring, timing, markers, overlays, review text boxes, export settings, queue execution, metrics, ShotML, and settings
@@ -52,10 +52,13 @@ The main loop is:
 - Layout sizing uses CSS variables such as `--app-height`, `--rail-width`, `--inspector-width`, and `--waveform-height`.
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
+- Overlay, Review, Compose, and Export presentation edits waterfall from the active stage to later stages until a later stage is edited directly. Review auto-summary values remain stage-specific, and Queue renders the same configured boxes, metrics, badges, and placement shown in preview.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
-- Metrics centers post-stage analysis around Shot / Interval Timeline, Split / Interval Bar Chart, Run Comparison Overlay, and Stage Segment Breakdown, while CSV/text exports mirror the same current run state.
+- The In / Out sidebar item opens the Intro / Outro pane, which stores project-managed boundary videos, persists independent audio/video fades, previews text boxes through the same overlay contract as stage exports, and offers selectable match-level result fields.
+- Metrics begins with Match Metrics and a collapsed Stage Breakdown tree, with complete stage-specific cards, graphs, scoring context, and shot rows inside each branch.
 - Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.
-- Export progress uses the processing bar, which temporarily occupies the full top status row, plus the live export log modal.
+- Queue and multi-stage Trim processing use the green processing bar for aggregate per-video progress. Their shared live processing log is available from the pane that starts the work.
+- Export profiles persist framing and ffmpeg controls. The Intro / Outro pane owns boundary media and overlays. Queue owns inclusion choices, execution, project-level fades, and output-folder reveal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
 ## Editing Notes
@@ -72,3 +75,12 @@ The main loop is:
 - Draft state protects active edits until the server confirms the same value. Successful server state remains authoritative without interrupting the active interaction.
 - Stage defaults waterfall only into later stages that still inherit that field; directly customized stage values remain owned by that stage.
 - When adding a new pane, create a `panes/<name>-pane.js` module, import it in `app.js`, create its HTML section in `index.html`, and register it in the global compat bridge if needed.
+
+## Rendering and persistence rules
+
+- Ordinary value commits update existing controls in place whenever pane structure is unchanged.
+- Structural actions rebuild only their owned component. Full synchronization is reserved for pane entry, project load, stage switch, and explicit reset.
+- Pointer interactions defer server-driven rendering until the gesture commits or cancels; the active control remains connected throughout the gesture.
+- Every complete-state API response is ordered against all other complete-state mutations, not only its route family. An older response cannot overwrite a newer interaction.
+- Draft state protects active edits until the server confirms the same value. Successful server state remains authoritative without interrupting the active interaction.
+- Stage presentation defaults waterfall only into later stages that still inherit that field; directly customized stage values remain owned by that stage.

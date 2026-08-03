@@ -21,6 +21,7 @@ from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
     display_name_for_path,
+    find_free_port,
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
@@ -166,6 +167,18 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/primary/trim": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
+    "/api/project/in-out/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/queue/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/fades": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/overlay": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
 }
 
 PROJECT_LIFECYCLE_POST_ROUTES = {
@@ -185,9 +198,12 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/output-profiles/create",
     "/api/output-profiles/update",
     "/api/output-profiles/delete",
+    "/api/output-profiles/apply",
     "/api/output-profiles/render",
     "/api/project/probe",
     "/api/project/reveal",
+    "/api/project/output/reveal",
+    "/api/project/queue/settings",
     "/api/project/select-stage",
     "/api/project/stage/create",
     "/api/project/stage/delete",
@@ -430,6 +446,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
         keep_before_beep_s=None,
         keep_after_last_shot_s=None,
         clear=False,
+        progress_callback=None,
+        log_callback=None,
     ) -> None:
         captured.update(
             {
@@ -439,6 +457,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
                 "keep_before_beep_s": keep_before_beep_s,
                 "keep_after_last_shot_s": keep_after_last_shot_s,
                 "clear": clear,
+                "has_progress_callback": callable(progress_callback),
+                "has_log_callback": callable(log_callback),
             }
         )
 
@@ -465,6 +485,8 @@ def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
         "keep_before_beep_s": 1.5,
         "keep_after_last_shot_s": 2.5,
         "clear": False,
+        "has_progress_callback": True,
+        "has_log_callback": True,
     }
 
 
@@ -490,6 +512,28 @@ def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) 
         assert len(calls) == 1
     finally:
         httpd.server_close()
+
+
+def test_find_free_port_reuses_recently_released_desktop_port(monkeypatch) -> None:
+    options: list[tuple[int, int, int]] = []
+
+    class ReusableSocket:
+        def setsockopt(self, level: int, option: int, value: int) -> None:
+            options.append((level, option, value))
+
+        def bind(self, address: tuple[str, int]) -> None:
+            assert options[-1] == (
+                browser_server_module.socket.SOL_SOCKET,
+                browser_server_module.socket.SO_REUSEADDR,
+                1,
+            )
+            assert address == ("127.0.0.1", 8765)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(browser_server_module.socket, "socket", lambda *_args: ReusableSocket())
+    assert find_free_port("127.0.0.1", 8765) == 8765
 
 
 def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
@@ -1707,7 +1751,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": False,
-            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
 
         (project_path / "project.json").write_text("{}", encoding="utf-8")
@@ -1719,7 +1763,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": True,
-            "missing_required_dirs": ["Input", "CSV", "Markers", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
     finally:
         server.shutdown()
@@ -2276,6 +2320,32 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert len(saved["analysis"]["shots"]) == len(
             uploaded_primary["project"]["analysis"]["shots"]
         )
+
+        _post_json(
+            f"{server.url}api/project/in-out/media",
+            {"kind": "intro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/queue/media",
+            {"kind": "outro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/fades",
+            {"kind": "intro", "fade_in_s": 0.7, "fade_out_s": 0.9},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/overlay",
+            {"kind": "intro", "show_timer": True, "show_shots": False},
+        )
+        saved = _read_project_json(project_path)
+        assert Path(saved["queue_settings"]["intro_path"]).parent.name == "IntroOutro"
+        assert Path(saved["queue_settings"]["outro_path"]).parent.name == "IntroOutro"
+        assert saved["queue_settings"]["include_intro"] is True
+        assert saved["queue_settings"]["include_outro"] is True
+        assert saved["intro_clip"]["fade_in_s"] == pytest.approx(0.7)
+        assert saved["intro_clip"]["fade_out_s"] == pytest.approx(0.9)
+        assert saved["intro_clip"]["overlay"]["show_timer"] is True
+        assert saved["intro_clip"]["overlay"]["show_shots"] is False
 
         uploaded_secondary = _post_multipart(
             f"{server.url}api/files/secondary",

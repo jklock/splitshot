@@ -6,25 +6,27 @@ import argparse
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from _media_fixtures import ensure_stage_video
 from playwright.sync_api import (
     Browser,
     BrowserType,
     Page,
     Playwright,
-    TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
 )
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
-from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
@@ -417,7 +419,6 @@ def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
         threshold_after,
     )
     page.wait_for_function("() => window.__auditHeldShotMLResponseStarted === true")
-
     page.locator("[data-tool='scoring']").click()
     scoring_before = page.locator("#scoring-enabled").is_checked()
     scoring_after = not scoring_before
@@ -455,7 +456,6 @@ def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
     project_file = Path(settled["project_path"]) / "project.json"
     if project_file.is_file():
         stored_enabled = bool(json.loads(project_file.read_text(encoding="utf-8"))["scoring"]["enabled"])
-
     page.locator("[data-tool='export']").click()
     page.locator("[data-tool='scoring']").click()
     after_navigation = page.locator("#scoring-enabled").is_checked()
@@ -465,7 +465,6 @@ def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
         arg=scoring_after,
     )
     after_reopen = page.locator("#scoring-enabled").is_checked()
-
     return expect(
         immediate_threshold == {
             "value": threshold_after,

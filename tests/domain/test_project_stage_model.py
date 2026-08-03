@@ -9,11 +9,15 @@ from splitshot.domain.models import (
     QueueStatus,
     CombinedExportSettings,
     CombinedExportMode,
+    OutputProfile,
+    QueueSettings,
     VideoAsset,
     project_to_dict,
     project_from_dict,
     stage_to_dict,
     _stage_from_dict,
+    output_profile_from_dict,
+    output_profile_to_dict,
 )
 
 
@@ -24,6 +28,9 @@ def test_project_has_stages_and_queue_fields():
     assert p.queue == []
     assert p.schema_version == 1
     assert isinstance(p.combined_export_settings, CombinedExportSettings)
+    assert isinstance(p.queue_settings, QueueSettings)
+    assert p.queue_settings.fade_in_s == 0.5
+    assert p.queue_settings.fade_out_s == 0.5
 
 
 def test_project_stage_defaults():
@@ -163,6 +170,7 @@ def test_stage_to_dict_and_back():
             path="/tmp/test.mp4", duration_ms=8000, width=1920, height=1080, fps=29.97
         ),
         queue_status=QueueStatus.QUEUED,
+        presentation_overridden=True,
     )
     d = stage_to_dict(s)
     assert d["id"] == "abc"
@@ -170,6 +178,7 @@ def test_stage_to_dict_and_back():
     assert d["order_index"] == 3
     assert d["primary_media"]["path"] == "/tmp/test.mp4"
     assert d["queue_status"] == "queued"
+    assert d["presentation_overridden"] is True
 
     s2 = _stage_from_dict(d)
     assert s2.id == "abc"
@@ -177,6 +186,23 @@ def test_stage_to_dict_and_back():
     assert s2.order_index == 3
     assert s2.primary_media.path == "/tmp/test.mp4"
     assert s2.queue_status == QueueStatus.QUEUED
+    assert s2.presentation_overridden is True
+
+
+def test_review_comparison_context_round_trips_for_export() -> None:
+    project = Project()
+    project.scoring.comparison_competitors = [
+        {
+            "name": "Other Shooter",
+            "place": 2,
+            "division": "Carry Optics",
+            "classification": "Sharpshooter",
+        }
+    ]
+
+    restored = project_from_dict(project_to_dict(project))
+
+    assert restored.scoring.comparison_competitors == project.scoring.comparison_competitors
 
 
 def test_legacy_with_merge_sources_migrates_correctly():
@@ -244,6 +270,51 @@ def test_project_serializes_combined_export_settings():
     assert ces["separator_enabled"] is True
     assert ces["separator_duration_s"] == 1.0
     assert ces["separator_text"] == "Next Stage"
+
+
+def test_project_round_trips_queue_fade_settings():
+    project = Project()
+    project.queue_settings.fade_in_s = 0.75
+    project.queue_settings.fade_out_s = 1.25
+
+    restored = project_from_dict(project_to_dict(project))
+
+    assert restored.queue_settings.fade_in_s == 0.75
+    assert restored.queue_settings.fade_out_s == 1.25
+
+
+def test_queue_settings_migrate_invalid_values_to_defaults():
+    project = Project()
+    project.schema_version = 2
+    payload = project_to_dict(project)
+    payload["queue_settings"] = {"fade_in_s": "bad", "fade_out_s": -1}
+
+    restored = project_from_dict(payload)
+
+    assert restored.queue_settings.fade_in_s == 0.5
+    assert restored.queue_settings.fade_out_s == 0.5
+
+
+def test_output_profile_validates_persistent_export_settings():
+    profile = OutputProfile(
+        profile_name="Vertical",
+        export_settings={
+            "quality": "medium",
+            "aspect_ratio": "9:16",
+            "video_codec": "h264",
+            "video_bitrate_mbps": 12,
+            "output_path": "/ignored/output.mp4",
+            "last_log": "ignored",
+        },
+    )
+
+    restored = output_profile_from_dict(output_profile_to_dict(profile))
+
+    assert restored.export_settings["quality"] == "medium"
+    assert restored.export_settings["aspect_ratio"] == "9:16"
+    assert restored.export_settings["video_bitrate_mbps"] == 12
+    assert "output_path" not in restored.export_settings
+    assert "last_log" not in restored.export_settings
 
 
 def test_schema_version_bumped_on_save():

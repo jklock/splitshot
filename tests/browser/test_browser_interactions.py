@@ -15,7 +15,6 @@ from splitshot.scoring.practiscore_web_extract import (
 )
 from splitshot.ui.controller import ProjectController
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 
@@ -309,6 +308,127 @@ def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypa
         server.shutdown()
 
 
+def test_reordered_cross_domain_response_cannot_overwrite_newer_single_click(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "reordered-response.ssproj"
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate("path => createNewProject(path)", str(project_path))
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                page.evaluate(
+                    """() => {
+                      const originalFetch = window.fetch.bind(window);
+                      let releaseHeldResponse;
+                      const heldResponse = new Promise((resolve) => { releaseHeldResponse = resolve; });
+                      window.__releaseHeldShotMLResponse = releaseHeldResponse;
+                      window.__heldShotMLResponseStarted = false;
+                      window.fetch = async (...args) => {
+                        const requestPath = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+                        const response = await originalFetch(...args);
+                        if (requestPath === '/api/analysis/shotml-settings'
+                            && !window.__heldShotMLResponseStarted) {
+                          window.__heldShotMLResponseStarted = true;
+                          await heldResponse;
+                        }
+                        return response;
+                      };
+                    }"""
+                )
+
+                _open_tool(page, "shotml")
+                threshold_before = float(page.locator("#threshold").input_value())
+                threshold_after = 0.41 if abs(threshold_before - 0.41) > 0.001 else 0.42
+                page.evaluate(
+                    """(value) => {
+                      const control = document.getElementById('threshold');
+                      window.__thresholdEvents = { input: 0, change: 0 };
+                      control.addEventListener('input', () => { window.__thresholdEvents.input += 1; });
+                      control.addEventListener('change', () => { window.__thresholdEvents.change += 1; });
+                      control.focus();
+                      control.value = String(value);
+                      control.dispatchEvent(new Event('input', { bubbles: true }));
+                      control.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    threshold_after,
+                )
+                assert page.evaluate("document.getElementById('threshold').value") == str(
+                    threshold_after
+                )
+                assert page.evaluate("window.__thresholdEvents") == {"input": 1, "change": 1}
+                page.wait_for_function("() => window.__heldShotMLResponseStarted === true")
+
+                _open_tool(page, "scoring")
+                scoring_before = page.locator("#scoring-enabled").is_checked()
+                scoring_after = not scoring_before
+                page.evaluate(
+                    """() => {
+                      const control = document.getElementById('scoring-enabled');
+                      window.__scoringEnabledNode = control;
+                      window.__scoringEvents = { click: 0, change: 0 };
+                      control.addEventListener('click', () => { window.__scoringEvents.click += 1; });
+                      control.addEventListener('change', () => { window.__scoringEvents.change += 1; });
+                      control.click();
+                    }"""
+                )
+                immediate = page.evaluate(
+                    """() => ({
+                      checked: window.__scoringEnabledNode.checked,
+                      connected: window.__scoringEnabledNode.isConnected,
+                      events: window.__scoringEvents,
+                    })"""
+                )
+                assert immediate == {
+                    "checked": scoring_after,
+                    "connected": True,
+                    "events": {"click": 1, "change": 1},
+                }
+                page.wait_for_function(
+                    "expected => state?.project?.scoring?.enabled === expected",
+                    arg=scoring_after,
+                )
+                assert controller.project.scoring.enabled is scoring_after
+
+                page.evaluate("window.__releaseHeldShotMLResponse()")
+                page.wait_for_timeout(600)
+                final = page.evaluate(
+                    """() => ({
+                      checked: window.__scoringEnabledNode.checked,
+                      connected: window.__scoringEnabledNode.isConnected,
+                      events: window.__scoringEvents,
+                      state_enabled: state?.project?.scoring?.enabled,
+                    })"""
+                )
+                assert final == {
+                    "checked": scoring_after,
+                    "connected": True,
+                    "events": {"click": 1, "change": 1},
+                    "state_enabled": scoring_after,
+                }
+
+                stored = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+                assert stored["scoring"]["enabled"] is scoring_after
+                _open_tool(page, "export")
+                _open_tool(page, "scoring")
+                assert page.locator("#scoring-enabled").is_checked() is scoring_after
+
+                page.evaluate("path => useProjectFolder(path)", str(project_path))
+                page.wait_for_function(
+                    "expected => state?.project?.scoring?.enabled === expected",
+                    arg=scoring_after,
+                )
+                assert page.locator("#scoring-enabled").is_checked() is scoring_after
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_project_controls_enable_and_media_stays_stage_gated_after_project_create(
     tmp_path: Path,
 ) -> None:
@@ -329,7 +449,7 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 )
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
-                assert page.locator("#open-project-folder").is_disabled() is True
+                assert page.locator("#open-project").is_enabled() is True
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
 
@@ -340,12 +460,46 @@ def test_project_controls_enable_and_media_stays_stage_gated_after_project_creat
                 _open_tool(page, "project")
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is False
                 assert page.locator("#import-practiscore").is_disabled() is False
-                assert page.locator("#open-project-folder").is_disabled() is False
+                assert page.locator("#open-project").is_enabled() is True
                 assert page.locator("#project-path").input_value() == "created-project.ssproj"
                 _open_tool(page, "media")
                 assert page.locator("#media-stage-list [data-stage-id]").count() == 0
                 notices.extend(dialogs)
-                assert any("missing Input, CSV, Markers, Output" in message for message in notices)
+                assert any(
+                    "missing Input, CSV, Markers, IntroOutro, Output" in message
+                    for message in notices
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_open_project_button_opens_existing_project_from_folder_picker(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "existing-project.ssproj"
+    saved = ProjectController()
+    saved.project.name = "Existing Project"
+    saved.save_project(str(project_path))
+    server = BrowserControlServer(
+        controller=ProjectController(),
+        port=0,
+        path_chooser=lambda kind, current=None, default_root=None: (
+            str(project_path) if kind == "project_folder" else ""
+        ),
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.get_by_role("button", name="Open Project", exact=True).click()
+                page.wait_for_function(
+                    "() => state?.project?.name === 'Existing Project'"
+                )
+                assert page.locator("#project-path").input_value() == project_path.name
             finally:
                 browser.close()
     finally:
@@ -444,7 +598,10 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
                 assert (project_path / "CSV").is_dir()
                 assert (project_path / "Output").is_dir()
                 assert page.locator("#project-path").input_value() == "partial.ssproj"
-                assert any("missing CSV, Markers, Output" in message for message in dialogs)
+                assert any(
+                    "missing CSV, Markers, IntroOutro, Output" in message
+                    for message in dialogs
+                )
             finally:
                 browser.close()
     finally:
@@ -2613,9 +2770,42 @@ def test_marker_motion_toggle_keeps_current_marker_selected(synthetic_video_fact
                 selected_popup_id = page.evaluate("selectedPopupBubbleId")
                 assert selected_popup_id is not None
 
-                page.locator(
-                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]'
-                ).check()
+                selector = (
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] '
+                    '[data-popup-field="follow_motion"]'
+                )
+                interaction = page.evaluate(
+                    """(selector) => {
+                      const control = document.querySelector(selector);
+                      window.__markerMotionControl = control;
+                      window.__markerMotionEvents = { click: 0, change: 0 };
+                      control.addEventListener("click", () => { window.__markerMotionEvents.click += 1; });
+                      control.addEventListener("change", () => { window.__markerMotionEvents.change += 1; });
+                      const before = control.checked;
+                      const box = control.getBoundingClientRect();
+                      return { before, x: box.left + box.width / 2, y: box.top + box.height / 2 };
+                    }""",
+                    selector,
+                )
+                page.mouse.click(interaction["x"], interaction["y"])
+                immediate = page.evaluate(
+                    """(selector) => {
+                      const control = document.querySelector(selector);
+                      return {
+                        checked: control.checked,
+                        connected: control.isConnected,
+                        same_node: control === window.__markerMotionControl,
+                        events: window.__markerMotionEvents,
+                      };
+                    }""",
+                    selector,
+                )
+                assert immediate == {
+                    "checked": (not interaction["before"]),
+                    "connected": True,
+                    "same_node": True,
+                    "events": {"click": 1, "change": 1},
+                }
                 page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -2624,9 +2814,7 @@ def test_marker_motion_toggle_keeps_current_marker_selected(synthetic_video_fact
                     arg=selected_popup_id,
                 )
 
-                page.locator(
-                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]'
-                ).uncheck()
+                page.mouse.click(interaction["x"], interaction["y"])
                 page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -3692,7 +3880,7 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
                     }"""
                 )
 
-                def set_number(control_id: str, value: int | float) -> None:
+                def set_number(control_id: str, value: float) -> None:
                     page.evaluate(
                         """({ controlId, value }) => {
                             const control = document.getElementById(controlId);
@@ -3784,7 +3972,7 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
         server.shutdown()
 
 
-def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path: Path) -> None:
+def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp_path: Path) -> None:
     controller = ProjectController()
     controller.project.export.last_log = "Encoder command:\nffmpeg -i input"
     server = BrowserControlServer(controller=controller, port=0)
@@ -3793,24 +3981,43 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
-                _open_tool(page, "export")
+                _open_tool(page, "queue")
 
-                page.locator("#show-export-log").click(force=True)
+                page.locator("#queue-show-log").click(force=True)
                 modal = page.locator("#export-log-modal")
                 modal.wait_for(state="visible")
                 assert modal.evaluate("element => element.hidden") is False
                 assert "Encoder command:" in page.locator("#export-log-output").text_content()
                 assert page.locator("#export-export-log").is_disabled() is False
 
+                page.evaluate(
+                    """() => {
+                      activeProcessingPath = '/api/project/queue/process';
+                      setProcessingProgress(37, { allowDecrease: true });
+                      renderExportLog();
+                    }"""
+                )
+                assert page.locator("#queue-show-log").text_content() == "Show Log"
+                assert page.locator("#export-log-summary").text_content() == "Processing in progress • 37%"
+                page.evaluate(
+                    """() => {
+                      state.project.export.last_log = 'Encoder command:\\nffmpeg -i input\\nQueue complete';
+                      activeProcessingPath = null;
+                      renderExportLog();
+                    }"""
+                )
+                assert page.locator("#export-log-summary").text_content() == ""
+                assert page.locator("#export-log-output").text_content().endswith("Queue complete")
+
                 with page.expect_download() as download_info:
                     page.locator("#export-export-log").click()
                 download = download_info.value
-                assert download.suggested_filename.endswith("-export-log.txt")
+                assert download.suggested_filename.endswith("-processing-log.txt")
                 download_target = tmp_path / download.suggested_filename
                 download.save_as(str(download_target))
                 assert (
                     download_target.read_text(encoding="utf-8")
-                    == "Encoder command:\nffmpeg -i input\n"
+                    == "Encoder command:\nffmpeg -i input\nQueue complete\n"
                 )
 
                 page.locator("#close-export-log").click()
@@ -3818,7 +4025,7 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
                     "() => document.getElementById('export-log-modal')?.hidden === true"
                 )
 
-                page.locator("#show-export-log").click(force=True)
+                page.locator("#queue-show-log").click(force=True)
                 page.wait_for_function(
                     "() => document.getElementById('export-log-modal')?.hidden === false"
                 )

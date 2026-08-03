@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 from splitshot.scoring.practiscore import (
     describe_practiscore_file,
-    infer_practiscore_context,
     import_practiscore_stage,
+    infer_practiscore_context,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -96,6 +96,14 @@ def test_import_idpa_stage_results_from_csv() -> None:
     assert result.imported_stage.aggregate_points == 5.0
     assert result.imported_stage.final_time == 39.83
     assert result.imported_stage.score_counts == {"Points Down": 5.0, "Non-Threat": 1.0}
+    assert result.imported_stage.match_final_time == 83.01
+    assert result.imported_stage.match_points_down == 11.0
+    assert result.imported_stage.match_penalties == 2.0
+    assert result.imported_stage.match_stage_count == 4
+    assert result.imported_stage.match_penalty_counts == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
 
 
 def test_import_idpa_stage_time_is_treated_as_raw_time() -> None:
@@ -114,6 +122,45 @@ def test_import_idpa_stage_time_is_treated_as_raw_time() -> None:
     assert result.imported_stage.aggregate_points == 1.0
     assert result.penalty_counts == {}
     assert result.imported_stage.score_counts == {"Points Down": 1.0}
+
+
+def test_idpa_stage_comparison_includes_every_spreadsheet_penalty_type(tmp_path: Path) -> None:
+    source_path = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
+    with source_path.open(newline="", encoding="utf-8-sig") as source:
+        reader = csv.DictReader(source)
+        fieldnames = list(reader.fieldnames or [])
+        rows = list(reader)
+
+    jeff = next(row for row in rows if row["First Name"] == "Jeff" and row["Last Name"] == "Graff")
+    jeff.update(
+        {
+            "Stage 2 Time": "10",
+            "Stage 2 PD": "1",
+            "Stage 2 Hits on Non-Threat": "",
+            "Stage 2 Procedural Error": "",
+            "Stage 2 Failure to Do Right": "1",
+            "Stage 2 Flagrant": "1",
+            "Stage 2 Finger PE": "1",
+        }
+    )
+    changed_path = tmp_path / "all-idpa-penalties.csv"
+    with changed_path.open("w", newline="", encoding="utf-8") as changed:
+        writer = csv.DictWriter(changed, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    result = import_practiscore_stage(
+        changed_path,
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+        source_name=changed_path.name,
+    )
+
+    comparison = next(row for row in result.comparison_competitors if row.name == "Jeff Graff")
+    assert comparison.raw_seconds == 10.0
+    assert comparison.final_time == 44.0
 
 
 def test_import_uspsa_stage_results_from_report_text() -> None:

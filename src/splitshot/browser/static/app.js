@@ -2,6 +2,7 @@ import { createActivityRuntime } from "./lib/activity.js";
 import { createApiRuntime } from "./lib/api.js";
 import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
 import { createExportPane } from "./panes/export-pane.js";
+import { createIntroOutroPane } from "./panes/intro-outro-pane.js";
 import { createMediaPane } from "./panes/media-pane.js";
 import { createMergePane } from "./panes/merge-pane.js";
 import { createMetricsPane } from "./panes/metrics-pane.js";
@@ -197,6 +198,7 @@ let settingsPane = null;
 let mergePane = null;
 let projectPane = null;
 let queuePane = null;
+let introOutroPane = null;
 let reviewPane = null;
 let timingPane = null;
 let scoringPane = null;
@@ -208,7 +210,7 @@ const PROCESSING_BAR_SHOW_DELAY_MS = 180;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
-const ACTIVITY_POLL_INTERVAL_MS = 1000;
+const ACTIVITY_POLL_INTERVAL_MS = 250;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
@@ -344,7 +346,7 @@ function normalizeToolId(tool) {
 
 activeTool = normalizeToolId(activeTool);
 
-const VALID_TOOL_IDS = new Set(["project", "media", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "media", "intro-outro", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -4232,14 +4234,50 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
       anchor_mode: "anchor_mode",
       shot_id: "shot_id",
     }[field] || field;
-    const eventName = control.type === "checkbox" ? "change" : "input";
-    if (field === "shot_id" || field === "anchor_mode") {
-      control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-      return;
+    const syncDependentControls = () => {
+      const updatedBubble = popupBubbles().find((item) => item.id === bubble.id);
+      if (!updatedBubble) return;
+      if (field === "follow_motion") {
+        syncPopupBubbleMotionModeControls(card, updatedBubble);
+        renderPopupBubbleMotionGuide(card, updatedBubble);
+      }
+      if (field === "content_type") {
+        const showText = updatedBubble.content_type !== "image";
+        const showImage = updatedBubble.content_type !== "text";
+        card.querySelector('[data-popup-section="text"]')?.toggleAttribute("hidden", !showText);
+        card.querySelectorAll("[data-popup-media-field]").forEach((element) => {
+          element.toggleAttribute("hidden", !showImage);
+        });
+      }
+      if (field === "anchor_mode" || field === "shot_id") {
+        const anchorControl = card.querySelector('[data-popup-field="anchor_mode"]');
+        const shotControl = card.querySelector('[data-popup-field="shot_id"]');
+        const timeControl = card.querySelector('[data-popup-field="time_s"]');
+        if (anchorControl instanceof HTMLSelectElement) syncControlValue(anchorControl, updatedBubble.anchor_mode);
+        if (shotControl instanceof HTMLSelectElement) syncControlValue(shotControl, updatedBubble.shot_id || "");
+        if (timeControl instanceof HTMLInputElement) timeControl.disabled = updatedBubble.anchor_mode === "shot";
+        if (shotControl instanceof HTMLSelectElement) shotControl.disabled = updatedBubble.anchor_mode !== "shot" || shots.length === 0;
+      }
+      if (field === "duration_s") renderPopupBubbleMotionGuide(card, updatedBubble);
+    };
+    const serializeValue = () => JSON.stringify(readValue());
+    let lastCommittedValue = serializeValue();
+    const updateDraft = () => {
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false });
+      syncDependentControls();
+    };
+    const commitOnce = () => {
+      const nextValue = serializeValue();
+      if (nextValue === lastCommittedValue) return;
+      lastCommittedValue = nextValue;
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: false });
+      syncDependentControls();
+    };
+    if (control.type !== "checkbox" && field !== "shot_id" && field !== "anchor_mode") {
+      control.addEventListener("input", updateDraft);
     }
-    control.addEventListener(eventName, () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false }));
-    control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-    control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+    control.addEventListener("change", commitOnce);
+    control.addEventListener("blur", commitOnce);
   });
   const xInput = card.querySelector('[data-popup-field="x"]');
   const yInput = card.querySelector('[data-popup-field="y"]');
@@ -4687,6 +4725,12 @@ function stepShotLinkedPopupBubble(direction) {
 function renderPopupEditors() {
   const markerList = $("popup-marker-list");
   if (!markerList) return;
+  const activeControl = document.activeElement;
+  if (
+    activeControl instanceof HTMLElement
+      && activeControl.closest("#markers-workbench-editor")
+      && activeControl.matches("input, select, textarea")
+  ) return;
   const bubbles = popupBubbles();
   const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
@@ -4918,6 +4962,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
   if (tool === "media" && mediaPane) mediaPane.render();
+  if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
   if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();
@@ -5061,6 +5106,7 @@ async function refresh() {
     applyRemoteState(data);
     requestRender();
     if (mediaPane) mediaPane.render();
+    if (introOutroPane) introOutroPane.render();
     if (queuePane) queuePane.render();
   } catch (error) {
     setStatus(error.message);
@@ -5605,7 +5651,9 @@ function syncMergePreviewElements(primary) {
 }
 
 function renderVideo() {
-  return videoPlayerComponent?.renderVideo();
+  const result = videoPlayerComponent?.renderVideo();
+  if (activeTool === "intro-outro") introOutroPane?.updatePreview();
+  return result;
 }
 
 let preferredOutputProfileId = "";
@@ -5643,6 +5691,7 @@ function renderOutputProfiles() {
   const typeSelect = $("output-profile-type");
   const frameSelect = $("output-profile-frame");
   const exportBadgesButton = $("export-badges");
+  const saveButton = $("save-output-profile");
   if (selected && draft
     && selected.profile_name === draft.profile_name
     && selected.profile_kind === draft.profile_kind
@@ -5655,6 +5704,7 @@ function renderOutputProfiles() {
   if (nameInput) nameInput.disabled = !selected;
   if (typeSelect) typeSelect.disabled = !selected;
   if (frameSelect) frameSelect.disabled = !selected;
+  if (saveButton) saveButton.disabled = !selected;
   if (exportBadgesButton) {
     exportBadgesButton.dataset.outputId = resolvedSelectedId;
     exportBadgesButton.onclick = () => {
@@ -5699,7 +5749,32 @@ function exportBadges() {
 function createOutputProfile() {
   const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
   autoSelectNewestOutputProfile = true;
-  callApi("/api/output-profiles/create", { profile_name: baseName, profile_kind: "stage_output" });
+  callApi("/api/output-profiles/create", {
+    profile_name: baseName,
+    profile_kind: "stage_output",
+    export_settings: currentExportProfileSettings(),
+  });
+}
+
+function currentExportProfileSettings() {
+  return {
+    ...(state?.project?.export || {}),
+    preset: $("export-preset")?.value || state?.project?.export?.preset || "custom",
+    ...readExportLayoutPayload(),
+    ...readExportSettingsPayload(),
+  };
+}
+
+function saveOutputProfile() {
+  const id = activeOutputProfileId();
+  if (!id) return;
+  callApi("/api/output-profiles/update", {
+    output_id: id,
+    profile_name: $("output-profile-name")?.value || "",
+    profile_kind: $("output-profile-type")?.value || "stage_output",
+    frame_profile: $("output-profile-frame")?.value || "source",
+    export_settings: currentExportProfileSettings(),
+  });
 }
 
 function deleteOutputProfile() {
@@ -5727,6 +5802,7 @@ function selectOutputProfile() {
   if (nameInput) { nameInput.value = draft?.profile_name || selected?.profile_name || ""; nameInput.disabled = !selected; }
   if (typeSelect) { typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
   if (frameSelect) { frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
+  if (selected) callApi("/api/output-profiles/apply", { output_id: id });
 }
 
 let _outputProfileFieldCommitTimer = null;
@@ -6872,7 +6948,7 @@ function createMetricsGraphCanvas({ compact = true } = {}) {
   svg.classList.add("metrics-graph-svg");
   svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
   svg.setAttribute("preserveAspectRatio", "none");
-  const viewWidth = compact ? 260 : 320;
+  const viewWidth = compact ? 260 : 640;
   const viewHeight = compact ? 132 : 150;
   const padding = { left: 12, right: 10, top: 10, bottom: 22 };
   const plotWidth = viewWidth - padding.left - padding.right;
@@ -8469,6 +8545,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
 }
 
 function renderLiveOverlay(positionMsOverride = null) {
+  if (activeTool === "intro-outro") return introOutroPane?.updatePreview();
   return overlayPane?.renderLiveOverlay(positionMsOverride);
 }
 
@@ -8797,7 +8874,7 @@ async function applySettingsDefaults(options = {}) {
       // Ignore prior failure; continue with the latest update.
     }
   }
-  const payload = readSettingsDefaultsPayload(options);
+  const payload = options.payload || readSettingsDefaultsPayload(options);
   const promise = callApi("/api/settings", payload);
   const finalPromise = promise.then((result) => {
     if (result && !options.scheduled) {
@@ -9135,6 +9212,8 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
     });
   return {
     scope: $("settings-scope")?.value || "app",
+    section: section || undefined,
+    project_defaults: Boolean(projectDefaults),
     settings: {
       default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
       overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
@@ -9408,6 +9487,8 @@ videoPlayerComponent = createVideoPlayerComponent({
   $,
   getState: () => state,
   getSelectedShotId: () => selectedShotId,
+  getActiveTool: () => activeTool,
+  getIntroOutroKind: () => introOutroPane?.selectedKind?.() || "intro",
   maybeApplyRecommendedLayout,
   buildMediaUrl,
   resetMediaElement,
@@ -9778,6 +9859,7 @@ projectPane = createProjectPane({
   controlIsActive,
   normalizeToolId,
   setActiveTool,
+  readProjectUiStatePayload,
   applyProjectUiStatePayload,
   cancelPendingExportDrafts,
   flushPendingSettingsDefaults,
@@ -9826,17 +9908,28 @@ mediaPane = createMediaPane({
   setStatus,
 });
 
+introOutroPane = createIntroOutroPane({
+  $,
+  windowObject: window,
+  documentObject: document,
+  getState: () => state,
+  callApi,
+  pickPath,
+  activity,
+  fileName,
+  previewFrameClientRect,
+});
+
 queuePane = createQueuePane({
   $,
   documentObject: document,
   windowObject: window,
   getState: () => state,
   setActiveTool,
-  setActiveStageId: (stageId) => {
-    if (state?.project) state.project.active_stage_id = stageId;
-  },
   activity,
   callApi,
+  pickPath,
+  openProcessingLog: () => openExportLogModal(),
   fileName,
   formatNumber,
   renderHeader,
@@ -10021,6 +10114,7 @@ trimSyncPane = createTrimSyncPane({
   withPreservedScrollState,
   activity,
   callApi,
+  openProcessingLog: () => openExportLogModal(),
   scheduleInteractionPreviewRender,
   renderVideo,
   setStatus,
@@ -10098,6 +10192,7 @@ shellRuntime = createShellRuntime({
   renderReviewImportedMetrics,
   renderOutputProfiles,
   createOutputProfile,
+  saveOutputProfile,
   deleteOutputProfile,
   selectOutputProfile,
   scheduleOutputProfileFieldCommit,
@@ -10183,6 +10278,7 @@ shellRuntime = createShellRuntime({
   popupBubbles,
   readPopupTemplatePayload,
   scheduleSettingsDefaultsApply,
+  readSettingsDefaultsPayload,
   applySettingsDefaults,
   toggleLayoutLock,
   resetLayout,

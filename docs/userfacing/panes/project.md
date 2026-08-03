@@ -20,7 +20,7 @@ The Project pane owns project metadata, PractiScore import, competitor identity 
 | `Project folder` | Shows the current project directory. |
 | `Select Project` | Selects a directory. It opens the project when `project.json` exists or offers to initialize the directory when it does not. |
 | `Create Project` | Selects a directory, initializes a blank project there, and resets the current session. If a project already exists there, SplitShot asks before replacing it. |
-| `Open Project Folder` | Opens the active directory in the operating system's file manager. |
+| `Open Project` | Selects and opens an existing SplitShot project directory. |
 | `Delete Project` | Deletes the saved project metadata without deleting the surrounding folder. |
 | `Project name` | Sets the saved project name. |
 | `Project description` | Stores project notes. |
@@ -35,7 +35,7 @@ The Project pane owns project metadata, PractiScore import, competitor identity 
 ## Workflow
 
 1. Create or open the project first.
-   Creating a project also creates `Input/`, `CSV/`, `Markers/`, and `Output/`.
+   Creating a project also creates `Input/`, `CSV/`, `Markers/`, `IntroOutro/`, and `Output/`.
 2. Set `Project name` and `Project description`.
 3. Import the PractiScore CSV/TXT file if stage results are needed.
 4. Select the imported stage, competitor name, and competitor place.

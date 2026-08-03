@@ -3,14 +3,14 @@ export function createQueuePane({
   documentObject = document,
   windowObject = window,
   getState = () => null,
-  setActiveStageId = () => {},
   activity = () => {},
   callApi = async () => null,
+  openProcessingLog = async () => {},
   fileName = (value) => String(value || ""),
   setStatus = () => {},
   sendKeepaliveJson = () => false,
 } = {}) {
-  const expansionKey = "splitshot.queue.stageExpanded";
+  let queueSettingsSavePromise = Promise.resolve();
 
   function currentState() {
     return getState() || {};
@@ -26,14 +26,6 @@ export function createQueuePane({
 
   function queueEntries() {
     return Array.isArray(project().queue) ? project().queue : [];
-  }
-
-  function activeStageId() {
-    return project().active_stage_id || "";
-  }
-
-  function activeStage() {
-    return stages().find((stage) => stage.id === activeStageId()) || stages()[0] || null;
   }
 
   function queuedCount() {
@@ -88,37 +80,6 @@ export function createQueuePane({
     }[status] || String(status || "Not queued");
   }
 
-  function isStageExpanded(stageId) {
-    try {
-      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
-      if (stored && typeof stored === "object" && stored[stageId] !== undefined) return Boolean(stored[stageId]);
-    } catch (_) {}
-    return false;
-  }
-
-  function setStageExpanded(stageId, expanded) {
-    try {
-      const stored = JSON.parse(windowObject?.localStorage?.getItem(expansionKey) || "{}");
-      const next = { ...(stored && typeof stored === "object" ? stored : {}), [stageId]: expanded };
-      windowObject?.localStorage?.setItem(expansionKey, JSON.stringify(next));
-    } catch (_) {}
-  }
-
-  function toggleStage(stageId) {
-    setStageExpanded(stageId, !isStageExpanded(stageId));
-    render();
-  }
-
-  function selectStage(stageId) {
-    const proj = project();
-    if (!proj || !stageId) return;
-    proj.active_stage_id = stageId;
-    setActiveStageId(stageId);
-    sendKeepaliveJson("/api/project/select-stage", { active_stage_id: stageId });
-    activity("queue.select-stage", { stageId });
-    render();
-  }
-
   function queueActionLabel(stageId) {
     const entry = findQueueEntry(stageId);
     const status = String(entry?.status || "not_queued");
@@ -128,7 +89,18 @@ export function createQueuePane({
     return "Unqueue";
   }
 
-  async function updateQueueMembership(stageId = activeStageId()) {
+  function saveQueueSettings(payload) {
+    project().queue_settings = {
+      ...(project().queue_settings || {}),
+      ...payload,
+    };
+    queueSettingsSavePromise = queueSettingsSavePromise
+      .catch(() => null)
+      .then(() => callApi("/api/project/queue/settings", payload));
+    return queueSettingsSavePromise;
+  }
+
+  async function updateQueueMembership(stageId) {
     if (!stageId) return;
     const action = queueActionLabel(stageId);
     if (action === "Queue" || action === "Requeue") {
@@ -157,28 +129,21 @@ export function createQueuePane({
     await callApi("/api/project/queue/process", { mode: "combined" });
   }
 
-  function renderQueueStage(queueEntry) {
-    const stage = stages().find((item) => item.id === queueEntry.stage_id) || null;
-    const stageId = queueEntry.stage_id;
+  function renderQueueStage(stage) {
+    const stageId = stage.id;
+    const queueEntry = findQueueEntry(stageId);
     const status = queueEntry?.status || stage?.queue_status || "not_queued";
-    const selected = stageId === activeStageId();
-    const expanded = isStageExpanded(stageId);
     const actionLabel = queueActionLabel(stageId);
-    const disabled = status === "processing";
+    const disabled = status === "processing" || !stage?.primary_media?.path;
     return `
-      <article class="queue-stage-card ${selected ? "selected" : ""}" data-queue-stage-id="${stageId}">
-        <div class="queue-stage-header section-header-with-toggle">
+      <article class="queue-stage-card" data-queue-stage-id="${stageId}">
+        <div class="queue-stage-header">
           <div class="queue-stage-copy">
-            <strong>${stageLabel(stage || queueEntry?.snapshot || {})}</strong>
-            <small>${queueEntryAssetSummary(queueEntry, stage)}</small>
+            <strong>${stageLabel(stage)}</strong>
+            <small>${stageAssetSummary(stage)}</small>
           </div>
           <div class="queue-stage-header-actions">
             <span class="queue-status-text queue-status-${status}">${queueStatusLabel(status)}</span>
-            <button class="pane-toggle queue-stage-toggle" type="button" data-stage-id="${stageId}" aria-label="${expanded ? "Collapse" : "Expand"} queue stage">${expanded ? "v" : ">"}</button>
-          </div>
-        </div>
-        <div class="queue-stage-body"${expanded ? "" : " hidden"}>
-          <div class="queue-stage-actions">
             <button class="btn-sm btn-secondary queue-membership-btn" type="button" data-stage-id="${stageId}" ${disabled ? "disabled" : ""}>${actionLabel}</button>
           </div>
         </div>
@@ -187,21 +152,22 @@ export function createQueuePane({
   }
 
   function renderControlsSection() {
-    const stage = activeStage();
-    const stageOptions = stages()
-      .map((item) => `<option value="${item.id}" ${item.id === stage?.id ? "selected" : ""}>${stageLabel(item)}</option>`)
-      .join("");
     const combinedOutput = combinedOutputPath();
+    const queueSettings = project()?.queue_settings || {};
+    const introPath = project()?.intro_clip?.asset?.path || queueSettings.intro_path || "";
+    const outroPath = project()?.outro_clip?.asset?.path || queueSettings.outro_path || "";
     return `
       <section class="settings-section queue-pane-section">
         <div class="section-header media-section-header">
-          <strong>Stage</strong>
+          <strong>Match Output</strong>
         </div>
         <div class="queue-controls-body">
-          <label>Active Stage
-            <select id="queue-stage-select">${stageOptions}</select>
-          </label>
-          <button class="btn btn-secondary queue-membership-btn" type="button" data-stage-id="${stage?.id || ""}" ${stage ? "" : "disabled"}>${queueActionLabel(stage?.id || "")}</button>
+          <div class="queue-boundary-actions queue-include-actions">
+            <label class="check-row"><input id="queue-include-intro" type="checkbox" ${queueSettings.include_intro ? "checked" : ""} ${introPath ? "" : "disabled"} /> Include intro</label>
+            <label class="check-row"><input id="queue-include-outro" type="checkbox" ${queueSettings.include_outro ? "checked" : ""} ${outroPath ? "" : "disabled"} /> Include outro</label>
+          </div>
+          <button id="queue-show-output-folder" class="btn btn-secondary" type="button" ${project().output_root ? "" : "disabled"}>Show Output Folder</button>
+          <button id="queue-show-log" class="btn btn-secondary" type="button">Show Log</button>
         </div>
         ${combinedOutput ? `
           <div class="queue-combined-output" data-queue-combined-output="${combinedOutput}">
@@ -213,21 +179,63 @@ export function createQueuePane({
     `;
   }
 
+  function renderStructureKey() {
+    const queueSettings = project()?.queue_settings || {};
+    return JSON.stringify({
+      combined_output: combinedOutputPath(),
+      has_intro: Boolean(project()?.intro_clip?.asset?.path || queueSettings.intro_path),
+      has_outro: Boolean(project()?.outro_clip?.asset?.path || queueSettings.outro_path),
+      has_output_root: Boolean(project()?.output_root),
+      stages: stages().map((stage) => {
+        const entry = findQueueEntry(stage.id);
+        return {
+          id: stage.id,
+          label: stageLabel(stage),
+          primary: stage?.primary_media?.path || "",
+          added: (stage?.added_media || []).map((asset) => asset?.path || ""),
+          status: entry?.status || stage?.queue_status || "not_queued",
+        };
+      }),
+    });
+  }
+
+  function syncScalarControls(pane) {
+    const queueSettings = project()?.queue_settings || {};
+    const syncValue = (id, value) => {
+      const control = $(id);
+      if (!control || documentObject.activeElement === control) return;
+      control.value = String(value);
+    };
+    const syncChecked = (id, checked) => {
+      const control = $(id);
+      if (!control || documentObject.activeElement === control) return;
+      control.checked = Boolean(checked);
+    };
+    syncValue("queue-fade-in", Number(queueSettings.fade_in_s ?? 0.5));
+    syncValue("queue-fade-out", Number(queueSettings.fade_out_s ?? 0.5));
+    syncChecked("queue-include-intro", queueSettings.include_intro);
+    syncChecked("queue-include-outro", queueSettings.include_outro);
+    const status = pane.querySelector(".pane-status-text");
+    if (status) status.textContent = `${queuedCount()} queued`;
+  }
+
   function bindEvents(pane) {
     if (!(pane instanceof HTMLElement)) return;
     pane.onclick = (event) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
-      const toggle = target.closest(".queue-stage-toggle");
-      if (toggle instanceof HTMLElement) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleStage(toggle.dataset.stageId || "");
-        return;
-      }
       const membershipButton = target.closest(".queue-membership-btn");
       if (membershipButton instanceof HTMLElement) {
-        updateQueueMembership(membershipButton.dataset.stageId || activeStage()?.id || "");
+        event.stopPropagation();
+        updateQueueMembership(membershipButton.dataset.stageId || "");
+        return;
+      }
+      if (target.closest("#queue-show-output-folder")) {
+        callApi("/api/project/output/reveal", {});
+        return;
+      }
+      if (target.closest("#queue-show-log")) {
+        openProcessingLog();
         return;
       }
       if (target.closest(".queue-process-btn")) {
@@ -238,16 +246,17 @@ export function createQueuePane({
         processIntoOneFile();
         return;
       }
-      const card = target.closest("[data-queue-stage-id]");
-      if (card instanceof HTMLElement) {
-        selectStage(card.dataset.queueStageId || "");
-      }
     };
     pane.onchange = (event) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
-      if (target.id === "queue-stage-select") {
-        selectStage(target.value || "");
+      if (["queue-fade-in", "queue-fade-out", "queue-include-intro", "queue-include-outro"].includes(target.id)) {
+        saveQueueSettings({
+          fade_in_s: Math.max(0, Number($("queue-fade-in")?.value || 0)),
+          fade_out_s: Math.max(0, Number($("queue-fade-out")?.value || 0)),
+          include_intro: Boolean($("queue-include-intro")?.checked),
+          include_outro: Boolean($("queue-include-outro")?.checked),
+        });
       }
     };
   }
@@ -255,6 +264,11 @@ export function createQueuePane({
   function render() {
     const pane = $("queue-pane");
     if (!pane) return;
+    const structureKey = renderStructureKey();
+    if (pane.dataset.renderStructureKey === structureKey && pane.querySelector(".queue-pane-shell")) {
+      syncScalarControls(pane);
+      return;
+    }
     const count = queuedCount();
     pane.innerHTML = `
       <div class="pane-section queue-pane-shell">
@@ -263,25 +277,39 @@ export function createQueuePane({
           <span class="pane-status-text">${count} queued</span>
         </div>
         ${renderControlsSection()}
+        <section class="settings-section queue-pane-section">
+          <div class="section-header media-section-header">
+            <strong>Output Fades</strong>
+          </div>
+          <div class="control-grid">
+            <label>Fade in (seconds)
+              <input id="queue-fade-in" type="number" min="0" step="0.1" value="${Number(project()?.queue_settings?.fade_in_s ?? 0.5)}" />
+            </label>
+            <label>Fade out (seconds)
+              <input id="queue-fade-out" type="number" min="0" step="0.1" value="${Number(project()?.queue_settings?.fade_out_s ?? 0.5)}" />
+            </label>
+          </div>
+        </section>
         <section class="settings-section queue-pane-section queue-process-section">
           <div class="section-header media-section-header">
             <strong>Process</strong>
           </div>
           <div class="queue-process-actions">
             <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Queue</button>
-            <button id="queue-combined-btn" class="btn btn-secondary queue-combined-btn" type="button">Process as One File</button>
+            <button id="queue-combined-btn" class="btn queue-combined-btn" type="button">Process as One File</button>
           </div>
         </section>
         <section class="settings-section queue-pane-section">
           <div class="section-header media-section-header">
-            <strong>Queued Stages</strong>
+            <strong>Match Stages</strong>
           </div>
           <div class="queue-stage-list">
-            ${visibleQueueEntries().length ? visibleQueueEntries().map((entry) => renderQueueStage(entry)).join("") : '<div class="empty-state">No queued stages.</div>'}
+            ${stages().length ? stages().map((stage) => renderQueueStage(stage)).join("") : '<div class="empty-state">No match stages loaded.</div>'}
           </div>
         </section>
       </div>
     `;
+    pane.dataset.renderStructureKey = structureKey;
     bindEvents(pane);
   }
 
@@ -293,6 +321,5 @@ export function createQueuePane({
     render,
     mount,
     updateQueueMembership,
-    toggleStage,
   });
 }

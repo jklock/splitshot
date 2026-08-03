@@ -5,6 +5,7 @@ export function createTrimSyncPane({
   withPreservedScrollState = (_elements, callback) => callback(),
   activity = () => {},
   callApi = async () => null,
+  openProcessingLog = async () => {},
   scheduleInteractionPreviewRender = () => {},
   renderVideo = () => {},
   setStatus = () => {},
@@ -582,6 +583,7 @@ export function createTrimSyncPane({
     $("trim-global-clear")?.addEventListener("click", () => trimAll(true));
     $("trim-global-undo")?.addEventListener("click", () => undoLastTrimChange());
     $("trim-global-defaults-btn")?.addEventListener("click", applyGlobalDefaults);
+    $("trim-show-log")?.addEventListener("click", openProcessingLog);
     $("trim-stage-select-all")?.addEventListener("click", () => {
       trimmableStages().forEach((stage) => selectedTrimStageIds.add(String(stage.id || "")));
       documentObject.querySelectorAll("[data-trim-stage-id]").forEach((input) => {
@@ -669,12 +671,6 @@ export function createTrimSyncPane({
     const sources = stageSources();
     const stages = syncTrimStageSelection();
     const existingList = $("trim-sync-list");
-    const primaryBeep = originalBeepTimeMs();
-    const primaryLastShot = originalLastShotTimeMs();
-    const primaryDurMs = primaryVideo()?.duration_ms ?? 0;
-    const beepS = primaryBeep !== null ? (primaryBeep / 1000).toFixed(2) : "--.--";
-    const lastShotS = primaryLastShot !== null ? (primaryLastShot / 1000).toFixed(2) : "--.--";
-    const durS = primaryDurMs ? (primaryDurMs / 1000).toFixed(2) : "--.--";
     withPreservedScrollState(existingList ? [existingList] : [], () => {
       pane.innerHTML = `
         <div class="pane-section trim-pane-shell">
@@ -685,9 +681,6 @@ export function createTrimSyncPane({
           <div class="settings-section trim-pane-section ${isExpanded("bulk") ? "" : "collapsed"}" data-trim-section="bulk">
             ${renderSectionHeader("Bulk Trim", "bulk")}
             <div class="trim-pane-section-body"${isExpanded("bulk") ? "" : " hidden"}>
-              <div class="trim-timing-bar">
-                <span>Beep ${beepS}s · Last shot ${lastShotS}s · Duration ${durS}s</span>
-              </div>
               <div class="trim-stage-selector">
                 <div class="trim-stage-selector-header">
                   <strong>Stages</strong>
@@ -728,6 +721,7 @@ export function createTrimSyncPane({
                 <button id="trim-global-apply" type="button" class="btn btn-primary">Apply All</button>
                 <button id="trim-global-clear" type="button" class="btn btn-secondary">Clear All</button>
               </div>
+              <button id="trim-show-log" type="button" class="btn btn-secondary">Show Log</button>
             </div>
             </div>
           </div>

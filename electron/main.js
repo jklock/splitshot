@@ -398,6 +398,20 @@ ipcMain.handle('open-file', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('open-in-out-video-dialog', async () => {
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH) {
+    return process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose Intro / Outro video',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Videos', extensions: ['mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
 ipcMain.handle('open-project-dialog', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],

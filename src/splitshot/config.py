@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from copy import deepcopy
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import tomllib
 
 from splitshot.domain.models import (
     BadgeSize,
@@ -141,6 +141,7 @@ class AppSettings:
     layout_waveform_height: int | None = None
     marker_template: PopupTemplate = field(default_factory=PopupTemplate)
     review_text_boxes: list[dict[str, object]] = field(default_factory=list)
+    project_defaults: dict[str, object] = field(default_factory=dict)
     active_template_name: str = "Default"
     settings_templates: dict[str, dict[str, object]] = field(default_factory=dict)
     recent_projects: list[str] = field(default_factory=list)
@@ -186,6 +187,7 @@ class AppSettings:
             "layout_waveform_height": self.layout_waveform_height,
             "marker_template": _serialize_popup_template(self.marker_template),
             "review_text_boxes": deepcopy(self.review_text_boxes),
+            "project_defaults": deepcopy(self.project_defaults),
         }
 
     def template_snapshot(self) -> dict[str, object]:
@@ -204,7 +206,7 @@ class AppSettings:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "AppSettings":
+    def from_dict(cls, data: dict[str, object]) -> AppSettings:
         shotml_payload = data.get("shotml_defaults")
         defaults = ShotMLSettings()
         factory_threshold = defaults.detection_threshold
@@ -332,6 +334,11 @@ class AppSettings:
             layout_waveform_height=_optional_int(layout_waveform_height),
             marker_template=_popup_template_from_dict(data.get("marker_template")),
             review_text_boxes=review_text_boxes,
+            project_defaults=(
+                deepcopy(data.get("project_defaults", {}))
+                if isinstance(data.get("project_defaults"), dict)
+                else {}
+            ),
             active_template_name=active_template_name,
             settings_templates=settings_templates,
             recent_projects=recent_projects,

@@ -1,10 +1,58 @@
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-
 INDEX_HTML = Path("src/splitshot/browser/static/index.html")
+STATIC_ROOT = Path("src/splitshot/browser/static")
+
+# JavaScript-rendered controls are not present in index.html and were previously
+# invisible to this guard. Counts are source definitions, not runtime instances:
+# repeated stages, sources, shots, markers, and boxes must be parameterized by
+# the interaction audit.
+EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
+    "app.js": 39,
+    "lib/shell-runtime.js": 5,
+    "panes/intro-outro-pane.js": 25,
+    "panes/media-pane.js": 13,
+    "panes/queue-pane.js": 9,
+    "panes/review-pane.js": 18,
+    "panes/trim-sync-pane.js": 26,
+}
+
+EXPECTED_PROGRAMMATIC_CONTROL_FAMILIES = {
+    "app.js:ensureSectionToggle:button:toggle:1",
+    "app.js:renderColorPickerSwatches:button:button:1",
+    "app.js:renderPopupTimeline:button:bar:1",
+    "app.js:renderTimingTable:button:handle:1",
+    "app.js:renderTimingTable:input:input:1",
+    "components/waveform.js:renderWaveformShotList:button:deleteBtn:1",
+    "components/waveform.js:renderWaveformShotList:button:item:1",
+    "lib/shell-runtime.js:renderStyleControls:button:input:1",
+    "lib/shell-runtime.js:renderStyleControls:input:hex:1",
+    "panes/markers-pane.js:renderPopupKeyframeOverlay:button:handle:1",
+    "panes/merge-pane.js:renderMergeMediaList:button:toggle:1",
+    "panes/merge-pane.js:renderMergeMediaList:input:input:1",
+    "panes/merge-pane.js:renderMergeMediaList:input:input:2",
+    "panes/merge-pane.js:renderMergeMediaList:input:sizeInput:1",
+    "panes/merge-pane.js:renderMergeMediaList:select:placementModeSelect:1",
+    "panes/metrics-pane.js:renderStageMetricsTree:details:details:1",
+    "panes/scoring-pane.js:appendPenaltyRow:button:add:1",
+    "panes/scoring-pane.js:appendPenaltyRow:button:remove:1",
+    "panes/scoring-pane.js:appendPenaltyRow:select:select:1",
+    "panes/scoring-pane.js:buildScoringDeleteCell:button:button:1",
+    "panes/scoring-pane.js:buildScoringRestoreCell:button:button:1",
+    "panes/scoring-pane.js:buildScoringRowControlCell:button:button:1",
+    "panes/scoring-pane.js:renderScoringTable:select:select:1",
+    "panes/shotml-pane.js:renderShotMLProposals:button:apply:1",
+    "panes/shotml-pane.js:renderShotMLProposals:button:discard:1",
+    "panes/timing-pane.js:buildSplitRowActionCell:button:remove:1",
+    "panes/timing-pane.js:buildTimingDeleteCell:button:deleteShot:1",
+    "panes/timing-pane.js:buildTimingRestoreCell:button:restore:1",
+    "panes/timing-pane.js:buildTimingRowControlCell:button:lockButton:1",
+    "panes/timing-pane.js:renderTimingEventList:button:remove:1",
+}
 
 EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     line.strip()
@@ -78,6 +126,7 @@ data-shotml-setting:weak_onset_support_threshold
 data-shotml-setting:weak_support_penalty
 data-shotml-setting:window_size
 data-tool-pane:export
+data-tool-pane:intro-outro
 data-tool-pane:media
 data-tool-pane:markers
 data-tool-pane:merge
@@ -92,6 +141,7 @@ data-tool-pane:shotml
 data-tool-pane:timing
 data-tool-pane:trim-sync
 data-tool:export
+data-tool:intro-outro
 data-tool:media
 data-tool:markers
 data-tool:merge
@@ -130,6 +180,7 @@ id:color-picker-saturation
 id:color-space
 id:create-output-profile
 id:delete-output-profile
+id:save-output-profile
 id:delete-project
 id:timing-enabled
 id:draw-lock-to-stack
@@ -147,7 +198,7 @@ id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
-id:open-project-folder
+id:open-project
 id:match-type
 id:match-class
 id:match-competitor-name
@@ -282,7 +333,6 @@ id:settings-use-current-layout
 id:shot-direction
 id:shot-quadrant
 id:show-draw
-id:show-export-log
 id:show-markers
 id:show-overlay
 id:show-pip
@@ -374,3 +424,62 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
         f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
     )
     assert len(actual_identifiers) == len(EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS)
+
+
+_INTERACTIVE_TAG_RE = re.compile(
+    r"<(button|input|select|textarea|details|video)\b([^>]*)>", re.IGNORECASE | re.DOTALL
+)
+_FUNCTION_RE = re.compile(r"(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(")
+_PROGRAMMATIC_CONTROL_RE = re.compile(
+    r"(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*=\s*"
+    r"(?:documentObject|document)\.createElement\([\"']"
+    r"(button|input|select|textarea|details|video)[\"']\)"
+)
+
+
+def _dynamic_literal_control_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for path in sorted(STATIC_ROOT.rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        count = 0
+        for match in _INTERACTIVE_TAG_RE.finditer(text):
+            attributes = match.group(2)
+            if re.search(r"\breadonly(?:\s|>|$)", attributes):
+                continue
+            if re.search(r"\bdisabled(?:\s|>|$)", attributes) and not re.search(
+                r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes
+            ):
+                continue
+            count += 1
+            assert re.search(
+                r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes
+            ), (
+                "JavaScript-rendered interactive control needs a stable id, class, or data owner: "
+                f"{path}:{text.count(chr(10), 0, match.start()) + 1}"
+            )
+        if count:
+            counts[str(path.relative_to(STATIC_ROOT))] = count
+    return counts
+
+
+def _programmatic_control_families() -> set[str]:
+    families: set[str] = set()
+    for path in sorted(STATIC_ROOT.rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        function_matches = list(_FUNCTION_RE.finditer(text))
+        occurrences: dict[tuple[str, str, str], int] = {}
+        for match in _PROGRAMMATIC_CONTROL_RE.finditer(text):
+            enclosing = [item for item in function_matches if item.start() < match.start()]
+            function_name = enclosing[-1].group(1) if enclosing else "<module>"
+            variable, tag = match.groups()
+            key = (function_name, tag, variable)
+            occurrences[key] = occurrences.get(key, 0) + 1
+            families.add(
+                f"{path.relative_to(STATIC_ROOT)}:{function_name}:{tag}:{variable}:{occurrences[key]}"
+            )
+    return families
+
+
+def test_javascript_rendered_mutable_control_inventory_is_exhaustive() -> None:
+    assert _dynamic_literal_control_counts() == EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS
+    assert _programmatic_control_families() == EXPECTED_PROGRAMMATIC_CONTROL_FAMILIES

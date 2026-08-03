@@ -83,10 +83,7 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     )
     assert 'callApi("/api/merge/source"' not in drag_body
     assert '$("export-video").addEventListener("click"' not in shell_runtime_source
-    assert (
-        '$("show-export-log")?.addEventListener("click", openExportLogModal);'
-        in shell_runtime_source
-    )
+    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' not in shell_runtime_source
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
     assert "state.project.export.last_error = null;" in _function_body(
         source, "clearCurrentExportLogState"

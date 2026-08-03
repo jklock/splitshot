@@ -346,18 +346,29 @@ def choose_local_path(
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary", "popup_image", "practiscore"}:
+        if kind in {
+            "primary",
+            "secondary",
+            "queue_media",
+            "in_out_media",
+            "popup_image",
+            "practiscore",
+        }:
             return filedialog.askopenfilename(
                 title=(
                     "Choose stage video"
                     if kind == "primary"
                     else (
-                        "Choose secondary angle video"
-                        if kind == "secondary"
+                        "Choose Intro / Outro video"
+                        if kind in {"queue_media", "in_out_media"}
                         else (
-                            "Choose marker image"
-                            if kind == "popup_image"
-                            else "Choose PractiScore results"
+                            "Choose secondary angle video"
+                            if kind == "secondary"
+                            else (
+                                "Choose marker image"
+                                if kind == "popup_image"
+                                else "Choose PractiScore results"
+                            )
                         )
                     )
                 ),
@@ -398,15 +409,28 @@ def choose_local_path_macos(
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary", "popup_image", "practiscore"}:
+    if kind in {
+        "primary",
+        "secondary",
+        "queue_media",
+        "in_out_media",
+        "popup_image",
+        "practiscore",
+    }:
         prompt = (
             "Choose stage video"
             if kind == "primary"
             else (
-                "Choose secondary angle video"
-                if kind == "secondary"
+                "Choose Intro / Outro video"
+                if kind in {"queue_media", "in_out_media"}
                 else (
-                    "Choose marker image" if kind == "popup_image" else "Choose PractiScore results"
+                    "Choose secondary angle video"
+                    if kind == "secondary"
+                    else (
+                        "Choose marker image"
+                        if kind == "popup_image"
+                        else "Choose PractiScore results"
+                    )
                 )
             )
         )
@@ -549,6 +573,7 @@ def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: i
     for attempt in range(max_attempts):
         port = desired + attempt
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 sock.bind((host, port))
                 return port
@@ -894,6 +919,14 @@ class BrowserControlServer:
                         return
                     self._send_media(Path(active_path or fallback_path))
                     return
+                if request_path in {"/media/intro", "/media/outro"}:
+                    kind = request_path.removeprefix("/media/")
+                    boundary_path = getattr(controller.project, f"{kind}_clip").asset.path
+                    if not boundary_path:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_media(Path(boundary_path))
+                    return
                 if request_path.startswith("/media/merge/"):
                     self._send_merge_media(request_path.removeprefix("/media/merge/"))
                     return
@@ -965,6 +998,7 @@ class BrowserControlServer:
                     "/api/project/save": self._save_project,
                     "/api/project/delete": self._delete_project,
                     "/api/project/reveal": self._reveal_project,
+                    "/api/project/output/reveal": self._reveal_output,
                     "/api/import/practiscore": self._import_practiscore,
                     "/api/import/primary": self._import_primary,
                     "/api/import/secondary": self._import_merge,
@@ -1000,6 +1034,7 @@ class BrowserControlServer:
                     "/api/output-profiles/list": self._list_output_profiles,
                     "/api/output-profiles/create": self._create_output_profile,
                     "/api/output-profiles/update": self._update_output_profile,
+                    "/api/output-profiles/apply": self._apply_output_profile,
                     "/api/output-profiles/delete": self._delete_output_profile,
                     "/api/output-profiles/render": self._render_output_profile,
                     "/api/overlay": self._set_overlay,
@@ -1022,6 +1057,11 @@ class BrowserControlServer:
                     "/api/project/queue/add": self._add_to_queue,
                     "/api/project/queue/remove": self._remove_from_queue,
                     "/api/project/queue/apply-all": self._apply_settings_to_all,
+                    "/api/project/queue/settings": self._set_queue_settings,
+                    "/api/project/in-out/media": self._set_in_out_media,
+                    "/api/project/queue/media": self._set_in_out_media,
+                    "/api/project/intro-outro/fades": self._set_intro_outro_fades,
+                    "/api/project/intro-outro/overlay": self._set_intro_outro_overlay,
                     "/api/project/queue/process": self._process_queue,
                 }
                 route = routes.get(self.path)
@@ -1806,6 +1846,11 @@ class BrowserControlServer:
                 reveal_local_folder(controller.project_path)
                 controller.status_message = f"Opened project folder {controller.project_path}."
 
+            def _reveal_output(self, payload: dict[str, Any]) -> None:
+                output_dir = controller.output_dir()
+                reveal_local_folder(output_dir)
+                controller.status_message = f"Opened output folder {output_dir}."
+
             def _import_primary(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()
                 controller.ingest_primary_video(str(payload["path"]))
@@ -1878,6 +1923,8 @@ class BrowserControlServer:
                     if isinstance(payload.get("settings", payload), dict)
                     else {},
                     scope=str(payload.get("scope", "app") or "app"),
+                    section=(str(payload.get("section") or "").strip() or None),
+                    capture_current_project=bool(payload.get("project_defaults", False)),
                 )
 
             def _set_beep(self, payload: dict[str, Any]) -> None:
@@ -2090,6 +2137,10 @@ class BrowserControlServer:
                         keep_before_beep_s=normalized_keep_before_s,
                         keep_after_last_shot_s=normalized_keep_after_s,
                         clear=clear,
+                        progress_callback=lambda detail: activity.log(
+                            "api.trim.progress", **detail
+                        ),
+                        log_callback=lambda line: activity.log("api.process.log", line=line),
                     )
                 else:
                     controller.trim_all_merge_sources(
@@ -2098,6 +2149,10 @@ class BrowserControlServer:
                         keep_before_beep_s=normalized_keep_before_s,
                         keep_after_last_shot_s=normalized_keep_after_s,
                         clear=clear,
+                        progress_callback=lambda detail: activity.log(
+                            "api.trim.progress", **detail
+                        ),
+                        log_callback=lambda line: activity.log("api.process.log", line=line),
                     )
                 server._clear_browser_media_cache()
                 server._bump_media_url_token()
@@ -2108,7 +2163,12 @@ class BrowserControlServer:
             def _create_output_profile(self, payload: dict[str, Any]) -> None:
                 profile_name = str(payload.get("profile_name", "New Profile"))
                 profile_kind = str(payload.get("profile_kind", "stage_output"))
-                controller.create_output_profile(profile_name, profile_kind)
+                export_settings = payload.get("export_settings")
+                controller.create_output_profile(
+                    profile_name,
+                    profile_kind,
+                    export_settings if isinstance(export_settings, dict) else None,
+                )
 
             def _update_output_profile(self, payload: dict[str, Any]) -> None:
                 output_id = payload.get("output_id")
@@ -2118,6 +2178,12 @@ class BrowserControlServer:
                 result = controller.update_output_profile(str(output_id), **updates)
                 if result is None:
                     raise ValueError(f"Output profile {output_id} not found")
+
+            def _apply_output_profile(self, payload: dict[str, Any]) -> None:
+                output_id = payload.get("output_id")
+                if output_id in {None, ""}:
+                    raise ValueError("output_id is required")
+                controller.apply_output_profile(str(output_id))
 
             def _delete_output_profile(self, payload: dict[str, Any]) -> None:
                 output_id = payload.get("output_id")
@@ -2321,8 +2387,44 @@ class BrowserControlServer:
             def _apply_settings_to_all(self, _payload: dict[str, Any]) -> None:
                 controller.apply_settings_to_all_stages()
 
+            def _set_queue_settings(self, payload: dict[str, Any]) -> None:
+                controller.set_queue_settings(
+                    fade_in_s=float(payload.get("fade_in_s", 0.5)),
+                    fade_out_s=float(payload.get("fade_out_s", 0.5)),
+                    include_intro=(
+                        None if "include_intro" not in payload else bool(payload["include_intro"])
+                    ),
+                    include_outro=(
+                        None if "include_outro" not in payload else bool(payload["include_outro"])
+                    ),
+                )
+
+            def _set_in_out_media(self, payload: dict[str, Any]) -> None:
+                controller.set_in_out_media(
+                    str(payload.get("kind", "")),
+                    str(payload.get("path", "")),
+                )
+                server._bump_media_url_token()
+
+            def _set_intro_outro_overlay(self, payload: dict[str, Any]) -> None:
+                controller.set_intro_outro_overlay(
+                    str(payload.get("kind", "")),
+                    payload,
+                )
+
+            def _set_intro_outro_fades(self, payload: dict[str, Any]) -> None:
+                controller.set_intro_outro_fades(
+                    str(payload.get("kind", "")),
+                    fade_in_s=float(payload.get("fade_in_s", 0.5)),
+                    fade_out_s=float(payload.get("fade_out_s", 0.5)),
+                )
+
             def _process_queue(self, payload: dict[str, Any]) -> None:
                 mode = str(payload.get("mode", "individual")).strip().lower()
-                controller.process_queue(mode)
+                controller.process_queue(
+                    mode,
+                    progress_callback=lambda detail: activity.log("api.queue.progress", **detail),
+                    log_callback=lambda line: activity.log("api.export.log", line=line),
+                )
 
         return Handler

@@ -11,7 +11,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | project details, project output root, create/select/reveal project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, inferred match type, competitor/place/class/division selectors |"
+        "| Project / import | project details, project output root, create/select/open project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, inferred match type, competitor/place/class/division selectors |"
         in matrix
     )
     assert (
@@ -23,15 +23,16 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, marker editor, text-box drag |"
+        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, stage presentation waterfall, marker editor, text-box drag |"
+        in matrix
+    )
+    assert "| In / Out |" in matrix
+    assert (
+        "| Queue | all-match stage membership, always-visible status rows, intro/outro include choices, project fades, output-folder reveal, live processing log, whole-queue progress, `Process Queue`, `Process as One File` |"
         in matrix
     )
     assert (
-        "| Queue | `Active Stage`, queue membership, plain queue status, per-stage collapse, `Process Queue`, `Process as One File` |"
-        in matrix
-    )
-    assert (
-        "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, overlay defaults, marker defaults including default quadrant, export defaults, ShotML defaults, section collapse, template fields |"
+        "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, complete Overlay/Review defaults, marker defaults including default quadrant, complete persistent Export and Queue/combined-output defaults, Intro/Outro fade/overlay defaults, complete ShotML defaults, section collapse, template fields |"
         in matrix
     )
     for surface in [

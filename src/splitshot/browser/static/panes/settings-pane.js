@@ -313,6 +313,7 @@ export function createSettingsPane({
     return {
       scope: $("settings-scope")?.value || "app",
       section: sectionName || undefined,
+      project_defaults: Boolean(projectDefaults),
       settings,
     };
   }

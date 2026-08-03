@@ -67,6 +67,7 @@ export function createShellRuntime({
   renderReviewSourceControls = () => {},
   renderReviewImportedMetrics = () => {},
   createOutputProfile = () => {},
+  saveOutputProfile = () => {},
   deleteOutputProfile = () => {},
   selectOutputProfile = () => {},
   setReviewSource = () => {},
@@ -154,6 +155,7 @@ export function createShellRuntime({
   popupBubbles = () => [],
   readPopupTemplatePayload = () => ({}),
   scheduleSettingsDefaultsApply = () => {},
+  readSettingsDefaultsPayload = () => ({}),
   applySettingsDefaults = () => {},
   toggleLayoutLock = () => {},
   resetLayout = () => {},
@@ -190,6 +192,19 @@ export function createShellRuntime({
 } = {}) {
   function currentState() {
     return getState() || {};
+  }
+
+  async function saveCurrentSettings(section = null) {
+    const options = {
+      projectDefaults: true,
+      ...(section ? { section } : {}),
+    };
+    // Capture layout and other client-owned values before flushing project drafts.
+    // Each flush response refreshes remote state and may legitimately synchronize
+    // the project snapshot, but it must not replace the values from this click.
+    const payload = readSettingsDefaultsPayload(options);
+    await flushPendingProjectDrafts();
+    await applySettingsDefaults({ ...options, payload });
   }
 
   function renderStyleControls() {
@@ -435,13 +450,7 @@ export function createShellRuntime({
       await createNewProject();
     });
     $("browse-project-path").addEventListener("click", browseProjectPath);
-    $("open-project-folder").addEventListener("click", async () => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      await callApi("/api/project/reveal", {});
-    });
+    $("open-project").addEventListener("click", browseProjectPath);
     $("browse-project-output-root").addEventListener("click", () => pickPath(
       "project_folder",
       "project-output-root",
@@ -833,7 +842,9 @@ export function createShellRuntime({
       $(id)?.addEventListener("blur", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
     });
 
-    $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
+    $("settings-import-current")?.addEventListener("click", async () => {
+      await saveCurrentSettings();
+    });
     $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
     [
       "settings-default-tool",
@@ -900,27 +911,35 @@ export function createShellRuntime({
       scheduleSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
+      documentObject.activeElement?.blur?.();
       resetMergeDraft();
       resetExportDraft();
       cancelPendingExportDrafts();
+      await flushPendingSettingsDefaults();
       await callApi("/api/settings/reset-defaults", {});
     });
-    $("settings-use-current-layout")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true, section: "layout" }));
+    $("settings-use-current-layout")?.addEventListener("click", async () => {
+      await saveCurrentSettings("layout");
+    });
     $("settings-release-layout")?.addEventListener("click", async () => {
+      documentObject.activeElement?.blur?.();
+      await flushPendingSettingsDefaults();
       await callApi("/api/settings/reset-defaults", {
         scope: $("settings-scope")?.value || "app",
         section: "layout",
       });
     });
     documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const section = button.getAttribute("data-settings-save-section") || "";
-        applySettingsDefaults({ projectDefaults: true, section });
+        await saveCurrentSettings(section);
       });
     });
     documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {
       button.addEventListener("click", async () => {
+        documentObject.activeElement?.blur?.();
         const section = button.getAttribute("data-settings-reset-section") || "";
+        await flushPendingSettingsDefaults();
         await callApi("/api/settings/reset-defaults", {
           scope: $("settings-scope")?.value || "app",
           section,
@@ -1010,6 +1029,7 @@ export function createShellRuntime({
       $(id).addEventListener("change", scheduleExportLayoutApply);
     });
     $("create-output-profile")?.addEventListener("click", createOutputProfile);
+    $("save-output-profile")?.addEventListener("click", saveOutputProfile);
     $("delete-output-profile")?.addEventListener("click", deleteOutputProfile);
     $("output-profile-select")?.addEventListener("change", () => {
       selectOutputProfile();
@@ -1043,7 +1063,6 @@ export function createShellRuntime({
     ].forEach((id) => {
       $(id).addEventListener("change", scheduleExportSettingsApply);
     });
-    $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);
     $("close-export-log")?.addEventListener("click", closeExportLogModal);
     $("close-color-picker")?.addEventListener("click", () => closeColorPicker({ commit: true }));

@@ -14,11 +14,13 @@ INPUT_DIRNAME = "Input"
 PRACTISCORE_DIRNAME = "CSV"
 OUTPUT_DIRNAME = "Output"
 MARKERS_DIRNAME = "Markers"
+INTRO_OUTRO_DIRNAME = "IntroOutro"
 POPUP_DIRNAME = MARKERS_DIRNAME
 REQUIRED_PROJECT_DIRNAMES = (
     INPUT_DIRNAME,
     PRACTISCORE_DIRNAME,
     MARKERS_DIRNAME,
+    INTRO_OUTRO_DIRNAME,
     OUTPUT_DIRNAME,
 )
 
@@ -242,7 +244,13 @@ def _resolve_saved_paths(project: Project, project_path: Path) -> None:
 def save_project(project: Project, bundle_path: str | Path) -> Path:
     project_path = ensure_project_structure(bundle_path)
     metadata_path = project_metadata_path(project_path)
-    metadata_path.write_text(json.dumps(_project_to_disk_dict(project, project_path), indent=2))
+    serialized = json.dumps(_project_to_disk_dict(project, project_path), indent=2)
+    partial = metadata_path.with_name(f".{metadata_path.name}.{uuid4().hex}.part")
+    try:
+        partial.write_text(serialized, encoding="utf-8")
+        partial.replace(metadata_path)
+    finally:
+        partial.unlink(missing_ok=True)
     return project_path
 
 

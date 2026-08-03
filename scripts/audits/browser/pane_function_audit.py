@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
-
 
 ROOT = Path(__file__).resolve().parents[3]
 PANE_DIR = ROOT / "src" / "splitshot" / "browser" / "static" / "panes"
@@ -27,6 +26,7 @@ PANE_FILES = {
     "Overlay": "overlay-pane.js",
     "Review": "review-pane.js",
     "Export": "export-pane.js",
+    "In / Out": "intro-outro-pane.js",
     "Queue": "queue-pane.js",
     "Metrics": "metrics-pane.js",
     "ShotML": "shotml-pane.js",
@@ -44,6 +44,7 @@ PANE_MATRIX_LABELS = {
     "Overlay": "Markers / Review / Overlay",
     "Review": "Markers / Review / Overlay",
     "Export": "Export",
+    "In / Out": "In / Out",
     "Queue": "Queue",
     "Metrics": "Metrics",
     "ShotML": "ShotML",
@@ -96,7 +97,7 @@ def _read_text(path: Path) -> str:
 
 
 def _strip_prefix(value: str, prefix: str) -> str:
-    return value[len(prefix) :] if value.startswith(prefix) else value
+    return value.removeprefix(prefix)
 
 
 def _extract_functions(path: Path) -> list[tuple[str, str]]:
@@ -176,11 +177,27 @@ def _selectors_from_body(body: str) -> list[str]:
         selectors.add(f"#{match.group(2).strip()}")
     for match in re.finditer(r"\$\((['\"])(.+?)\1\)", body):
         selectors.add(f"#{match.group(2).strip()}")
+    for match in re.finditer(r'\bid=["\']([A-Za-z0-9_-]+)["\']', body):
+        selectors.add(f"#{match.group(1)}")
+    for match in re.finditer(
+        r'\b(data-[A-Za-z0-9_-]+)=["\']([^"\']+)["\']', body
+    ):
+        attribute, value = match.groups()
+        selectors.add(
+            f"[{attribute}]" if "${" in value else f'[{attribute}="{value}"]'
+        )
     return sorted(selectors)
 
 
 def _routes_from_body(body: str) -> list[str]:
-    return sorted(set(re.findall(r"callApi\((['\"])(/api/[^'\"]+)\1", body)))
+    return sorted(
+        set(
+            re.findall(
+                r"(?:callApi\(|queueSave\([^,]+,)\s*(['\"])(/api/[^'\"]+)\1",
+                body,
+            )
+        )
+    )
 
 
 def _normalized_routes(route_matches: list[tuple[str, str]]) -> list[str]:
@@ -282,9 +299,7 @@ def _proof_evidence(
         if selector.startswith("#"):
             search_terms.add(selector[1:])
             search_terms.add(selector)
-        elif selector.startswith("[data-"):
-            search_terms.add(selector)
-        elif selector.startswith("."):
+        elif selector.startswith(("[data-", ".")):
             search_terms.add(selector)
         for token in re.findall(
             r"(#[A-Za-z0-9_-]+|\.[A-Za-z0-9_-]+|\[data-[A-Za-z0-9_-]+)", selector
@@ -481,11 +496,71 @@ def _rows_to_json(rows: list[FunctionAuditRow]) -> list[dict[str, object]]:
     return [asdict(row) for row in rows]
 
 
+def _control_trace_rows(rows: list[FunctionAuditRow]) -> list[dict[str, object]]:
+    traces: list[dict[str, object]] = []
+    for pane_owner in PANE_FILES:
+        pane_rows = [row for row in rows if row.pane_owner == pane_owner]
+        controls = sorted({control for row in pane_rows for control in row.primary_controls})
+        pane_route_rows = [row for row in pane_rows if row.route_paths]
+        renderers = sorted(
+            {
+                row.function_name
+                for row in pane_rows
+                if "render" in row.function_name.lower()
+                or row.function_type == "preview/waveform renderer"
+            }
+        )
+        for control in controls:
+            owning_rows = [row for row in pane_rows if control in row.primary_controls]
+            handler_rows = [
+                row
+                for row in owning_rows
+                if row.function_type in {"browser-action", "local-ui-state"}
+                or any(token in row.function_name.lower() for token in ("bind", "handle", "apply", "save", "set", "toggle", "select", "delete", "add", "remove", "drag"))
+            ]
+            draft_owners = sorted(
+                {
+                    row.function_name
+                    for row in pane_rows
+                    if any(token in row.function_name.lower() for token in ("draft", "editable", "read", "save", "queue"))
+                }
+            )
+            route_rows = [row for row in owning_rows if row.route_paths] or pane_route_rows
+            traces.append(
+                {
+                    "pane_owner": pane_owner,
+                    "control": control,
+                    "event_handlers": sorted({row.function_name for row in handler_rows}),
+                    "client_draft_state_owners": draft_owners,
+                    "api_routes": sorted({route for row in route_rows for route in row.route_paths}),
+                    "server_methods": sorted({method for row in route_rows for method in row.server_methods}),
+                    "controller_methods": sorted({method for row in route_rows for method in row.controller_methods}),
+                    "stored_project_profile_fields": sorted({field for row in route_rows for field in row.persisted_state_paths}),
+                    "renderer_refresh_paths": renderers,
+                    "later_export_queue_trim_consumption": sorted(
+                        {
+                            target
+                            for row in pane_rows
+                            if row.affects_export_queue_runtime
+                            for target in row.visible_truth_targets
+                        }
+                    ),
+                    "proof_sources": sorted({source for row in owning_rows for source in row.proof_sources}),
+                }
+            )
+    return traces
+
+
 def write_artifacts(audit: PaneFunctionAudit, artifact_root: Path) -> None:
     artifact_root.mkdir(parents=True, exist_ok=True)
     rows_json = _rows_to_json(audit.rows)
     (artifact_root / "pane-function-inventory.json").write_text(
         json.dumps(rows_json, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    control_traces = _control_trace_rows(audit.rows)
+    (artifact_root / "control-interaction-trace-matrix.json").write_text(
+        json.dumps(control_traces, indent=2) + "\n",
         encoding="utf-8",
     )
     trace_rows = [
@@ -564,6 +639,7 @@ def write_artifacts(audit: PaneFunctionAudit, artifact_root: Path) -> None:
         "# Pane Function Audit",
         "",
         f"- Inventory rows: {len(audit.rows)}",
+        f"- Control trace rows: {len(control_traces)}",
         f"- Open rows: {len(audit.open_rows)}",
         "",
         "## Sources",

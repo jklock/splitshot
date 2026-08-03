@@ -10,6 +10,7 @@ export function createProjectPane({
   controlIsActive = (control) => Boolean(control) && documentObject.activeElement === control,
   normalizeToolId = (tool) => String(tool || "project"),
   setActiveTool = () => {},
+  readProjectUiStatePayload = () => ({}),
   applyProjectUiStatePayload = async () => null,
   cancelPendingExportDrafts = () => {},
   flushPendingSettingsDefaults = async () => {},
@@ -330,10 +331,24 @@ export function createProjectPane({
   async function flushPendingProjectDrafts(options = {}) {
     if (!currentState()?.project) return;
     const primaryImport = Boolean(options?.primaryImport);
+    const scoringRuleset = $("scoring-preset")?.value || "";
+    const captured = {
+      shotml: readShotMLSettingsPayload(),
+      projectDetails: readProjectDetailsPayload(),
+      practiscore: readPractiScoreContextPayload(),
+      projectUiState: readProjectUiStatePayload(),
+      overlay: readOverlayPayload(),
+      merge: readMergePayload(),
+      exportLayout: readExportLayoutPayload(),
+      exportSettings: readExportSettingsPayload(),
+      scoring: readScoringPayload(),
+      scoringRuleset,
+      scoringRulesetChanged: scoringRuleset !== String(currentState()?.project?.scoring?.ruleset || ""),
+    };
     cancelPendingExportDrafts();
     await flushPendingSettingsDefaults();
     if (!primaryImport || shouldSyncShotMLSettingsBeforePrimaryImport()) {
-      await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
+      await callApi("/api/analysis/shotml-settings", { settings: captured.shotml, rerun: false });
     }
     if (primaryImport) {
       if (hasPendingPrimaryImportKeepaliveDrafts()) {
@@ -341,16 +356,18 @@ export function createProjectPane({
       }
       return;
     }
-    await callApi("/api/project/details", readProjectDetailsPayload());
-    await callApi("/api/project/practiscore", readPractiScoreContextPayload());
-    await applyProjectUiStatePayload();
-    await callApi("/api/overlay", readOverlayPayload());
-    await callApi("/api/merge", readMergePayload());
+    await callApi("/api/project/details", captured.projectDetails);
+    await callApi("/api/project/practiscore", captured.practiscore);
+    await applyProjectUiStatePayload(captured.projectUiState);
+    await callApi("/api/overlay", captured.overlay);
+    await callApi("/api/merge", captured.merge);
     await flushPendingMergeSourceCommits();
-    await callApi("/api/export/settings", readExportLayoutPayload());
-    await callApi("/api/export/settings", readExportSettingsPayload());
-    await callApi("/api/scoring/profile", { ruleset: $("scoring-preset")?.value || "" });
-    await callApi("/api/scoring", readScoringPayload());
+    await callApi("/api/export/settings", captured.exportLayout);
+    await callApi("/api/export/settings", captured.exportSettings);
+    if (captured.scoringRulesetChanged) {
+      await callApi("/api/scoring/profile", { ruleset: captured.scoringRuleset });
+    }
+    await callApi("/api/scoring", captured.scoring);
   }
 
   function flushPendingProjectDraftsKeepalive() {
@@ -442,7 +459,7 @@ export function createProjectPane({
 
   function setProjectActionAvailability() {
     const enabled = hasActiveProject();
-    ["open-project-folder", "open-practiscore-dashboard", "import-practiscore"].forEach((id) => {
+    ["open-practiscore-dashboard", "import-practiscore"].forEach((id) => {
       const control = $(id);
       if (control && "disabled" in control) control.disabled = !enabled;
     });

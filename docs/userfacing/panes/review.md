@@ -2,6 +2,8 @@
 
 The Review pane controls preview/export artifact visibility, Summary boxes, and custom boxes. It is where you decide which overlay badges remain visible, choose which metrics appear in a Summary box, and tune each box's placement, size, color, and opacity.
 
+Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custom text, styling, size, and placement shown over the video. Auto Summary boxes use each output stage's own timing, scoring, and placement data.
+
 <img src="../../screenshots/ReviewPane.png" alt="Review pane with badge visibility toggles and an expanded Summary box" width="960">
 
 <img src="../../screenshots/ReviewPane2.png" alt="Lower Review pane with expanded custom text box placement, size, color, and opacity controls" width="840">
@@ -92,6 +94,7 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 | A box moved after overlay changes. | That is expected when `Lock to shot stack` is on. |
 | A box is missing from export. | Confirm the box enable checkbox is on. |
 | A badge is hidden even though Overlay is configured. | Recheck the Review visibility toggles. |
+| A later stage should use the same Review layout. | Configure the earlier active stage. Its presentation settings waterfall to later stages unless a later stage has been edited directly. |
 
 ## Related Guides
 

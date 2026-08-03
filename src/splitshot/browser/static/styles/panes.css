@@ -2348,7 +2348,12 @@
 }
 
 .metrics-graph-list-workbench {
+  align-content: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   margin-bottom: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-1);
 }
 
 .metrics-graph-card {
@@ -2406,6 +2411,90 @@
 
 .metrics-graph-card-wide .metrics-graph-svg {
   height: 150px;
+}
+
+.metrics-graph-timeline-svg {
+  height: 84px;
+}
+
+.metrics-graph-card-wide .metrics-graph-timeline-svg {
+  height: 110px;
+}
+
+.metrics-stage-overview {
+  font-size: var(--text-xs);
+  overflow-x: auto;
+}
+
+.metrics-stage-overview > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--space-1) 0.35rem;
+}
+
+.metrics-stage-overview .metrics-match-cell {
+  background: rgba(57, 208, 111, 0.08);
+  font-weight: var(--weight-semibold);
+}
+
+.metrics-stage-overview .metrics-stage-label {
+  text-align: left;
+}
+
+.metrics-match-section,
+.metrics-stage-breakdown-section {
+  display: grid;
+  gap: 10px;
+}
+
+.metrics-stage-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.metrics-stage-tree-item {
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.metrics-stage-tree-item > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  list-style-position: inside;
+  padding: 10px 12px;
+}
+
+.metrics-stage-tree-item > summary span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.metrics-stage-tree-body {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.metrics-stage-tree-body h4 {
+  margin: 0;
+}
+
+.metrics-stage-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metrics-stage-shot-table {
+  overflow-x: auto;
+}
+
+.metrics-stage-tree-workbench {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .metrics-graph-grid-line {
@@ -2818,7 +2907,6 @@
   .control-grid,
   .score-color-grid,
   .metrics-summary-grid,
-  .project-action-grid,
   .score-option-grid,
   .penalty-grid {
     grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
@@ -3281,7 +3369,7 @@
 .metrics-workbench {
   background: var(--surface);
   display: none;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(300px, 2fr) minmax(180px, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -3720,6 +3808,64 @@
 .queue-process-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.queue-boundary-actions,
+.queue-boundary-files {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.queue-boundary-files small {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-combined-btn:not(:disabled) {
+  background: var(--green);
+  border-color: var(--green);
+  color: #08110b;
+  font-weight: var(--weight-bold);
+}
+
+.intro-outro-shell,
+.intro-outro-box-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.intro-outro-kind-tabs button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #111;
+}
+
+.intro-outro-file {
+  display: block;
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.intro-outro-box {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.intro-outro-metrics {
+  display: grid;
+  gap: var(--space-1);
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+}
+
+.intro-outro-preview-badge {
+  position: absolute;
+  white-space: pre-line;
+  z-index: 1;
 }
 
 .queue-status-text {

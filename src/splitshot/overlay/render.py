@@ -34,6 +34,7 @@ from splitshot.scoring.logic import (
     calculate_scoring_summary,
     current_shot_index,
     format_imported_stage_overlay_text,
+    format_review_summary_overlay_text,
     penalty_field_short_label,
     shot_display_time_ms,
 )
@@ -52,6 +53,11 @@ class Badge:
     text_bias: str = "center"
     image_path: str = ""
     image_scale_mode: str = "contain"
+    style_type: str | None = None
+    font_family: str | None = None
+    font_size: int | None = None
+    font_bold: bool | None = None
+    font_italic: bool | None = None
 
 
 _FONT_SIZE = {
@@ -423,7 +429,12 @@ class OverlayRenderer:
 
     @staticmethod
     def _text_box_text(
-        project: Project, position_ms: int, source: str, text: str, enabled: bool
+        project: Project,
+        position_ms: int,
+        source: str,
+        text: str,
+        enabled: bool,
+        summary_metric_ids: list[str] | None = None,
     ) -> str:
         if not enabled:
             return ""
@@ -436,9 +447,17 @@ class OverlayRenderer:
             if final_shot_time is None or position_ms < final_shot_time:
                 return ""
             override_text = text.strip()
-            if override_text:
+            review_text = format_review_summary_overlay_text(
+                project, summary_metric_ids
+            ).strip()
+            legacy_text = format_imported_stage_overlay_text(
+                project.scoring.imported_stage
+            ).strip()
+            if override_text and override_text not in {review_text, legacy_text}:
                 return override_text
-            return format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
+            if review_text:
+                return review_text
+            return legacy_text
         return text.strip()
 
     def paint(
@@ -530,6 +549,7 @@ class OverlayRenderer:
                 text_box.source,
                 text_box.text,
                 text_box.enabled,
+                text_box.summary_metric_ids,
             )
             if not text_value:
                 continue
@@ -539,7 +559,6 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
-            text_box_auto_size = _auto_badge_size((text_value,), metrics, line_height=line_height)
             if text_box.lock_to_stack and text_box.quadrant != _ABOVE_FINAL_TEXT_BOX_QUADRANT:
                 rects = self._paint_badges(
                     painter,
@@ -549,6 +568,11 @@ class OverlayRenderer:
                             custom_style,
                             width=text_box.width or None,
                             height=text_box.height or None,
+                            style_type=text_box.style_type,
+                            font_family=text_box.font_family,
+                            font_size=text_box.font_size,
+                            font_bold=text_box.font_bold,
+                            font_italic=text_box.font_italic,
                         )
                     ],
                     project,
@@ -557,7 +581,6 @@ class OverlayRenderer:
                     quadrant=project.overlay.shot_quadrant,
                     anchor_rect=None,
                     after_rect=stack_terminal_rect,
-                    auto_badge_size=text_box_auto_size,
                     use_project_bubble_size=False,
                 )
                 if rects:
@@ -581,6 +604,11 @@ class OverlayRenderer:
                         custom_style,
                         width=text_box.width or None,
                         height=text_box.height or None,
+                        style_type=text_box.style_type,
+                        font_family=text_box.font_family,
+                        font_size=text_box.font_size,
+                        font_bold=text_box.font_bold,
+                        font_italic=text_box.font_italic,
                     )
                 ],
                 project,
@@ -590,7 +618,6 @@ class OverlayRenderer:
                 custom_x=text_box.x,
                 custom_y=text_box.y,
                 anchor_rect=anchor_rect,
-                auto_badge_size=text_box_auto_size,
                 use_project_bubble_size=False,
             )
         for popup in project.popups:
@@ -659,14 +686,15 @@ class OverlayRenderer:
         if not badges:
             return []
 
-        font_size = project.overlay.font_size or _FONT_SIZE.get(
+        first_badge = badges[0]
+        font_size = first_badge.font_size or project.overlay.font_size or _FONT_SIZE.get(
             project.overlay.badge_size, _FONT_SIZE[BadgeSize.M]
         )
         font = _overlay_qfont(
-            project.overlay.font_family or default_overlay_font_family(),
+            first_badge.font_family or project.overlay.font_family or default_overlay_font_family(),
             font_size,
-            project.overlay.font_bold,
-            project.overlay.font_italic,
+            project.overlay.font_bold if first_badge.font_bold is None else first_badge.font_bold,
+            project.overlay.font_italic if first_badge.font_italic is None else first_badge.font_italic,
         )
         painter.setFont(font)
         metrics = painter.fontMetrics()
@@ -788,9 +816,10 @@ class OverlayRenderer:
             background.setAlphaF(badge.style.opacity)
             painter.setPen(Qt.NoPen)
             painter.setBrush(background)
-            if project.overlay.style_type == "bubble":
+            style_type = badge.style_type or project.overlay.style_type
+            if style_type == "bubble":
                 radius = rect.height() / 2
-            elif project.overlay.style_type == "rounded":
+            elif style_type == "rounded":
                 radius = 16
             else:
                 radius = 0

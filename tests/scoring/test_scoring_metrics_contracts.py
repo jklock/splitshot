@@ -6,8 +6,10 @@ from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, Sc
 from splitshot.scoring.logic import (
     apply_scoring_preset,
     calculate_scoring_summary,
+    format_review_summary_overlay_text,
     normalize_penalty_counts_for_ruleset,
     normalize_score_letter_for_ruleset,
+    stage_competition_placement,
 )
 
 
@@ -140,3 +142,59 @@ def test_imported_time_plus_summary_keeps_video_raw_official_raw_and_delta_contr
     assert summary["final_delta_seconds"] == 0.25
     assert summary["display_label"] == "Final"
     assert summary["display_value"] == "7.50"
+
+
+def test_stage_overlay_uses_official_spreadsheet_values_and_stage_rankings() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=40_000, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+    ]
+    project.scoring.competitor_name = "Selected Shooter"
+    project.scoring.division = "CO"
+    project.scoring.classification = "SS"
+    project.scoring.imported_stage = ImportedStageScore(
+        source_name="IDPA.csv",
+        match_type="idpa",
+        competitor_name="Selected Shooter",
+        competitor_place=5,
+        stage_number=2,
+        division="CO",
+        classification="SS",
+        raw_seconds=29.44,
+        aggregate_points=3.0,
+        final_time=32.44,
+        score_counts={"Points Down": 3.0, "Procedural Error": 1.0},
+    )
+    project.scoring.comparison_competitors = [
+        {"name": "CO Leader", "place": 9, "division": "CO", "classification": "MA", "final_time": 31.0},
+        {"name": "SS Peer", "place": 1, "division": "PCC", "classification": "SS", "final_time": 33.0},
+        {"name": "Other", "place": 2, "division": "PCC", "classification": "MA", "final_time": 34.0},
+    ]
+
+    assert stage_competition_placement(project, dimension="division") == "2/2"
+    assert stage_competition_placement(project, dimension="classification") == "1/2"
+    assert stage_competition_placement(project) == "2/4"
+    text = format_review_summary_overlay_text(
+        project,
+        [
+            "score_time",
+            "raw_time",
+            "points_down",
+            "penalties",
+            "division_placement",
+            "class_placement",
+            "overall_placement",
+        ],
+    )
+    assert text.splitlines() == [
+        "Score / Time 32.44",
+        "Raw Time 29.44s",
+        "Points Down 3",
+        "Penalties 1",
+        "CO - 2/2",
+        "SS - 1/2",
+        "Overall - 2/4",
+    ]
