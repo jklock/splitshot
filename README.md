@@ -46,9 +46,9 @@ If you just forked the repo and want maintainer context, use the developer secti
 6. Use `Splits` to correct timing, add or remove shots, review timing events, and make the final timeline match the footage before deeper presentation work.
 7. Import PractiScore context if you need official stage and competitor data, then finish scoring in `Score`.
 8. Arrange added media in `Compose`, set source timing in `Trim`, create callouts in `Markers`, tune badges in `Overlay`, and configure text boxes in `Review`.
-9. Check `Metrics`, choose codec and render settings in `Export`, then use `Queue` to add, run, monitor, or cancel output jobs.
+9. Check `Metrics`, choose codec and render settings in `Export`, configure optional boundary media in `In / Out`, then use `Queue` to add, run, monitor, or cancel output jobs.
 
-The left rail contains 14 panes in workflow order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
+The left rail contains 15 panes in workflow order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 
 For the full user workflow, continue with [docs/userfacing/workflow.md](docs/userfacing/workflow.md).
 

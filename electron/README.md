@@ -61,7 +61,7 @@ That path validates the actual user-download artifact instead of an unpacked sta
    On Windows the packaged app uses an app-local runtime under `bundle/python/` instead of a virtualenv so the installed NSIS app does not depend on the build machine's base Python location.
    On macOS and Linux the packaged app now sets `PYTHONHOME` to the bundled `.venv`, which carries the copied stdlib needed for a self-contained installed runtime.
 2. The Python backend is started with `splitshot --headless --no-open`. If a `.ssproj` was opened, `--project <path>` is appended.
-3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`.
+3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`. Each window launch resets the page zoom factor to 100%; the standard `View` menu zoom commands remain available after launch.
 4. The `launch-intent` module handles single-instance locking, `.ssproj` file associations, and `splitshot://` protocol URLs.
 
 ## Bundle

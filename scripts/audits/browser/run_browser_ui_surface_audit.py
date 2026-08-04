@@ -193,7 +193,7 @@ def open_page(
     playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
 ) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
-    page = browser.new_page(viewport={"width": 1440, "height": 1024})
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
     page.goto(base_url, wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
     return browser, page
@@ -350,6 +350,38 @@ def capture_release_surface_screenshots(
         wait_for_processing_bar_to_settle(page)
     _capture_surface_screenshot(page, artifact_root, "expanded-timing-workbench")
 
+    page.evaluate("setTimingExpanded(false, { persistUiState: false })")
+    _set_active_tool(page, "metrics")
+    page.evaluate("setMetricsExpanded(true, { persistUiState: false })")
+    page.locator("#metrics-workbench").wait_for(state="visible")
+    first_metric_stage = page.locator(
+        "#metrics-workbench-stage-tree details.metrics-stage-tree-item"
+    ).first
+    if first_metric_stage.count() and not first_metric_stage.evaluate("item => item.open"):
+        first_metric_stage.evaluate("item => { item.open = true; item.dispatchEvent(new Event('toggle')); }")
+    _capture_surface_screenshot(page, artifact_root, "expanded-metrics")
+    metric_charts = page.locator(
+        "#metrics-workbench-stage-tree .metrics-stage-tree-body .metrics-graph-list"
+    ).first
+    if metric_charts.count():
+        metric_charts.scroll_into_view_if_needed()
+        page.wait_for_timeout(100)
+        _capture_surface_screenshot(page, artifact_root, "expanded-metrics-charts")
+        page.locator("#metrics-workbench").evaluate("element => { element.scrollTop = 0; }")
+    original_viewport = page.viewport_size
+    if original_viewport:
+        page.set_viewport_size({"width": 842, "height": 900})
+        page.wait_for_timeout(150)
+        _capture_surface_screenshot(page, artifact_root, "expanded-metrics-narrow")
+        if metric_charts.count():
+            metric_charts.scroll_into_view_if_needed()
+            page.wait_for_timeout(100)
+            _capture_surface_screenshot(page, artifact_root, "expanded-metrics-charts-narrow")
+            page.locator("#metrics-workbench").evaluate("element => { element.scrollTop = 0; }")
+        page.set_viewport_size(original_viewport)
+        page.wait_for_timeout(150)
+
+    page.evaluate("setMetricsExpanded(false, { persistUiState: false })")
     _set_active_tool(page, "merge")
     first_card = page.locator(".merge-media-card").first
     first_body = first_card.locator(".merge-media-card-body")
@@ -1281,8 +1313,8 @@ def audit_review_locked_text_box_drag_moves_stack(page: Page) -> CheckResult:
     )
     return expect(
         setup["before_box_locked"] is True
-        and header_click["expanded"] is False
-        and header_click["body_hidden"] is True
+        and header_click["expanded"] is True
+        and header_click["body_hidden"] is False
         and result["shot_quadrant"] == "custom"
         and result["custom_x"] is not None
         and result["custom_y"] is not None

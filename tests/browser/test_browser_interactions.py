@@ -1000,7 +1000,6 @@ def test_review_text_box_drag_updates_overlay_coordinates(synthetic_video_factor
                     arg=before_cards,
                 )
                 new_card = page.locator("#review-text-box-list .text-box-card").nth(before_cards)
-                new_card.locator('[data-text-box-action="toggle"]').click()
                 new_card.locator('textarea[data-text-box-field="text"]').fill("Review note")
                 page.wait_for_timeout(250)
 
@@ -1249,8 +1248,6 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 new_card = page.locator("#review-text-box-list .text-box-card").nth(before_cards)
                 box_id = new_card.get_attribute("data-box-id")
                 assert box_id
-
-                new_card.locator('[data-text-box-action="toggle"]').click()
 
                 page.wait_for_function(
                     """(boxId) => {

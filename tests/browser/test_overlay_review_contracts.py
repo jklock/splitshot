@@ -893,7 +893,9 @@ def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> Non
     assert "return reviewPane?.buildTextBoxCard(box, index);" in app_js
     assert "function renderTextBoxEditors() {" in app_js
     assert "return reviewPane?.renderTextBoxEditors();" in app_js
-    assert "setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));" in review_js
+    assert 'data-text-box-action="toggle"' not in review_js
+    assert "return Boolean(boxId);" in review_js
+    assert "void expanded;" in review_js
     build_text_box_body = review_js[
         review_js.index("function buildTextBoxCard(") : review_js.index(
             "function renderTextBoxEditors()"

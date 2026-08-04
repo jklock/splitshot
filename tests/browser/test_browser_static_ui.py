@@ -1596,7 +1596,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert 'input[type="number"]::-webkit-outer-spin-button' in css
     assert ".pip-size-control output" in css
     assert "height: var(--app-height, 100vh);" in css
-    assert "min-height: var(--app-height, 100vh);" in css
+    assert "html,\n  body {\n    height: 100%;\n    overflow: hidden;" in css
+    assert "height: var(--app-height, 100vh);\n    min-height: 0;" in css
     assert "touch-action: none;" in css
     assert "touch-action: manipulation;" in css
     assert "-webkit-user-select: none;" in css

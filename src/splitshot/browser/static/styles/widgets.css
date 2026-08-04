@@ -33,14 +33,14 @@
 @media (max-width: 900px) {
   html,
   body {
-    height: auto;
-    overflow: auto;
+    height: 100%;
+    overflow: hidden;
   }
 
   .cockpit-shell {
     grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);
-    height: auto;
-    min-height: var(--app-height, 100vh);
+    height: var(--app-height, 100vh);
+    min-height: 0;
   }
 
   .resize-handle {
@@ -49,8 +49,8 @@
   }
 
   .tool-rail {
-    height: auto;
-    min-height: auto;
+    height: var(--app-height, 100vh);
+    min-height: 0;
   }
 
   .tool-nav {
@@ -67,9 +67,9 @@
   }
 
   .cockpit {
-    height: auto;
-    min-height: var(--app-height, 100vh);
-    overflow: visible;
+    height: var(--app-height, 100vh);
+    min-height: 0;
+    overflow: hidden;
   }
 
   .processing-bar {
@@ -87,14 +87,24 @@
 
   .review-grid {
     grid-template-columns: minmax(0, 1fr);
-    height: auto;
-    overflow: visible;
+    grid-template-rows: max-content max-content;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .review-stack {
-    grid-template-rows: auto auto auto;
+    grid-template-rows: minmax(90px, 1fr) var(--resize-handle-size) minmax(72px, 35%);
+    height: min(58vh, calc(var(--app-height, 100vh) - var(--topbar-height)));
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .inspector {
     height: auto;
+    max-height: none;
     overflow: visible;
+    width: 100%;
   }
 
   .button-grid,
@@ -152,16 +162,37 @@
 
   .video-stage,
   .video-stage video {
-    min-height: 280px;
+    min-height: 0;
     max-height: 56vh;
   }
 
   .waveform-panel {
-    min-height: 220px;
+    min-height: 72px;
   }
 
   .waveform-panel canvas {
-    min-height: 160px;
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 720px) {
+  .cockpit-shell,
+  .cockpit-shell.rail-collapsed {
+    --rail-width: 48px;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  }
+
+  .resize-handle-rail {
+    display: none;
+  }
+
+  .cockpit-shell:not(.rail-collapsed) .rail-brand small,
+  .cockpit-shell:not(.rail-collapsed) .tool-item b {
+    display: none;
+  }
+
+  .cockpit-shell:not(.rail-collapsed) .tool-item::after {
+    content: attr(data-short);
   }
 }
 
@@ -263,6 +294,14 @@
 
 .cockpit.scoring-expanded .review-stack {
   grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .review-stack,
+.cockpit.timing-expanded .review-stack,
+.cockpit.metrics-expanded .review-stack,
+.cockpit.scoring-expanded .review-stack {
+  height: 100%;
+  max-height: none;
 }
 
 .cockpit.scoring-expanded .video-stage,

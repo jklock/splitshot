@@ -48,7 +48,7 @@ Imported standings use the sport's own acronyms: `<division> - <place>/<division
 
 ## Screenshot Coverage
 
-The screenshot set covers every pane plus expanded timing, waveform, metrics, ShotML sections, score cards, added media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the export log modal.
+The screenshot set covers 14 of the 15 panes plus expanded timing, waveform, metrics, ShotML sections, score cards, added media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the export log modal. `In / Out` is documented in the workflow but does not yet have a canonical screenshot.
 
 ## Common Workflows
 

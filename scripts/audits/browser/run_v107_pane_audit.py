@@ -330,12 +330,6 @@ def _prepare_review_capture(page: Page) -> None:
     if imported_button.count() > 0 and imported_button.is_visible():
         imported_button.click()
         page.wait_for_timeout(250)
-    first_toggle = page.locator(
-        '#review-text-box-list .text-box-card [data-text-box-action="toggle"]'
-    ).first
-    if first_toggle.count() > 0 and first_toggle.is_visible():
-        first_toggle.click()
-        page.wait_for_timeout(150)
     try:
         first_card = page.locator("#review-text-box-list .text-box-card").first
         if first_card.count() > 0:

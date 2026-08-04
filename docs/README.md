@@ -81,7 +81,7 @@ uv run python scripts/docs/capture_browser_screenshots.py
 
 Covered surfaces:
 
-- Every left-rail pane: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`
+- Fourteen left-rail panes: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`. `In / Out` is part of the live 15-pane rail but does not yet have a canonical screenshot in this set.
 - Expanded score, splits, waveform, metrics, marker, settings, review, and ShotML states already represented by the capture script
 - Shared modals: color picker and export log
 

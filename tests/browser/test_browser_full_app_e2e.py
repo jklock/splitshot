@@ -450,7 +450,6 @@ def _exercise_markers_review_overlay(page) -> None:
 
     review_card = page.locator("#review-text-box-list .text-box-card").last
     review_card.wait_for(state="attached")
-    review_card.locator('[data-text-box-action="toggle"]').click()
     review_card.locator('textarea[data-text-box-field="text"]').wait_for(state="visible")
     review_card.locator('textarea[data-text-box-field="text"]').fill("Master review note")
     page.wait_for_function(
@@ -851,7 +850,6 @@ def test_browser_review_summary_imported_metrics_truth_gate(
                     }"""
                 )
                 review_card = page.locator("#review-text-box-list .text-box-card").last
-                review_card.locator('[data-text-box-action="toggle"]').click()
                 selector_labels = [
                     label.strip()
                     for label in review_card.locator(

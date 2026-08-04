@@ -261,7 +261,7 @@ def test_project_create_and_open_actions_fill_the_inspector_evenly() -> None:
         server.shutdown()
 
 
-def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated() -> None:
+def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated(tmp_path: Path) -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -270,7 +270,7 @@ def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated() -> No
             page = browser.new_page(viewport={"width": 1500, "height": 1000})
             try:
                 page.goto(server.url, wait_until="domcontentloaded")
-                create_project(page, str(Path("tmp/codex/alpha-spacing.ssproj").resolve()))
+                create_project(page, str(tmp_path / "alpha-spacing.ssproj"))
                 page.evaluate("() => callApi('/api/project/stage/create', {})")
                 page.locator('button[data-tool="overlay"]').click(force=True)
 
@@ -323,7 +323,8 @@ def test_imported_stage_review_summary_is_populated_without_manual_reentry() -> 
                 page.goto(server.url, wait_until="domcontentloaded")
                 page.locator('button[data-tool="review"]').click(force=True)
                 card = page.locator(".text-box-card").filter(has_text="Summary").first
-                card.locator('[data-text-box-action="toggle"]').click()
+                assert card.locator('[data-text-box-action="toggle"]').count() == 0
+                assert card.locator(".text-box-card-body").is_visible()
                 page.wait_for_function(
                     """() => {
                       const card = document.querySelector('.text-box-card');

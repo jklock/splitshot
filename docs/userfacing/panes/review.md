@@ -29,7 +29,6 @@ Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custo
 | `Add Custom Box` | Adds a manually typed text box. |
 | `Add Summary Box` | Adds a PractiScore-backed summary box. |
 | Box enable checkbox | Turns one text box on or off. |
-| `>` / `v` | Expands or collapses that box editor. |
 | `Duplicate` | Copies the box and its styling. |
 | `Remove` | Deletes the box. |
 | Top-right lock icon | Unlocks or relocks the shared layout resize controls from the upper-right corner of the top status bar. The inspector header no longer duplicates this icon. |
@@ -69,7 +68,7 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 3. Use `Add Summary Box` to add a Summary box.
 4. Use `Add Custom Box` for a typed note, title, or stage plan.
 5. Check the metrics you want in the Summary box.
-6. Expand or collapse cards with `>` / `v`; the pane preserves the clicked card position so the inspector does not jump vertically.
+6. Scroll the Review inspector to reach the complete editor for each box. Editors remain expanded so every setting is directly available.
 7. Use `Above Final Box` for a summary that should sit above the final result badge.
 8. Use `Custom` placement plus X/Y, or drag the rendered box in the video, when the box needs an exact location.
 9. When `Lock to shot stack` is on, dragging that rendered box moves the whole locked stack and keeps the box locked.
@@ -80,7 +79,9 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 ## Summary Box Behavior
 
 - Summary boxes render the checked metrics in the fixed order shown above.
+- Every Review box editor is always expanded. Older projects may still contain saved expansion state, but SplitShot ignores it and requires no migration.
 - `Above Final Box` keeps a summary aligned with the final score/result badge.
+- The complete portrait or landscape video remains visible while authoring. Dragging uses the displayed video frame, including its letterboxed bounds, so saved positions continue to match export geometry.
 - Locked boxes keep the same spacing relationship as the shot stack. Drag any locked item to reposition the stack as a group.
 - Custom boxes stay visible according to their own enable state and placement.
 - Enabled review boxes render into export.

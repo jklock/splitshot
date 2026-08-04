@@ -42,7 +42,7 @@ If you are new to the repo, read:
 
 | Script | Type | What it does | When to use it | Inputs / outputs |
 | --- | --- | --- | --- | --- |
-| `audits/browser/run_browser_ui_surface_audit.py` | audit | Verifies UI-surface expectations against the running browser app | Browser-shell regressions or control audits | Inputs: app runtime. Outputs: audit summary |
+| `audits/browser/run_browser_ui_surface_audit.py` | audit | Verifies UI-surface and viewport expectations against the running browser app, including 1400×900 and narrow 842×900 captures | Browser-shell regressions or control audits | Inputs: app runtime. Outputs: audit summary and screenshots |
 | `audits/browser/run_browser_interaction_audit.py` | audit | Exercises real browser interactions against local media fixtures | Interaction regressions or evidence gathering | Inputs: media paths and optional PractiScore file. Outputs: structured audit report |
 | `audits/browser/run_browser_av_audit.py` | audit | Checks audio/video playback and timeline stability | AV-specific browser regressions | Inputs: app runtime and media. Outputs: JSON/table audit summary |
 | `audits/browser/run_browser_export_matrix.py` | audit | Exercises browser export combinations | Export-surface investigation | Inputs: export matrix parameters. Outputs: matrix results |

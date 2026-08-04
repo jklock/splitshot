@@ -154,6 +154,12 @@ async function main() {
     await window.waitForLoadState('domcontentloaded', { timeout: ELECTRON_TIMEOUT });
     console.log('  DOM content loaded');
 
+    const zoomFactor = await electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ));
+    assert.equal(zoomFactor, 1);
+    console.log('  launch zoom reset to 100%');
+
     console.log('Evaluating bridge API...');
     const bridge = await window.evaluate(() => ({
       getVersion: typeof window.splitshot?.getVersion === 'function',

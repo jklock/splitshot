@@ -166,6 +166,97 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
         server.shutdown()
 
 
+@pytest.mark.parametrize("resolution", [(640, 360), (360, 640)])
+def test_review_video_frame_stays_contained_at_scaled_effective_viewports(
+    synthetic_video_factory,
+    resolution: tuple[int, int],
+) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name=f"viewport-{resolution[0]}x{resolution[1]}",
+            resolution=resolution,
+        )
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "review")
+                for viewport in (
+                    {"width": 1024, "height": 700},
+                    {"width": 819, "height": 560},
+                    {"width": 683, "height": 467},
+                    {"width": 512, "height": 350},
+                ):
+                    page.set_viewport_size(viewport)
+                    page.evaluate("renderViewportLayout()")
+                    page.wait_for_timeout(100)
+                    geometry = page.evaluate(
+                        """() => {
+                          const video = document.getElementById('primary-video');
+                          const stage = document.getElementById('video-stage');
+                          const shell = document.querySelector('.cockpit-shell');
+                          const frame = previewFrameClientRect(video, stage);
+                          const stageRect = stage.getBoundingClientRect();
+                          const shellRect = shell.getBoundingClientRect();
+                          const sampleRect = (x, y) => ({
+                            left: frame.left + (frame.width * x) - 1,
+                            right: frame.left + (frame.width * x) + 1,
+                            top: frame.top + (frame.height * y) - 1,
+                            bottom: frame.top + (frame.height * y) + 1,
+                            width: 2,
+                            height: 2,
+                          });
+                          return {
+                            frame: {
+                              left: frame.left,
+                              right: frame.left + frame.width,
+                              top: frame.top,
+                              bottom: frame.top + frame.height,
+                              width: frame.width,
+                              height: frame.height,
+                            },
+                            stage: { left: stageRect.left, right: stageRect.right, top: stageRect.top, bottom: stageRect.bottom },
+                            shell: { left: shellRect.left, right: shellRect.right, top: shellRect.top, bottom: shellRect.bottom },
+                            viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight },
+                            documentScroll: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+                            expectedRatio: currentPreviewAspectRatio(video),
+                            mapped: [
+                              resolveNormalizedPointFromRect(sampleRect(0, 0), frame),
+                              resolveNormalizedPointFromRect(sampleRect(0.5, 0.5), frame),
+                              resolveNormalizedPointFromRect(sampleRect(1, 1), frame),
+                            ],
+                          };
+                        }"""
+                    )
+                    frame = geometry["frame"]
+                    stage = geometry["stage"]
+                    assert frame["width"] > 0 and frame["height"] > 0
+                    assert frame["left"] >= stage["left"] - 1
+                    assert frame["right"] <= stage["right"] + 1
+                    assert frame["top"] >= stage["top"] - 1
+                    assert frame["bottom"] <= stage["bottom"] + 1
+                    assert frame["right"] <= geometry["viewport"]["width"] + 1
+                    assert frame["bottom"] <= geometry["viewport"]["height"] + 1
+                    assert frame["width"] / frame["height"] == pytest.approx(
+                        geometry["expectedRatio"], rel=0.03
+                    )
+                    assert geometry["shell"]["right"] <= geometry["viewport"]["width"] + 1
+                    assert geometry["shell"]["bottom"] <= geometry["viewport"]["height"] + 1
+                    assert geometry["documentScroll"]["width"] <= geometry["viewport"]["width"] + 1
+                    assert geometry["documentScroll"]["height"] <= geometry["viewport"]["height"] + 1
+                    assert geometry["mapped"][0] == pytest.approx({"x": 0, "y": 0}, abs=0.01)
+                    assert geometry["mapped"][1] == pytest.approx({"x": 0.5, "y": 0.5}, abs=0.01)
+                    assert geometry["mapped"][2] == pytest.approx({"x": 1, "y": 1}, abs=0.01)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_primary_rail_tool_buttons_route_to_matching_panes_and_persist_active_tool() -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)

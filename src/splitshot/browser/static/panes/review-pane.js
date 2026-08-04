@@ -500,24 +500,20 @@ export function createReviewPane({
   }
 
   function isReviewTextBoxExpanded(boxId) {
-    if (!boxId) return false;
-    if (currentReviewTextBoxExpansion().has(boxId)) return Boolean(currentReviewTextBoxExpansion().get(boxId));
-    return false;
+    return Boolean(boxId);
   }
 
   function setReviewTextBoxExpanded(boxId, expanded) {
-    if (!boxId) return;
-    currentReviewTextBoxExpansion().set(boxId, Boolean(expanded));
-    syncLocalProjectUiState();
-    scheduleProjectUiStateApply();
+    // Compatibility no-op: saved expansion state remains readable, but Review
+    // text-box editors are intentionally always open.
+    void boxId;
+    void expanded;
   }
 
   function buildTextBoxCard(box, index) {
     const card = documentObject.createElement("section");
     card.className = "text-box-card";
     card.dataset.boxId = box.id;
-    const expanded = isReviewTextBoxExpanded(box.id);
-    card.classList.toggle("collapsed", !expanded);
     const boxLockedToStack = Boolean(box.lock_to_stack);
     const displayedCoordinates = boxLockedToStack && box.quadrant !== aboveFinalTextBoxValue
       ? resolveRenderedTextBoxCoordinates(box.id, box)
@@ -559,12 +555,11 @@ export function createReviewPane({
       <div class="text-box-card-header">
         <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
         <div class="text-box-card-actions">
-          <button type="button" class="scoring-shot-toggle" data-text-box-action="toggle" aria-label="${expanded ? "Hide" : "Show"} text box editor">${expanded ? "v" : ">"}</button>
           <button type="button" data-text-box-action="duplicate">Duplicate</button>
           <button type="button" data-text-box-action="remove">Remove</button>
         </div>
       </div>
-      <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
+      <div class="text-box-card-body">
         <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
         <p class="hint" data-text-box-hint="true"></p>
         ${contentEditor}
@@ -626,8 +621,6 @@ export function createReviewPane({
         </div>
       </div>
     `;
-    const body = card.querySelector(".text-box-card-body");
-    if (body) body.hidden = !expanded;
     syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
     syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
     syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
@@ -704,18 +697,6 @@ export function createReviewPane({
           .filter(Boolean);
         setOverlayTextBoxField(box.id, "summary_metric_ids", metricIds, { commit: true, rerender: true });
       });
-    });
-    card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      preserveElementViewportAnchor(
-        () => documentObject.querySelector(`.text-box-card[data-box-id="${box.id}"]`),
-        () => {
-          setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
-          renderTextBoxEditors();
-        },
-      );
     });
     card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
       event.preventDefault();

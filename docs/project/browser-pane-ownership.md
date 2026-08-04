@@ -12,11 +12,11 @@ Audit basis: the v1.0.7 browser shell/backend wiring and the code-first pane fun
 - `Splits`: split rows, timing event editing, waveform controls, and timing workbench state.
 - `Markers`: marker image and callout authoring.
 - `Overlay`: overlay styling, placement, drag, and preview controls.
-- `Review`: review playback state, review visibility state, and imported summary presentation.
+- `Review`: review playback state, review visibility state, always-expanded text-box editors, and imported summary presentation. Legacy serialized expansion state remains readable but does not affect the UI.
 - `Export`: stage-local export settings only; no direct render execution surface.
 - `In / Out`: sidebar label for the Intro / Outro pane, which owns project-managed boundary videos, independent audio/video fades, WYSIWYG text overlays, and match-level result fields.
 - `Queue`: all-match queue membership/state, intro/outro inclusion, batch processing, combined processing, output reveal, and the live processing log.
-- `Metrics`: metrics workbench, graphs, metrics exports.
+- `Metrics`: the contained scrolling metrics workbench, responsive and accessible graphs, and unchanged metrics exports.
 - `ShotML`: ShotML defaults, proposals, and proposal actions.
 - `Settings`: settings sections, settings summaries, and section save/reset payload building.
 
@@ -36,6 +36,8 @@ Audit basis: the v1.0.7 browser shell/backend wiring and the code-first pane fun
 - generic route helpers
 - media, waveform, and layout runtimes
 - top-level render orchestration
+
+The shell owns viewport containment. Active inspectors and expanded workbenches own scrolling, while preview overlays continue to use the rendered video frame as their coordinate space.
 
 Pane-owned summaries and section-owned settings payloads should stay out of the shell.
 

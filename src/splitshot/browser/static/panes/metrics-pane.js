@@ -1109,7 +1109,11 @@ export function createMetricsPane({
       rect.setAttribute("height", String(Math.max(1, (padding.top + plotHeight) - y)));
       rect.setAttribute("fill", bar.category.color);
       rect.setAttribute("class", `metrics-graph-bar${bar.highlight ? " highlight" : ""}`);
-      appendMetricsSvgTitle(rect, `${bar.label}: ${metricsGraphValueLabel(bar.value, graph.unit)} • ${bar.category.label}`);
+      const accessibleLabel = `${bar.highlight ? "You, " : ""}rank ${bar.rank || index + 1}, ${bar.label}: ${metricsGraphValueLabel(bar.value, graph.unit)}`;
+      rect.setAttribute("tabindex", "0");
+      rect.setAttribute("role", "img");
+      rect.setAttribute("aria-label", accessibleLabel);
+      appendMetricsSvgTitle(rect, accessibleLabel);
       svg.appendChild(rect);
 
       if (bar.highlight || (!compact && bars.length <= 8)) {
@@ -1128,6 +1132,7 @@ export function createMetricsPane({
         axis.setAttribute("y", String(viewHeight - 6));
         axis.setAttribute("text-anchor", "middle");
         axis.setAttribute("class", "metrics-graph-axis-label");
+        axis.setAttribute("aria-hidden", "true");
         axis.textContent = bar.shortLabel || bar.label;
         svg.appendChild(axis);
       }
@@ -1336,10 +1341,11 @@ export function createMetricsPane({
     const otherBarColor = "#4ea7ff";
     const unit = comparison.resultKey === "final_time" ? "s" : "HF";
     function buildBars(cohort) {
-      return cohort.items.map((c) => ({
+      return cohort.items.map((c, index) => ({
         key: c.name,
         label: c.name,
-        shortLabel: c.name.split(" ").pop() || c.name,
+        shortLabel: c.name === myName ? "You" : String(index + 1),
+        rank: index + 1,
         value: c[comparison.resultKey],
         category: { color: c.name === myName ? userBarColor : otherBarColor },
         highlight: c.name === myName,

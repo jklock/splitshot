@@ -69,8 +69,14 @@ The supported test baseline is Python 3.12 with `uv`, FFmpeg/FFprobe on `PATH`, 
 ### Overlay, review, and export
 
 - [../../tests/browser/test_overlay_review_contracts.py](../../tests/browser/test_overlay_review_contracts.py)
+- [../../tests/browser/test_browser_rail_layout.py](../../tests/browser/test_browser_rail_layout.py) for effective-zoom viewport containment, aspect-correct video framing, and overlay-coordinate geometry
 - [../../tests/export/test_export.py](../../tests/export/test_export.py)
 - [../../tests/export/test_merge_export_contracts.py](../../tests/export/test_merge_export_contracts.py)
+
+### Metrics layout and accessibility
+
+- [../../tests/browser/test_metrics_e2e.py](../../tests/browser/test_metrics_e2e.py) owns expanded-workspace containment, responsive columns, dense 8/11/27-competitor axes, selected-shooter identification, and full-name/value accessibility labels.
+- [../../tests/browser/test_browser_rail_layout.py](../../tests/browser/test_browser_rail_layout.py) owns minimum-window and scaled-effective-viewport geometry.
 
 ### Project files and queue execution
 

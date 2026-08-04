@@ -461,6 +461,12 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(
                 )
                 assert shooting_graph["barCount"] >= 2
 
+                workbench_stage = page.locator(
+                    "#metrics-workbench-stage-tree details.metrics-stage-tree-item"
+                ).first
+                workbench_stage.locator("summary").click()
+                assert workbench_stage.evaluate("item => item.open") is True
+
                 layout = page.evaluate(
                     """() => {
                       const workbench = document.getElementById("metrics-workbench");
@@ -471,13 +477,24 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(
                       const axisLabels = [...list.querySelectorAll(".metrics-graph-axis-label")];
                       const workbenchRect = workbench.getBoundingClientRect();
                       const tableRect = table.getBoundingClientRect();
+                      const viewportWidth = document.documentElement.clientWidth;
+                      const viewportHeight = document.documentElement.clientHeight;
                       return {
                         columnCount: getComputedStyle(list).gridTemplateColumns.split(" ").length,
                         viewWidths: svgs.map((svg) => svg.viewBox.baseVal.width),
                         maxAxisLabelWidth: Math.max(0, ...axisLabels.map((label) => label.getBoundingClientRect().width)),
                         cardWidth: cards[0]?.getBoundingClientRect().width || 0,
                         tableHeight: tableRect.height,
-                        tableContained: tableRect.bottom <= workbenchRect.bottom + 1,
+                        workbenchContained: workbenchRect.left >= -1
+                          && workbenchRect.right <= viewportWidth + 1
+                          && workbenchRect.top >= -1
+                          && workbenchRect.bottom <= viewportHeight + 1,
+                        tableHorizontallyContained: tableRect.left >= workbenchRect.left - 1
+                          && tableRect.right <= workbenchRect.right + 1,
+                        documentContained: document.documentElement.scrollWidth <= viewportWidth + 1
+                          && document.documentElement.scrollHeight <= viewportHeight + 1,
+                        workbenchScrollMode: getComputedStyle(workbench).overflowY,
+                        workbenchHasOverflow: workbench.scrollHeight > workbench.clientHeight,
                       };
                     }"""
                 )
@@ -485,7 +502,72 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(
                 assert set(layout["viewWidths"]) == {640}
                 assert layout["maxAxisLabelWidth"] < layout["cardWidth"] * 0.5
                 assert layout["tableHeight"] >= 180
-                assert layout["tableContained"] is True
+                assert layout["workbenchContained"] is True
+                assert layout["tableHorizontallyContained"] is True
+                assert layout["documentContained"] is True
+                assert layout["workbenchScrollMode"] == "auto"
+                assert layout["workbenchHasOverflow"] is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_dense_competitor_graphs_use_accessible_rank_labels_without_collisions() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                for effective_width in (1024, 819, 683, 512):
+                    page.set_viewport_size({"width": effective_width, "height": 700})
+                    for competitor_count in (8, 11, 27):
+                        result = page.evaluate(
+                            """({ competitorCount }) => {
+                              const host = document.createElement('div');
+                              host.style.width = '100%';
+                              document.body.appendChild(host);
+                              const bars = Array.from({ length: competitorCount }, (_, index) => ({
+                                label: `Competitor With Long Name ${index + 1}`,
+                                shortLabel: index === 2 ? 'You' : String(index + 1),
+                                rank: index + 1,
+                                value: index + 1,
+                                highlight: index === 2,
+                                category: { color: index === 2 ? '#ff7b22' : '#4ea7ff' },
+                              }));
+                              const svg = renderMetricsBarGraphSvg({ type: 'bars', unit: 's', bars }, { compact: false });
+                              host.appendChild(svg);
+                              const labels = [...svg.querySelectorAll('.metrics-graph-axis-label')];
+                              const rects = labels.map((label) => label.getBoundingClientRect());
+                              const collisions = rects.some((left, index) => rects.slice(index + 1).some((right) => (
+                                Math.min(left.right, right.right) - Math.max(left.left, right.left) > 0.5
+                                && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 0.5
+                              )));
+                              const barsRendered = [...svg.querySelectorAll('.metrics-graph-bar')];
+                              barsRendered[2]?.focus();
+                              const payload = {
+                                collisions,
+                                labels: labels.map((label) => label.textContent),
+                                barCount: barsRendered.length,
+                                accessible: barsRendered.every((bar) => bar.getAttribute('tabindex') === '0'
+                                  && bar.getAttribute('role') === 'img'
+                                  && bar.getAttribute('aria-label')?.includes('Competitor With Long Name')),
+                                selectedFocused: document.activeElement === barsRendered[2],
+                                selectedFill: barsRendered[2]?.getAttribute('fill'),
+                              };
+                              host.remove();
+                              return payload;
+                            }""",
+                            {"competitorCount": competitor_count},
+                        )
+                        assert result["barCount"] == competitor_count
+                        assert result["collisions"] is False
+                        assert result["accessible"] is True
+                        assert result["selectedFocused"] is True
+                        assert result["selectedFill"] == "#ff7b22"
+                        assert "You" in result["labels"]
+                        assert all(label == "You" or label.isdigit() for label in result["labels"])
             finally:
                 browser.close()
     finally:

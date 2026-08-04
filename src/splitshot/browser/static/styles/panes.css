@@ -2349,10 +2349,10 @@
 
 .metrics-graph-list-workbench {
   align-content: start;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   margin-bottom: var(--space-3);
-  min-height: 0;
-  overflow-y: auto;
+  min-height: max-content;
+  overflow: visible;
   padding-right: var(--space-1);
 }
 
@@ -2532,6 +2532,12 @@
   opacity: 1;
   stroke: rgba(248, 250, 252, 0.95);
   stroke-width: 1.5;
+}
+
+.metrics-graph-bar:focus {
+  outline: none;
+  stroke: var(--accent);
+  stroke-width: 3;
 }
 
 .metrics-graph-bar-value,
@@ -3367,11 +3373,36 @@
 }
 
 .metrics-workbench {
+  align-content: start;
   background: var(--surface);
   display: none;
-  grid-template-rows: auto auto minmax(0, 0.7fr) minmax(0, 1.5fr) minmax(180px, 0.8fr);
+  grid-auto-rows: max-content;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.metrics-workbench > .section-header:first-child {
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 8;
+}
+
+.metrics-workbench > :not(.section-header) {
+  margin-inline: var(--space-3);
+  width: auto;
+}
+
+.metrics-workbench > .metrics-match-summary {
+  margin-block: var(--space-3);
+}
+
+.metrics-workbench > .metrics-stage-breakdown-section,
+.metrics-workbench > .metrics-graph-list-workbench,
+.metrics-workbench > .metrics-workbench-table {
+  margin-bottom: var(--space-4);
 }
 
 .timing-workbench-table {
@@ -3385,9 +3416,15 @@
 .metrics-workbench-table {
   align-content: start;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.48fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr);
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  min-height: 180px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+@media (max-width: 900px) {
+  .metrics-graph-list-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 #timing-table {
