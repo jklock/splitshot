@@ -411,10 +411,87 @@ export function createMediaPane({
     };
   }
 
+  function renderStructureKey(stage) {
+    const primaryExpanded = sectionExpanded("primary");
+    const addedExpanded = sectionExpanded("added");
+    const addedCount = stage ? stageAddedMedia(stage).length : 0;
+    return `${stage?.id || ""}|${stages().length}|${addedCount}|${primaryExpanded}|${addedExpanded}|${stage?.primary_media?.path ? "1" : "0"}|${mediaMutationPending}`;
+  }
+
+  function syncScalarControls(pane, stage) {
+    const count = stageAssetCount(stage);
+    const statusText = pane.querySelector(".pane-status-text");
+    if (statusText) statusText.textContent = `${count} asset${count === 1 ? "" : "s"}`;
+    pane.setAttribute("aria-busy", mediaMutationPending ? "true" : "false");
+
+    const select = pane.querySelector("#media-active-stage-select");
+    if (select && documentObject.activeElement !== select) {
+      select.disabled = mediaMutationPending;
+      const desiredValue = stage?.id || "";
+      if (select.value !== desiredValue) {
+        select.value = desiredValue;
+      }
+    }
+
+    const labelInput = pane.querySelector("#media-active-stage-label");
+    if (labelInput && documentObject.activeElement !== labelInput) {
+      labelInput.disabled = mediaMutationPending;
+      const desiredLabel = stage ? stageLabel(stage) : "";
+      if (labelInput.value !== desiredLabel) {
+        labelInput.value = desiredLabel;
+      }
+    }
+
+    const saveBtn = pane.querySelector(".media-save-stage-btn");
+    if (saveBtn) saveBtn.disabled = !stage || mediaMutationPending;
+
+    const deleteBtn = pane.querySelector(".media-delete-stage-btn");
+    if (deleteBtn) {
+      deleteBtn.disabled = stages().length <= 1 || mediaMutationPending;
+      deleteBtn.dataset.stageId = stage?.id || "";
+    }
+
+    const addStageBtn = pane.querySelector(".media-add-stage-btn");
+    if (addStageBtn) addStageBtn.disabled = mediaMutationPending;
+
+    const addPrimaryBtn = pane.querySelector(".media-add-primary-btn");
+    if (addPrimaryBtn) {
+      addPrimaryBtn.disabled = mediaMutationPending;
+      addPrimaryBtn.dataset.stageId = stage?.id || "";
+    }
+
+    const addMoreBtn = pane.querySelector(".media-add-more-btn");
+    if (addMoreBtn) {
+      addMoreBtn.disabled = !stage?.primary_media?.path || mediaMutationPending;
+      addMoreBtn.dataset.stageId = stage?.id || "";
+    }
+
+    const primarySection = pane.querySelector("[data-media-section=\"primary\"]")?.closest(".media-pane-section");
+    if (primarySection) {
+      const body = primarySection.querySelector(".media-pane-section-body");
+      const expanded = sectionExpanded("primary");
+      primarySection.classList.toggle("collapsed", !expanded);
+      if (body) body.hidden = !expanded;
+    }
+
+    const addedSection = pane.querySelector("[data-media-section=\"added\"]")?.closest(".media-pane-section");
+    if (addedSection) {
+      const body = addedSection.querySelector(".media-pane-section-body");
+      const expanded = sectionExpanded("added");
+      addedSection.classList.toggle("collapsed", !expanded);
+      if (body) body.hidden = !expanded;
+    }
+  }
+
   function render() {
     const pane = $("media-pane");
     if (!pane) return;
     const stage = activeStage();
+    const structureKey = renderStructureKey(stage);
+    if (pane.dataset.renderStructureKey === structureKey && pane.querySelector(".media-pane-shell")) {
+      syncScalarControls(pane, stage);
+      return;
+    }
     const count = stageAssetCount(stage);
     pane.setAttribute("aria-busy", mediaMutationPending ? "true" : "false");
     pane.innerHTML = `
@@ -427,6 +504,7 @@ export function createMediaPane({
         ${renderStagesSection(stage)}
       </div>
     `;
+    pane.dataset.renderStructureKey = structureKey;
     bindEvents(pane);
   }
 

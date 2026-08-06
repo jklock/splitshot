@@ -1251,7 +1251,7 @@ function requireValue(id, label) {
 }
 
 function controlIsActive(control) {
-  return !!control && document.activeElement === control;
+  return !!control && control.contains(document.activeElement);
 }
 
 function captureScrollState(elements = []) {
@@ -1370,7 +1370,9 @@ function hasActivePointerInteraction() {
       || popupBubbleDrag
       || draggingShotId
       || waveformPanDrag
-      || waveformNavigatorDrag,
+      || waveformNavigatorDrag
+      || timingRowEdits.size > 0
+      || scoringRowEdits.size > 0,
   );
 }
 
@@ -6221,9 +6223,26 @@ function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
   syncSelectedShotId();
+  const expandedTable = tableId === "timing-workbench-table";
+  // Preserve active editing inputs so a concurrent render does not destroy
+  // user work or steal focus.
+  const preservedEditors = new Map();
+  if (timingRowEdits.size > 0) {
+    table.querySelectorAll(".timing-adjustment-input").forEach((input) => {
+      const cell = input.closest(".timing-edit-cell");
+      const shotId = cell?.dataset.shotId;
+      if (shotId && timingRowEdits.has(shotId)) {
+        preservedEditors.set(shotId, {
+          value: input.value,
+          selectionStart: input.selectionStart,
+          selectionEnd: input.selectionEnd,
+          focused: document.activeElement === input,
+        });
+      }
+    });
+  }
   withPreservedScrollState([table], () => {
     table.innerHTML = "";
-    const expandedTable = tableId === "timing-workbench-table";
     const compactEnabled = $("timing-enabled")?.checked ?? true;
     if (!expandedTable && !compactEnabled) {
       applyTimingTableColumns(table);
@@ -6321,6 +6340,7 @@ function renderTimingTable(tableId = "timing-table") {
       table.appendChild(confidenceCell);
 
       const adjustmentCell = document.createElement("div");
+      adjustmentCell.dataset.shotId = row.shot_id;
       const adjustmentMs = splitRowAdjustmentMs(row);
       if (editing) {
         adjustmentCell.classList.add("timing-edit-cell");
@@ -6331,7 +6351,10 @@ function renderTimingTable(tableId = "timing-table") {
         input.inputMode = "decimal";
         input.step = "0.01";
         input.className = "timing-adjustment-input";
-        input.value = String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
+        const preserved = preservedEditors.get(row.shot_id);
+        input.value = preserved
+          ? preserved.value
+          : String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
         input.setAttribute("aria-label", `Adjustment for ${splitRowEntryLabel(row)}`);
         input.title = "Edit the adjustment in seconds, for example +0.06 or -0.06.";
         input.addEventListener("input", () => {
@@ -6339,6 +6362,14 @@ function renderTimingTable(tableId = "timing-table") {
         });
         editor.append(input);
         adjustmentCell.appendChild(editor);
+        if (preserved?.focused) {
+          window.requestAnimationFrame(() => {
+            input.focus();
+            if (preserved.selectionStart != null) {
+              input.setSelectionRange(preserved.selectionStart, preserved.selectionEnd);
+            }
+          });
+        }
       } else {
         adjustmentCell.textContent = signedSeconds(adjustmentMs);
       }
