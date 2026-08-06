@@ -148,7 +148,7 @@ def test_media_pane_uses_flat_og_sections():
     assert "media-section-toggle" in source
     assert "sectionExpanded" in source
     assert "Active Stage" not in source
-    assert "<strong>${stageLabel(stage)}</strong>" in source
+    assert "media-active-stage-label" in source
     assert "<strong>Primary</strong>" in source
     assert "<strong>Added Media</strong>" in source
 

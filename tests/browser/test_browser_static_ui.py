@@ -2341,7 +2341,7 @@ def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
     assert "function handleKeyboardEdit(event) {" in key_runtime
 
     assert "export function createApiRuntime({" in api_runtime
-    assert "function applyRemoteState(nextState) {" in api_runtime
+    assert "function applyRemoteState(nextState" in api_runtime
     assert "function normalizePractiScoreSyncPayload(payload) {" in api_runtime
 
 
