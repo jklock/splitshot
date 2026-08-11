@@ -746,12 +746,8 @@ async function runStandardFlow(page) {
   const exportFile = path.join(exportDir, 'e2e-export-test.mp4');
   ensureDir(exportDir);
   await openTool(page, 'export', '06-export-tool');
-  const exportPathInput = page.locator('#export-path');
-  if (await exportPathInput.isVisible()) {
-    await exportPathInput.fill(exportFile);
-    const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, '06');
-    if (!outputPath) fail('queue export did not return an output path');
-  } else fail('export output path input not found');
+  const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, '06');
+  if (!outputPath) fail('queue export did not return an output path');
   await screenshot(page, '07-after-export');
 }
 
