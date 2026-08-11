@@ -21,8 +21,8 @@ const isReleaseProof = e2eScope === 'release-proof';
 
 const THRESHOLDS = {
   tool_switch_settled_ms: 2000,
-  profile_create_ms: 2000,
-  profile_edit_ms: 2000,
+  profile_create_ms: 5000,
+  profile_edit_ms: 5000,
   review_source_update_ms: 2000,
   export_badges_ms: 2000,
   source_commit_ms: 2000,

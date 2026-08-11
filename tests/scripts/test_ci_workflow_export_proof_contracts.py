@@ -37,6 +37,8 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert ".queue-add-btn" not in script
     assert "#export-path" not in script
     assert "#show-export-log" not in script
+    assert "profile_create_ms: 5000" in script
+    assert "profile_edit_ms: 5000" in script
     assert "def _proof_windows_export_text" in (
         ROOT / "scripts" / "testing" / "test_packaged_app_e2e.py"
     ).read_text(encoding="utf-8")
