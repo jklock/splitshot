@@ -213,7 +213,7 @@ async function ensureMergeCardExpanded(card) {
 
 async function ensureTrimCardVisible(page, sourceId) {
   await openTool(page, 'trim-sync');
-  const card = page.locator(`.trim-sync-card[data-source-id="${sourceId}"]`).first();
+  const card = page.locator(`.trim-source-card[data-source-id="${sourceId}"]`).first();
   await card.waitFor({ state: 'visible', timeout: 30000 });
   return card;
 }
@@ -611,8 +611,8 @@ async function runReleaseProof(page) {
   await screenshot(page, 'release-07-role-layout-committed');
 
   const trimCardForApply = await ensureTrimCardVisible(page, sourceId);
-  await setInputValue(page, `.trim-sync-card[data-source-id="${sourceId}"] input[data-trim-start]`, '0.5');
-  await setInputValue(page, `.trim-sync-card[data-source-id="${sourceId}"] input[data-trim-end]`, '1.5');
+  await setInputValue(page, `.trim-source-card[data-source-id="${sourceId}"] input[data-trim-start]`, '0.5');
+  await setInputValue(page, `.trim-source-card[data-source-id="${sourceId}"] input[data-trim-end]`, '1.5');
   await measureStep('trim-apply', THRESHOLDS.trim_apply_ms, async () => {
     await trimCardForApply.locator('.trim-apply-btn').click({ force: true });
     await waitForCondition(

@@ -30,6 +30,8 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert "const stopAfterExport = e2eScope === 'export-proof';" in script
     assert "String(payload?.status || '').includes('Processed ')" in script
     assert "outputPath.length > 0" not in script
+    assert '.trim-source-card[data-source-id="${sourceId}"]' in script
+    assert ".trim-sync-card" not in script
     assert "def _proof_windows_export_text" in (
         ROOT / "scripts" / "testing" / "test_packaged_app_e2e.py"
     ).read_text(encoding="utf-8")
@@ -75,3 +77,20 @@ def test_packaged_build_and_release_workflows_use_compact_e2e_fixture() -> None:
         if workflow.name == "release.yml":
             assert 'SPLITSHOT_E2E_OCR_PROOF: "1"' in source, workflow.name
         assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow.name
+
+
+def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
+    test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(
+        encoding="utf-8"
+    )
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow
+    assert "Prepare macOS signing certificate" in test_workflow
+    assert "Prepare macOS notarization credentials" not in test_workflow
+    assert "codesign --verify --deep --strict" in test_workflow
+    assert "spctl --assess" not in test_workflow
+    assert "Prepare macOS notarization credentials" in release_workflow
+    assert 'SPLITSHOT_MAC_NOTARIZE: "0"' not in release_workflow

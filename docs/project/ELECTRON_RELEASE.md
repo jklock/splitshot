@@ -104,7 +104,7 @@ The supported fallback is the complete Apple ID set:
 - `APPLE_APP_SPECIFIC_PASSWORD`
 - `APPLE_TEAM_ID`
 
-Do not mix incomplete credential sets. The workflow imports the certificate into a temporary keychain, materializes the API key only for the job, signs and notarizes the application, verifies the signed app, and deletes temporary credentials during cleanup.
+Do not mix incomplete credential sets. The publishing workflows import the certificate into a temporary keychain, materialize the API key only for the job, sign and notarize the application, verify the signed app, and delete temporary credentials during cleanup.
 
 ## CI Validation
 
@@ -113,6 +113,8 @@ Use these GitHub Actions workflows on the intended release commit:
 - **Test macOS**: source tests plus packaged DMG validation on `macos-14`
 - **Test Windows**: source tests plus packaged NSIS validation on `windows-latest`
 - **Test Linux**: source tests plus packaged AppImage validation on `ubuntu-latest`
+
+The Test macOS workflow signs its validation DMG but explicitly disables notarization. This keeps ordinary clean-runner package proof independent of Apple agreement availability. The Build macOS and Release workflows retain mandatory notarization; publication is still blocked when Apple credentials or agreements are invalid.
 
 Run each with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Copy the validation bundles into:
 
