@@ -33,6 +33,8 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert '.trim-source-card[data-source-id="${sourceId}"]' in script
     assert ".trim-sync-card" not in script
     assert "page.locator('#queue-show-log').click()" in script
+    assert '.queue-membership-btn[data-stage-id="${activeStageId}"]' in script
+    assert ".queue-add-btn" not in script
     assert "#export-path" not in script
     assert "#show-export-log" not in script
     assert "def _proof_windows_export_text" in (

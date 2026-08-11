@@ -220,7 +220,9 @@ async function ensureTrimCardVisible(page, sourceId) {
 
 async function queueAndProcessCurrentStage(page, artifactRoot, screenshotPrefix) {
   await openTool(page, 'queue', `${screenshotPrefix}-queue`);
-  await page.locator('.queue-add-btn').first().click({ force: true });
+  const activeStageId = await page.evaluate(() => String(state?.project?.active_stage_id || ''));
+  if (!activeStageId) throw new Error('active stage id missing before queue processing');
+  await page.locator(`.queue-membership-btn[data-stage-id="${activeStageId}"]`).click({ force: true });
   await waitForCondition(
     page,
     () => {
