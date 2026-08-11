@@ -25,8 +25,9 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
         "const exportDir = process.env.E2E_EXPORT_DIR || path.join(artifactRoot, 'exports');"
         in script
     )
-    assert "const exportFile = path.join(exportDir, 'e2e-export-test.mp4');" in script
-    assert "artifacts.push(artifactCopyPath);" in script
+    assert "const canonicalExportFile = path.join(exportDir, 'e2e-export-test.mp4');" in script
+    assert "fs.copyFileSync(outputPath, canonicalExportFile);" in script
+    assert "artifacts.push(canonicalExportFile);" in script
     assert "const stopAfterExport = e2eScope === 'export-proof';" in script
     assert "String(payload?.status || '').includes('Processed ')" in script
     assert "outputPath.length > 0" not in script

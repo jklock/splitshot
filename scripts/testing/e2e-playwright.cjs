@@ -11,6 +11,7 @@ const primaryVideoPath = process.env.E2E_PRIMARY_VIDEO_PATH || process.env.E2E_V
 const secondaryVideoPath = process.env.E2E_SECONDARY_VIDEO_PATH || '';
 const tertiaryVideoPath = process.env.E2E_TERTIARY_VIDEO_PATH || '';
 const exportDir = process.env.E2E_EXPORT_DIR || path.join(artifactRoot, 'exports');
+const canonicalExportFile = path.join(exportDir, 'e2e-export-test.mp4');
 const baseUrl = `http://127.0.0.1:${port}`;
 const artifacts = [];
 const failures = [];
@@ -263,10 +264,9 @@ async function queueAndProcessCurrentStage(page, artifactRoot, screenshotPrefix)
     fail('queue output file did not stabilize as a valid MP4');
     return null;
   }
-  const artifactCopyPath = path.join(artifactRoot, 'exports', path.basename(outputPath));
-  ensureDir(path.dirname(artifactCopyPath));
-  fs.copyFileSync(outputPath, artifactCopyPath);
-  artifacts.push(artifactCopyPath);
+  ensureDir(path.dirname(canonicalExportFile));
+  fs.copyFileSync(outputPath, canonicalExportFile);
+  artifacts.push(canonicalExportFile);
   writeJson(path.join(artifactRoot, 'queue-process-response.json'), payload || {});
   artifacts.push(outputPath);
   writeJson(path.join(artifactRoot, 'export-metadata.json'), exportValidation);
@@ -557,7 +557,6 @@ async function runReleaseProof(page) {
     fail('release-proof requires primary, secondary, and tertiary video paths');
     return;
   }
-  const exportFile = path.join(exportDir, 'e2e-export-test.mp4');
   ensureDir(exportDir);
 
   const uploadResponse = await apiUpload('/api/files/primary', primaryVideoPath, path.basename(primaryVideoPath), 'video/mp4');
@@ -745,7 +744,6 @@ async function runStandardFlow(page) {
     await openTool(page, tool, `tool-${tool}`);
   }
 
-  const exportFile = path.join(exportDir, 'e2e-export-test.mp4');
   ensureDir(exportDir);
   await openTool(page, 'export', '06-export-tool');
   const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, '06');
