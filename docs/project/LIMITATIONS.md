@@ -1,5 +1,7 @@
 # Limitations
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This page records the current constraints that are visible in the source tree and runtime behavior.
 
 ## Media Toolchain

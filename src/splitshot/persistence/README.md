@@ -1,5 +1,7 @@
 # Persistence
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns project-folder save, load, normalization, and metadata deletion behavior. A project is identified by `project.json`; the folder name does not require a special suffix.
 
 ## Purpose

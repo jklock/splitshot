@@ -1,5 +1,7 @@
 # Analysis
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns audio extraction inputs, ShotML inference, beep and shot detection, sync helpers, and review-suggestion generation.
 
 ## Purpose

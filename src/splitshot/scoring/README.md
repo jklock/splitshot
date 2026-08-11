@@ -1,5 +1,7 @@
 # Scoring
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns scoring presets, per-shot score helpers, penalty handling, hit-factor math, and PractiScore import support.
 
 ## Purpose

@@ -1,5 +1,7 @@
 # Markers Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Markers pane creates shot-linked and time-based text or image callouts for the active stage. Its compact inspector supports quick selection; Edit opens the full marker workbench.
 
 <img src="../../screenshots/MarkersPane.png" alt="Markers pane with marker enable control, compact marker list, and time-marker action" width="960">

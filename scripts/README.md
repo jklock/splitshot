@@ -1,5 +1,7 @@
 # Scripts
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This directory is the operational toolbox for SplitShot. Use it to bootstrap machines, run tests, audit browser behavior, inspect ShotML output, validate release readiness, and refresh documentation assets.
 
 ## Start Here
@@ -34,7 +36,7 @@ If you are new to the repo, read:
 | `testing/run_electron_preflight.py` | validation | Runs the local Electron release gate for the current platform | Before packaging or release workflow triggers | Inputs: local repo state. Outputs: preflight pass/fail |
 | `testing/check_tracked_tree_hygiene.py` | validation | Rejects generated files, machine-local paths, unexpected media, and unapproved blobs over 5 MiB in Git | Before committing repository cleanup or release changes | Inputs: tracked working tree. Outputs: concise violation list |
 | `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
-| `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
+| `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds a fully enabled showcase state, and regenerates the 1400×900 user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: two different approved real-video paths outside `tests/`. Outputs: refreshed files in `docs/screenshots/` |
 | `release/apply_github_rulesets.sh` | release | Creates or updates the `main` and `v*` repository rulesets through `gh api` | Initial V1 governance setup or later protection refresh | Inputs: authenticated GitHub CLI session. Outputs: live repository rulesets |
 | `release/extract_release_notes.py` | release | Extracts one semver section from `CHANGELOG.md` into a release-body markdown file | Before publishing or manually editing a GitHub release | Inputs: tag name and changelog path. Outputs: markdown notes file |
 
@@ -70,7 +72,7 @@ uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 uv run python scripts/testing/run_ci_locally.py --job source-local
 uv run python scripts/testing/run_electron_preflight.py
-uv run python scripts/docs/capture_browser_screenshots.py
+uv run python scripts/docs/capture_browser_screenshots.py --primary-video /path/to/approved-primary.mp4 --secondary-video /path/to/approved-secondary.mp4
 uv run python scripts/tooling/validate_toolchain.py
 uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
 uv run python scripts/audits/browser/run_browser_ui_surface_audit.py

@@ -1,8 +1,12 @@
 # Queue Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Queue pane is the multi-stage export surface. It shows every loaded match stage, manages queue membership, and processes individual or combined outputs.
 
 <img src="../../screenshots/QueuePane.png" alt="Queue pane with active-stage selection, queue status rows, settings propagation, and processing actions" width="960">
+
+<img src="../../screenshots/ProcessingLogModal.png" alt="Queue processing log with current render inputs, enabled presentation features, output path, and status" width="840">
 
 ## Use This Pane For
 

@@ -1,5 +1,7 @@
 # Repository Governance
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This document is the maintainer-facing source of truth for SplitShot branch protection, release-tag protection, and branch lifecycle.
 
 ## Branch Model

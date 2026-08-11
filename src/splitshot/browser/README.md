@@ -1,5 +1,7 @@
 # Browser
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns the browser-first runtime: the local HTTP server, JSON API, activity logging, PractiScore session plumbing, and browser-state serialization.
 
 ## Purpose

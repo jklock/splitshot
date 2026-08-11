@@ -1,5 +1,7 @@
 # Media
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns FFmpeg resolution, media probing, waveform/audio extraction, and thumbnail generation.
 
 ## Purpose

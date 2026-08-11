@@ -1,5 +1,7 @@
 # Developing SplitShot
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This guide is the day-1 path for a developer or fork owner working from source.
 
 ## Start Here

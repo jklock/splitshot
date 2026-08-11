@@ -1,5 +1,7 @@
 # Review Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Review pane controls preview/export artifact visibility, Summary boxes, and custom boxes. It is where you decide which overlay badges remain visible, choose which metrics appear in a Summary box, and tune each box's placement, size, color, and opacity.
 
 Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custom text, styling, size, and placement shown over the video. Auto Summary boxes use each output stage's own timing, scoring, and placement data.

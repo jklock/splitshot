@@ -1,5 +1,7 @@
 # SplitShot Workflow
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the recommended multi-stage workflow.
 
 ## End-To-End Flow

@@ -1,6 +1,10 @@
 # Intro / Outro Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The `In / Out` sidebar item opens the Intro / Outro pane for optional match-opening and match-closing videos. In the packaged app, selection uses the native video picker; browser mode uses the local path picker. A successful selection is copied into the project `IntroOutro/` folder, shown in the main preview immediately, persisted with the project, and made available to Queue. Intro and Outro keep independent text overlay configurations.
+
+<img src="../../screenshots/IntroOutroPane.png" alt="In / Out pane showing real Intro footage, fade controls, manual text, and match-summary overlay controls" width="960">
 
 Text boxes can be positioned with the controls or dragged directly in the video preview. Control edits update the preview immediately, save in order, and remain stable while the app refreshes project state.
 

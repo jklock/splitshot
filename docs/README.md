@@ -1,5 +1,7 @@
 # SplitShot Documentation
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the documentation index for SplitShot. It routes readers through user docs first, then maintainer, developer, and code-reader references.
 
 ## Start Here
@@ -76,16 +78,20 @@ The current user-facing screenshot set lives in [screenshots/](screenshots/).
 Regenerate it with:
 
 ```bash
-uv run python scripts/docs/capture_browser_screenshots.py
+uv run python scripts/docs/capture_browser_screenshots.py \
+  --primary-video /path/to/approved-primary.mp4 \
+  --secondary-video /path/to/approved-secondary.mp4
 ```
 
 Covered surfaces:
 
-- Fourteen left-rail panes: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Queue`, `Metrics`, `ShotML`, and `Settings`. `In / Out` is part of the live 15-pane rail but does not yet have a canonical screenshot in this set.
+- Every left-rail pane: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 - Expanded score, splits, waveform, metrics, marker, settings, review, and ShotML states already represented by the capture script
-- Shared modals: color picker and export log
+- Shared modals: color picker and Queue processing log
 
-The canonical filenames are `ProjectPane.png`, `MediaPane.png`, `ComposePane.png`, `TrimPane.png`, `ScorePane.png`, `ScorePane2.png`, `SplitsPane.png`, `SplitsExpanded.png`, `WaveformExpanded.png`, `MarkersPane.png`, `MarkersPane2.png`, `OverlayPane.png`, `OverlayPane2.png`, `ColorPickerModal.png`, `ReviewPane.png`, `ReviewPane2.png`, `ExportPane.png`, `ExportPane2.png`, `ExportLogModal.png`, `QueuePane.png`, `MetricsPane.png`, `MetricsExpanded.png`, `ShotMLPane.png`, `ShotMLPane2.png`, `SettingsPane.png`, and `SettingsPane2.png`.
+The canonical filenames are `ProjectPane.png`, `MediaPane.png`, `ComposePane.png`, `TrimPane.png`, `ScorePane.png`, `ScorePane2.png`, `SplitsPane.png`, `SplitsExpanded.png`, `WaveformExpanded.png`, `MarkersPane.png`, `MarkersPane2.png`, `OverlayPane.png`, `OverlayPane2.png`, `ColorPickerModal.png`, `ReviewPane.png`, `ReviewPane2.png`, `ExportPane.png`, `ExportPane2.png`, `IntroOutroPane.png`, `QueuePane.png`, `ProcessingLogModal.png`, `MetricsPane.png`, `MetricsExpanded.png`, `ShotMLPane.png`, `ShotMLPane2.png`, `SettingsPane.png`, and `SettingsPane2.png`.
+
+The capture command requires two different maintainer-approved real videos outside `tests/`; synthetic fixtures are rejected. The 1400×900 capture validates decoded, non-black frames and enabled showcase overlays before writing each screenshot.
 
 ## Technical Docs
 

@@ -1,5 +1,7 @@
 # Metrics Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Metrics pane is the read-only match dashboard. Match Metrics is visible first. Stage Breakdown is a collapsed tree with one branch per stage; opening a branch reveals that stage's cards, scoring context, graphs, and shot rows. Expanded Metrics is a single vertically scrolling workspace with a sticky header; its cards, graphs, stage branches, and tables remain inside the visible window.
 
 <img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, six graphs, compact timing table, scoring context, and export buttons beside the live preview" width="960">

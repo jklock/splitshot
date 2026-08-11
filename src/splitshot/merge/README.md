@@ -1,5 +1,7 @@
 # Merge
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns layout geometry for side-by-side, above-below, and picture-in-picture composition shown in the Compose pane.
 
 ## Purpose

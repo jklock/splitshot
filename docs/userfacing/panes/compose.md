@@ -1,5 +1,7 @@
 # Compose Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Compose pane controls the active stage composition. It uses media already paired in Media and does not import new stage files.
 
 <img src="../../screenshots/ComposePane.png" alt="Compose pane with added-media export, stage defaults, and expanded per-source composition controls" width="960">

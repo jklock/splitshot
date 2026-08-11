@@ -1,5 +1,7 @@
 # Browser Static Assets
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This directory contains the browser-first SplitShot shell that talks to the local API.
 
 ## Module Layout
@@ -35,7 +37,7 @@ The frontend has been modularized into ES modules with clear boundaries:
 - the persistent top status bar that shows the selected video name or \`No Video Selected\` and keeps the shared layout lock in the upper-right corner
 - the review grid with the stage preview, waveform, timing workbench, and inspector
 - inspector panes for project metadata, stage media, composition, trimming, scoring, timing, markers, overlays, review text boxes, export settings, queue execution, metrics, ShotML, and settings
-- the color picker and export log modals used by overlay, markers, review, and export controls
+- the color picker and processing-log modals used by overlay, markers, review, Trim, and Queue controls
 
 ## Browser State Flow
 

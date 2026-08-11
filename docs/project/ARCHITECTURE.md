@@ -1,5 +1,7 @@
 # Architecture
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 SplitShot is a local-first video analysis and export system with one shared `Project` model, one controller layer, and one browser-first UI shell.
 
 ## Start Here

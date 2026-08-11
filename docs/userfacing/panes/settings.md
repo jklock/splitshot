@@ -1,5 +1,7 @@
 # Settings Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Settings pane controls app-wide and folder-scoped defaults for layout, scoring, compose, overlay, markers, export, and ShotML.
 
 <img src="../../screenshots/SettingsPane.png" alt="Settings pane with scope, layout, scoring, Compose, Overlay, Markers, Export, and ShotML defaults" width="960">

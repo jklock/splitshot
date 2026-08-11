@@ -1,5 +1,7 @@
 # Electron Release Runbook
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the durable packaging and publishing runbook for SplitShot v1.0.7. The release is feature-frozen; complete validation and defect fixes only, then publish the same release-ready commit on all three platforms.
 
 ## Toolchain

@@ -1,5 +1,7 @@
 # ShotML In SplitShot
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This document explains how SplitShot's embedded ShotML pipeline works in the current codebase, what each stage is responsible for, and what its confidence values do and do not mean.
 
 ShotML is not a full stage-understanding system. It is a local audio event detector that helps SplitShot estimate the timer beep and shot times from a video's audio track. Everything downstream, including split rows, timer badges, metrics, and scoring summaries, depends on how well this detector lines up with the real audio.

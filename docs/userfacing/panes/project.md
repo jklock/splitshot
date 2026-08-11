@@ -1,5 +1,7 @@
 # Project Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Project pane owns project metadata, PractiScore import, competitor identity selectors, and the compact imported summary. It does not own stage media intake, stage file rows, primary designation, or queue controls.
 
 <img src="../../screenshots/ProjectPane.png" alt="Project pane with project-folder controls, project metadata, PractiScore import, and competitor selection" width="960">

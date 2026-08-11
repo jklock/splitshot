@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -19,7 +18,7 @@ def load_module(relative_path: str, name: str):
     return module
 
 
-def test_screenshot_manifest_is_complete_and_uses_clean_clone_fixtures() -> None:
+def test_screenshot_manifest_is_complete_and_requires_real_video_inputs() -> None:
     module = load_module(
         "scripts/docs/capture_browser_screenshots.py", "capture_browser_screenshots"
     )
@@ -42,8 +41,9 @@ def test_screenshot_manifest_is_complete_and_uses_clean_clone_fixtures() -> None
         "ReviewPane2.png",
         "ExportPane.png",
         "ExportPane2.png",
-        "ExportLogModal.png",
+        "IntroOutroPane.png",
         "QueuePane.png",
+        "ProcessingLogModal.png",
         "MetricsPane.png",
         "MetricsExpanded.png",
         "ShotMLPane.png",
@@ -51,10 +51,45 @@ def test_screenshot_manifest_is_complete_and_uses_clean_clone_fixtures() -> None
         "SettingsPane.png",
         "SettingsPane2.png",
     )
-    assert module.VIEWPORT == {"width": 1440, "height": 1024}
-    assert module.SOURCE_VIDEO == ROOT / "tests/fixtures/media/e2e-stage.mp4"
+    assert module.VIEWPORT == {"width": 1400, "height": 900}
+    assert not hasattr(module, "SOURCE_VIDEO")
     assert module.PRACTISCORE == ROOT / "example_data/IDPA/IDPA.csv"
     assert module.WORK_ROOT.is_relative_to(ROOT / "tmp/codex")
+    assert hasattr(module, "prewarm_boundary_media")
+    assert hasattr(module, "stabilize_intro_outro_preview")
+    assert hasattr(module, "restore_primary_stage")
+
+
+def test_screenshot_capture_rejects_test_fixtures_and_duplicate_sources(tmp_path: Path) -> None:
+    module = load_module(
+        "scripts/docs/capture_browser_screenshots.py", "capture_browser_screenshots_inputs"
+    )
+    real_primary = tmp_path / "primary.mp4"
+    real_secondary = tmp_path / "secondary.mp4"
+    real_primary.write_bytes(b"primary")
+    real_secondary.write_bytes(b"secondary")
+
+    assert module.validated_real_video(real_primary, label="Primary") == real_primary.resolve()
+    assert module.validated_real_video(real_secondary, label="Secondary") == real_secondary.resolve()
+    assert module.validated_video_pair(real_primary, real_secondary) == (
+        real_primary.resolve(),
+        real_secondary.resolve(),
+    )
+
+    try:
+        module.validated_video_pair(real_primary, real_primary)
+    except ValueError as exc:
+        assert "must be different files" in str(exc)
+    else:
+        raise AssertionError("Duplicate documentation video sources were accepted")
+
+    fixture = ROOT / "tests/fixtures/media/e2e-stage.mp4"
+    try:
+        module.validated_real_video(fixture, label="Primary")
+    except ValueError as exc:
+        assert "must not come from tests/" in str(exc)
+    else:
+        raise AssertionError("Test fixture was accepted as documentation footage")
 
 
 def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> None:
@@ -63,7 +98,11 @@ def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> N
     assert 'document.querySelectorAll(\'#merge-preview-layer video\')' in source
     assert 'result["primaryReady"]' in source
     assert 'result["secondaryReady"]' in source
-    assert 'result["playerVisible"] and not result["secondaryVisible"]' in source
+    assert 'result["activeToolName"] != "intro-outro"' in source
+    assert 'not result["secondaryVisible"]' in source
+    assert "stats.mean > 8" in source
+    assert "stats.variance > 12" in source
+    assert "validate_showcase_state(page)" in source
 
 
 def test_screenshot_capture_keeps_summary_selectors_generic_and_output_dynamic() -> None:

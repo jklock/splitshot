@@ -1,5 +1,7 @@
 # Splits Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Splits pane is the manual timing workbench. It shows the selected shot, nudge controls, timing rows, the waveform, and expanded editing modes for detailed split review.
 
 <img src="../../screenshots/SplitsPane.png" alt="Splits pane with selected-shot nudge controls, timing table, and waveform controls" width="960">

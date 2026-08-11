@@ -1,5 +1,7 @@
 # Export Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Export pane configures ffmpeg export settings for the active stage. It does not start processing directly.
 
 <img src="../../screenshots/ExportPane.png" alt="Export pane with output profile, framing, codec, bitrate, and ffmpeg settings for the active stage" width="960">

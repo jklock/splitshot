@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
 ## v1.0.7

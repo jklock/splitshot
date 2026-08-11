@@ -1,5 +1,7 @@
 # Media Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Media pane is the stage media workspace. It makes one stage active at a time, names that stage, and shows the primary and added media that belong to it.
 
 <img src="../../screenshots/MediaPane.png" alt="Media pane showing the active stage, project-managed primary video, added media, and stage controls" width="960">

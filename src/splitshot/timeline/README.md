@@ -1,5 +1,7 @@
 # Timeline
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns split-row generation and the core timing helpers derived from the shot list.
 
 ## Purpose

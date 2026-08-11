@@ -1,5 +1,7 @@
 # Browser Control QA Matrix
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 Audited against the v1.0.7 `src/splitshot/browser/static/index.html` rail, current browser routes, and current browser suites.
 
 This matrix names the current browser surfaces, the control families each surface owns, and the suites that keep those claims explicit. The rail order is Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, In / Out, Queue, Metrics, ShotML, and Settings.

@@ -1,5 +1,7 @@
 # Score Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Score pane applies a ruleset to the current shot list. It shows imported match context, enables scoring, assigns score values per shot, edits per-shot penalties, and lets you restore or delete individual shots from the scoring surface.
 
 <img src="../../screenshots/ScorePane.png" alt="Score pane with scoring enabled, imported PractiScore context, expanded shot cards, score dropdowns, penalty inputs, restore buttons, and delete buttons" width="960">

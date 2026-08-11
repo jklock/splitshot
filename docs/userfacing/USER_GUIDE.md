@@ -1,5 +1,7 @@
 # SplitShot User Guide
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 SplitShot v1.0.7 is a local-first app for turning stage footage into a reviewed, scored, annotated, and exported video. This guide is the hub for the user-facing docs. Each pane guide below matches the current left-rail tool set and references fresh screenshots from the active UI.
 
 ## Start Here
@@ -20,7 +22,7 @@ Every session uses the same workspace:
 - The right inspector can be resized; pane cards, tables, badge controls, and action buttons reflow to the available width without horizontal scrolling.
 - Inspector card chevrons use `>` when collapsed and `v` when expanded.
 - The waveform, timing table, metrics table, and right inspector have expanded states where available.
-- Shared modals, including the color picker and export log, appear above the current pane.
+- Shared modals, including the color picker and Queue processing log, appear above the current pane.
 
 Most edits auto-apply. Export saves stage settings. Queue is where packaged processing starts for one file per stage or one combined output.
 
@@ -39,7 +41,7 @@ Imported standings use the sport's own acronyms: `<division> - <place>/<division
 | [panes/markers.md](panes/markers.md) | Shot-linked and time-based markers, text/image markers, guided Start/Finish motion authoring, the expanded markers workbench, and project-managed marker images |
 | [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
 | [panes/review.md](panes/review.md) | Preview artifact toggles, Summary boxes, custom text boxes, placement, size, and style |
-| [panes/export.md](panes/export.md) | Stage-local ffmpeg settings, output profiles, codecs, bitrate, and export logs |
+| [panes/export.md](panes/export.md) | Stage-local ffmpeg settings, output profiles, codecs, bitrate, and framing |
 | [panes/queue.md](panes/queue.md) | Queue membership, queue status, processing one file per stage, and processing one combined file |
 | [panes/intro-outro.md](panes/intro-outro.md) | Match intro/outro media, text overlays, and selectable match-result fields |
 | [panes/metrics.md](panes/metrics.md) | Read-only post-stage graphs, expanded timing table, scoring context, CSV export, and text export |
@@ -48,7 +50,7 @@ Imported standings use the sport's own acronyms: `<division> - <place>/<division
 
 ## Screenshot Coverage
 
-The screenshot set covers 14 of the 15 panes plus expanded timing, waveform, metrics, ShotML sections, score cards, added media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the export log modal. `In / Out` is documented in the workflow but does not yet have a canonical screenshot.
+The screenshot set covers all 15 panes plus expanded timing, waveform, metrics, ShotML sections, score cards, added media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the Queue processing-log modal. Every preview-bearing capture uses decoded real stage footage; expanded workbenches remain faithful to the application layout when the preview is intentionally hidden.
 
 ## Common Workflows
 

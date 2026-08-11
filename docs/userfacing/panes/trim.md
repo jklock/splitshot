@@ -1,5 +1,7 @@
 # Trim Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Trim pane creates project-managed media derivatives. Bulk Trim can apply the same before-beep and after-last-shot window to selected stages, while Sources edits the active stage one file at a time.
 
 <img src="../../screenshots/TrimPane.png" alt="Trim pane with bulk timing controls, video transport, and expanded primary and added-media source cards" width="960">

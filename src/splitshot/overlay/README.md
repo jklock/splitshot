@@ -1,5 +1,7 @@
 # Overlay
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns overlay badge and review-box rendering for preview and final export.
 
 ## Purpose

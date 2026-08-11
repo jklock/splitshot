@@ -1,5 +1,7 @@
 # Electron Desktop App
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This directory contains the Electron shell that packages SplitShot as a native desktop application.
 
 Use Node.js 22 and `npm ci`. Building the bundled backend also requires Python 3.12 and `uv`; source media checks require `ffmpeg` and `ffprobe` on `PATH`.

@@ -1,5 +1,7 @@
 # Overlay Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Overlay pane controls the badges drawn over the video: timer, draw, shot stack, current shot, and final score. It owns badge placement, typography, score-token colors, and the live visual style used in preview and export.
 
 <!-- markdownlint-disable MD033 -->

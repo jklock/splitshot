@@ -1,5 +1,7 @@
 # Presentation
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns the derived stage metrics and timing summaries that the browser shell displays.
 
 ## Purpose

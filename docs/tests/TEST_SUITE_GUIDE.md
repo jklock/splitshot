@@ -1,5 +1,7 @@
 # SplitShot Test Suite Guide
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the maintainer guide for SplitShot validation. Use it to decide which test to run, why it exists, and which subsystem owns the behavior you changed.
 
 ## Start Here

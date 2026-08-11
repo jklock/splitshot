@@ -1,5 +1,7 @@
 # Project Structure
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 SplitShot stores a project in a user-selected directory containing `project.json`. The directory does not need a `.ssproj` suffix, although CLI-created or older paths may use one.
 
 ## Expected Layout

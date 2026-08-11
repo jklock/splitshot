@@ -1,5 +1,7 @@
 # Utils
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns small shared helpers that do not justify a larger subsystem.
 
 ## Purpose

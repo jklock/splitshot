@@ -1,5 +1,7 @@
 # SplitShot Source Tree
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package is the root map for the application code. Use it to decide where to start reading and which subsystem owns a change.
 
 ## Start Here

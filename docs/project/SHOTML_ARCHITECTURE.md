@@ -1,5 +1,7 @@
 # ShotML Pane Architecture
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This document describes the v1.0.7 ShotML pane from the project model through detection, controller orchestration, browser API, static UI, persistence, and tests.
 
 ## Executive Summary
