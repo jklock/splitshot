@@ -639,13 +639,12 @@ async function runReleaseProof(page) {
   }
 
   await openTool(page, 'export', 'release-10-export-pane');
-  await page.locator('#export-path').fill(exportFile);
   await measureStep('queue-process', THRESHOLDS.queue_process_ms, async () => {
     const outputPath = await queueAndProcessCurrentStage(page, artifactRoot, 'release-10');
     if (!outputPath) return;
   });
-  await openTool(page, 'export');
-  await page.locator('#show-export-log').click();
+  await openTool(page, 'queue');
+  await page.locator('#queue-show-log').click();
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
   await screenshot(page, 'release-11-export-log');
   const exportLog = await page.evaluate(() => String(state?.project?.export?.last_log || ''));

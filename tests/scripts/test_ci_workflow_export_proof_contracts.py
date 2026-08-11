@@ -32,6 +32,9 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert "outputPath.length > 0" not in script
     assert '.trim-source-card[data-source-id="${sourceId}"]' in script
     assert ".trim-sync-card" not in script
+    assert "page.locator('#queue-show-log').click()" in script
+    assert "#export-path" not in script
+    assert "#show-export-log" not in script
     assert "def _proof_windows_export_text" in (
         ROOT / "scripts" / "testing" / "test_packaged_app_e2e.py"
     ).read_text(encoding="utf-8")
