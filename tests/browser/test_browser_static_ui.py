@@ -1195,7 +1195,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const firstTokenGap = "  ";' in js
     assert 'fragment.style.whiteSpace = "pre";' in js
     assert 'const unsetOption = document.createElement("option");' not in js
-    assert "select.value = segment.score_letter || defaultScore;" in js
+    assert "const preservedScore = preservedScoreSelects.get(segment.shot_id);" in js
+    assert (
+        "select.value = preservedScore ? preservedScore.value : (segment.score_letter || defaultScore);"
+        in js
+    )
     assert "scoreCell.textContent = row.score_letter || defaultScore;" not in js
     assert '{ label: "ShotML Confidence %", columnId: "confidence", resizable: true }' in js
     assert '"timing-table": ["segment", "split", "total", "action"],' in js

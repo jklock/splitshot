@@ -1292,6 +1292,10 @@ export function createMarkersPane({
       }
       return;
     }
+    const reusableBadges = new Map(
+      [...popupOverlay.querySelectorAll(".popup-overlay-badge[data-popup-id]")]
+        .map((badge) => [badge.dataset.popupId || "", badge]),
+    );
     popupOverlay.innerHTML = "";
     popupOverlay.style.left = `${frameRect.left}px`;
     popupOverlay.style.top = `${frameRect.top}px`;
@@ -1325,7 +1329,8 @@ export function createMarkersPane({
       const scaledFontSize = selectorStyle
         ? selectorFontSize
         : scaledOverlayPixelValue(currentState().project?.overlay?.font_size || 14, overlayScale, 1);
-      const badge = documentObject.createElement("div");
+      const badge = reusableBadges.get(bubble.id) || documentObject.createElement("div");
+      badge.replaceChildren();
       badge.className = "overlay-badge popup-overlay-badge";
       badge.classList.toggle("popup-placement-selector", Boolean(selectorStyle));
       badge.style.minWidth = `${scaledWidth}px`;

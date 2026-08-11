@@ -282,6 +282,18 @@ export function createMediaPane({
     `;
   }
 
+  function syncInventoryFileRow(pane, sourceId, source) {
+    const row = [...pane.querySelectorAll(".media-asset-row")]
+      .find((item) => item.dataset.sourceId === sourceId);
+    if (!(row instanceof HTMLElement)) return;
+    const asset = source?.asset || source || {};
+    const activeName = source?.active_display_name || fileName(asset.path || "");
+    const name = row.querySelector(".media-asset-copy > strong");
+    const meta = row.querySelector(".media-asset-copy > small");
+    if (name) name.textContent = activeName;
+    if (meta) meta.textContent = activeAssetMeta(source);
+  }
+
   function renderActiveStageSection(stage) {
     const stageOptions = stages()
       .map((item) => `<option value="${item.id}" ${item.id === stage?.id ? "selected" : ""}>${htmlEscape(stageLabel(item))}</option>`)
@@ -414,8 +426,12 @@ export function createMediaPane({
   function renderStructureKey(stage) {
     const primaryExpanded = sectionExpanded("primary");
     const addedExpanded = sectionExpanded("added");
-    const addedCount = stage ? stageAddedMedia(stage).length : 0;
-    return `${stage?.id || ""}|${stages().length}|${addedCount}|${primaryExpanded}|${addedExpanded}|${stage?.primary_media?.path ? "1" : "0"}|${mediaMutationPending}`;
+    const added = stage ? stageAddedMedia(stage) : [];
+    const primaryIdentity = stage?.primary_media?.path || "";
+    const addedIdentity = added
+      .map((source) => `${source.id || ""}:${source?.asset?.path || source?.path || ""}`)
+      .join(",");
+    return `${stage?.id || ""}|${stages().length}|${primaryIdentity}|${addedIdentity}|${primaryExpanded}|${addedExpanded}|${mediaMutationPending}`;
   }
 
   function syncScalarControls(pane, stage) {
@@ -423,6 +439,10 @@ export function createMediaPane({
     const statusText = pane.querySelector(".pane-status-text");
     if (statusText) statusText.textContent = `${count} asset${count === 1 ? "" : "s"}`;
     pane.setAttribute("aria-busy", mediaMutationPending ? "true" : "false");
+    if (stage?.primary_media?.path) syncInventoryFileRow(pane, "primary", stage.primary_media);
+    stageAddedMedia(stage).forEach((source) => {
+      syncInventoryFileRow(pane, source.id || "", source);
+    });
 
     const select = pane.querySelector("#media-active-stage-select");
     if (select && documentObject.activeElement !== select) {

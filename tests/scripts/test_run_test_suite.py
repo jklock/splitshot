@@ -39,9 +39,7 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 42
-    assert payload["summary"]["total_runs"] == 42
-    assert {tuple(run["targets"]) for run in payload["runs"]} == {
+    expected_targets = {
         ("tests/browser/test_action_control_single_interaction_audit.py",),
         ("tests/browser/test_browser_control.py",),
         ("tests/browser/test_browser_control_coverage_matrix.py",),
@@ -55,6 +53,7 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
         ("tests/browser/test_compose_layout_actual.py",),
         ("tests/browser/test_compose_pane_qa.py",),
         ("tests/browser/test_export_pipeline_actual.py",),
+        ("tests/browser/test_full_interaction_persistence_audit.py",),
         ("tests/browser/test_markers_video_actual.py",),
         ("tests/browser/test_media_pane_qa.py",),
         ("tests/browser/test_merge_export_contracts.py",),
@@ -85,6 +84,9 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
         ("tests/browser/test_waveform_qa.py",),
         ("tests/browser/test_waveform_timing_actual.py",),
     }
+    assert payload["summary"]["planned"] == len(expected_targets)
+    assert payload["summary"]["total_runs"] == len(expected_targets)
+    assert {tuple(run["targets"]) for run in payload["runs"]} == expected_targets
 
 
 def test_runner_dry_run_writes_raw_and_json_output_files(tmp_path: Path) -> None:

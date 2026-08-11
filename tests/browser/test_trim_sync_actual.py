@@ -340,6 +340,20 @@ def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_
                 )
                 assert source_id, "No merge source found"
 
+                navigate_to_tool(page, "media")
+                page.evaluate(
+                    """(sid) => {
+                        window.__trimPrimaryMediaRow = document.querySelector(
+                            '#media-pane .media-asset-row[data-source-id="primary"]'
+                        );
+                        window.__trimAddedMediaRow = document.querySelector(
+                            `#media-pane .media-asset-row[data-source-id="${sid}"]`
+                        );
+                    }""",
+                    source_id,
+                )
+                navigate_to_tool(page, "trim-sync")
+
                 original_primary_path = page.evaluate(
                     "() => state?.project?.primary_video?.path || ''"
                 )
@@ -384,6 +398,17 @@ def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_
                 media_text = page.locator("#media-pane").inner_text()
                 assert primary_state["active_display_name"] in media_text
                 assert Path(added_state["effective_media_path"]).name in media_text
+                assert page.evaluate(
+                    """(sid) => (
+                        window.__trimPrimaryMediaRow === document.querySelector(
+                            '#media-pane .media-asset-row[data-source-id="primary"]'
+                        )
+                        && window.__trimAddedMediaRow === document.querySelector(
+                            `#media-pane .media-asset-row[data-source-id="${sid}"]`
+                        )
+                    )""",
+                    source_id,
+                )
 
                 navigate_to_tool(page, "merge")
                 page.wait_for_function(

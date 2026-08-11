@@ -720,6 +720,9 @@ def _exercise_settings_and_shotml(page) -> None:
     _set_select("#settings-export-ffmpeg-preset")
     page.locator("#settings-export-two-pass").check()
     page.locator("#settings-import-current").click()
+    page.wait_for_function(
+        "() => window.lastAppliedSettingsDefaultsPayload?.project_defaults === true"
+    )
     page.locator("#settings-reset-defaults").click()
     page.wait_for_function("() => state?.settings?.default_tool === 'project'")
 
