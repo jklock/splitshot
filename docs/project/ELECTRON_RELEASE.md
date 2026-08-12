@@ -4,6 +4,8 @@
 
 This is the durable packaging and publishing runbook for SplitShot v1.0.7. The release is feature-frozen; complete validation and defect fixes only, then publish the same release-ready commit on all three platforms.
 
+The approved implementation contract for complete installed-package validation is [Exhaustive Packaged Release Validation Plan](EXHAUSTIVE_PACKAGED_RELEASE_VALIDATION_PLAN.md). Until that plan's zero-gap gates are implemented and passing, the compact proof below describes the current release coverage and must not be represented as exhaustive feature validation.
+
 ## Toolchain
 
 Install these tools before source or packaging work:

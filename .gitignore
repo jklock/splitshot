@@ -55,6 +55,8 @@ Stage*.mp4
 !tests/fixtures/media/stage.mp4
 !tests/fixtures/media/stage-merge.mp4
 !tests/fixtures/media/e2e-stage.mp4
+!tests/release_data/primary.MP4
+!tests/release_data/secondary.MP4
 artifacts/*.png
 artifacts/
 development/
