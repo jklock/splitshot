@@ -74,7 +74,7 @@ def _fixture(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
     monkeypatch.setattr(
         MODULE,
         "_tracked_files",
-        lambda root, paths: {str(path.relative_to(root)) for path in paths},
+        lambda root, paths: {path.relative_to(root).as_posix() for path in paths},
     )
     monkeypatch.setattr(MODULE, "_resolve_tool", lambda name: name)
     monkeypatch.setattr(
