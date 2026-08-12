@@ -25,10 +25,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Launch the local browser control interface. This is the default.",
     )
-    parser.add_argument("--headless", action="store_true", help="Start the HTTP server without a GUI. Uses the browser control interface without Qt.")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Start the HTTP server without a GUI. Uses the browser control interface without Qt.",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="Browser bind host.")
     parser.add_argument("--port", type=int, default=8765, help="Browser bind port.")
-    parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
+    parser.add_argument(
+        "--no-open", action="store_true", help="Do not open the browser automatically."
+    )
     parser.add_argument(
         "--log-level",
         choices=("off", "error", "warning", "info", "debug"),
@@ -60,6 +66,8 @@ def run_browser(
     if project_path is not None:
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    if project_path is not None:
+        server.prewarm_primary_media()
     desktop_runtime = SplitShotDesktopRuntime()
     if not open_browser:
         print(f"Open SplitShot at {server.url}")
@@ -114,13 +122,17 @@ def _check_dialog_runtime() -> str:
     if sys.platform.startswith("darwin"):
         helper = shutil.which("osascript")
         if not helper:
-            raise RuntimeError("macOS file dialogs require osascript, but it was not found in PATH.")
+            raise RuntimeError(
+                "macOS file dialogs require osascript, but it was not found in PATH."
+            )
         return helper
 
     try:
         import tkinter  # noqa: F401
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Native file dialogs require tkinter in this environment: {exc}") from exc
+        raise RuntimeError(
+            f"Native file dialogs require tkinter in this environment: {exc}"
+        ) from exc
 
     return "tkinter"
 
@@ -141,6 +153,8 @@ def run_headless(
     if project_path is not None:
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    if project_path is not None:
+        server.prewarm_primary_media()
 
     shutdown = threading.Event()
 
@@ -158,7 +172,11 @@ def run_headless(
 
     if actual_port != port:
         print(f"Port {port} in use; using {actual_port} instead")
-        server = BrowserControlServer(controller=controller, host=host, port=actual_port, log_level=log_level)
+        server = BrowserControlServer(
+            controller=controller, host=host, port=actual_port, log_level=log_level
+        )
+        if project_path is not None:
+            server.prewarm_primary_media()
 
     server.start_background(open_browser=False)
 

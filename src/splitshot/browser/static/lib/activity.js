@@ -16,7 +16,7 @@ export function createActivityRuntime({
   setProcessingProgress = () => {},
   ACTIVITY_FLUSH_DELAY_MS = 160,
   ACTIVITY_BATCH_SIZE = 48,
-  ACTIVITY_POLL_INTERVAL_MS = 1000,
+  ACTIVITY_POLL_INTERVAL_MS = 250,
 } = {}) {
   function syncActivityBackbone() {
     patchBackboneStore(backbone, {
@@ -99,7 +99,7 @@ export function createActivityRuntime({
       const seq = Number(entry.seq || 0);
       if (seq > runtime.activityCursor) runtime.activityCursor = seq;
       if (entry.event === "/api/activity/poll") return;
-      if (entry.event === "api.export.log") {
+      if (entry.event === "api.export.log" || entry.event === "api.process.log") {
         appendExportLogLine(entry.line);
         exportLogChanged = true;
         return;
@@ -108,6 +108,47 @@ export function createActivityRuntime({
         const nextProgress = Number(entry.progress);
         if (Number.isFinite(nextProgress)) {
           setProcessingProgress(nextProgress * 100);
+          exportLogChanged = true;
+        }
+        return;
+      }
+      if (entry.event === "api.queue.progress") {
+        const nextProgress = Number(entry.progress);
+        if (Number.isFinite(nextProgress)) setProcessingProgress(nextProgress * 100);
+        const message = document.getElementById("processing-message");
+        const detail = document.getElementById("processing-detail");
+        if (message) {
+          message.textContent = entry.phase === "combine"
+            ? "Finalizing combined output..."
+            : `Processing ${entry.stage_label || "queue"}...`;
+        }
+        if (detail) {
+          detail.textContent = entry.phase === "combine"
+            ? "Concatenating, fading, and validating"
+            : `Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
+        }
+        if (entry.phase === "complete" || entry.phase === "failed") {
+          exportLogChanged = true;
+        }
+        return;
+      }
+      if (entry.event === "api.trim.progress") {
+        const nextProgress = Number(entry.progress);
+        if (Number.isFinite(nextProgress)) setProcessingProgress(nextProgress * 100);
+        const message = document.getElementById("processing-message");
+        const detail = document.getElementById("processing-detail");
+        const verb = entry.action === "clear" ? "Clearing" : "Trimming";
+        if (message) {
+          message.textContent = entry.phase === "complete"
+            ? "Trim complete"
+            : `${verb} ${entry.media_label || "selected videos"}...`;
+        }
+        if (detail) {
+          detail.textContent = entry.phase === "complete"
+            ? `${entry.file_count || 0} videos processed`
+            : `Video ${entry.file_index || 0} of ${entry.file_count || 0} · Stage ${entry.stage_index || 0} of ${entry.stage_count || 0}`;
+        }
+        if (entry.phase === "complete" || entry.phase === "failed") {
           exportLogChanged = true;
         }
         return;
@@ -162,13 +203,67 @@ export function createActivityRuntime({
     };
   }
 
+  function elementDescriptor(el) {
+    const tag = el.tagName || "";
+    let className = "";
+    if (el instanceof Element) {
+      try { className = typeof el.className === "string" ? el.className : el.className?.animVal ?? ""; } catch (_) { className = ""; }
+    }
+    let text = "";
+    if (el instanceof HTMLElement) text = el.textContent ?? "";
+    else if (el.nodeValue) text = el.nodeValue;
+    text = String(text).trim().replace(/\s+/g, " ").slice(0, 80);
+    let rect = null;
+    if (el instanceof Element) {
+      try { const r = el.getBoundingClientRect(); rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; } catch (_) {}
+    }
+    return { tag, id: el.id || "", class: className, text, rect };
+  }
+
   function wireGlobalActivityLogging() {
+    let dragOriginEl = null;
+    let dragOriginPos = null;
+
+    document.addEventListener("mousedown", (event) => {
+      if (!(event.target instanceof Element)) return;
+      dragOriginEl = event.target;
+      dragOriginPos = { x: event.clientX, y: event.clientY };
+      activity("element.mousedown", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    }, true);
+
+    document.addEventListener("mouseup", (event) => {
+      if (!(event.target instanceof Element)) return;
+      const wasDrag = dragOriginEl !== null && dragOriginPos !== null && (
+        Math.abs(event.clientX - dragOriginPos.x) > 3 || Math.abs(event.clientY - dragOriginPos.y) > 3
+      );
+      dragOriginEl = null;
+      dragOriginPos = null;
+      activity("element.mouseup", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+        wasDrag,
+      });
+    }, true);
+
     document.addEventListener("click", (event) => {
       if (!(event.target instanceof Element)) return;
       const button = event.target.closest("button");
-      if (!button) return;
-      activity("button.click", buttonDescriptor(button));
+      if (button) {
+        activity("button.click", buttonDescriptor(button));
+        return;
+      }
+      activity("element.click", {
+        ...elementDescriptor(event.target),
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
     }, true);
+
     document.addEventListener("change", (event) => {
       if (!(event.target instanceof HTMLElement)) return;
       const control = event.target;

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260501f" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260714a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -14,16 +14,20 @@
           <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
-          <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool"><b>Project</b></button>
-          <button class="tool-item" data-tool="merge" data-short="PiP" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
-          <button class="tool-item" data-tool="scoring" data-short="Sco" type="button" aria-label="Show scoring tool"><b>Score</b></button>
-          <button class="tool-item active" data-tool="timing" data-short="Spl" type="button" aria-label="Show splits tool"><b>Splits</b></button>
-          <button class="tool-item" data-tool="markers" data-short="Mar" type="button" aria-label="Show markers tool"><b>Markers</b></button>
-          <button class="tool-item" data-tool="overlay" data-short="Ovr" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
-          <button class="tool-item" data-tool="review" data-short="Rev" type="button" aria-label="Show review tool"><b>Review</b></button>
-          <button class="tool-item" data-tool="export" data-short="Exp" type="button" aria-label="Show export tool"><b>Export</b></button>
-          <button class="tool-item" data-tool="metrics" data-short="Met" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
-          <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
+          <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool">Project</button>
+          <button class="tool-item" data-tool="media" data-short="Med" type="button" aria-label="Show media tool">Media</button>
+          <button class="tool-item" data-tool="merge" data-short="Com" type="button" aria-label="Show compose tool">Compose</button>
+          <button class="tool-item" data-tool="trim-sync" data-short="Trim" type="button" aria-label="Show trim tool">Trim</button>
+          <button class="tool-item" data-tool="scoring" data-short="Sco" type="button" aria-label="Show scoring tool">Score</button>
+          <button class="tool-item active" data-tool="timing" data-short="Spl" type="button" aria-label="Show splits tool">Splits</button>
+          <button class="tool-item" data-tool="markers" data-short="Mar" type="button" aria-label="Show markers tool">Markers</button>
+          <button class="tool-item" data-tool="overlay" data-short="Ovr" type="button" aria-label="Show overlay tool">Overlay</button>
+          <button class="tool-item" data-tool="review" data-short="Rev" type="button" aria-label="Show review tool">Review</button>
+          <button class="tool-item" data-tool="export" data-short="Exp" type="button" aria-label="Show export tool">Export</button>
+          <button class="tool-item" data-tool="intro-outro" data-short="I/O" type="button" aria-label="Show In and Out tool">In / Out</button>
+          <button class="tool-item" data-tool="queue" data-short="Que" type="button" aria-label="Show queue tool">Queue</button>
+          <button class="tool-item" data-tool="metrics" data-short="Met" type="button" aria-label="Show metrics tool">Metrics</button>
+          <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool">ShotML</button>
         </nav>
         <div class="tool-rail-footer" aria-label="Rail controls">
           <button id="settings-rail-button" class="tool-item" data-tool="settings" data-short="Set" type="button" aria-label="Show settings tool">⚙</button>
@@ -35,6 +39,7 @@
       <main id="cockpit-root" class="cockpit">
         <input id="primary-file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts" hidden />
         <input id="merge-media-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+        <input id="media-add-more-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
         <input id="practiscore-file-input" type="file" accept=".csv,.txt,text/csv,text/plain" hidden />
         <span id="project-title" hidden>Untitled Project</span>
         <span id="status" hidden>Ready.</span>
@@ -89,6 +94,7 @@
                 </div>
               </div>
               <div class="waveform-actions waveform-footer">
+                <span id="waveform-total-time" class="waveform-total-time">0.00s</span>
                 <button id="zoom-waveform-out" type="button">Zoom -</button>
                 <button id="zoom-waveform-in" type="button">Zoom +</button>
                 <button id="amp-waveform-out" type="button">Amp -</button>
@@ -97,6 +103,16 @@
                 <button class="mode-button active" data-waveform-mode="select" type="button" aria-label="Use waveform select mode">Select</button>
                 <button class="mode-button" data-waveform-mode="add" type="button" aria-label="Use waveform add shot mode">Add Shot</button>
                 <button id="expand-waveform" type="button">Expand</button>
+                <div class="waveform-tracks-controls" id="waveform-tracks-controls" hidden>
+                  <span class="waveform-tracks-label">Tracks:</span>
+                  <div id="waveform-track-list" class="waveform-track-list"></div>
+                </div>
+                <div class="waveform-segment-legend" id="waveform-segment-legend" hidden>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-moving"></span>Moving</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-static"></span>Static</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-long-move"></span>Long Move</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-auto-cut"></span>Auto-Cut</span>
+                </div>
               </div>
               <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
             </section>
@@ -128,11 +144,15 @@
 
             <section id="metrics-workbench" class="metrics-workbench" aria-label="Expanded metrics analysis">
               <div class="section-header">
-                <h2>Metrics</h2>
+                <h2>Match Metrics</h2>
                 <button id="collapse-metrics" type="button">Collapse</button>
               </div>
-              <p class="hint">Post-stage graphs highlight dead time, interval outliers, reference deltas, and grouped stage segments beside the expanded table.</p>
-              <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench" aria-label="Expanded metrics graphs"></div>
+              <div id="metrics-workbench-match-summary" class="metrics-summary-grid metrics-match-summary"></div>
+              <section class="metrics-stage-breakdown-section">
+                <div class="section-header"><h3>Stage Breakdown</h3></div>
+                <div id="metrics-workbench-stage-tree" class="metrics-stage-tree metrics-stage-tree-workbench"></div>
+              </section>
+              <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench"></div>
               <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
             </section>
 
@@ -176,7 +196,7 @@
                 <section class="markers-workbench-column markers-workbench-list-panel">
                   <div class="section-header sub-section-header">
                     <h3>Markers</h3>
-                    <span id="markers-workbench-list-status">No markers yet.</span>
+                    <span id="markers-workbench-list-status"></span>
                   </div>
                   <div id="markers-workbench-list" class="text-box-list popup-marker-list markers-workbench-list" aria-label="Expanded marker navigator"></div>
                 </section>
@@ -188,7 +208,7 @@
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context tools">
             <section class="tool-pane" data-tool-pane="review">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Review</h3>
               </div>
               <section class="review-visibility-manager">
@@ -197,7 +217,7 @@
                 </div>
                 <div class="button-grid two-up review-visibility-grid">
                   <label class="check-row review-visibility-option"><input id="show-markers" type="checkbox" /> Show markers</label>
-                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show PiP</label>
+                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show added media</label>
                   <label class="check-row review-visibility-option"><input id="show-timer" type="checkbox" /> Show timer badge</label>
                   <label class="check-row review-visibility-option"><input id="show-draw" type="checkbox" /> Show draw badge</label>
                   <label class="check-row review-visibility-option"><input id="show-shots" type="checkbox" /> Show split badges</label>
@@ -214,29 +234,62 @@
                 </div>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
+              <section class="review-imported-metrics" id="review-imported-metrics" hidden>
+                <div class="section-header sub-section-header">
+                  <h3>Summary</h3>
+                </div>
+                <div id="review-metrics-checklist" class="review-metrics-checklist"></div>
+                <dl id="review-metrics-list" class="details review-metrics-details"></dl>
+              </section>
+
+            </section>
+
+            <section class="tool-pane" data-tool-pane="trim-sync">
+              <div class="section-header pane-title-row">
+                <h3>Trim</h3>
+                <span class="pane-summary-token">0 sources</span>
+              </div>
+              <div class="trim-timing-bar">
+                <span>Beep: --.--s</span>
+                <span>Last Shot: --.--s</span>
+                <span>Total: --.--s</span>
+              </div>
+              <div class="control-grid">
+                <label>Keep before beep (s)
+                  <input id="trim-global-start" type="number" min="0" step="0.01" placeholder="2.00" />
+                </label>
+                <label>Keep after last shot (s)
+                  <input id="trim-global-end" type="number" min="0" step="0.01" placeholder="2.00" />
+                </label>
+              </div>
+              <div class="queue-toolbar">
+                <button id="trim-global-defaults-btn" class="btn-sm btn-secondary" type="button">Reset to 2/2</button>
+                <button id="trim-global-undo" class="btn-sm btn-secondary" type="button">Undo</button>
+                <button id="trim-global-apply" class="btn btn-primary" type="button">Apply to All</button>
+                <button id="trim-global-clear" class="btn btn-secondary" type="button">Clear All</button>
+              </div>
+              <div id="trim-sync-list" class="merge-media-list" aria-label="Trim controls"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="metrics">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Metrics</h3>
                 <button id="expand-metrics" type="button">Expand</button>
               </div>
-              <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
-              <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
-                <div class="section-header sub-section-header">
-                  <h3>Stage Story</h3>
-                  <span>Timeline, intervals, comparison, and segment grouping</span>
-                </div>
-                <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
-                <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
+              <section class="settings-section metrics-section metrics-match-section">
+                <div class="section-header"><strong>Match Metrics</strong></div>
+                <div id="metrics-summary-grid" class="metrics-summary-grid metrics-match-summary"></div>
+                <div id="metrics-stage-overview" class="data-table metrics-stage-overview" aria-label="Match and stage metrics"></div>
               </section>
-              <section class="settings-section metrics-section" data-metrics-section="scoring-context">
-                <div class="section-header sub-section-header">
-                  <h3>Scoring Context</h3>
-                  <span id="metrics-score-status">No scoring data.</span>
-                </div>
-                <dl id="metrics-score-summary" class="details metrics-details"></dl>
+              <section class="settings-section metrics-section metrics-stage-breakdown-section">
+                <div class="section-header"><strong>Stage Breakdown</strong></div>
+                <div id="metrics-stage-tree" class="metrics-stage-tree"></div>
               </section>
+              <div id="metrics-competition-summary" hidden></div>
+              <div id="metrics-graph-list" hidden></div>
+              <div id="metrics-trend-list" hidden></div>
+              <span id="metrics-score-status" hidden></span>
+              <dl id="metrics-score-summary" hidden></dl>
               <div class="button-grid two-up">
                 <button id="metrics-export-csv" type="button">Export CSV</button>
                 <button id="metrics-export-text" type="button">Export Text</button>
@@ -244,7 +297,7 @@
             </section>
 
             <section class="tool-pane active" data-tool-pane="timing">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Splits</h3>
                 <div class="section-header-actions scoring-header-actions">
                   <strong id="timing-result">--</strong>
@@ -260,7 +313,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="shotml">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>ShotML</h3>
                 <div class="section-header-actions">
                   <span id="shotml-confidence-summary">Avg auto confidence --</span>
@@ -271,7 +324,7 @@
               <section class="shotml-section" data-shotml-section="threshold">
                 <div class="section-header sub-section-header">
                   <h3>Threshold</h3>
-                  <span id="shotml-run-summary">No ShotML run yet.</span>
+                  <span id="shotml-run-summary"></span>
                 </div>
                 <div class="threshold-control">
                   <label for="threshold">Detection threshold</label>
@@ -291,7 +344,7 @@
               <section class="shotml-section" data-shotml-section="beep_detection">
                 <div class="section-header sub-section-header">
                   <h3>Beep Detection</h3>
-                  <span>Start tone search and refinement</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Onset fraction <input data-shotml-setting="beep_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
@@ -319,7 +372,7 @@
               <section class="shotml-section" data-shotml-section="shot_candidate_detection">
                 <div class="section-header sub-section-header">
                   <h3>Shot Candidate Detection</h3>
-                  <span>Peak picking and confidence</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Minimum shot interval ms <input data-shotml-setting="min_shot_interval_ms" type="number" min="1" max="1000" step="1" /></label>
@@ -336,7 +389,7 @@
               <section class="shotml-section" data-shotml-section="shot_refinement">
                 <div class="section-header sub-section-header">
                   <h3>Shot Refinement</h3>
-                  <span>Onset placement windows</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Onset fraction <input data-shotml-setting="shot_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
@@ -351,7 +404,7 @@
               <section class="shotml-section" data-shotml-section="false_positive_suppression">
                 <div class="section-header sub-section-header">
                   <h3>False Positive Suppression</h3>
-                  <span>Duplicate and outlier filtering</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Weak onset threshold <input data-shotml-setting="weak_onset_support_threshold" type="number" min="0" max="1" step="0.01" /></label>
@@ -366,7 +419,7 @@
               <section class="shotml-section" data-shotml-section="confidence_review">
                 <div class="section-header sub-section-header">
                   <h3>Confidence And Review</h3>
-                  <span>Support scoring and review pressure</span>
+                  <span></span>
                 </div>
                 <div class="control-grid">
                   <label>Refinement confidence weight <input data-shotml-setting="refinement_confidence_weight" type="number" min="0" max="1" step="0.01" /></label>
@@ -394,9 +447,7 @@
               <section class="shotml-section" data-shotml-section="advanced_runtime">
                 <div class="section-header sub-section-header">
                   <h3>Advanced Runtime</h3>
-                  <span>Changes alter model timing granularity</span>
                 </div>
-                <p class="hint">Window size and hop size are model-runtime values. Keep the defaults unless you are validating a detector experiment.</p>
                 <div class="control-grid">
                   <label>Window size <input data-shotml-setting="window_size" type="number" min="128" max="16384" step="1" /></label>
                   <label>Hop size <input data-shotml-setting="hop_size" type="number" min="1" max="4096" step="1" /></label>
@@ -405,7 +456,7 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Score</h3>
                 <div class="section-header-actions scoring-header-actions">
                   <strong id="scoring-result">--</strong>
@@ -424,12 +475,13 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Overlay</h3>
                 <small>Auto-applies</small>
               </div>
               <div class="control-grid">
                 <label class="check-row"><input id="show-overlay" type="checkbox" /> Show overlay</label>
+                <label class="check-row"><input id="show-shot-scores" type="checkbox" /> Show scores in split badges</label>
                 <label>Badge size
                   <select id="badge-size">
                     <option>XS</option>
@@ -546,12 +598,15 @@
                 <label class="check-row"><input id="overlay-font-italic" type="checkbox" /> Italic</label>
               </div>
               <div class="style-grid" id="badge-style-grid"></div>
-              <h3>Score Colors</h3>
+              <div class="button-grid two-up overlay-badge-actions">
+                <h3>Score Colors</h3>
+                <button id="export-badges" type="button">Export Badges</button>
+              </div>
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="markers">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Markers</h3>
                 <div class="section-header-actions">
                   <span id="popup-pane-status">0 enabled</span>
@@ -569,7 +624,7 @@
               <section class="popup-list-section popup-list-section-unified">
                 <div class="section-header sub-section-header">
                   <h3>Markers</h3>
-                  <span id="popup-list-status">No markers yet.</span>
+                  <span id="popup-list-status"></span>
                 </div>
                 <div id="popup-marker-list" class="text-box-list popup-marker-list" aria-label="Marker navigator"></div>
               </section>
@@ -583,47 +638,80 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="merge">
-              <div class="section-header">
-                <h3>PiP</h3>
-                <strong id="sync-offset">Defaults only</strong>
-              </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
-              <section class="pip-defaults-section" data-inspector-section="pip-defaults">
-                <div class="section-header sub-section-header">
-                  <h3>PiP Default Settings</h3>
-                  <button id="restore-merge-defaults" type="button">Restore</button>
+              <div class="pane-section merge-pane-shell">
+                <div class="section-header pane-title-row">
+                  <h3>Compose</h3>
+                  <span id="sync-offset" class="pane-status-text">0 sources</span>
                 </div>
-                <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-                <label>Layout
-                  <select id="merge-layout">
-                    <option value="side_by_side">Side by side</option>
-                    <option value="above_below">Above / below</option>
-                    <option value="pip">Picture in picture</option>
-                  </select>
-                </label>
-                <label>Default PiP size
-                  <div class="pip-size-control">
-                    <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
-                    <output id="pip-size-label">35%</output>
+                <section class="pip-defaults-section" data-inspector-section="pip-defaults">
+                  <div class="section-header sub-section-header">
+                    <h3>Defaults</h3>
+                    <button id="restore-merge-defaults" class="btn-sm btn-secondary" type="button">Reset Defaults</button>
                   </div>
-                </label>
-                <div class="control-grid pip-position-grid">
-                  <label>Default PiP X (0 left, 1 right)
-                    <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Include added media</label>
+                  <label>Layout
+                    <select id="merge-layout">
+                      <option value="side_by_side">Side by side</option>
+                      <option value="above_below">Above / below</option>
+                      <option value="pip">Picture in picture</option>
+                      <option value="full_screen_portrait">Full-screen portrait</option>
+                      <option value="dual_center_hud">Dual center HUD</option>
+                      <option value="dual_top_hud">Dual top HUD</option>
+                    </select>
                   </label>
-                  <label>Default PiP Y (0 top, 1 bottom)
-                    <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                  <label>Size
+                    <div class="pip-size-control">
+                      <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
+                      <output id="pip-size-label">35%</output>
+                    </div>
                   </label>
-                </div>
-              </section>
-              <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+                  <div class="control-grid pip-position-grid">
+                    <label>Position X
+                      <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                    </label>
+                    <label>Position Y
+                      <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                    </label>
+                  </div>
+                </section>
+                <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+              </div>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Export</h3>
-                <small>Local video</small>
+                <small>Active stage settings</small>
               </div>
+              <div class="section-header sub-section-header">
+                <h3>Output Profiles</h3>
+              </div>
+              <select id="output-profile-select">
+                <option value="">-- No profile selected --</option>
+              </select>
+              <div class="control-grid">
+                <button id="create-output-profile" type="button">Create</button>
+                <button id="save-output-profile" type="button">Save Profile</button>
+                <button id="delete-output-profile" type="button">Delete</button>
+              </div>
+              <label>Profile name
+                <input id="output-profile-name" type="text" placeholder="Profile name" />
+              </label>
+              <label>Type
+                <select id="output-profile-type">
+                  <option value="stage_output">Stage Output</option>
+                  <option value="stage_composite">Stage Composite</option>
+                </select>
+              </label>
+              <label>Frame profile
+                <select id="output-profile-frame">
+                  <option value="source">Source</option>
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:5">4:5</option>
+                </select>
+              </label>
               <label>Preset
                 <select id="export-preset"></select>
               </label>
@@ -705,22 +793,12 @@
                   </select>
                 </label>
                 <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
+
               </div>
-              <label>Output path
-                <div class="path-row">
-                  <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
-                  <button id="browse-export-path" type="button">Browse</button>
-                </div>
-              </label>
-              <div class="button-grid two-up">
-                <button id="export-video" class="primary-button" type="button">Export Video</button>
-                <button id="show-export-log" type="button">Show Export Log</button>
-              </div>
-              <p id="export-log-status" class="hint">No export log yet.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="settings">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Settings</h3>
                 <small>Master defaults</small>
               </div>
@@ -741,7 +819,7 @@
                   <label>Landing pane
                     <select id="settings-default-tool">
                       <option value="project">Project</option>
-                      <option value="merge">PiP</option>
+                      <option value="merge">Compose</option>
                       <option value="scoring">Score</option>
                       <option value="timing">Splits</option>
                       <option value="markers">Markers</option>
@@ -758,14 +836,14 @@
                   <button id="settings-import-current" type="button">Save Current Settings</button>
                   <button id="settings-reset-defaults" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-scope-status" class="hint">No project folder is open. App defaults are the global template.</p>
+                <p id="settings-scope-status" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="layout">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Layout</h3>
-                    <span id="settings-layout-status">No saved layout defaults.</span>
+                    <span id="settings-layout-status"></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -774,7 +852,7 @@
                     <input id="settings-layout-rail-width" type="number" min="84" max="104" step="1" value="84" />
                   </label>
                   <label>Inspector width
-                    <input id="settings-layout-inspector-width" type="number" min="320" max="4096" step="1" value="440" />
+                    <input id="settings-layout-inspector-width" type="number" min="280" max="4096" step="1" value="440" />
                   </label>
                   <label>Waveform height
                     <input id="settings-layout-waveform-height" type="number" min="112" max="4096" step="1" value="206" />
@@ -784,14 +862,14 @@
                   <button id="settings-use-current-layout" type="button">Save Current Settings</button>
                   <button id="settings-release-layout" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-layout-summary" class="hint">New projects are using SplitShot's built-in layout defaults.</p>
+                <p id="settings-layout-summary" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="scoring">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Scoring</h3>
-                    <span>Default sport for new projects</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -803,7 +881,6 @@
                     </select>
                   </label>
                 </div>
-                <p class="hint">New projects start with this sport unless an import provides a match type.</p>
                 <div class="button-grid two-up">
                   <button id="settings-save-current-scoring" data-settings-save-section="scoring" type="button">Save Current Settings</button>
                   <button id="settings-reset-section-scoring" data-settings-reset-section="scoring" type="button">Reset to Default</button>
@@ -813,29 +890,32 @@
               <section class="settings-section collapsed" data-settings-section="pip">
                 <div class="section-header sub-section-header">
                   <div>
-                    <h3>PiP</h3>
-                    <span>Merge layout, size, and position defaults</span>
+                    <h3>Compose</h3>
+                    <span id="settings-pip-summary"></span>
                   </div>
                 </div>
                 <div class="control-grid">
-                  <label>PiP layout
+                  <label>Layout
                     <select id="settings-merge-layout">
                       <option value="side_by_side">Side by side</option>
                       <option value="above_below">Above / below</option>
-                      <option value="pip">PiP</option>
+                      <option value="pip">Picture in picture</option>
+                      <option value="full_screen_portrait">Full-screen portrait</option>
+                      <option value="dual_center_hud">Dual center HUD</option>
+                      <option value="dual_top_hud">Dual top HUD</option>
                     </select>
                   </label>
-                  <label>PiP size
+                  <label>Size
                     <select id="settings-pip-size">
                       <option value="25%">25%</option>
                       <option value="35%">35%</option>
                       <option value="50%">50%</option>
                     </select>
                   </label>
-                  <label>PiP X (0 left, 1 right)
+                  <label>X (0 left, 1 right)
                     <input id="settings-merge-pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
-                  <label>PiP Y (0 top, 1 bottom)
+                  <label>Y (0 top, 1 bottom)
                     <input id="settings-merge-pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
@@ -843,14 +923,14 @@
                   <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Save Current Settings</button>
                   <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-pip-summary" class="hint">No saved PiP media defaults.</p>
+                <p id="settings-pip-summary" class="hint"></p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="overlay">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Overlay</h3>
-                    <span>Badge placement, color, and opacity defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -990,6 +1070,20 @@
                     </label>
                     <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Enable motion</label>
                     <input id="settings-marker-motion-mode" type="hidden" value="fixed" />
+                    <label>Quadrant
+                      <select id="settings-marker-quadrant">
+                        <option value="top_left">Top left</option>
+                        <option value="top_middle">Top middle</option>
+                        <option value="top_right">Top right</option>
+                        <option value="middle_left">Middle left</option>
+                        <option value="middle_middle">Middle middle</option>
+                        <option value="middle_right">Middle right</option>
+                        <option value="bottom_left">Bottom left</option>
+                        <option value="bottom_middle">Bottom middle</option>
+                        <option value="bottom_right">Bottom right</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </label>
                   </div>
                   <div class="control-grid">
                     <label>Background
@@ -1016,7 +1110,7 @@
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Export</h3>
-                    <span>Render quality and FFmpeg defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1077,7 +1171,7 @@
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>ShotML</h3>
-                    <span>Detector threshold and defaults</span>
+                    <span></span>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1093,9 +1187,9 @@
             </section>
 
             <section class="tool-pane" data-tool-pane="project">
-              <div class="section-header">
+              <div class="section-header pane-title-row">
                 <h3>Project</h3>
-                <span id="media-badge">No Video Selected</span>
+                <span id="media-badge">No project open</span>
               </div>
               <label>Project folder
                 <div class="path-row">
@@ -1105,13 +1199,20 @@
               </label>
               <div class="project-action-grid">
                 <button id="new-project" type="button">Create Project</button>
+                <button id="open-project" type="button">Open Project</button>
                 <button id="delete-project" class="danger-button project-delete-button" type="button">Delete Project</button>
               </div>
               <label>Project name
                 <input id="project-name" placeholder="Untitled Project" />
               </label>
               <label>Project description
-                <textarea id="project-description" rows="5" placeholder="Summarize the stage, what the run is for, and any notes to save with the project."></textarea>
+                <textarea id="project-description" rows="5" placeholder="Save match-level notes and context for this project."></textarea>
+              </label>
+              <label>Output folder
+                <div class="path-row">
+                  <input id="project-output-root" placeholder="Project Output folder" readonly />
+                  <button id="browse-project-output-root" type="button">Select Output</button>
+                </div>
               </label>
               <div class="section-header">
                 <h3>PractiScore Import</h3>
@@ -1119,8 +1220,8 @@
               </div>
               <section class="practiscore-actions" aria-label="PractiScore actions">
                 <div class="button-grid two-up practiscore-action-grid">
-                  <button id="open-practiscore-dashboard" type="button">Open PractiScore Dashboard</button>
-                  <button id="import-practiscore" type="button">Select PractiScore File</button>
+                  <button id="open-practiscore-dashboard" type="button" disabled>Open PractiScore Dashboard</button>
+                  <button id="import-practiscore" type="button" disabled>Select PractiScore File</button>
                 </div>
               </section>
               <div class="control-grid">
@@ -1132,33 +1233,40 @@
                     <option value="idpa">IDPA</option>
                   </select>
                 </label>
-                <label>Stage #
-                  <select id="match-stage-number">
-                    <option value="">Select stage</option>
-                  </select>
-                </label>
-              </div>
-              <div class="control-grid">
-                <label>Competitor name
+                <label>Competitor
                   <select id="match-competitor-name">
                     <option value="">Select competitor</option>
                   </select>
                 </label>
-                <label>Place
+                <label>Overall Place
                   <select id="match-competitor-place">
-                    <option value="">Select place</option>
+                    <option value="">Place</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Classification
+                  <select id="match-class">
+                    <option value="">Class</option>
+                  </select>
+                </label>
+                <label>Division
+                  <select id="match-division">
+                    <option value="">Division</option>
                   </select>
                 </label>
               </div>
               <dl id="practiscore-import-summary" class="details"></dl>
-              <div class="project-path-row">
-                <label>Primary Video
-                  <input id="primary-file-path" placeholder="Please select a video" readonly />
-                </label>
-                <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Select Primary Video</button>
-                </div>
-              </div>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="media">
+              <div id="media-pane"></div>
+            </section>
+
+            <section id="intro-outro-pane" class="tool-pane" data-tool-pane="intro-outro"></section>
+
+            <section class="tool-pane" data-tool-pane="queue">
+              <div id="queue-pane"></div>
             </section>
           </aside>
         </div>
@@ -1202,15 +1310,15 @@
       <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="export-log-title">
         <div class="modal-header">
           <div>
-            <h2 id="export-log-title">Export Log</h2>
-            <p id="export-log-summary">No export activity yet.</p>
+            <h2 id="export-log-title">Processing Log</h2>
+            <p id="export-log-summary"></p>
           </div>
           <button id="close-export-log" type="button">Close</button>
         </div>
         <div id="export-log-error" class="modal-alert" hidden></div>
-        <pre id="export-log-output" class="export-log-output">No export log yet.</pre>
+        <pre id="export-log-output" class="export-log-output"></pre>
         <div class="modal-actions">
-          <button id="export-export-log" type="button">Export Log</button>
+          <button id="export-export-log" type="button">Save Log</button>
         </div>
       </section>
     </div>

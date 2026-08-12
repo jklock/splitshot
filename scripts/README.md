@@ -1,5 +1,7 @@
 # Scripts
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This directory is the operational toolbox for SplitShot. Use it to bootstrap machines, run tests, audit browser behavior, inspect ShotML output, validate release readiness, and refresh documentation assets.
 
 ## Start Here
@@ -32,9 +34,9 @@ If you are new to the repo, read:
 | `testing/run_test_suite.py` | validation | Canonical grouped pytest runner | Any normal local validation run | Inputs: suite/mode flags. Outputs: console summary, optional raw or JSON artifact |
 | `testing/run_ci_locally.py` | validation | Runs CI-shaped local job groups | Before pushing or when reproducing CI locally | Inputs: job name. Outputs: job summary and command failures |
 | `testing/run_electron_preflight.py` | validation | Runs the local Electron release gate for the current platform | Before packaging or release workflow triggers | Inputs: local repo state. Outputs: preflight pass/fail |
-| `audits/run_v1_1_audit.py` | audit | Runs the `v1.1` baseline bundle, writes summary artifacts, and emits a ranked worklist | Start of the `v1.1` hardening cycle or any later non-regression refresh | Inputs: optional timing manifest/video. Outputs: `artifacts/v1_1_audit/summary.json`, `summary.md`, logs, and optional analysis JSON reports |
+| `testing/check_tracked_tree_hygiene.py` | validation | Rejects generated files, machine-local paths, unexpected media, and unapproved blobs over 5 MiB in Git | Before committing repository cleanup or release changes | Inputs: tracked working tree. Outputs: concise violation list |
 | `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
-| `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
+| `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds a fully enabled showcase state, and regenerates the 1400×900 user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: two different approved real-video paths outside `tests/`. Outputs: refreshed files in `docs/screenshots/` |
 | `release/apply_github_rulesets.sh` | release | Creates or updates the `main` and `v*` repository rulesets through `gh api` | Initial V1 governance setup or later protection refresh | Inputs: authenticated GitHub CLI session. Outputs: live repository rulesets |
 | `release/extract_release_notes.py` | release | Extracts one semver section from `CHANGELOG.md` into a release-body markdown file | Before publishing or manually editing a GitHub release | Inputs: tag name and changelog path. Outputs: markdown notes file |
 
@@ -42,11 +44,10 @@ If you are new to the repo, read:
 
 | Script | Type | What it does | When to use it | Inputs / outputs |
 | --- | --- | --- | --- | --- |
-| `audits/browser/run_browser_ui_surface_audit.py` | audit | Verifies UI-surface expectations against the running browser app | Browser-shell regressions or control audits | Inputs: app runtime. Outputs: audit summary |
+| `audits/browser/run_browser_ui_surface_audit.py` | audit | Verifies UI-surface and viewport expectations against the running browser app, including 1400×900 and narrow 842×900 captures | Browser-shell regressions or control audits | Inputs: app runtime. Outputs: audit summary and screenshots |
 | `audits/browser/run_browser_interaction_audit.py` | audit | Exercises real browser interactions against local media fixtures | Interaction regressions or evidence gathering | Inputs: media paths and optional PractiScore file. Outputs: structured audit report |
 | `audits/browser/run_browser_av_audit.py` | audit | Checks audio/video playback and timeline stability | AV-specific browser regressions | Inputs: app runtime and media. Outputs: JSON/table audit summary |
 | `audits/browser/run_browser_export_matrix.py` | audit | Exercises browser export combinations | Export-surface investigation | Inputs: export matrix parameters. Outputs: matrix results |
-| `audits/run_v1_1_audit.py` | audit | Freezes the current `v1.1` non-regression baseline across toolchain, browser, timing, persistence, export, analysis, and packaged parity surfaces | Beginning of the `v1.1` cycle or before broad hardening work | Inputs: optional timing manifest/video. Outputs: summary JSON/markdown, logs, ranked worklist |
 
 ### Analysis and training
 
@@ -64,12 +65,14 @@ If you are new to the repo, read:
 
 ## Common Commands
 
+Use Python 3.12 with `uv`; Electron scripts require Node.js 22 and `npm ci` in `electron/`. Source media and export tools require `ffmpeg` and `ffprobe` on `PATH` on macOS, Windows, and Linux.
+
 ```bash
 uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 uv run python scripts/testing/run_ci_locally.py --job source-local
 uv run python scripts/testing/run_electron_preflight.py
-uv run python scripts/docs/capture_browser_screenshots.py
+uv run python scripts/docs/capture_browser_screenshots.py --primary-video /path/to/approved-primary.mp4 --secondary-video /path/to/approved-secondary.mp4
 uv run python scripts/tooling/validate_toolchain.py
 uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
 uv run python scripts/audits/browser/run_browser_ui_surface_audit.py

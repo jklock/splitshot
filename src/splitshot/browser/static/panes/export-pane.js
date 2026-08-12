@@ -1,8 +1,6 @@
 export function createExportPane({
   $ = (id) => document.getElementById(id),
   getState = () => null,
-  getExportPathDraft = () => "",
-  setExportPathDraft = () => {},
   getExportLogLines = () => [],
   getActiveProcessingPath = () => null,
   getProcessingProgressPercent = () => 0,
@@ -12,6 +10,7 @@ export function createExportPane({
   applyExportDraft = () => {},
   autoApplyExportLayout = () => {},
   autoApplyExportSettings = () => {},
+  refreshState = async () => {},
 } = {}) {
   function currentState() {
     return getState() || {};
@@ -25,7 +24,9 @@ export function createExportPane({
 
   function visibleExportLogLines() {
     const visibleLines = getExportLogLines() || [];
-    return visibleLines.length > 0 ? visibleLines : persistedExportLogLines();
+    const persistedLines = persistedExportLogLines();
+    if (getActiveProcessingPath()) return visibleLines.length > 0 ? visibleLines : persistedLines;
+    return persistedLines.length >= visibleLines.length ? persistedLines : visibleLines;
   }
 
   function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = currentState()?.project?.export?.preset) {
@@ -47,13 +48,17 @@ export function createExportPane({
     if (descriptionId) {
       const preset = (currentState().export_presets || []).find((item) => item.id === select.value);
       let description = $(descriptionId);
+      if (!preset?.description) {
+        description?.remove();
+        return;
+      }
       if (!description) {
         description = document.createElement("div");
         description.id = descriptionId;
         description.className = "hint export-preset-description";
         select.closest("label")?.insertAdjacentElement("afterend", description);
       }
-      if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
+      if (description) description.textContent = preset.description;
     }
   }
 
@@ -63,40 +68,27 @@ export function createExportPane({
     const output = $("export-log-output");
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
-    const status = $("export-log-status");
-    const button = $("show-export-log");
     const exportButton = $("export-export-log");
     if (output) {
-      output.textContent = visibleLines.join("\n") || "No export log yet.";
-      if (getActiveProcessingPath() === "/api/export") output.scrollTop = output.scrollHeight;
+      output.textContent = visibleLines.join("\n");
+      if (getActiveProcessingPath()) output.scrollTop = output.scrollHeight;
     }
     if (summary) {
-      summary.textContent = getActiveProcessingPath() === "/api/export"
-        ? `Export in progress • ${Math.round(getProcessingProgressPercent())}%`
-        : (visibleLines.length > 0 ? "Most recent local export output." : "No export activity yet.");
+      summary.textContent = getActiveProcessingPath()
+        ? `Processing in progress • ${Math.round(getProcessingProgressPercent())}%`
+        : "";
     }
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
       errorBox.textContent = projectExport.last_error || "";
     }
-    if (status) {
-      status.textContent = projectExport.last_error
-        ? `Latest export failed: ${projectExport.last_error}`
-        : getActiveProcessingPath() === "/api/export"
-          ? `Export log is updating in real time. Current progress: ${Math.round(getProcessingProgressPercent())}%.`
-          : (visibleLines.length > 0
-            ? "The last local export log is available in the modal window."
-            : "The live export log opens in a separate window so the output settings stay readable while rendering runs.");
-    }
-    if (button) {
-      button.textContent = getActiveProcessingPath() === "/api/export"
-        ? `Show Log (${Math.round(getProcessingProgressPercent())}%)`
-        : "Show Log";
-    }
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
 
-  function openExportLogModal() {
+  async function openExportLogModal() {
+    if (visibleExportLogLines().length === 0) {
+      await refreshState();
+    }
     const modal = $("export-log-modal");
     if (!modal) return;
     modal.hidden = false;
@@ -114,26 +106,15 @@ export function createExportPane({
   function downloadExportLog() {
     const visibleLines = visibleExportLogLines();
     if (visibleLines.length === 0) {
-      setStatus("No export log available yet.");
+      setStatus("");
       return;
     }
-    downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
-    setStatus("Downloaded export log.");
+    downloadTextFile(`${metricsFileStem()}-processing-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
+    setStatus("Downloaded processing log.");
   }
 
   function syncExportPathControl() {
-    const input = $("export-path");
-    if (!input) return;
-    const state = currentState();
-    const savedPath = state?.project?.export?.output_path || "";
-    const defaultPath = state?.project?.path
-      ? `${state.project.path}/Output/output.mp4`
-      : `${state?.default_project_path || "~/splitshot"}/output.mp4`;
-    const draftPath = getExportPathDraft().trim();
-    const hasUnsavedDraft = draftPath && draftPath !== savedPath;
-    const nextValue = hasUnsavedDraft ? getExportPathDraft() : savedPath || draftPath || input.value || defaultPath;
-    if (input.value !== nextValue) input.value = nextValue;
-    if (!draftPath) setExportPathDraft(nextValue);
+    return "";
   }
 
   function readExportLayoutPayload() {
@@ -144,9 +125,7 @@ export function createExportPane({
   }
 
   function readExportSettingsPayload() {
-    const outputPath = $("export-path")?.value.trim() || getExportPathDraft().trim() || currentState()?.project?.export?.output_path || "";
     return {
-      output_path: outputPath,
       target_width: $("target-width").value ? Number($("target-width").value) : "",
       target_height: $("target-height").value ? Number($("target-height").value) : "",
       frame_rate: $("frame-rate").value,

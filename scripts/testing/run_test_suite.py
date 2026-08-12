@@ -191,7 +191,9 @@ def selected_suites(names: list[str] | None) -> list[SuiteDefinition]:
     return [SUITE_BY_NAME[name] for name in names]
 
 
-def planned_runs(suites: list[SuiteDefinition], mode: str, pytest_args: list[str]) -> list[PlannedRun]:
+def planned_runs(
+    suites: list[SuiteDefinition], mode: str, pytest_args: list[str]
+) -> list[PlannedRun]:
     python_cmd = sys.executable
     runs: list[PlannedRun] = []
     if mode == "all-together":

@@ -481,7 +481,9 @@ def download_remote_match_artifacts(
             selected_remote_id,
             suffix,
         )
-        cache_dir = Path(cache_root) / _safe_path_component(selected_remote_id, default="selected-match")
+        cache_dir = Path(cache_root) / _safe_path_component(
+            selected_remote_id, default="selected-match"
+        )
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -492,16 +494,24 @@ def download_remote_match_artifacts(
         source_artifact_path.write_text(str(fetched_artifact.get("text", "")), encoding="utf-8")
         html_path.write_text(html, encoding="utf-8")
 
-        selected_match = known_match or RemotePractiScoreMatch.from_dict({
-            **snapshot,
-            "details_url": details_url,
-        }) or RemotePractiScoreMatch(
-            remote_id=selected_remote_id,
-            label=_clean_text(snapshot.get("label")) or selected_remote_id,
-            match_type=_normalize_match_type(snapshot.get("match_type")),
-            event_name=_clean_text(snapshot.get("event_name")) or _clean_text(snapshot.get("label")) or selected_remote_id,
-            event_date=_clean_text(snapshot.get("event_date")),
-            details_url=details_url,
+        selected_match = (
+            known_match
+            or RemotePractiScoreMatch.from_dict(
+                {
+                    **snapshot,
+                    "details_url": details_url,
+                }
+            )
+            or RemotePractiScoreMatch(
+                remote_id=selected_remote_id,
+                label=_clean_text(snapshot.get("label")) or selected_remote_id,
+                match_type=_normalize_match_type(snapshot.get("match_type")),
+                event_name=_clean_text(snapshot.get("event_name"))
+                or _clean_text(snapshot.get("label"))
+                or selected_remote_id,
+                event_date=_clean_text(snapshot.get("event_date")),
+                details_url=details_url,
+            )
         )
 
         summary_snapshot = {
@@ -519,7 +529,9 @@ def download_remote_match_artifacts(
                 "html_path": str(html_path),
             },
         }
-        summary_path.write_text(json.dumps(summary_snapshot, indent=2, sort_keys=True), encoding="utf-8")
+        summary_path.write_text(
+            json.dumps(summary_snapshot, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
         return SelectedRemoteMatchArtifacts(
             match=selected_match,
@@ -603,7 +615,9 @@ def _page_hook_or_evaluate(
     except PractiScoreSyncError:
         raise
     except Exception as exc:
-        raise _remote_exception(exc, _category_from_exception(exc), str(exc) or f"PractiScore {hook_name} failed.") from exc
+        raise _remote_exception(
+            exc, _category_from_exception(exc), str(exc) or f"PractiScore {hook_name} failed."
+        ) from exc
 
 
 def _selected_match_page(
@@ -638,7 +652,9 @@ def _selected_match_page(
             details={"remote_id": remote_id},
         )
 
-    details_url = _clean_text(selection.get("details_url")) or ("" if known_match is None else known_match.details_url)
+    details_url = _clean_text(selection.get("details_url")) or (
+        "" if known_match is None else known_match.details_url
+    )
     if not details_url:
         current_page_url = _page_url(active_page)
         if _remote_id_from_value(current_page_url) == remote_id:
@@ -714,7 +730,11 @@ def _match_from_catalog(
     if match_catalog is None:
         return None
     for item in match_catalog:
-        match = item if isinstance(item, RemotePractiScoreMatch) else RemotePractiScoreMatch.from_dict(item)
+        match = (
+            item
+            if isinstance(item, RemotePractiScoreMatch)
+            else RemotePractiScoreMatch.from_dict(item)
+        )
         if match is not None and match.remote_id == remote_id:
             return match
     return None
@@ -754,7 +774,11 @@ def _artifact_suffix(url: str, content_type: str, *, suggested_name: str) -> str
     lowered_content_type = content_type.lower()
     if "csv" in lowered_content_type:
         return ".csv"
-    if "text/plain" in lowered_content_type or lowered_content_type.endswith("/txt") or "text/" in lowered_content_type:
+    if (
+        "text/plain" in lowered_content_type
+        or lowered_content_type.endswith("/txt")
+        or "text/" in lowered_content_type
+    ):
         return ".txt"
     return ""
 
@@ -799,7 +823,9 @@ def _remote_id_from_value(value: object) -> str:
     text = _clean_text(value)
     if not text:
         return ""
-    query_match = re.search(r"(?:remote_id|match_id|result_id|event_id)=([^&#]+)", text, re.IGNORECASE)
+    query_match = re.search(
+        r"(?:remote_id|match_id|result_id|event_id)=([^&#]+)", text, re.IGNORECASE
+    )
     if query_match:
         return query_match.group(1)
     result_match = re.search(r"/(?:results?|match|event)s?/(?:new/)?([^/?#]+)", text, re.IGNORECASE)

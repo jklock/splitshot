@@ -2,16 +2,20 @@ import { createActivityRuntime } from "./lib/activity.js";
 import { createApiRuntime } from "./lib/api.js";
 import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
 import { createExportPane } from "./panes/export-pane.js";
+import { createIntroOutroPane } from "./panes/intro-outro-pane.js";
+import { createMediaPane } from "./panes/media-pane.js";
 import { createMergePane } from "./panes/merge-pane.js";
 import { createMetricsPane } from "./panes/metrics-pane.js";
 import { createMarkersPane } from "./panes/markers-pane.js";
 import { createOverlayPane } from "./panes/overlay-pane.js";
 import { createProjectPane } from "./panes/project-pane.js";
+import { createQueuePane } from "./panes/queue-pane.js";
 import { createReviewPane } from "./panes/review-pane.js";
 import { createScoringPane } from "./panes/scoring-pane.js";
 import { createSettingsPane } from "./panes/settings-pane.js";
 import { createShotMLPane } from "./panes/shotml-pane.js";
 import { createTimingPane } from "./panes/timing-pane.js";
+import { createTrimSyncPane } from "./panes/trim-sync-pane.js";
 import { createStatusBarComponent } from "./components/status-bar.js";
 import { createVideoPlayerComponent } from "./components/video-player.js";
 import { createWaveformComponent } from "./components/waveform.js";
@@ -61,6 +65,7 @@ let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
+let waveformTrackMode = "single";
 let draggingShotId = null;
 let draggingShotPointerId = null;
 let pendingDragTimeMs = null;
@@ -122,7 +127,7 @@ let exportDraft = {};
 let mergeDraft = {};
 let overlayPositionDraft = {};
 let overlayStyleDraft = null;
-let projectDetailsDraft = { name: null, description: null };
+let projectDetailsDraft = { name: null, description: null, output_root: null };
 let overlayTextBoxesDraft = null;
 let popupBubblesDraft = null;
 let popupTemplateDraft = null;
@@ -154,8 +159,8 @@ let overlayAutoBubbleCache = { width: 0, height: 0 };
 let customOverlayRenderKey = "";
 let textBoxRenderedPositionById = new Map();
 let metricsSectionExpansion = new Map([
-  ["trend-snapshot", true],
-  ["scoring-context", true],
+  ["trend-snapshot", false],
+  ["scoring-context", false],
 ]);
 let pendingInspectorScrollTop = null;
 let lastInspectorUserScrollTop = 0;
@@ -186,22 +191,26 @@ let overlayCanvasComponent = null;
 
 let shotmlPane = null;
 let markersPane = null;
+let mediaPane = null;
 let overlayPane = null;
 let exportPane = null;
 let settingsPane = null;
 let mergePane = null;
 let projectPane = null;
+let queuePane = null;
+let introOutroPane = null;
 let reviewPane = null;
 let timingPane = null;
 let scoringPane = null;
 let metricsPane = null;
+let trimSyncPane = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
-const ACTIVITY_POLL_INTERVAL_MS = 1000;
+const ACTIVITY_POLL_INTERVAL_MS = 250;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
@@ -319,6 +328,8 @@ const SECONDARY_PREVIEW_PAUSED_SEEK_THRESHOLD_S = 0.01;
 const SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16;
 const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.02;
 const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08;
+const SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 200;
+const secondaryPreviewLastSeekAt = new WeakMap();
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -335,7 +346,7 @@ function normalizeToolId(tool) {
 
 activeTool = normalizeToolId(activeTool);
 
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "settings", "shotml", "merge", "overlay", "review", "markers", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "media", "intro-outro", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -583,7 +594,7 @@ function normalizeOverlayFieldDraftValue(key, value, fallback = undefined) {
   if (key === "font_size") {
     return Math.max(8, Number(value ?? fallback ?? 14) || 14);
   }
-  if (["font_bold", "font_italic", "show_timer", "show_draw", "show_shots", "show_score"].includes(key)) {
+  if (["font_bold", "font_italic", "show_timer", "show_draw", "show_shots", "show_shot_scores", "show_score"].includes(key)) {
     return Boolean(value ?? fallback);
   }
   return undefined;
@@ -1015,6 +1026,7 @@ function formatMatchType(matchType) {
     uspsa: "USPSA",
     ipsc: "IPSC",
     idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
   }[String(matchType || "").toLowerCase()] || "PractiScore";
 }
 
@@ -1239,7 +1251,7 @@ function requireValue(id, label) {
 }
 
 function controlIsActive(control) {
-  return !!control && document.activeElement === control;
+  return !!control && control.contains(document.activeElement);
 }
 
 function captureScrollState(elements = []) {
@@ -1271,7 +1283,7 @@ function withPreservedScrollState(elements, callback) {
 
 function scrollContainerForElement(element) {
   if (!(element instanceof HTMLElement)) return null;
-  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .inspector");
+  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .queue-stage-list, .trim-source-list, .inspector");
 }
 
 function preserveElementViewportAnchor(elementOrResolver, callback) {
@@ -1301,9 +1313,16 @@ function resetInspectorHorizontalScroll() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
   inspector.scrollLeft = 0;
-  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .shotml-section, .pip-defaults-section").forEach((element) => {
+  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .queue-stage-list, .queue-stage-card, .trim-source-list, .trim-source-card, .shotml-section, .pip-defaults-section").forEach((element) => {
     if (element instanceof HTMLElement) element.scrollLeft = 0;
   });
+}
+
+function applyInspectorScrollTop(targetScrollTop) {
+  const inspector = document.querySelector(".inspector");
+  if (!(inspector instanceof HTMLElement)) return;
+  if (Number.isFinite(targetScrollTop)) inspector.scrollTop = Math.max(inspector.scrollTop, targetScrollTop);
+  resetInspectorHorizontalScroll();
 }
 
 function rememberInspectorScrollPosition() {
@@ -1317,6 +1336,10 @@ function queueInspectorScrollRestore() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
   const currentScrollTop = inspector.scrollTop;
+  if (currentScrollTop > 0) {
+    lastInspectorUserScrollTop = Math.max(lastInspectorUserScrollTop, currentScrollTop);
+    lastInspectorUserScrollTs = Date.now();
+  }
   const hasRecentScroll = (Date.now() - lastInspectorUserScrollTs) <= 2000;
   if (hasRecentScroll && lastInspectorUserScrollTop > currentScrollTop + 24) {
     pendingInspectorScrollTop = lastInspectorUserScrollTop;
@@ -1326,12 +1349,14 @@ function queueInspectorScrollRestore() {
 }
 
 function flushPendingInspectorScrollRestore() {
-  if (pendingInspectorScrollTop === null) return;
-  const inspector = document.querySelector(".inspector");
-  if (inspector instanceof HTMLElement) {
-    inspector.scrollTop = pendingInspectorScrollTop;
-    resetInspectorHorizontalScroll();
-  }
+  const hasRecentScroll = (Date.now() - lastInspectorUserScrollTs) <= 2000;
+  const targetScrollTop = pendingInspectorScrollTop ?? (hasRecentScroll && lastInspectorUserScrollTop > 0 ? lastInspectorUserScrollTop : null);
+  if (targetScrollTop === null) return;
+  applyInspectorScrollTop(targetScrollTop);
+  window.requestAnimationFrame(() => {
+    applyInspectorScrollTop(targetScrollTop);
+    window.requestAnimationFrame(() => applyInspectorScrollTop(targetScrollTop));
+  });
   pendingInspectorScrollTop = null;
 }
 
@@ -1342,9 +1367,12 @@ function hasActivePointerInteraction() {
       || overlayBadgeDrag
       || mergePreviewDrag
       || textBoxDrag
+      || popupBubbleDrag
       || draggingShotId
       || waveformPanDrag
-      || waveformNavigatorDrag,
+      || waveformNavigatorDrag
+      || timingRowEdits.size > 0
+      || scoringRowEdits.size > 0,
   );
 }
 
@@ -1919,7 +1947,7 @@ function normalizeProjectUiState(uiState = {}) {
     scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
-    inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
+    inspector_width: Math.max(280, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
     waveform_height: Math.max(112, Math.round(Number(uiState.waveform_height ?? DEFAULT_PROJECT_UI_STATE.waveform_height) || DEFAULT_PROJECT_UI_STATE.waveform_height)),
     scoring_edit_shot_ids: normalizedUiStringList(
       uiState.scoring_edit_shot_ids || Object.keys(normalizedUiBooleanMap(uiState.scoring_shot_expansion)).filter((shotId) => uiState.scoring_shot_expansion?.[shotId]),
@@ -2330,7 +2358,7 @@ function ensureSectionToggle(section, expanded, onToggle) {
     toggle.type = "button";
     toggle.dataset.sectionToggle = "true";
     toggle.className = "scoring-shot-toggle";
-    actions.prepend(toggle);
+    actions.appendChild(toggle);
   }
   toggle.textContent = expanded ? "v" : ">";
   toggle.title = expanded ? "Hide section" : "Show section";
@@ -3437,6 +3465,7 @@ function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
   setSelectedPopupKeyframeOffset(offsetMs);
   setPopupMotionGeneratedOffsets(bubble.id, [...popupMotionGeneratedOffsetsForBubbleId(bubble.id)].filter((value) => value !== offsetMs));
   setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
+  syncPopupBubbleMotionGuideForBubble(bubbleId);
   seekPopupBubbleMotionPoint(bubbleId, offsetMs);
   return true;
 }
@@ -3475,6 +3504,7 @@ function jumpPopupBubbleKeyframe(bubbleId, direction) {
   setSelectedPopupKeyframeOffset(offsetMs);
   seekPopupBubbleMotionPoint(bubbleId, offsetMs);
   renderPopupEditors();
+  syncPopupBubbleMotionGuideForBubble(bubbleId);
   return true;
 }
 
@@ -3964,6 +3994,15 @@ function renderPopupBubbleMotionGuide(card, bubble) {
   });
 }
 
+function syncPopupBubbleMotionGuideForBubble(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  const card = document.querySelector(
+    `#markers-workbench-editor .popup-bubble-card[data-popup-id="${bubbleId}"]`,
+  );
+  if (!(card instanceof HTMLElement) || !bubble) return;
+  renderPopupBubbleMotionGuide(card, bubble);
+}
+
 function buildPopupBubbleCard(bubble, index, options = {}) {
   const card = document.createElement("section");
   card.className = "text-box-card popup-bubble-card";
@@ -4208,14 +4247,50 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
       anchor_mode: "anchor_mode",
       shot_id: "shot_id",
     }[field] || field;
-    const eventName = control.type === "checkbox" ? "change" : "input";
-    if (field === "shot_id" || field === "anchor_mode") {
-      control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-      return;
+    const syncDependentControls = () => {
+      const updatedBubble = popupBubbles().find((item) => item.id === bubble.id);
+      if (!updatedBubble) return;
+      if (field === "follow_motion") {
+        syncPopupBubbleMotionModeControls(card, updatedBubble);
+        renderPopupBubbleMotionGuide(card, updatedBubble);
+      }
+      if (field === "content_type") {
+        const showText = updatedBubble.content_type !== "image";
+        const showImage = updatedBubble.content_type !== "text";
+        card.querySelector('[data-popup-section="text"]')?.toggleAttribute("hidden", !showText);
+        card.querySelectorAll("[data-popup-media-field]").forEach((element) => {
+          element.toggleAttribute("hidden", !showImage);
+        });
+      }
+      if (field === "anchor_mode" || field === "shot_id") {
+        const anchorControl = card.querySelector('[data-popup-field="anchor_mode"]');
+        const shotControl = card.querySelector('[data-popup-field="shot_id"]');
+        const timeControl = card.querySelector('[data-popup-field="time_s"]');
+        if (anchorControl instanceof HTMLSelectElement) syncControlValue(anchorControl, updatedBubble.anchor_mode);
+        if (shotControl instanceof HTMLSelectElement) syncControlValue(shotControl, updatedBubble.shot_id || "");
+        if (timeControl instanceof HTMLInputElement) timeControl.disabled = updatedBubble.anchor_mode === "shot";
+        if (shotControl instanceof HTMLSelectElement) shotControl.disabled = updatedBubble.anchor_mode !== "shot" || shots.length === 0;
+      }
+      if (field === "duration_s") renderPopupBubbleMotionGuide(card, updatedBubble);
+    };
+    const serializeValue = () => JSON.stringify(readValue());
+    let lastCommittedValue = serializeValue();
+    const updateDraft = () => {
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false });
+      syncDependentControls();
+    };
+    const commitOnce = () => {
+      const nextValue = serializeValue();
+      if (nextValue === lastCommittedValue) return;
+      lastCommittedValue = nextValue;
+      setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: false });
+      syncDependentControls();
+    };
+    if (control.type !== "checkbox" && field !== "shot_id" && field !== "anchor_mode") {
+      control.addEventListener("input", updateDraft);
     }
-    control.addEventListener(eventName, () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false }));
-    control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
-    control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+    control.addEventListener("change", commitOnce);
+    control.addEventListener("blur", commitOnce);
   });
   const xInput = card.querySelector('[data-popup-field="x"]');
   const yInput = card.querySelector('[data-popup-field="y"]');
@@ -4330,13 +4405,14 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
     event.stopPropagation();
     const imageInput = card.querySelector('[data-popup-field="image_path"]');
     if (!(imageInput instanceof HTMLInputElement)) return;
+    const projectRoot = String(state?.project?.path || "").trim().replace(/[\\/]+$/, "");
     await pickPathForElement("popup_image", imageInput, `popup-image-${bubble.id}`, async (path) => {
       if (!path) return;
       imageInput.dataset.popupSourcePath = path;
       imageInput.title = path;
       syncControlValue(imageInput, fileName(path));
       setPopupBubbleField(bubble.id, "image_path", path, { commit: true, rerender: true });
-    });
+    }, projectRoot ? `${projectRoot}/Markers` : "");
   });
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -4382,7 +4458,11 @@ function buildPopupMarkerRow(bubble, index) {
     selectMarkerRow();
   });
   row.querySelector('[data-popup-field="enabled"]')?.addEventListener("change", (event) => {
-    setPopupBubbleField(bubble.id, "enabled", event.target.checked, { commit: true, rerender: true });
+    const enabled = event.target.checked;
+    setPopupBubbleField(bubble.id, "enabled", enabled, { commit: true, rerender: false });
+    document.querySelectorAll(`[data-popup-id="${CSS.escape(bubble.id)}"] [data-popup-field="enabled"]`).forEach((control) => {
+      if (control !== event.target) syncControlChecked(control, enabled);
+    });
   });
   return row;
 }
@@ -4516,10 +4596,6 @@ function renderPopupTimeline(allBubbles = popupBubbles(), visibleBubbles = filte
   playhead.style.left = `${clamp((playheadMs / totalMs) * 100, 0, 100)}%`;
   strip.appendChild(playhead);
   if (sortedBubbles.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "popup-timeline-empty";
-    empty.textContent = allBubbles.length === 0 ? "No popups yet." : "No popups match the current filter.";
-    strip.appendChild(empty);
     return;
   }
   const originalIndexById = new Map(allBubbles.map((bubble, index) => [bubble.id, index]));
@@ -4610,16 +4686,12 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
   if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
   if (status instanceof HTMLElement) status.textContent = `${visibleBubbles.length} shown`;
   if (listStatus instanceof HTMLElement) {
-    listStatus.textContent = allBubbles.length === 0
-      ? "No markers yet."
-      : visibleBubbles.length === 0
-        ? "No markers match the current filter."
-        : `${visibleBubbles.length} shown`;
+    listStatus.textContent = visibleBubbles.length > 0 ? `${visibleBubbles.length} shown` : "";
   }
   if (editorStatus instanceof HTMLElement) {
     editorStatus.textContent = selected
       ? popupBubbleSummaryText(selected, Math.max(0, allBubbles.findIndex((bubble) => bubble.id === selected.id)))
-      : (hasBubbles ? "No marker selected." : "Nothing to edit yet.");
+      : "";
   }
   ["popup-prev-workbench", "popup-next-workbench"].forEach((id) => {
     const button = $(id);
@@ -4631,15 +4703,7 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
   withPreservedScrollState([list, editor], () => {
     list.innerHTML = "";
     if (!hasBubbles) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-list-empty";
-      empty.textContent = "No markers yet.";
-      list.appendChild(empty);
     } else if (visibleBubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-list-empty";
-      empty.textContent = "No markers match the current filter.";
-      list.appendChild(empty);
     } else {
       visibleBubbles.forEach((bubble, index) => {
         list.appendChild(buildPopupMarkerRow(bubble, originalIndexById.get(bubble.id) ?? index));
@@ -4647,12 +4711,6 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
     }
     editor.innerHTML = "";
     if (!selected) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-editor-empty";
-      empty.textContent = hasBubbles
-        ? "Select a marker from the list to edit it here."
-        : "Add a time marker or import shots to start editing.";
-      editor.appendChild(empty);
       return;
     }
     editor.appendChild(buildPopupBubbleCard(selected, originalIndexById.get(selected.id) ?? 0, { forceExpanded: true }));
@@ -4681,9 +4739,16 @@ function stepShotLinkedPopupBubble(direction) {
   return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
 }
 
-function renderPopupEditors() {
+function renderPopupEditors({ force = false } = {}) {
   const markerList = $("popup-marker-list");
   if (!markerList) return;
+  const activeControl = document.activeElement;
+  if (
+    !force
+      && activeControl instanceof HTMLElement
+      && activeControl.closest("#markers-workbench-editor")
+      && activeControl.matches("input, select, textarea")
+  ) return;
   const bubbles = popupBubbles();
   const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
@@ -4703,17 +4768,9 @@ function renderPopupEditors() {
   withPreservedScrollState([markerList], () => {
     markerList.innerHTML = "";
     if (bubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No markers yet.";
-      markerList.appendChild(empty);
       return;
     }
     if (visibleBubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No markers match the current filter.";
-      markerList.appendChild(empty);
       return;
     }
     visibleBubbles.forEach((bubble, index) => {
@@ -4824,6 +4881,7 @@ function endLayoutResize(event) {
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
   tool = normalizeToolId(tool);
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
+  const previousTool = activeTool;
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
   const hadExpandedLayout = root?.classList.contains("waveform-expanded")
@@ -4832,6 +4890,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     || root?.classList.contains("scoring-expanded")
     || root?.classList.contains("markers-expanded");
   setActiveToolValue(tool);
+  trimSyncPane?.setActive(tool === "trim-sync");
   if (!initialProjectUiStateApplied && persistUiState) {
     pendingBootstrapProjectUiStateOverride = true;
   }
@@ -4885,9 +4944,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     const markersWorkbench = $("markers-workbench");
     if (markersWorkbench instanceof HTMLElement) markersWorkbench.hidden = true;
   }
-  if (tool === "merge") {
-    $("add-merge-media")?.focus();
-  } else if (tool === "markers" && changed) {
+  if (tool === "markers" && changed) {
     if (selectedPopupBubbleId) {
       window.requestAnimationFrame(() => revealPopupBubbleCard(selectedPopupBubbleId, { focus: false }));
     }
@@ -4923,6 +4980,11 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   if (tool === "scoring" && state?.project?.ui_state?.scoring_expanded) {
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
+  if (tool === "media" && mediaPane) mediaPane.render();
+  if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
+  if (changed && previousTool === "intro-outro" && tool !== "intro-outro") renderVideo();
+  if (tool === "queue" && queuePane) queuePane.render();
+  renderOutputProfiles();
   renderLiveOverlay();
 }
 
@@ -4960,7 +5022,12 @@ async function postFile(path, file) {
   activity("file.selected", { path, name: file.name, size: file.size });
   try {
     const response = await fetch(path, { method: "POST", body: form });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from ${path}, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
     requestRender();
@@ -4975,20 +5042,27 @@ async function postFile(path, file) {
   }
 }
 
-async function pickPath(kind, targetId, afterSelect = null) {
-  const target = $(targetId);
-  activity("dialog.path.request", { kind, target: targetId, current: target.value });
+async function pickPath(kind, targetId, afterSelect = null, defaultRoot = "") {
+  const target = targetId ? $(targetId) : null;
+  const currentValue = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ? target.value : "";
+  activity("dialog.path.request", { kind, target: targetId, current: currentValue });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify({ kind, current: currentValue, default_root: defaultRoot || "" }),
     });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/dialog/path, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     if (data.path) {
-      target.value = data.path;
-      if (targetId === "export-path") exportPathDraft = data.path;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        target.value = data.path;
+      }
       activity("dialog.path.selected", { kind, target: targetId, path: data.path });
       if (afterSelect) {
         await afterSelect(data.path);
@@ -5004,16 +5078,21 @@ async function pickPath(kind, targetId, afterSelect = null) {
   }
 }
 
-async function pickPathForElement(kind, target, targetLabel, afterSelect = null) {
+async function pickPathForElement(kind, target, targetLabel, afterSelect = null, defaultRoot = "") {
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return "";
   activity("dialog.path.request", { kind, target: targetLabel, current: target.value });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify({ kind, current: target.value, default_root: defaultRoot || "" }),
     });
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/dialog/path, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     if (data.path) {
       target.value = data.path;
@@ -5037,10 +5116,18 @@ async function refresh() {
   runtimeBackbone?.bus?.emit?.("api.refresh", {});
   try {
     const response = await fetch("/api/state");
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const responseText = await response.text();
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Expected JSON from /api/state, got ${contentType || "unknown"}: ${responseText.trim().slice(0, 120) || "<empty>"}`);
+    }
+    const data = JSON.parse(responseText);
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
     requestRender();
+    if (mediaPane) mediaPane.render();
+    if (introOutroPane) introOutroPane.render();
+    if (queuePane) queuePane.render();
   } catch (error) {
     setStatus(error.message);
     runtimeBackbone?.bus?.emit?.("api.error", { path: "/api/state", error: error.message });
@@ -5048,7 +5135,7 @@ async function refresh() {
   }
 }
 
-function applyRemoteState(nextState) {
+function applyRemoteState(nextState, options = {}) {
   const shouldApplyBootstrapLandingTool = !initialProjectUiStateApplied
     && !pendingBootstrapProjectUiStateOverride
     && Boolean(String(nextState?.project?.path || "").trim());
@@ -5068,7 +5155,7 @@ function applyRemoteState(nextState) {
       },
     };
   }
-  return apiRuntime.applyRemoteState(nextState);
+  return apiRuntime.applyRemoteState(nextState, options);
 }
 
 function hasCompleteProjectState(nextState) {
@@ -5086,12 +5173,11 @@ function resetLocalProjectView() {
   draggingShotId = null;
   draggingShotPointerId = null;
   pendingDragTimeMs = null;
-  exportPathDraft = "";
   exportDraft = {};
   mergeDraft = {};
   overlayPositionDraft = {};
   overlayStyleDraft = null;
-  projectDetailsDraft = { name: null, description: null };
+  projectDetailsDraft = { name: null, description: null, output_root: null };
   overlayTextBoxesDraft = null;
   popupBubblesDraft = null;
   popupTemplateDraft = null;
@@ -5162,13 +5248,9 @@ function resetLocalProjectView() {
     }
   });
   [
-    "primary-file-path",
     "project-path",
-    "export-path",
+    "project-output-root",
     "match-type",
-    "match-stage-number",
-    "match-competitor-name",
-    "match-competitor-place",
   ].forEach((id) => {
     const element = $(id);
     if (element) element.value = "";
@@ -5357,7 +5439,8 @@ function syncPractiScoreSelectionFields(changedField) {
 }
 
 function durationMs() {
-  return waveformStateRuntime?.durationMs() || Math.max(1, state?.project?.primary_video?.duration_ms || 1);
+  return waveformStateRuntime?.durationMs()
+    || Math.max(1, state?.project?.primary_video?.active_duration_ms || state?.project?.primary_video?.duration_ms || 1);
 }
 
 function waveformWindow() {
@@ -5492,78 +5575,10 @@ function syncSettingsMarkerTemplate(template = {}) {
   syncControlValue($("settings-marker-height"), template.height ?? 0);
   syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
   syncControlValue($("settings-marker-motion-mode"), Boolean(template.follow_motion ?? false) ? "guided" : "fixed");
+  syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
   syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
   syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
   syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
-}
-
-const SETTINGS_LAYER_FIELDS = [
-  { label: "Landing pane", path: ["default_tool"] },
-  { label: "Reopen last pane", path: ["reopen_last_tool"] },
-  { label: "Overlay position", path: ["overlay_position"] },
-  { label: "Badge size", path: ["badge_size"] },
-  { label: "PiP layout", path: ["merge_layout"] },
-  { label: "PiP size", path: ["pip_size"] },
-  { label: "Export quality", path: ["export_quality"] },
-  { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
-  {
-    label: "Marker enabled",
-    path: ["marker_template", "enabled"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "enabled"],
-  },
-  {
-    label: "Marker content",
-    path: ["marker_template", "content_type"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "content_type"],
-  },
-  {
-    label: "Marker text source",
-    path: ["marker_template", "text_source"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "text_source"],
-  },
-  {
-    label: "Marker duration ms",
-    path: ["marker_template", "duration_ms"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "duration_ms"],
-  },
-  {
-    label: "Marker use shot split duration",
-    path: ["marker_template", "use_shot_split_duration"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "use_shot_split_duration"],
-  },
-  {
-    label: "Marker width",
-    path: ["marker_template", "width"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "width"],
-  },
-  {
-    label: "Marker height",
-    path: ["marker_template", "height"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "height"],
-  },
-  {
-    label: "Marker follow motion",
-    path: ["marker_template", "follow_motion"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "follow_motion"],
-  },
-  {
-    label: "Marker motion mode",
-    path: ["marker_template", "motion_mode"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "motion_mode"],
-  },
-];
-
-function renderSettingsLayerSummary(settings, markerTemplate, layers) {
-  return settingsPane?.renderSettingsLayerSummary(settings, markerTemplate, layers);
 }
 
 function renderSettingsPane() {
@@ -5585,8 +5600,18 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
   return mergePane?.renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
 }
 
+function previewSeekBoundary(preview) {
+  if (mergePreviewDrag) return false;
+  const lastSeek = secondaryPreviewLastSeekAt.get(preview);
+  if (lastSeek !== undefined && Date.now() - lastSeek < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) {
+    return false;
+  }
+  return true;
+}
+
 function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
   if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return;
+  if (mergePreviewDrag) return;
   const currentTime = Number(preview.currentTime || 0);
   const drift = target - currentTime;
   const absoluteDrift = Math.abs(drift);
@@ -5596,6 +5621,9 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     preview.defaultPlaybackRate = targetPlaybackRate;
   }
   if (absoluteDrift > seekThreshold) {
+    if (!previewSeekBoundary(preview)) return;
+    secondaryPreviewLastSeekAt.set(preview, Date.now());
+    preview.dataset.syncCorrectionMode = "seek";
     try {
       if (typeof preview.fastSeek === "function") preview.fastSeek(target);
       else preview.currentTime = target;
@@ -5613,6 +5641,7 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
   if (Math.abs((preview.playbackRate || 1) - nextPlaybackRate) > 0.001) {
     preview.playbackRate = nextPlaybackRate;
     preview.defaultPlaybackRate = nextPlaybackRate;
+    preview.dataset.syncCorrectionMode = "rate";
   }
 }
 
@@ -5642,7 +5671,187 @@ function syncMergePreviewElements(primary) {
 }
 
 function renderVideo() {
-  return videoPlayerComponent?.renderVideo();
+  const result = videoPlayerComponent?.renderVideo();
+  if (activeTool === "intro-outro") introOutroPane?.updatePreview();
+  return result;
+}
+
+let preferredOutputProfileId = "";
+let autoSelectNewestOutputProfile = false;
+let pendingOutputProfileDraft = null;
+
+function activeOutputProfileId() {
+  const select = $("output-profile-select");
+  if (preferredOutputProfileId) return preferredOutputProfileId;
+  return select?.value || "";
+}
+
+function renderOutputProfiles() {
+  const select = $("output-profile-select");
+  if (!select) return;
+  const currentValue = preferredOutputProfileId || select.value;
+  const profiles = state?.output_profiles || [];
+  select.innerHTML = '<option value="">-- No profile selected --</option>';
+  profiles.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.output_id;
+    opt.textContent = p.profile_name || p.output_id;
+    select.appendChild(opt);
+  });
+  const selectedId = autoSelectNewestOutputProfile && profiles.length > 0
+    ? profiles[profiles.length - 1].output_id
+    : currentValue;
+  const resolvedSelectedId = profiles.some((p) => p.output_id === selectedId) ? selectedId : "";
+  select.value = resolvedSelectedId;
+  preferredOutputProfileId = resolvedSelectedId;
+  autoSelectNewestOutputProfile = false;
+  const selected = profiles.find((p) => p.output_id === resolvedSelectedId);
+  const draft = pendingOutputProfileDraft?.output_id === resolvedSelectedId ? pendingOutputProfileDraft : null;
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  const exportBadgesButton = $("export-badges");
+  const saveButton = $("save-output-profile");
+  if (selected && draft
+    && selected.profile_name === draft.profile_name
+    && selected.profile_kind === draft.profile_kind
+    && selected.frame_profile === draft.frame_profile) {
+    pendingOutputProfileDraft = null;
+  }
+  if (nameInput) nameInput.value = draft?.profile_name || selected?.profile_name || "";
+  if (typeSelect) typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output";
+  if (frameSelect) frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source";
+  if (nameInput) nameInput.disabled = !selected;
+  if (typeSelect) typeSelect.disabled = !selected;
+  if (frameSelect) frameSelect.disabled = !selected;
+  if (saveButton) saveButton.disabled = !selected;
+  if (exportBadgesButton) {
+    exportBadgesButton.dataset.outputId = resolvedSelectedId;
+    exportBadgesButton.onclick = () => {
+      void exportBadges();
+    };
+  }
+}
+
+function exportBadges() {
+  const profileId = activeOutputProfileId() || $("export-badges")?.dataset.outputId || "";
+  if (!profileId) return;
+  const payload = readOverlayPayload();
+  const badgeState = {
+    styles: payload.styles,
+    scoring_colors: payload.scoring_colors,
+    badge_size: payload.badge_size,
+    style_type: payload.style_type,
+    spacing: payload.spacing,
+    margin: payload.margin,
+    max_visible_shots: payload.max_visible_shots,
+    shot_quadrant: payload.shot_quadrant,
+    shot_direction: payload.shot_direction,
+    font_family: payload.font_family,
+    font_size: payload.font_size,
+    font_bold: payload.font_bold,
+    font_italic: payload.font_italic,
+    show_timer: payload.show_timer,
+    show_draw: payload.show_draw,
+    show_shots: payload.show_shots,
+    show_shot_scores: payload.show_shot_scores,
+    show_score: payload.show_score,
+    timer_lock_to_stack: payload.timer_lock_to_stack,
+    draw_lock_to_stack: payload.draw_lock_to_stack,
+    score_lock_to_stack: payload.score_lock_to_stack,
+  };
+  callApi("/api/output-profiles/update", {
+    output_id: profileId,
+    metric_caption_preset: JSON.stringify(badgeState),
+  });
+}
+
+function createOutputProfile() {
+  const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
+  autoSelectNewestOutputProfile = true;
+  callApi("/api/output-profiles/create", {
+    profile_name: baseName,
+    profile_kind: "stage_output",
+    export_settings: currentExportProfileSettings(),
+  });
+}
+
+function currentExportProfileSettings() {
+  return {
+    ...(state?.project?.export || {}),
+    preset: $("export-preset")?.value || state?.project?.export?.preset || "custom",
+    ...readExportLayoutPayload(),
+    ...readExportSettingsPayload(),
+  };
+}
+
+function saveOutputProfile() {
+  const id = activeOutputProfileId();
+  if (!id) return;
+  callApi("/api/output-profiles/update", {
+    output_id: id,
+    profile_name: $("output-profile-name")?.value || "",
+    profile_kind: $("output-profile-type")?.value || "stage_output",
+    frame_profile: $("output-profile-frame")?.value || "source",
+    export_settings: currentExportProfileSettings(),
+  });
+}
+
+function deleteOutputProfile() {
+  const select = $("output-profile-select");
+  const id = select?.value;
+  if (!id) return;
+  if (preferredOutputProfileId === id) preferredOutputProfileId = "";
+  if (pendingOutputProfileDraft?.output_id === id) pendingOutputProfileDraft = null;
+  callApi("/api/output-profiles/delete", { output_id: id });
+}
+
+function selectOutputProfile() {
+  const select = $("output-profile-select");
+  const id = select?.value;
+  preferredOutputProfileId = id || "";
+  if (pendingOutputProfileDraft?.output_id && pendingOutputProfileDraft.output_id !== preferredOutputProfileId) {
+    pendingOutputProfileDraft = null;
+  }
+  const profiles = state.output_profiles || [];
+  const selected = profiles.find((p) => p.output_id === id);
+  const draft = pendingOutputProfileDraft?.output_id === id ? pendingOutputProfileDraft : null;
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  if (nameInput) { nameInput.value = draft?.profile_name || selected?.profile_name || ""; nameInput.disabled = !selected; }
+  if (typeSelect) { typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
+  if (frameSelect) { frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
+  if (selected) callApi("/api/output-profiles/apply", { output_id: id });
+}
+
+let _outputProfileFieldCommitTimer = null;
+
+function scheduleOutputProfileFieldCommit() {
+  const id = activeOutputProfileId();
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  if (id) {
+    pendingOutputProfileDraft = {
+      output_id: id,
+      profile_name: nameInput?.value || "",
+      profile_kind: typeSelect?.value || "stage_output",
+      frame_profile: frameSelect?.value || "source",
+    };
+  }
+  if (_outputProfileFieldCommitTimer) clearTimeout(_outputProfileFieldCommitTimer);
+  _outputProfileFieldCommitTimer = setTimeout(() => {
+    _outputProfileFieldCommitTimer = null;
+    const id = activeOutputProfileId();
+    if (!id) return;
+    const updates = {};
+    if (nameInput) updates.profile_name = nameInput.value;
+    if (typeSelect) updates.profile_kind = typeSelect.value;
+    if (frameSelect) updates.frame_profile = frameSelect.value;
+    pendingOutputProfileDraft = { output_id: id, ...updates };
+    callApi("/api/output-profiles/update", { output_id: id, ...updates });
+  }, 400);
 }
 
 function syncSecondaryPreview() {
@@ -6018,9 +6227,26 @@ function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
   syncSelectedShotId();
+  const expandedTable = tableId === "timing-workbench-table";
+  // Preserve active editing inputs so a concurrent render does not destroy
+  // user work or steal focus.
+  const preservedEditors = new Map();
+  if (timingRowEdits.size > 0) {
+    table.querySelectorAll(".timing-adjustment-input").forEach((input) => {
+      const cell = input.closest(".timing-edit-cell");
+      const shotId = cell?.dataset.shotId;
+      if (shotId && timingRowEdits.has(shotId)) {
+        preservedEditors.set(shotId, {
+          value: input.value,
+          selectionStart: input.selectionStart,
+          selectionEnd: input.selectionEnd,
+          focused: document.activeElement === input,
+        });
+      }
+    });
+  }
   withPreservedScrollState([table], () => {
     table.innerHTML = "";
-    const expandedTable = tableId === "timing-workbench-table";
     const compactEnabled = $("timing-enabled")?.checked ?? true;
     if (!expandedTable && !compactEnabled) {
       applyTimingTableColumns(table);
@@ -6118,6 +6344,7 @@ function renderTimingTable(tableId = "timing-table") {
       table.appendChild(confidenceCell);
 
       const adjustmentCell = document.createElement("div");
+      adjustmentCell.dataset.shotId = row.shot_id;
       const adjustmentMs = splitRowAdjustmentMs(row);
       if (editing) {
         adjustmentCell.classList.add("timing-edit-cell");
@@ -6128,7 +6355,10 @@ function renderTimingTable(tableId = "timing-table") {
         input.inputMode = "decimal";
         input.step = "0.01";
         input.className = "timing-adjustment-input";
-        input.value = String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
+        const preserved = preservedEditors.get(row.shot_id);
+        input.value = preserved
+          ? preserved.value
+          : String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
         input.setAttribute("aria-label", `Adjustment for ${splitRowEntryLabel(row)}`);
         input.title = "Edit the adjustment in seconds, for example +0.06 or -0.06.";
         input.addEventListener("input", () => {
@@ -6136,6 +6366,14 @@ function renderTimingTable(tableId = "timing-table") {
         });
         editor.append(input);
         adjustmentCell.appendChild(editor);
+        if (preserved?.focused) {
+          window.requestAnimationFrame(() => {
+            input.focus();
+            if (preserved.selectionStart != null) {
+              input.setSelectionRange(preserved.selectionStart, preserved.selectionEnd);
+            }
+          });
+        }
       } else {
         adjustmentCell.textContent = signedSeconds(adjustmentMs);
       }
@@ -6196,6 +6434,9 @@ function renderScoringPresetDescription() {
 }
 
 function renderPractiScoreSummaries() {
+  projectPane?.renderPractiScoreOptionLists?.();
+  projectPane?.ensurePractiScoreSelectionControls?.();
+  projectPane?.setProjectActionAvailability?.();
   projectPane?.renderPractiScoreImportSummary?.();
   return scoringPane?.renderPractiScoreSummaries();
 }
@@ -6336,10 +6577,6 @@ function renderMetricsTrendTable(table) {
     table.appendChild(header);
   });
   if (rows.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "metrics-table-empty";
-    empty.textContent = "No timing segments yet.";
-    table.appendChild(empty);
     return;
   }
   rows.forEach((entry) => {
@@ -6625,7 +6862,7 @@ function buildMetricsGraphSeries(rows = buildMetricsRows()) {
       id: "shot_interval_timeline",
       type: "timeline",
       title: "Shot / Interval Timeline",
-      subtitle: "Start signal to last shot, with dead time made obvious",
+      subtitle: "Split time per shot",
       unit: "s",
       points: graphPoints.map((point) => ({
         ...point,
@@ -6760,7 +6997,7 @@ function createMetricsGraphCanvas({ compact = true } = {}) {
   svg.classList.add("metrics-graph-svg");
   svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
   svg.setAttribute("preserveAspectRatio", "none");
-  const viewWidth = compact ? 260 : 320;
+  const viewWidth = compact ? 260 : 640;
   const viewHeight = compact ? 132 : 150;
   const padding = { left: 12, right: 10, top: 10, bottom: 22 };
   const plotWidth = viewWidth - padding.left - padding.right;
@@ -7296,7 +7533,7 @@ function buildMetricsCsv() {
       ],
       rows: [[
         state.project.name || "",
-        fileName(state.project.primary_video.path || ""),
+        state.project.primary_video.active_display_name || fileName(state.project.primary_video.effective_media_path || state.project.primary_video.path || ""),
         imported.competitor_name || state.project.scoring.competitor_name || "",
         imported.stage_number ?? state.project.scoring.stage_number ?? "",
         imported.stage_name || "",
@@ -7422,7 +7659,7 @@ function buildMetricsText() {
   const comparisonGraph = graphs.find((graph) => graph.id === "run_comparison_overlay") || null;
   const lines = [
     state.project.name || "Untitled Project",
-    `Video: ${fileName(state.project.primary_video.path || "")}`,
+    `Video: ${state.project.primary_video.active_display_name || fileName(state.project.primary_video.effective_media_path || state.project.primary_video.path || "")}`,
     `${summary.display_label || "Result"}: ${summary.display_value || "--"}`,
     `Raw Time: ${summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : "--"}`,
     `Shots: ${state.metrics.total_shots || 0}`,
@@ -7531,8 +7768,21 @@ async function flushPendingMergeSourceCommits(options = {}) {
 
 function renderMergeMediaList() {
   // input.dataset.mergeSourceField = "opacity";
-  // These values are saved per item and take effect in PiP layout and export timing.
+  // These values are saved per item and take effect in compose layout and export timing.
   return mergePane?.renderMergeMediaList();
+}
+
+function renderTrimSyncList() {
+  const addedCount = Math.max(0, state?.project?.merge_sources?.length || 0);
+  const trimButton = document.querySelector('[data-tool="trim-sync"] b');
+  if (trimButton) {
+    trimButton.textContent = addedCount > 0 ? `Trim (${addedCount})` : "Trim";
+  }
+  return trimSyncPane?.renderTrimSyncList();
+}
+
+function renderReviewImportedMetrics() {
+  return reviewPane?.renderReviewImportedMetrics();
 }
 
 function visibleTimingEventsByShot(currentIndex) {
@@ -7678,7 +7928,13 @@ function overlayAutoSizedBadgeContents() {
     shots.forEach((shot, index) => {
       const splitRow = splitRowsByShotId.get(shot.id) || null;
       const splitMs = resolvedSplitMsForShot(shot.id, index + 1, shot.time_ms);
-      contents.push(scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)));
+      const splitText = splitSeconds(splitMs);
+      const intervalLabel = splitRowIntervalLabel(splitRow);
+      contents.push(
+        overlay.show_shot_scores
+          ? scoreBadgeContent(shot, index + 1, splitText, intervalLabel)
+          : { text: shotBadgeBaseText(index + 1, splitText, intervalLabel), runs: null },
+      );
     });
   }
   const summary = state?.scoring_summary || {};
@@ -8338,6 +8594,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
 }
 
 function renderLiveOverlay(positionMsOverride = null) {
+  if (activeTool === "intro-outro") return introOutroPane?.updatePreview();
   return overlayPane?.renderLiveOverlay(positionMsOverride);
 }
 
@@ -8392,6 +8649,13 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
   activity("waveform.mode", { mode });
   syncLocalProjectUiState();
   if (persistUiState) scheduleProjectUiStateApply();
+}
+
+function setWaveformTrackMode(mode) {
+  waveformTrackMode = mode;
+  window.localStorage.setItem("splitshot.waveformTrackMode", mode);
+  const legend = $("waveform-segment-legend");
+  if (legend) legend.hidden = mode !== "multi";
 }
 
 function syncExpandWaveformButton() {
@@ -8570,7 +8834,7 @@ function readExportLayoutPayload() {
 function readScoringPayload() {
   return scoringPane?.readScoringPayload() ?? {
     enabled: $("scoring-enabled")?.checked ?? false,
-    penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state?.project?.scoring?.penalties || 0),
+    penalties: Number(state?.project?.scoring?.penalties || 0),
     penalty_counts: { ...(state?.project?.scoring?.penalty_counts || {}) },
   };
 }
@@ -8659,7 +8923,7 @@ async function applySettingsDefaults(options = {}) {
       // Ignore prior failure; continue with the latest update.
     }
   }
-  const payload = readSettingsDefaultsPayload(options);
+  const payload = options.payload || readSettingsDefaultsPayload(options);
   const promise = callApi("/api/settings", payload);
   const finalPromise = promise.then((result) => {
     if (result && !options.scheduled) {
@@ -8720,7 +8984,7 @@ function sendKeepaliveJson(path, payload) {
       headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
-    });
+    }).catch(() => {});
     return true;
   } catch {
     return false;
@@ -8959,7 +9223,11 @@ function scheduleScoringApply() {
 
 const scheduleSettingsDefaultsApply = debounce((options = {}) => {
   activity("auto_apply.settings_defaults", {});
-  applySettingsDefaults({ ...options, scheduled: true });
+  applySettingsDefaults({
+    ...options,
+    scheduled: true,
+    scheduledGeneration: window.settingsDefaultsApplyGeneration,
+  });
 }, 300);
 
 const handleViewportLayoutChange = debounce(() => {
@@ -8997,6 +9265,8 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
     });
   return {
     scope: $("settings-scope")?.value || "app",
+    section: section || undefined,
+    project_defaults: Boolean(projectDefaults),
     settings: {
       default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
       overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
@@ -9270,6 +9540,8 @@ videoPlayerComponent = createVideoPlayerComponent({
   $,
   getState: () => state,
   getSelectedShotId: () => selectedShotId,
+  getActiveTool: () => activeTool,
+  getIntroOutroKind: () => introOutroPane?.selectedKind?.() || "intro",
   maybeApplyRecommendedLayout,
   buildMediaUrl,
   resetMediaElement,
@@ -9306,6 +9578,7 @@ waveformComponent = createWaveformComponent({
   getSelectedShotId: () => selectedShotId,
   setSelectedShotIdValue,
   getWaveformMode: () => waveformMode,
+  getWaveformTrackMode: () => waveformTrackMode,
   getWaveformZoomX: () => waveformZoomX,
   getWaveformOffsetMs: () => waveformOffsetMs,
   getDraggingShotId: () => draggingShotId,
@@ -9326,6 +9599,9 @@ waveformComponent = createWaveformComponent({
   releasePointer,
   withPreservedScrollState,
   seconds,
+  formatTimelineTime: (timeMs) => activeTool === "trim-sync"
+    ? `${(Number(timeMs) / 1000).toFixed(2)}s`
+    : `${(Number(timeMs) / 1000).toFixed(3)}s`,
   formatConfidenceValue,
   isLowConfidence,
   activity,
@@ -9524,6 +9800,7 @@ overlayPane = createOverlayPane({
   shotDisplayTimeMs,
   resolvedSplitMsForShot,
   splitRowIntervalLabel,
+  shotBadgeBaseText,
   scoreBadgeContent,
   splitSeconds,
   seconds,
@@ -9573,6 +9850,7 @@ exportPane = createExportPane({
   applyExportDraft,
   autoApplyExportLayout,
   autoApplyExportSettings,
+  refreshState: refresh,
 });
 
 settingsPane = createSettingsPane({
@@ -9587,7 +9865,6 @@ settingsPane = createSettingsPane({
   normalizePopupTemplate,
   renderExportPresetOptions,
   ensureSectionToggle,
-  settingsLayerFields: SETTINGS_LAYER_FIELDS,
 });
 
 mergePane = createMergePane({
@@ -9620,6 +9897,7 @@ mergePane = createMergePane({
   previewFrameGeometry,
   pipDefaultsSectionId: PIP_DEFAULTS_SECTION_ID,
   sendKeepaliveJson,
+  setStatus,
 });
 
 projectPane = createProjectPane({
@@ -9634,6 +9912,7 @@ projectPane = createProjectPane({
   controlIsActive,
   normalizeToolId,
   setActiveTool,
+  readProjectUiStatePayload,
   applyProjectUiStatePayload,
   cancelPendingExportDrafts,
   flushPendingSettingsDefaults,
@@ -9661,6 +9940,54 @@ projectPane = createProjectPane({
   renderHeader,
   setStatus,
   activity,
+});
+
+mediaPane = createMediaPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  setActiveStageId: (stageId) => {
+    if (state?.project) state.project.active_stage_id = stageId;
+  },
+  setActiveTool,
+  activity,
+  callApi,
+  pickPath,
+  fileName,
+  splitSeconds,
+  formatNumber,
+  renderHeader,
+  setStatus,
+});
+
+introOutroPane = createIntroOutroPane({
+  $,
+  windowObject: window,
+  documentObject: document,
+  getState: () => state,
+  callApi,
+  pickPath,
+  activity,
+  fileName,
+  previewFrameClientRect,
+});
+
+queuePane = createQueuePane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  setActiveTool,
+  activity,
+  callApi,
+  pickPath,
+  openProcessingLog: () => openExportLogModal(),
+  fileName,
+  formatNumber,
+  renderHeader,
+  setStatus,
+  sendKeepaliveJson,
 });
 
 reviewPane = createReviewPane({
@@ -9833,6 +10160,23 @@ metricsPane = createMetricsPane({
   metricsTableColumns: METRICS_TABLE_COLUMNS,
 });
 
+trimSyncPane = createTrimSyncPane({
+  $,
+  documentObject: document,
+  getState: () => state,
+  withPreservedScrollState,
+  activity,
+  callApi,
+  openProcessingLog: () => openExportLogModal(),
+  scheduleInteractionPreviewRender,
+  renderVideo,
+  setStatus,
+  fileName,
+  sourceIdentifier: (source, fallback) => mergePane?.sourceIdentifier(source, fallback) ?? fallback,
+  currentSourceSyncOffsetMs: (source) => mergePane?.currentSourceSyncOffsetMs(source) ?? 0,
+});
+trimSyncPane.setActive(activeTool === "trim-sync");
+
 shellRuntime = createShellRuntime({
   $,
   documentObject: document,
@@ -9897,6 +10241,14 @@ shellRuntime = createShellRuntime({
   renderSettingsPane,
   renderMetricsPanel,
   renderMergeMediaList,
+  renderTrimSyncList,
+  renderReviewImportedMetrics,
+  renderOutputProfiles,
+  createOutputProfile,
+  saveOutputProfile,
+  deleteOutputProfile,
+  selectOutputProfile,
+  scheduleOutputProfileFieldCommit,
   badgeControls,
   badgeDisplayLabels,
   scoringColorOptions,
@@ -9930,6 +10282,7 @@ shellRuntime = createShellRuntime({
   stopOverlayLoop,
   renderWaveformPlayhead,
   setWaveformMode,
+  setWaveformTrackMode,
   setWaveformExpanded,
   setWaveformZoom,
   setWaveformAmplitude,
@@ -9978,6 +10331,7 @@ shellRuntime = createShellRuntime({
   popupBubbles,
   readPopupTemplatePayload,
   scheduleSettingsDefaultsApply,
+  readSettingsDefaultsPayload,
   applySettingsDefaults,
   toggleLayoutLock,
   resetLayout,
@@ -10152,4 +10506,5 @@ wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();
 startActivityPolling();
+autoSelectNewestOutputProfile = true;
 refresh();

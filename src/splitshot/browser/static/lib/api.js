@@ -87,20 +87,48 @@ export function createApiRuntime({
     return true;
   }
 
+  function apiResponseNeedsRender(path) {
+    const normalizedPath = String(path || "");
+    // These routes commit state that the client has already rendered
+    // optimistically. Rendering their responses again replaces active marker
+    // and drag nodes during an ordinary save.
+    return normalizedPath !== "/api/project/ui-state"
+      && normalizedPath !== "/api/popups"
+      && normalizedPath !== "/api/overlay";
+  }
+
+  async function parseJsonResponse(response, path) {
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const bodyText = await response.text();
+    if (!contentType.includes("application/json")) {
+      const preview = bodyText.trim().slice(0, 120) || "<empty>";
+      throw new Error(`Expected JSON from ${path}, got ${contentType || "unknown"}: ${preview}`);
+    }
+    try {
+      return JSON.parse(bodyText);
+    } catch (error) {
+      throw new Error(`Invalid JSON from ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   let apiRequestSequence = 0;
   const latestApiRequestSequenceByDomain = new Map();
+  let latestRemoteStateRequestSequence = 0;
 
   function beginTrackedApiRequest(path) {
     const domain = apiRequestDomain(path);
     apiRequestSequence += 1;
     const request = { path, domain, sequence: apiRequestSequence };
     latestApiRequestSequenceByDomain.set(domain, request.sequence);
+    if (apiResponseOwnsRemoteState(path)) latestRemoteStateRequestSequence = request.sequence;
     return request;
   }
 
   function isTrackedApiRequestStale(request) {
     if (!request) return false;
-    return latestApiRequestSequenceByDomain.get(request.domain) !== request.sequence;
+    if (latestApiRequestSequenceByDomain.get(request.domain) !== request.sequence) return true;
+    return apiResponseOwnsRemoteState(request.path)
+      && request.sequence !== latestRemoteStateRequestSequence;
   }
 
   async function api(path, payload = null) {
@@ -121,7 +149,7 @@ export function createApiRuntime({
         };
     try {
       const response = await fetch(path, options);
-      const data = await response.json();
+      const data = await parseJsonResponse(response, path);
       if (isTrackedApiRequestStale(request)) {
         const responseDetail = {
           path,
@@ -136,11 +164,13 @@ export function createApiRuntime({
         return null;
       }
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-      if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);
-      requestRender();
+      if (apiResponseOwnsRemoteState(path)) {
+        applyRemoteState(data, { preserveActiveInteraction: !apiResponseNeedsRender(path) });
+      }
+      if (finishProcessing) finishProcessing(data.status || "Ready.");
+      if (apiResponseNeedsRender(path)) requestRender();
       emitBackbone(backbone, "api.response", { path, status: data.status, shots: data.metrics?.total_shots });
       activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
-      if (finishProcessing) finishProcessing(data.status || "Ready.");
       return data;
     } catch (error) {
       if (isTrackedApiRequestStale(request)) {
@@ -156,6 +186,11 @@ export function createApiRuntime({
         return null;
       }
       if (finishProcessing) finishProcessing(error.message || "Request failed.");
+      try {
+        await refresh();
+      } catch {
+        // Preserve the original mutation error when reconciliation is unavailable.
+      }
       throw error;
     }
   }
@@ -193,7 +228,7 @@ export function createApiRuntime({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const result = await response.json();
+      const result = await parseJsonResponse(response, "/api/practiscore/dashboard/open");
       if (!response.ok || result.error) throw new Error(result.error || response.statusText);
       if (finishProcessing) finishProcessing(result.status || "Ready.");
       setStatus(result.status || "Opened PractiScore dashboard in your browser.");
@@ -216,7 +251,7 @@ export function createApiRuntime({
     const refreshRequestSequence = apiRequestSequence;
     try {
       const response = await fetch("/api/state");
-      const data = await response.json();
+      const data = await parseJsonResponse(response, "/api/state");
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
       if (refreshRequestSequence !== apiRequestSequence) return;
       applyRemoteState(data);
@@ -228,7 +263,7 @@ export function createApiRuntime({
     }
   }
 
-  function applyRemoteState(nextState) {
+  function applyRemoteState(nextState, { preserveActiveInteraction = false } = {}) {
     if (!hasCompleteProjectState(nextState)) {
       throw new Error("Received invalid project state from the local server.");
     }
@@ -264,7 +299,7 @@ export function createApiRuntime({
     }
     runtime.currentProjectId = nextProjectId;
     setStateValue(nextState);
-    applyProjectUiState(nextUiState);
+    if (!preserveActiveInteraction) applyProjectUiState(nextUiState);
     runtime.initialProjectUiStateApplied = true;
     runtime.pendingBootstrapProjectUiStateOverride = false;
     if (!stateHasShot(runtime.state, runtime.selectedShotId)) {

@@ -233,6 +233,34 @@ export function createScoringPane({
     const defaultScore = scoreOptions[0] || "A";
     const scoringRowEdits = currentScoringRowEdits();
     const selectedShotId = getSelectedShotId();
+    // Preserve active score selects and penalty editors so a concurrent render
+    // does not destroy user work or steal focus.
+    const preservedScoreSelects = new Map();
+    const preservedPenaltyEditors = new Map();
+    if (scoringRowEdits.size > 0) {
+      table.querySelectorAll(".shot-score-select").forEach((select) => {
+        const shotId = select.dataset.scoreShotId;
+        if (shotId && scoringRowEdits.has(shotId)) {
+          preservedScoreSelects.set(shotId, {
+            value: select.value,
+            focused: document.activeElement === select,
+          });
+        }
+      });
+      table.querySelectorAll(".scoring-penalty-editor").forEach((editor) => {
+        const shotId = editor.closest("[data-shot-id]")?.dataset.shotId;
+        if (shotId && scoringRowEdits.has(shotId)) {
+          const penaltyIds = [...editor.querySelectorAll(".shot-penalty-select")].map((s) => s.value).filter(Boolean);
+          const focusedPenalty = [...editor.querySelectorAll(".shot-penalty-select")].find((s) => document.activeElement === s);
+          preservedPenaltyEditors.set(shotId, {
+            penaltyIds,
+            focusedIndex: focusedPenalty
+              ? [...editor.querySelectorAll(".shot-penalty-select")].indexOf(focusedPenalty)
+              : -1,
+          });
+        }
+      });
+    }
     withPreservedScrollState([table], () => {
       table.innerHTML = "";
       table.classList.toggle("timing-resizable-table", expandedTable && tableId !== "scoring-workbench-table");
@@ -300,10 +328,14 @@ export function createScoringPane({
             option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
             select.appendChild(option);
           });
-          select.value = segment.score_letter || defaultScore;
+          const preservedScore = preservedScoreSelects.get(segment.shot_id);
+          select.value = preservedScore ? preservedScore.value : (segment.score_letter || defaultScore);
           select.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
           rowScope.appendChild(select);
           scoreCell.appendChild(select);
+          if (preservedScore?.focused) {
+            window.requestAnimationFrame(() => select.focus());
+          }
         } else {
           scoreCell.textContent = compactScoreDisplay(segment.score_letter || defaultScore, activeScoringRuleset()) || defaultScore;
         }
@@ -312,6 +344,16 @@ export function createScoringPane({
         const penaltiesCell = document.createElement("div");
         if (editing && penaltyFields.length > 0) {
           const editor = buildScoringPenaltyEditor(segment, rowScope, penaltyFields);
+          const preservedPenalties = preservedPenaltyEditors.get(segment.shot_id);
+          if (preservedPenalties && preservedPenalties.penaltyIds.length > 0) {
+            const selects = editor.querySelectorAll(".shot-penalty-select");
+            preservedPenalties.penaltyIds.forEach((penaltyId, index) => {
+              if (selects[index]) selects[index].value = penaltyId;
+            });
+            if (preservedPenalties.focusedIndex >= 0 && selects[preservedPenalties.focusedIndex]) {
+              window.requestAnimationFrame(() => selects[preservedPenalties.focusedIndex].focus());
+            }
+          }
           rowScope.appendChild(editor);
           penaltiesCell.appendChild(editor);
         } else {
@@ -449,15 +491,17 @@ export function createScoringPane({
     const state = currentState();
     return {
       enabled: $("scoring-enabled")?.checked ?? Boolean(state.project?.scoring?.enabled),
-      penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state.project?.scoring?.penalties || 0),
+      penalties: Number(state.project?.scoring?.penalties || 0),
       penalty_counts: { ...(state.project?.scoring?.penalty_counts || {}) },
     };
   }
 
   async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset")?.value || "") {
     const previousRuleset = currentState().project?.scoring?.ruleset;
-    if (ruleset !== previousRuleset) scoringPayload.penalty_counts = {};
-    await callApi("/api/scoring/profile", { ruleset });
+    if (ruleset !== previousRuleset) {
+      scoringPayload.penalty_counts = {};
+      await callApi("/api/scoring/profile", { ruleset });
+    }
     await callApi("/api/scoring", scoringPayload);
   }
 

@@ -5,7 +5,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
-
+from splitshot.domain.models import ProjectStage
+from splitshot.ui.controller import ProjectController
 
 METRICS_ROW_WIDTH = 11
 
@@ -137,8 +138,8 @@ def _metrics_row_for_shot(page, shot_id: str) -> list[str]:
 
 
 def _metrics_summary_values(page) -> dict[str, str]:
-        return page.evaluate(
-                """() => {
+    return page.evaluate(
+        """() => {
                     const values = {};
                     document.querySelectorAll("#metrics-summary-grid .metric-card").forEach((card) => {
                         const label = (card.querySelector("small")?.textContent || "").trim();
@@ -147,7 +148,7 @@ def _metrics_summary_values(page) -> dict[str, str]:
                     });
                     return values;
                 }"""
-        )
+    )
 
 
 def _metrics_graph_snapshot(page) -> list[dict[str, object]]:
@@ -169,6 +170,38 @@ def _metrics_graph_snapshot(page) -> list[dict[str, object]]:
             })),
         }))"""
     )
+
+
+def test_metrics_is_match_first_with_collapsed_stage_tree() -> None:
+    controller = ProjectController()
+    controller.project.stages = [
+        ProjectStage(label="Stage 1", order_index=1),
+        ProjectStage(label="Stage 2", order_index=2),
+    ]
+    controller.project.active_stage_id = controller.project.stages[0].id
+    controller._sync_active_stage_to_project()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _activate_tool(page, "metrics")
+                assert page.locator('[data-tool-pane="metrics"]').get_by_text(
+                    "Match Metrics", exact=True
+                ).is_visible()
+                branches = page.locator("#metrics-stage-tree details.metrics-stage-tree-item")
+                assert branches.count() == 2
+                assert branches.evaluate_all("items => items.every((item) => item.open === false)")
+                assert "Stage 1" in branches.nth(0).locator("summary").inner_text()
+                branches.nth(0).locator("summary").click()
+                assert branches.nth(0).evaluate("item => item.open") is True
+                assert branches.nth(0).locator(".metric-card").count() >= 6
+                assert branches.nth(0).locator(".metrics-stage-shot-table").count() == 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_video_factory) -> None:
@@ -193,7 +226,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 baseline_metrics_row = _metrics_row_for_shot(page, first_shot_id)
 
                 _open_scoring_workbench(page)
-                score_select = page.locator('#scoring-workbench-table select[data-score-field="letter"]').first
+                score_select = page.locator(
+                    '#scoring-workbench-table select[data-score-field="letter"]'
+                ).first
                 lock_button = page.locator("#scoring-workbench-table .lock-button").first
                 lock_button.click()
                 score_select.wait_for(state="visible")
@@ -202,7 +237,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 score_values = score_select.evaluate(
                     "select => [...select.options].map((option) => option.value)"
                 )
-                next_letter = next((value for value in score_values if value != original_letter), original_letter)
+                next_letter = next(
+                    (value for value in score_values if value != original_letter), original_letter
+                )
                 assert next_letter != original_letter
 
                 score_select.select_option(next_letter)
@@ -222,7 +259,9 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
                 assert updated_metrics_row[5] == next_letter
 
                 _open_scoring_workbench(page)
-                page.locator("#scoring-workbench-table button.restore-button:not(.danger-button)").first.click()
+                page.locator(
+                    "#scoring-workbench-table button.restore-button:not(.danger-button)"
+                ).first.click()
                 page.wait_for_function(
                     """({ shotId, originalLetter }) => {
                       const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
@@ -282,11 +321,15 @@ def test_metrics_pane_reflects_timing_event_position_and_delete(synthetic_video_
                     arg="Manual note",
                 )
                 metrics_rows = _metrics_table_rows(page)
-                first_shot_index = next(index for index, row in enumerate(metrics_rows) if row[0] == first_shot_label)
+                first_shot_index = next(
+                    index for index, row in enumerate(metrics_rows) if row[0] == first_shot_label
+                )
                 assert "Manual note" in metrics_rows[first_shot_index][-1]
 
                 _open_timing_workbench(page)
-                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(force=True)
+                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(
+                    force=True
+                )
                 page.wait_for_function(
                     """() => !(state?.project?.analysis?.events || []).some((event) => event.label === "Manual note")"""
                 )
@@ -362,7 +405,9 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
         server.shutdown()
 
 
-def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synthetic_video_factory) -> None:
+def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="metrics-graphs-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -393,32 +438,136 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synt
                 )
 
                 _open_metrics_pane(page)
-                graph_titles = page.locator("#metrics-workbench-graphs .metrics-graph-header strong").all_inner_texts()
-                assert graph_titles == [
-                    "Shot / Interval Timeline",
-                    "Split / Interval Bar Chart",
-                    "Run Comparison Overlay",
-                    "Stage Segment Breakdown",
-                ]
+                graph_titles = page.locator(
+                    "#metrics-workbench-graphs .metrics-graph-header strong"
+                ).all_inner_texts()
+                assert "Split Timeline" in graph_titles
+                assert "Split Distribution" in graph_titles
+                assert "Shooting vs Non-Shooting Time" in graph_titles
 
                 graph_snapshot = _metrics_graph_snapshot(page)
-                assert [graph["id"] for graph in graph_snapshot] == [
-                    "shot_interval_timeline",
-                    "split_interval_bars",
-                    "run_comparison_overlay",
-                    "stage_segment_breakdown",
-                ]
+                graph_ids = [graph["id"] for graph in graph_snapshot]
+                assert "split_timeline" in graph_ids
+                assert "split_distribution" in graph_ids
+                assert "shooting_vs_non_shooting" in graph_ids
 
-                timeline_graph = next(graph for graph in graph_snapshot if graph["id"] == "shot_interval_timeline")
-                assert timeline_graph["pointCount"] == int(page.evaluate("state.metrics.total_shots"))
+                timeline_graph = next(
+                    graph for graph in graph_snapshot if graph["id"] == "split_timeline"
+                )
+                assert timeline_graph["type"] == "lines"
 
-                comparison_graph = next(graph for graph in graph_snapshot if graph["id"] == "run_comparison_overlay")
-                assert comparison_graph["lineLabels"] == ["Current", "ShotML Reference"]
-                assert any(item["label"] == "Final delta" for item in comparison_graph["summary"])
+                shooting_graph = next(
+                    graph for graph in graph_snapshot if graph["id"] == "shooting_vs_non_shooting"
+                )
+                assert shooting_graph["barCount"] >= 2
 
-                segment_graph = next(graph for graph in graph_snapshot if graph["id"] == "stage_segment_breakdown")
-                assert segment_graph["barCount"] >= 2
-                assert any(bar["category"] == "Reload / manipulation" for bar in segment_graph["bars"])
+                workbench_stage = page.locator(
+                    "#metrics-workbench-stage-tree details.metrics-stage-tree-item"
+                ).first
+                workbench_stage.locator("summary").click()
+                assert workbench_stage.evaluate("item => item.open") is True
+
+                layout = page.evaluate(
+                    """() => {
+                      const workbench = document.getElementById("metrics-workbench");
+                      const list = document.getElementById("metrics-workbench-graphs");
+                      const table = document.getElementById("metrics-workbench-table");
+                      const cards = [...list.querySelectorAll(".metrics-graph-card")];
+                      const svgs = [...list.querySelectorAll(".metrics-graph-svg")];
+                      const axisLabels = [...list.querySelectorAll(".metrics-graph-axis-label")];
+                      const workbenchRect = workbench.getBoundingClientRect();
+                      const tableRect = table.getBoundingClientRect();
+                      const viewportWidth = document.documentElement.clientWidth;
+                      const viewportHeight = document.documentElement.clientHeight;
+                      return {
+                        columnCount: getComputedStyle(list).gridTemplateColumns.split(" ").length,
+                        viewWidths: svgs.map((svg) => svg.viewBox.baseVal.width),
+                        maxAxisLabelWidth: Math.max(0, ...axisLabels.map((label) => label.getBoundingClientRect().width)),
+                        cardWidth: cards[0]?.getBoundingClientRect().width || 0,
+                        tableHeight: tableRect.height,
+                        workbenchContained: workbenchRect.left >= -1
+                          && workbenchRect.right <= viewportWidth + 1
+                          && workbenchRect.top >= -1
+                          && workbenchRect.bottom <= viewportHeight + 1,
+                        tableHorizontallyContained: tableRect.left >= workbenchRect.left - 1
+                          && tableRect.right <= workbenchRect.right + 1,
+                        documentContained: document.documentElement.scrollWidth <= viewportWidth + 1
+                          && document.documentElement.scrollHeight <= viewportHeight + 1,
+                        workbenchScrollMode: getComputedStyle(workbench).overflowY,
+                        workbenchHasOverflow: workbench.scrollHeight > workbench.clientHeight,
+                      };
+                    }"""
+                )
+                assert layout["columnCount"] >= 2
+                assert set(layout["viewWidths"]) == {640}
+                assert layout["maxAxisLabelWidth"] < layout["cardWidth"] * 0.5
+                assert layout["tableHeight"] >= 180
+                assert layout["workbenchContained"] is True
+                assert layout["tableHorizontallyContained"] is True
+                assert layout["documentContained"] is True
+                assert layout["workbenchScrollMode"] == "auto"
+                assert layout["workbenchHasOverflow"] is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_dense_competitor_graphs_use_accessible_rank_labels_without_collisions() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                for effective_width in (1024, 819, 683, 512):
+                    page.set_viewport_size({"width": effective_width, "height": 700})
+                    for competitor_count in (8, 11, 27):
+                        result = page.evaluate(
+                            """({ competitorCount }) => {
+                              const host = document.createElement('div');
+                              host.style.width = '100%';
+                              document.body.appendChild(host);
+                              const bars = Array.from({ length: competitorCount }, (_, index) => ({
+                                label: `Competitor With Long Name ${index + 1}`,
+                                shortLabel: index === 2 ? 'You' : String(index + 1),
+                                rank: index + 1,
+                                value: index + 1,
+                                highlight: index === 2,
+                                category: { color: index === 2 ? '#ff7b22' : '#4ea7ff' },
+                              }));
+                              const svg = renderMetricsBarGraphSvg({ type: 'bars', unit: 's', bars }, { compact: false });
+                              host.appendChild(svg);
+                              const labels = [...svg.querySelectorAll('.metrics-graph-axis-label')];
+                              const rects = labels.map((label) => label.getBoundingClientRect());
+                              const collisions = rects.some((left, index) => rects.slice(index + 1).some((right) => (
+                                Math.min(left.right, right.right) - Math.max(left.left, right.left) > 0.5
+                                && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 0.5
+                              )));
+                              const barsRendered = [...svg.querySelectorAll('.metrics-graph-bar')];
+                              barsRendered[2]?.focus();
+                              const payload = {
+                                collisions,
+                                labels: labels.map((label) => label.textContent),
+                                barCount: barsRendered.length,
+                                accessible: barsRendered.every((bar) => bar.getAttribute('tabindex') === '0'
+                                  && bar.getAttribute('role') === 'img'
+                                  && bar.getAttribute('aria-label')?.includes('Competitor With Long Name')),
+                                selectedFocused: document.activeElement === barsRendered[2],
+                                selectedFill: barsRendered[2]?.getAttribute('fill'),
+                              };
+                              host.remove();
+                              return payload;
+                            }""",
+                            {"competitorCount": competitor_count},
+                        )
+                        assert result["barCount"] == competitor_count
+                        assert result["collisions"] is False
+                        assert result["accessible"] is True
+                        assert result["selectedFocused"] is True
+                        assert result["selectedFill"] == "#ff7b22"
+                        assert "You" in result["labels"]
+                        assert all(label == "You" or label.isdigit() for label in result["labels"])
             finally:
                 browser.close()
     finally:
@@ -462,13 +611,9 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert csv_download.suggested_filename.endswith("-metrics.csv")
                 assert "# per_shot_metrics" in csv_text
-                assert "# graph_shot_interval_timeline" in csv_text
-                assert "# graph_split_interval_bars" in csv_text
-                assert "# graph_run_comparison_overlay" in csv_text
-                assert "# graph_stage_segment_breakdown" in csv_text
-                assert "segment_label" in csv_text
-                assert "actions" in csv_text
-                assert "pair_label" in csv_text
+                assert "# graph_split_timeline" in csv_text
+                assert "# graph_split_distribution" in csv_text
+                assert "# graph_shooting_vs_non_shooting" in csv_text
                 assert "category_id" in csv_text
                 assert "Manual note" in csv_text
 
@@ -481,8 +626,6 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert text_download.suggested_filename.endswith("-metrics.txt")
                 assert "Split Timeline" in text_output
-                assert "Stage Segments" in text_output
-                assert "Run Comparison Overlay" in text_output
                 assert "Manual note" in text_output
                 assert "Absolute" in text_output
             finally:

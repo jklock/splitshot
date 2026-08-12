@@ -38,7 +38,9 @@ def _clamped_float(value: object, fallback: float = 0.5) -> float:
 
 def _popup_easing(value: object) -> str:
     easing = str(value or "linear").strip().lower()
-    return easing if easing in {"linear", "hold", "ease_in", "ease_out", "ease_in_out"} else "linear"
+    return (
+        easing if easing in {"linear", "hold", "ease_in", "ease_out", "ease_in_out"} else "linear"
+    )
 
 
 def _apply_easing(easing: str, ratio: float) -> float:
@@ -63,7 +65,11 @@ def format_popup_penalty_count(value: float) -> str:
 def popup_bubble_time_ms(project: Project, popup: object) -> int:
     if _field(popup, "anchor_mode", "time") == "shot" and _field(popup, "shot_id", None):
         shot = next(
-            (item for item in sort_shots(project.analysis.shots) if item.id == _field(popup, "shot_id")),
+            (
+                item
+                for item in sort_shots(project.analysis.shots)
+                if item.id == _field(popup, "shot_id")
+            ),
             None,
         )
         if shot is not None:
@@ -94,7 +100,11 @@ def popup_bubble_display_text(project: Project, popup: object) -> str:
         return fallback_text
 
     shot = next(
-        (item for item in sort_shots(project.analysis.shots) if item.id == _field(popup, "shot_id")),
+        (
+            item
+            for item in sort_shots(project.analysis.shots)
+            if item.id == _field(popup, "shot_id")
+        ),
         None,
     )
     if shot is None:
@@ -138,15 +148,19 @@ def popup_bubble_motion_path(popup: object) -> list[tuple[int, float, float, str
     points: list[tuple[int, float, float, str]] = []
     for item in raw_path:
         try:
-            offset_ms = max(0, int(round(float(_field(item, "offset_ms", _field(item, "time_ms", 0)) or 0))))
+            offset_ms = max(
+                0, int(round(float(_field(item, "offset_ms", _field(item, "time_ms", 0)) or 0)))
+            )
         except (TypeError, ValueError):
             offset_ms = 0
-        points.append((
-            offset_ms,
-            _clamped_float(_field(item, "x", 0.5)),
-            _clamped_float(_field(item, "y", 0.5)),
-            _popup_easing(_field(item, "easing", "linear")),
-        ))
+        points.append(
+            (
+                offset_ms,
+                _clamped_float(_field(item, "x", 0.5)),
+                _clamped_float(_field(item, "y", 0.5)),
+                _popup_easing(_field(item, "easing", "linear")),
+            )
+        )
     points.sort(key=lambda point: point[0])
 
     deduped: list[tuple[int, float, float, str]] = []
@@ -158,7 +172,9 @@ def popup_bubble_motion_path(popup: object) -> list[tuple[int, float, float, str
     return deduped
 
 
-def popup_bubble_point(project: Project, popup: object, position_ms: int | None = None) -> tuple[float, float]:
+def popup_bubble_point(
+    project: Project, popup: object, position_ms: int | None = None
+) -> tuple[float, float]:
     quadrant = str(_field(popup, "quadrant", "middle_middle") or "middle_middle")
     if quadrant == "custom":
         base_point = (
@@ -166,7 +182,9 @@ def popup_bubble_point(project: Project, popup: object, position_ms: int | None 
             _clamped_float(_field(popup, "y", 0.5)),
         )
     else:
-        base_point = POPUP_BUBBLE_QUADRANT_POINTS.get(quadrant, POPUP_BUBBLE_QUADRANT_POINTS["middle_middle"])
+        base_point = POPUP_BUBBLE_QUADRANT_POINTS.get(
+            quadrant, POPUP_BUBBLE_QUADRANT_POINTS["middle_middle"]
+        )
 
     if not bool(_field(popup, "follow_motion", False)) or position_ms is None:
         return base_point

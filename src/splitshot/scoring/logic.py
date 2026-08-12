@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import math
+from dataclasses import asdict, dataclass, field
 
 from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.timeline.model import raw_time_ms
@@ -32,8 +32,16 @@ class PenaltyField:
 
 USPSA_IPSC_PENALTIES = (
     PenaltyField("procedural_errors", "Procedural Error", 10, "points", "Usually -10 points each."),
-    PenaltyField("manual_no_shoots", "Extra No-Shoot", 10, "points", "Use for no-shoots not tied to a shot marker."),
-    PenaltyField("manual_misses", "Extra Miss", 10, "points", "Use for misses not tied to a shot marker."),
+    PenaltyField(
+        "manual_no_shoots",
+        "Extra No-Shoot",
+        10,
+        "points",
+        "Use for no-shoots not tied to a shot marker.",
+    ),
+    PenaltyField(
+        "manual_misses", "Extra Miss", 10, "points", "Use for misses not tied to a shot marker."
+    ),
 )
 
 IDPA_PENALTIES = (
@@ -263,11 +271,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
 
 
 def scoring_presets_for_api() -> list[dict[str, object]]:
-    return [
-        asdict(preset)
-        for preset in SCORING_PRESETS.values()
-        if preset.id != "gpa_time_plus"
-    ]
+    return [asdict(preset) for preset in SCORING_PRESETS.values() if preset.id != "gpa_time_plus"]
 
 
 def get_scoring_preset(ruleset: str) -> ScoringPreset:
@@ -293,7 +297,9 @@ def penalty_field_short_label(field_id: str, fallback_label: str = "") -> str:
     return PENALTY_FIELD_SHORT_LABELS.get(field_id, fallback_label or field_id.replace("_", " "))
 
 
-def normalize_score_letter_for_ruleset(ruleset: str, letter: str | ScoreLetter | None) -> str | None:
+def normalize_score_letter_for_ruleset(
+    ruleset: str, letter: str | ScoreLetter | None
+) -> str | None:
     if letter in {None, ""}:
         return None
     preset = get_scoring_preset(ruleset)
@@ -352,7 +358,9 @@ def _scoring_color_options(preset: ScoringPreset) -> list[dict[str, object]]:
     for letter in preset.score_options:
         add_option(letter, "Score token")
     for penalty_field in preset.penalty_fields:
-        add_option(penalty_field_short_label(penalty_field.id, penalty_field.label), penalty_field.label)
+        add_option(
+            penalty_field_short_label(penalty_field.id, penalty_field.label), penalty_field.label
+        )
     return options
 
 
@@ -402,10 +410,7 @@ def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
 
 def _field_penalty_total(project: Project, preset: ScoringPreset) -> float:
     penalty_counts = normalize_penalty_counts_for_ruleset(preset.id, project.scoring.penalty_counts)
-    return sum(
-        penalty_counts.get(field.id, 0.0) * field.value
-        for field in preset.penalty_fields
-    )
+    return sum(penalty_counts.get(field.id, 0.0) * field.value for field in preset.penalty_fields)
 
 
 def total_penalties(project: Project, preset: ScoringPreset | None = None) -> float:
@@ -438,23 +443,15 @@ def format_imported_stage_overlay_text(
     display_raw_seconds = (
         float(raw_seconds)
         if raw_seconds is not None
-        else (
-            float(imported_stage.raw_seconds)
-            if imported_stage.raw_seconds is not None
-            else None
-        )
+        else (float(imported_stage.raw_seconds) if imported_stage.raw_seconds is not None else None)
     )
     display_final_time = (
         float(final_time)
         if final_time is not None
-        else (
-            float(imported_stage.final_time)
-            if imported_stage.final_time is not None
-            else None
-        )
+        else (float(imported_stage.final_time) if imported_stage.final_time is not None else None)
     )
 
-    lines = ["Imported"]
+    lines = ["Summary"]
     if display_raw_seconds is not None:
         lines.append(f"Raw {display_raw_seconds:.2f}")
 
@@ -477,6 +474,260 @@ def format_imported_stage_overlay_text(
             hit_factor_value = max(0.0, float(imported_stage.total_points)) / display_raw_seconds
     if hit_factor_value is not None:
         lines.append(f"HF {float(hit_factor_value):.4f}")
+    return "\n".join(lines)
+
+
+_REVIEW_SUMMARY_METRICS = (
+    ("score_time", "Score / Time"),
+    ("raw_time", "Raw Time"),
+    ("points_down", "Points Down"),
+    ("penalties", "Penalties"),
+    ("division_placement", "Division"),
+    ("class_placement", "Class"),
+    ("overall_placement", "Overall"),
+)
+_DEFAULT_REVIEW_SUMMARY_METRIC_IDS = tuple(metric_id for metric_id, _ in _REVIEW_SUMMARY_METRICS)
+_DIVISION_CODES = {
+    "bug": "BUG",
+    "carryoptics": "CO",
+    "compactcarrypistol": "CCP",
+    "customdefensivepistol": "CDP",
+    "enhancedservicepistol": "ESP",
+    "enhancedservicerevolver": "ESR",
+    "limited": "LTD",
+    "limited10": "L10",
+    "limitedten": "L10",
+    "limitedoptics": "LO",
+    "open": "OPEN",
+    "pcc": "PCC",
+    "pistolcalibercarbine": "PCC",
+    "production": "PROD",
+    "revolver": "REV",
+    "singlestack": "SS",
+    "stockservicepistol": "SSP",
+    "stockservicerevolver": "SSR",
+}
+_IDPA_CLASS_CODES = {
+    "distinguishedmaster": "DM",
+    "expert": "EX",
+    "marksman": "MM",
+    "master": "MA",
+    "novice": "NV",
+    "sharpshooter": "SS",
+    "unclassified": "UN",
+}
+_USPSA_CLASS_CODES = {
+    "grandmaster": "GM",
+    "master": "M",
+    "unclassified": "U",
+}
+
+
+def _competition_key(value: object) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _competition_code(value: object, aliases: dict[str, str]) -> str:
+    clean_value = str(value or "").strip()
+    return aliases.get(_competition_key(clean_value), clean_value)
+
+
+def _class_codes(project: Project) -> dict[str, str]:
+    imported = project.scoring.imported_stage
+    match_type = str(project.scoring.match_type or getattr(imported, "match_type", "")).casefold()
+    return _IDPA_CLASS_CODES if match_type == "idpa" else _USPSA_CLASS_CODES
+
+
+def competition_placement(
+    project: Project,
+    *,
+    dimension: str | None = None,
+) -> str:
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    selected_name = str(
+        project.scoring.competitor_name or imported.competitor_name or ""
+    ).strip()
+    if not selected_name:
+        return ""
+    selected = {
+        "name": selected_name,
+        "place": imported.competitor_place,
+        "division": project.scoring.division or imported.division,
+        "classification": project.scoring.classification or imported.classification,
+    }
+    competitors = [selected, *project.scoring.comparison_competitors]
+    deduplicated: dict[str, dict[str, object]] = {}
+    for competitor in competitors:
+        name = str(competitor.get("name") or competitor.get("competitor_name") or "").strip()
+        key = name.casefold()
+        if not key or key in deduplicated:
+            continue
+        deduplicated[key] = {**competitor, "name": name}
+    cohort = list(deduplicated.values())
+    if dimension:
+        aliases = _DIVISION_CODES if dimension == "division" else _class_codes(project)
+        selected_value = _competition_code(selected.get(dimension), aliases).casefold()
+        cohort = [
+            competitor
+            for competitor in cohort
+            if _competition_code(competitor.get(dimension), aliases).casefold() == selected_value
+        ]
+    ranked = sorted(
+        (
+            (int(competitor["place"]), str(competitor["name"]).casefold())
+            for competitor in cohort
+            if competitor.get("place") not in {None, ""}
+        ),
+        key=lambda item: item[0],
+    )
+    selected_key = selected_name.casefold()
+    selected_rank = next(
+        (index + 1 for index, (_place, name) in enumerate(ranked) if name == selected_key),
+        None,
+    )
+    return "" if selected_rank is None else f"{selected_rank}/{len(ranked)}"
+
+
+def stage_competition_placement(
+    project: Project,
+    *,
+    dimension: str | None = None,
+) -> str:
+    """Return the selected competitor's rank for this stage, not match standings."""
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    selected_name = str(
+        project.scoring.competitor_name or imported.competitor_name or ""
+    ).strip()
+    if not selected_name:
+        return ""
+    match_type = str(project.scoring.match_type or imported.match_type).casefold()
+    result_key = "final_time" if match_type == "idpa" else "hit_factor"
+    ascending = match_type == "idpa"
+    selected = {
+        "name": selected_name,
+        "division": project.scoring.division or imported.division,
+        "classification": project.scoring.classification or imported.classification,
+        result_key: getattr(imported, result_key),
+    }
+    competitors = [selected, *project.scoring.comparison_competitors]
+    deduplicated: dict[str, dict[str, object]] = {}
+    for competitor in competitors:
+        name = str(competitor.get("name") or competitor.get("competitor_name") or "").strip()
+        key = name.casefold()
+        if not key or key in deduplicated:
+            continue
+        deduplicated[key] = {**competitor, "name": name}
+    cohort = list(deduplicated.values())
+    if dimension:
+        aliases = _DIVISION_CODES if dimension == "division" else _class_codes(project)
+        selected_value = _competition_code(selected.get(dimension), aliases).casefold()
+        cohort = [
+            competitor
+            for competitor in cohort
+            if _competition_code(competitor.get(dimension), aliases).casefold()
+            == selected_value
+        ]
+    ranked = []
+    for competitor in cohort:
+        raw_result = competitor.get(result_key)
+        if raw_result in {None, ""}:
+            continue
+        try:
+            result = float(raw_result)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(result):
+            continue
+        ranked.append((result, str(competitor["name"]).casefold()))
+    ranked.sort(key=lambda item: item[0], reverse=not ascending)
+    selected_key = selected_name.casefold()
+    selected_result = next(
+        (result for result, name in ranked if name == selected_key),
+        None,
+    )
+    if selected_result is None:
+        return ""
+    selected_rank = next(
+        index + 1 for index, (result, _name) in enumerate(ranked) if result == selected_result
+    )
+    return f"{selected_rank}/{len(ranked)}"
+
+
+def imported_stage_penalty_count(project: Project) -> float:
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return 0.0
+    if str(imported.match_type).casefold() != "idpa":
+        return float(calculate_scoring_summary(project).get("total_penalties") or 0.0)
+    penalty_labels = {
+        "Non-Threat",
+        "Procedural Error",
+        "Failure To Do Right",
+        "Flagrant Penalty",
+        "Finger PE",
+    }
+    return sum(
+        float(value or 0.0)
+        for label, value in imported.score_counts.items()
+        if label in penalty_labels
+    )
+
+
+def format_review_summary_overlay_text(
+    project: Project,
+    metric_ids: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Return the same auto Review summary text used by the browser preview."""
+    imported = project.scoring.imported_stage
+    if imported is None:
+        return ""
+    requested = tuple(
+        "overall_placement" if metric_id == "division_class_placement" else metric_id
+        for metric_id in (metric_ids or _DEFAULT_REVIEW_SUMMARY_METRIC_IDS)
+    )
+    summary = calculate_scoring_summary(project)
+    points_down = (
+        imported.score_counts.get("Points Down", imported.aggregate_points)
+        if imported.match_type == "idpa"
+        else None
+    )
+    division_label = _competition_code(
+        project.scoring.division or imported.division, _DIVISION_CODES
+    )
+    class_label = _competition_code(
+        project.scoring.classification or imported.classification, _class_codes(project)
+    )
+    values = {
+        "score_time": (
+            f"{float(imported.final_time):.2f}"
+            if imported.final_time is not None
+            else str(summary.get("display_value") or "").replace("--", "")
+        ),
+        "raw_time": (
+            f"{float(imported.raw_seconds):.2f}s"
+            if imported.raw_seconds is not None
+            else ""
+        ),
+        "points_down": "" if points_down is None else _format_overlay_stat(float(points_down)),
+        "penalties": _format_overlay_stat(imported_stage_penalty_count(project)),
+        "division_placement": stage_competition_placement(project, dimension="division"),
+        "class_placement": stage_competition_placement(project, dimension="classification"),
+        "overall_placement": stage_competition_placement(project),
+    }
+    labels = {
+        "division_placement": division_label or "Division",
+        "class_placement": class_label or "Class",
+    }
+    lines: list[str] = []
+    for metric_id, default_label in _REVIEW_SUMMARY_METRICS:
+        if metric_id not in requested or not values[metric_id]:
+            continue
+        separator = " - " if metric_id.endswith("_placement") else " "
+        lines.append(f"{labels.get(metric_id, default_label)}{separator}{values[metric_id]}")
     return "\n".join(lines)
 
 
@@ -523,11 +774,7 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         if imported_stage is not None and imported_stage.raw_seconds is not None
         else None
     )
-    raw_seconds = (
-        video_raw_seconds
-        if video_raw_seconds is not None
-        else official_raw_seconds
-    )
+    raw_seconds = video_raw_seconds if video_raw_seconds is not None else official_raw_seconds
     shot_points = _shot_score_total(project)
     shot_penalties = _shot_penalty_total(project, preset)
     field_penalties = _field_penalty_total(project, preset)

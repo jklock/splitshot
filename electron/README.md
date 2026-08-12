@@ -1,6 +1,10 @@
 # Electron Desktop App
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This directory contains the Electron shell that packages SplitShot as a native desktop application.
+
+Use Node.js 22 and `npm ci`. Building the bundled backend also requires Python 3.12 and `uv`; source media checks require `ffmpeg` and `ffprobe` on `PATH`.
 
 ## Structure
 
@@ -19,7 +23,7 @@ This directory contains the Electron shell that packages SplitShot as a native d
 
 ```bash
 cd electron
-npm install
+npm ci
 npm start
 ```
 
@@ -33,16 +37,19 @@ npm start
 | `npm run dev` | Launch Electron without rebuilding the Python bundle first |
 | `npm start` | Rebuild the bundle, then launch Electron |
 | `npm run check` | Validate the Python bundle without launching Electron |
-| `npm run build:mac` | Production signed DMG (macOS) |
+| `npm run build:mac` | Production DMG using explicit signing/notarization env (macOS) |
+| `npm run build:mac:local` | Export the local login-keychain identity, build a local signed DMG, and install `/Applications/SplitShot.app` |
 | `npm run build:win` | Production NSIS installer (Windows) |
 | `npm run build:linux` | Production AppImage (Linux) |
-| `npm test` | Run the Electron smoke test entrypoints when invoked directly in the package environment |
+| `npm run test:launch-intent` | Run the Node launch-intent tests |
+| `npm run test:electron-smoke` | Run the Electron smoke test entrypoint |
+| `npm run test:electron-iterate` | Run the iterative Electron test entrypoint |
 
 Artifact-native package validation uses:
 
-- [scripts/testing/test_packaged_artifact.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_packaged_artifact.py)
-- [scripts/testing/test_electron_app.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_electron_app.py)
-- [scripts/testing/test_packaged_app_e2e.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_packaged_app_e2e.py)
+- [test_packaged_artifact.py](../scripts/testing/test_packaged_artifact.py)
+- [test_electron_app.py](../scripts/testing/test_electron_app.py)
+- [test_packaged_app_e2e.py](../scripts/testing/test_packaged_app_e2e.py)
 
 That path validates the actual user-download artifact instead of an unpacked stand-in:
 
@@ -56,7 +63,7 @@ That path validates the actual user-download artifact instead of an unpacked sta
    On Windows the packaged app uses an app-local runtime under `bundle/python/` instead of a virtualenv so the installed NSIS app does not depend on the build machine's base Python location.
    On macOS and Linux the packaged app now sets `PYTHONHOME` to the bundled `.venv`, which carries the copied stdlib needed for a self-contained installed runtime.
 2. The Python backend is started with `splitshot --headless --no-open`. If a `.ssproj` was opened, `--project <path>` is appended.
-3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`.
+3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`. Each window launch resets the page zoom factor to 100%; the standard `View` menu zoom commands remain available after launch.
 4. The `launch-intent` module handles single-instance locking, `.ssproj` file associations, and `splitshot://` protocol URLs.
 
 ## Bundle
@@ -90,4 +97,6 @@ The Electron packaging and test workflows are split by platform:
 - `.github/workflows/release.yml`
 - platform smoke and test coverage in `.github/workflows/test-*.yml`
 
-macOS is the signed/notarized release path. Windows and Linux have configured packaging and smoke coverage, but their release flow does not use the macOS signing/notarization stack.
+The package targets are a DMG on macOS, an NSIS installer on Windows, and an AppImage on Linux. Signing and notarization are platform/release operations, not requirements for source startup or ordinary local smoke packages. macOS uses the documented Apple signing/notarization path; Windows and Linux do not use that stack.
+
+For local macOS parity, prefer `npm run build:mac:local` from `electron/`. It mirrors the CI certificate import path by exporting the current login-keychain signing identity to a temporary `.p12`, feeding that through `CSC_LINK`, disabling notarization only when Apple notarization credentials are absent, and installing the generated DMG app into `/Applications`.

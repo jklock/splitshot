@@ -1,5 +1,7 @@
 # SplitShot Documentation
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the documentation index for SplitShot. It routes readers through user docs first, then maintainer, developer, and code-reader references.
 
 ## Start Here
@@ -21,16 +23,19 @@ If you just forked SplitShot, read these in order after the top-level install pa
 - [userfacing/workflow.md](userfacing/workflow.md)
 - [userfacing/troubleshooting.md](userfacing/troubleshooting.md)
 - [userfacing/panes/project.md](userfacing/panes/project.md)
+- [userfacing/panes/media.md](userfacing/panes/media.md)
+- [userfacing/panes/compose.md](userfacing/panes/compose.md)
+- [userfacing/panes/trim.md](userfacing/panes/trim.md)
 - [userfacing/panes/score.md](userfacing/panes/score.md)
 - [userfacing/panes/splits.md](userfacing/panes/splits.md)
-- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
-- [userfacing/panes/pip.md](userfacing/panes/pip.md)
-- [userfacing/panes/popup.md](userfacing/panes/popup.md)
+- [userfacing/panes/markers.md](userfacing/panes/markers.md)
 - [userfacing/panes/overlay.md](userfacing/panes/overlay.md)
 - [userfacing/panes/review.md](userfacing/panes/review.md)
 - [userfacing/panes/export.md](userfacing/panes/export.md)
-- [userfacing/panes/settings.md](userfacing/panes/settings.md)
+- [userfacing/panes/queue.md](userfacing/panes/queue.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
+- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
+- [userfacing/panes/settings.md](userfacing/panes/settings.md)
 
 This is the primary reading path for people trying to use SplitShot rather than maintain it.
 
@@ -40,7 +45,6 @@ This is the primary reading path for people trying to use SplitShot rather than 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md)
 - [project/GOVERNANCE.md](project/GOVERNANCE.md)
-- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
 - [project/ELECTRON_RELEASE.md](project/ELECTRON_RELEASE.md)
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md)
@@ -74,14 +78,20 @@ The current user-facing screenshot set lives in [screenshots/](screenshots/).
 Regenerate it with:
 
 ```bash
-uv run python scripts/docs/capture_browser_screenshots.py
+uv run python scripts/docs/capture_browser_screenshots.py \
+  --primary-video /path/to/approved-primary.mp4 \
+  --secondary-video /path/to/approved-secondary.mp4
 ```
 
 Covered surfaces:
 
-- Every left-rail pane: `Project`, `PiP`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, `ShotML`
+- Every left-rail pane: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 - Expanded score, splits, waveform, metrics, marker, settings, review, and ShotML states already represented by the capture script
-- Shared modals: color picker and export log
+- Shared modals: color picker and Queue processing log
+
+The canonical filenames are `ProjectPane.png`, `MediaPane.png`, `ComposePane.png`, `TrimPane.png`, `ScorePane.png`, `ScorePane2.png`, `SplitsPane.png`, `SplitsExpanded.png`, `WaveformExpanded.png`, `MarkersPane.png`, `MarkersPane2.png`, `OverlayPane.png`, `OverlayPane2.png`, `ColorPickerModal.png`, `ReviewPane.png`, `ReviewPane2.png`, `ExportPane.png`, `ExportPane2.png`, `IntroOutroPane.png`, `QueuePane.png`, `ProcessingLogModal.png`, `MetricsPane.png`, `MetricsExpanded.png`, `ShotMLPane.png`, `ShotMLPane2.png`, `SettingsPane.png`, and `SettingsPane2.png`.
+
+The capture command requires two different maintainer-approved real videos outside `tests/`; synthetic fixtures are rejected. The 1400×900 capture validates decoded, non-black frames and enabled showcase overlays before writing each screenshot.
 
 ## Technical Docs
 
@@ -89,9 +99,6 @@ Covered surfaces:
 - [project/SHOTML_ARCHITECTURE.md](project/SHOTML_ARCHITECTURE.md)
 - [project/browser-pane-ownership.md](project/browser-pane-ownership.md)
 - [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
-- [project/browser-control-coverage-plan.md](project/browser-control-coverage-plan.md)
-- [project/browser-full-e2e-qa-plan.md](project/browser-full-e2e-qa-plan.md)
-- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 
 ## Read This Next
 

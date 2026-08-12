@@ -1,184 +1,197 @@
-# Electron Release and Signing
+# Electron Release Runbook
 
-This is the supported path for SplitShot Electron packaging and release work, with macOS signing and notarization as the most specialized platform-specific flow.
+<!-- Documentation reviewed: 2026-08-12 -->
 
-## Secrets
+This is the durable packaging and publishing runbook for SplitShot v1.0.7. The release is feature-frozen; complete validation and defect fixes only, then publish the same release-ready commit on all three platforms.
 
-Required for macOS signing:
+The approved implementation contract for complete installed-package validation is [Exhaustive Packaged Release Validation Plan](EXHAUSTIVE_PACKAGED_RELEASE_VALIDATION_PLAN.md). The workflows now fail closed on the versioned real corpus, exhaustive scenario manifest, runtime identity inventory, and per-OS zero-gap summary. Until every explicit case and discovered identity passes on all three installed packages, the release is blocked and must not be represented as exhaustively validated.
 
-- `MAC_CERT_BASE64`: base64-encoded Developer ID Application `.p12`
-- `MAC_CERT_PASSWORD`: password for that `.p12`
+## Toolchain
 
-Preferred notarization credentials:
+Install these tools before source or packaging work:
 
-- `APPLE_API_KEY` (the `.p8` key contents stored as a GitHub secret)
-- `APPLE_API_KEY_ID`
-- `APPLE_API_ISSUER`
+- Python 3.12
+- [`uv`](https://docs.astral.sh/uv/)
+- FFmpeg and FFprobe on `PATH` for source development and export checks
+- Node.js 22 with npm
 
-Fallback notarization credentials:
-
-- `APPLE_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-- `APPLE_TEAM_ID`
-
-The workflow prefers the API key set. If any API key variable is set, all three must be set. The Apple ID fallback is only used when the API key set is absent.
-In GitHub Actions, `APPLE_API_KEY` is written to a temporary `AuthKey_<id>.p8` file and that file path is what `electron-builder` receives for notarization.
-
-## Export the Developer ID `.p12`
-
-On macOS:
-
-1. Open Keychain Access.
-2. Select the `login` keychain.
-3. Find `Developer ID Application: John Klockenkemper (7DJ75AWV5R)`.
-4. Expand the certificate and confirm the private key is present.
-5. Right-click the certificate and choose `Export`.
-6. Save it as a `.p12` file and assign a password.
-
-Encode the exported file for GitHub Actions:
+From a fresh clone, install locked dependencies:
 
 ```bash
-base64 -i /path/to/DeveloperID.p12 | tr -d '\n'
+uv sync --frozen --extra dev --python 3.12
+cd electron
+npm ci
+cd ..
 ```
 
-Set that output as `MAC_CERT_BASE64`, and set the matching password as `MAC_CERT_PASSWORD`.
-
-## Verify the `.p12` Before Updating Secrets
-
-Run the local verifier on macOS:
+Confirm the source runtime before packaging:
 
 ```bash
-scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'your-password'
+uv run splitshot --check
 ```
 
-The script checks:
+Electron bundles its Python runtime and media tools. Packaged validation must not rely on host-installed FFmpeg/FFprobe, local-only files, or an existing build directory.
 
-- the `.p12` password
-- certificate subject, issuer, serial, and validity dates
-- import into a temporary keychain
-- visible codesigning identities after import
+## Local Preflight And Proof
 
-If this script fails, do not rotate the GitHub secrets yet.
-An OpenSSL-only pass is not enough. The `.p12` must also pass macOS `security import`, because that is the same import path used by GitHub Actions and `electron-builder`.
-
-If you need to rebuild a `.p12` from a matching certificate and private key outside Keychain Access, use PKCS#12 settings that macOS accepts:
-
-```bash
-openssl pkcs12 -export \
-  -inkey /path/to/devid-key.pem \
-  -in /path/to/developerID_application.pem \
-  -name 'Developer ID Application: John Klockenkemper (7DJ75AWV5R)' \
-  -keypbe PBE-SHA1-3DES \
-  -certpbe PBE-SHA1-3DES \
-  -macalg sha1 \
-  -out /path/to/developer-id-compatible.p12
-```
-
-The resulting file must still pass `scripts/release/verify_macos_cert.sh` before you upload it to GitHub Actions.
-
-## Local-First Release Gate
-
-Before any GitHub Actions Electron run, complete the local preflight on the target platform:
+Use the current platform's local preflight before requesting CI packaging:
 
 ```bash
 uv run python scripts/testing/run_electron_preflight.py
 ```
 
-That script is the source-of-truth gate for:
+The preflight checks the runtime, creates and verifies the Python bundle, runs Electron launch and backend checks, audits source/package parity, launches the source app, builds the current platform's unpacked application, and verifies that application launches.
 
-- runtime check
-- Python bundle generation and verification
-- Electron launch-intent unit tests
-- headless backend tests
-- parity audit
-- source Electron smoke
-- current-platform smoke packaging
-- packaged-app launch verification
-
-Do not use GitHub Actions as the first place to discover source-level or parity failures.
-
-## GitHub Actions Workflows
-
-Electron packaging and release work is split across dedicated workflows:
-
-- `.github/workflows/build-macos.yml`
-- `.github/workflows/build-windows.yml`
-- `.github/workflows/build-linux.yml`
-- `.github/workflows/release.yml`
-- platform smoke/test coverage in `.github/workflows/test-macos.yml`, `test-windows.yml`, and `test-linux.yml`
-
-The three `build-*` workflows are manual packaging helpers. They package one platform target each and upload artifacts for inspection, but they do not publish GitHub releases. `release.yml` is the only publisher. It runs on semver tags like `v1.0.1`, builds all three platforms, extracts the matching release notes from [../../CHANGELOG.md](../../CHANGELOG.md) through `scripts/release/extract_release_notes.py`, and publishes the GitHub release with all three platform artifacts.
-
-Runner targets:
-
-- macOS packaging: GitHub-hosted `macos-14`
-- Windows packaging: GitHub-hosted `windows-latest`
-- Linux packaging: GitHub-hosted `ubuntu-latest`
-
-The macOS packaging job:
-
-1. Decodes `MAC_CERT_BASE64` to a temporary `.p12`.
-2. Validates it with OpenSSL.
-3. Imports it into a temporary keychain.
-4. Verifies the codesigning identity.
-5. Passes the temp `.p12` path to `electron-builder` via `CSC_LINK`.
-6. Uses `CSC_KEY_PASSWORD` for signing.
-7. Lets `electron-builder` notarize with API key credentials when available, or Apple ID credentials as fallback.
-
-The release and macOS packaging workflows now fail when notarization secrets are missing or incomplete. They no longer silently ship a signed-but-not-notarized macOS artifact.
-
-## Hard Rules From The v1.0.4 Failure Chain
-
-These rules exist because the release path broke repeatedly when they were not enforced.
-
-- Treat the exact failed GitHub Actions lane as the source of truth. Download or inspect that specific job log before changing workflows, retagging, or blaming another platform.
-- Packaged validators must be self-contained. Do not rely on gitignored/local-only fixtures, host `PATH` ffmpeg/ffprobe, or nested child-process calls to bare `uv`/`python` executables when the running script can do the work directly.
-- A green package build is not enough. The clean-runner validate job must prove the built artifact actually launches, imports media, analyzes, and exports.
-- App notarization is not the same thing as DMG stapling. Verify the signed/notarized `.app`, then validate the installed DMG/app path in the macOS validate lane. Do not add DMG stapling steps unless the DMG itself is the notarized ticket target.
-- Do not retag until the exact failing lane is understood and the fix is tied to that lane's failure mode.
-
-## Smoke Builds
-
-Use the platform-specific build workflows and test workflows for packaging smoke checks.
-
-- Choose the target branch in the Actions UI.
-- Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform without cutting a release.
-- Run the local Electron preflight first.
-- Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
-- Confirm the `Prepare macOS notarization credentials` step passes and that `Verify notarization` validates the built app.
-- Use these runs to validate packaging, secret rotation, cert export, signing, notarization, and packaged-app launch.
-
-Do not create fake release tags for smoke testing.
-
-## Real Releases
-
-Use the semver tag flow when you want a coordinated three-platform release. The existing first-release baseline is `v1.0.0`. Use the next patch tag, such as `v1.0.1`, for the next normal release.
-
-1. Update the versioned files in the repo.
-2. Finalize the matching release notes section in [../../CHANGELOG.md](../../CHANGELOG.md).
-3. Merge the release-ready state into `main`.
-4. Extract the exact release body:
+Validate the immutable real release corpus and scenario manifest before package proof:
 
 ```bash
-uv run python scripts/release/extract_release_notes.py v1.0.1 --output artifacts/release-notes.md
+uv run python scripts/testing/validate_release_data.py \
+  --report-json artifacts/v107-release-proof/source/corpus-preflight.json
+uv run python scripts/testing/validate_packaged_release_evidence.py manifest \
+  --output artifacts/v107-release-proof/source/manifest-validation.json
+uv run python scripts/testing/run_source_release_proof.py \
+  --artifact-root artifacts/v107-release-proof/source
 ```
 
-5. Create and push the release tag:
+Proof output belongs under the ignored `artifacts/v107-release-proof/` tree. Packaged release acceptance uses only `tests/release_data/primary.MP4`, `tests/release_data/secondary.MP4`, and `tests/release_data/practiscore.csv`. `tests/release_data/corpus-v1.json` owns their checksums and semantic expectations; `tests/release_validation/manifest-v1.json` owns the 17 shards, common scenarios, platform cases, proof contract, and required artifact families.
+
+## Platform Packages
+
+Package on the matching operating system or use its GitHub Actions workflow. Electron Builder produces:
+
+| Platform | Command | Release artifact |
+| --- | --- | --- |
+| macOS | `npm --prefix electron run build:mac` | DMG |
+| Windows | `npm --prefix electron run build:win` | NSIS `.exe` installer |
+| Linux | `npm --prefix electron run build:linux` | AppImage |
+
+Outputs are written below `electron/build/`. The Windows and Linux configurations also create unpacked directory targets for smoke validation; those directories are not release downloads.
+
+For ordinary macOS iteration, avoid rebuilding the DMG:
 
 ```bash
-git tag -a v1.0.1 -m "SplitShot v1.0.1"
-git push origin v1.0.1
+npm --prefix electron run build:app:mac
+uv run python scripts/testing/run_electron_iterate.py \
+  --tier unpacked --scenario launch --build-if-needed
 ```
 
-6. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
+For a local macOS release package, the supported helper exports the active Developer ID identity to a temporary credential, verifies it, builds the DMG, and installs the application for validation:
 
-## Troubleshooting
+```bash
+npm --prefix electron run build:mac:local
+```
 
-- `MAC verification failed during PKCS12 import`: the `.p12` payload and `MAC_CERT_PASSWORD` do not match, or the export is malformed or incompatible with macOS `security import`. Re-export it from Keychain Access with the private key included.
-- Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
-- Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets. For the API key path, store the `.p8` file contents in the `APPLE_API_KEY` secret so the workflow can materialize it to a temporary file for `electron-builder`.
+If local notarization credentials are unavailable, that helper explicitly disables notarization. Such a build is suitable for local validation, not publication.
 
-## Read This Next
+## macOS Signing And Notarization
 
-- [GOVERNANCE.md](GOVERNANCE.md)
-- [../../CHANGELOG.md](../../CHANGELOG.md)
+The publishing workflow requires a Developer ID Application certificate including its private key:
+
+- `MAC_CERT_BASE64`: base64-encoded `.p12`
+- `MAC_CERT_PASSWORD`: `.p12` password
+
+Verify the export before changing secrets:
+
+```bash
+scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'password'
+```
+
+Prefer App Store Connect API-key notarization credentials:
+
+- `APPLE_API_KEY`: contents of the `.p8` key
+- `APPLE_API_KEY_ID`
+- `APPLE_API_ISSUER`
+
+The supported fallback is the complete Apple ID set:
+
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+
+Do not mix incomplete credential sets. The publishing workflows import the certificate into a temporary keychain, materialize the API key only for the job, sign and notarize the application, verify the signed app, and delete temporary credentials during cleanup.
+
+## CI Validation
+
+Use these GitHub Actions workflows on the intended release commit:
+
+- **Test macOS**: source tests plus packaged DMG validation on `macos-14`
+- **Test Windows**: source tests plus packaged NSIS validation on `windows-latest`
+- **Test Linux**: source tests plus packaged AppImage validation on `ubuntu-latest`
+
+The Test macOS workflow signs its validation DMG but explicitly disables notarization. This keeps ordinary clean-runner package proof independent of Apple agreement availability. The Build macOS and Release workflows retain mandatory notarization; publication is still blocked when Apple credentials or agreements are invalid.
+
+Run each with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. A package build or compact E2E pass is not a platform pass. `build_packaged_release_summary.py` requires explicit installed-package case results and per-identity disposition and reports every absent result as a gap. Copy the validation bundles into:
+
+```text
+artifacts/v107-release-proof/github-review/macos/
+artifacts/v107-release-proof/github-review/windows/
+artifacts/v107-release-proof/github-review/linux/
+```
+
+The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not release proof: the corresponding clean-runner Test workflow must install or mount the package, use the committed real corpus, collect the live identity inventory, execute every manifest case, prove reopen/restart and rendered outputs, and produce a zero-gap platform summary.
+
+For local package-native proof, pass the built artifact and canonical fixture to the packaged harness. On macOS, for example:
+
+```bash
+uv run python scripts/testing/test_packaged_artifact.py \
+  --artifact electron/build/SplitShot-1.0.7-arm64.dmg \
+  --script scripts/testing/test_packaged_app_e2e.py \
+  --script-arg=--scope \
+  --script-arg=release-proof \
+  --script-arg=--artifact-root \
+  --script-arg=artifacts/v107-release-proof/packaged-local-mac \
+  --script-arg=--primary-video \
+  --script-arg=tests/release_data/primary.MP4 \
+  --script-arg=--secondary-video \
+  --script-arg=tests/release_data/secondary.MP4 \
+  --script-arg=--practiscore \
+  --script-arg=tests/release_data/practiscore.csv
+uv run python scripts/testing/build_packaged_release_summary.py \
+  --platform macos \
+  --artifact-root artifacts/v107-release-proof/packaged-local-mac
+```
+
+Use the artifact filename produced for the host architecture. Package-native proof must be rerun from a clean output location; stale artifacts do not count. The summary builder is intentionally fail-closed: missing case records, missing proof-contract layers, unexercised runtime identities, empty artifacts, skips, and gaps all return nonzero.
+
+## Publish v1.0.7
+
+The release-ready commit must already contain version `1.0.7` in `pyproject.toml`, `src/splitshot/__init__.py`, `uv.lock`, `electron/package.json`, and `electron/package-lock.json`, plus this changelog entry.
+
+Extract the exact GitHub release body:
+
+```bash
+uv run python scripts/release/extract_release_notes.py v1.0.7 \
+  --output artifacts/release-notes.md
+```
+
+After all three Test workflows pass, merge the release-ready commit to `main`, create the semver tag, and push it:
+
+```bash
+git tag -a v1.0.7 -m "SplitShot v1.0.7"
+git push origin v1.0.7
+```
+
+`.github/workflows/release.yml` is the only publisher. A `v1.0.7` tag builds and validates the macOS DMG, Windows NSIS installer, and Linux AppImage. Before release creation, it aggregates the three platform summaries and rejects missing platforms, commit/corpus/manifest mismatches, failures, skips, gaps, or unreadable evidence. The manual **Release** dispatch may build an exact `release_ref` with `release_tag=v1.0.7`; do not use a moving tag or a different commit per platform.
+
+If an existing release body is stale after the validated release commit is published:
+
+```bash
+gh release edit v1.0.7 \
+  --title "SplitShot 1.0.7" \
+  --notes-file artifacts/release-notes.md \
+  --latest
+```
+
+## Failure Handling
+
+- Inspect the exact failing GitHub Actions job and its uploaded proof before changing code or workflows.
+- Fix and rerun that lane before retagging.
+- Treat missing packaged FFmpeg/FFprobe, non-corpus inputs, stale outputs, absent case/identity evidence, or child calls to bare `uv`/`python` as release blockers.
+- Do not publish when only package creation passed; package-native validation must also pass on macOS, Windows, and Linux.
+- Do not create temporary or moving release tags for smoke testing.
+
+## Related Documentation
+
+- [Development setup](DEVELOPING.md)
+- [Governance](GOVERNANCE.md)
+- [Changelog](../../CHANGELOG.md)

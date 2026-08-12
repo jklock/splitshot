@@ -1,5 +1,7 @@
 # Summary
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 Describe the change and why it was needed.
 
 ## Testing

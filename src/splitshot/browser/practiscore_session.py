@@ -22,10 +22,21 @@ from splitshot.browser.practiscore_profile import (
 PRACTISCORE_ENTRY_URL = "https://practiscore.com/dashboard/home"
 _PRACTISCORE_HOST_SUFFIX = "practiscore.com"
 _LOGIN_URL_HINTS = ("login", "signin", "sign-in")
-_CHALLENGE_URL_HINTS = ("challenge", "captcha", "verify", "verification", "twofactor", "two-factor", "otp", "mfa")
+_CHALLENGE_URL_HINTS = (
+    "challenge",
+    "captcha",
+    "verify",
+    "verification",
+    "twofactor",
+    "two-factor",
+    "otp",
+    "mfa",
+)
 _NOT_AUTHENTICATED_MESSAGE = "Connect PractiScore to use your browser session for background sync."
 _STORED_PROFILE_MESSAGE = "Stored PractiScore background profile found. Click Connect to refresh it from your browser session."
-_AUTHENTICATING_MESSAGE = "Complete PractiScore login in your browser. SplitShot will continue in the background."
+_AUTHENTICATING_MESSAGE = (
+    "Complete PractiScore login in your browser. SplitShot will continue in the background."
+)
 _EXPIRED_MESSAGE = "PractiScore session expired. Reconnect in your browser to continue."
 _CHALLENGE_MESSAGE = "Finish the PractiScore challenge in your browser."
 _AUTH_MARKERS_SCRIPT = r"""
@@ -162,8 +173,7 @@ def _page_requires_login(page: Any) -> bool:
     if not markers:
         return False
     return bool(
-        (markers["hasLoginLink"] or markers["hasPasswordField"])
-        and not markers["hasLogoutControl"]
+        (markers["hasLoginLink"] or markers["hasPasswordField"]) and not markers["hasLogoutControl"]
     )
 
 
@@ -235,7 +245,10 @@ class PractiScoreSessionManager:
             if status.state == "authenticated_ready":
                 self._external_login_requested = False
                 return status
-            if status.state in {"authenticating", "challenge_required"} and self._external_login_requested:
+            if (
+                status.state in {"authenticating", "challenge_required"}
+                and self._external_login_requested
+            ):
                 return status
             try:
                 opened = self._browser_opener(self._entry_url)
@@ -259,8 +272,12 @@ class PractiScoreSessionManager:
             if isinstance(status.details, dict):
                 current_url = str(status.details.get("current_url") or "")
             self._status = PractiScoreSessionStatus(
-                state="challenge_required" if status.state == "challenge_required" else "authenticating",
-                message=_CHALLENGE_MESSAGE if status.state == "challenge_required" else _AUTHENTICATING_MESSAGE,
+                state="challenge_required"
+                if status.state == "challenge_required"
+                else "authenticating",
+                message=_CHALLENGE_MESSAGE
+                if status.state == "challenge_required"
+                else _AUTHENTICATING_MESSAGE,
                 details=self._details(profile_path=profile_dir, current_url=current_url),
             )
             return self._status
@@ -336,7 +353,9 @@ class PractiScoreSessionManager:
                     details=self._details(error=str(exc)),
                 )
             else:
-                self._status = self._not_authenticated_status(_NOT_AUTHENTICATED_MESSAGE, error=str(exc))
+                self._status = self._not_authenticated_status(
+                    _NOT_AUTHENTICATED_MESSAGE, error=str(exc)
+                )
             return self._status
 
         has_cookie = _has_practiscore_cookie(cookies)
@@ -362,7 +381,9 @@ class PractiScoreSessionManager:
             )
             return self._status
         if _url_matches(current_url, _LOGIN_URL_HINTS):
-            state: PractiScoreSessionState = "expired" if self._had_authenticated_session else "authenticating"
+            state: PractiScoreSessionState = (
+                "expired" if self._had_authenticated_session else "authenticating"
+            )
             message = _EXPIRED_MESSAGE if state == "expired" else _AUTHENTICATING_MESSAGE
             self._status = PractiScoreSessionStatus(state=state, message=message, details=details)
             return self._status

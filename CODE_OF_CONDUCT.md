@@ -1,5 +1,7 @@
 # Code of Conduct
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This project expects professional, respectful collaboration.
 
 ## Expected Behavior

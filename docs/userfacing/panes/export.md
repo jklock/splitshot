@@ -1,79 +1,48 @@
 # Export Pane
 
-The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, marker, review-box, and enabled PiP state at the moment you start the render.
+<!-- Documentation reviewed: 2026-08-11 -->
 
-<!-- markdownlint-disable MD033 -->
+The Export pane configures ffmpeg export settings for the active stage. It does not start processing directly.
 
-<img src="../../screenshots/ExportPane.png" alt="Export pane with custom preset, frame settings, codecs, bitrate, output path, export button, and Show Export Log button" width="960">
+<img src="../../screenshots/ExportPane.png" alt="Export pane with output profile, framing, codec, bitrate, and ffmpeg settings for the active stage" width="960">
 
-<img src="../../screenshots/ExportPane2.png" alt="Export pane lower view with output path, Export Video button, Show Export Log button, and FFmpeg render note" width="840">
+<img src="../../screenshots/ExportPane2.png" alt="Lower Export pane with advanced frame-rate, codec, bitrate, color, and ffmpeg preset settings" width="840">
 
-<img src="../../screenshots/ExportLogModal.png" alt="Export Log modal with recent local FFmpeg output, Close button, and Export Log button" width="840">
+## Use This Pane For
 
-<!-- markdownlint-enable MD033 -->
-
-## When To Use This Pane
-
-- After timing, scoring, overlays, markers, review boxes, and PiP are final.
-- When you need a draft or final render.
-- When the output needs a specific aspect ratio, frame rate, codec, bitrate, or container.
-- When you want to inspect the live FFmpeg log.
+- Setting the render settings for the active stage.
+- Saving stage-local export settings before queueing.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Preset` | Chooses a built-in export profile or `Custom`. |
-| `Quality` | Sets the general quality target. |
-| `Aspect ratio` | Keeps original framing or crops to a target shape such as `16:9`, `9:16`, `1:1`, or `4:5`. |
-| `Output Width` / `Output Height` | Override output dimensions. Leave as `source` to follow source-derived size. |
-| `Frame rate` | Uses source frame rate or a fixed target. |
-| `Video codec` | Chooses the video encoder, such as H.264. |
-| `Video bitrate (Mbps)` | Sets target video bitrate. |
-| `Audio codec` | Chooses audio codec, currently AAC in the visible UI. |
-| `Audio Sample Rate (Hz)` | Sets output audio sample rate. |
-| `Audio kbps` | Sets output audio bitrate. |
-| `Color` | Sets the color pipeline, currently Rec.709 SDR in the visible UI. |
-| `FFmpeg preset` | Trades render speed against compression efficiency. |
-| `2-pass` | Enables two-pass bitrate allocation at the cost of extra render time. |
-| `Output path` | Sets the destination file. The extension selects the container. |
-| `Browse` | Opens a save dialog for the output path. |
-| `Export Video` | Starts the local render. |
-| `Show Export Log` | Opens the live/latest export log. |
-| Export Log modal | Shows recent local FFmpeg output and can export the log text. |
+| Output Profiles selector | Loads or switches an output profile for the active stage. |
+| `Create` / `Save Profile` / `Delete` | Creates a snapshot of the current Export settings, updates the selected profile, or removes it. |
+| `Profile name` | Names the selected output profile. |
+| `Type` | Chooses the stage output type. |
+| `Frame profile` | Chooses the output framing override. |
+| `Preset` | Chooses a built-in export preset or `Custom`. |
+| `Quality` / `Aspect ratio` / `Output Width` / `Output Height` | Set the output frame. |
+| `Frame rate` / `Video codec` / `Audio codec` | Set render codecs and playback rate. |
+| `Video bitrate (Mbps)` / `Audio kbps` | Set target bitrate values. |
+| `Color` / `Ffmpeg preset` / `2-pass` | Set encoding behavior for the active stage. |
 
-## How To Use It
+## Workflow
 
-1. Choose a `Preset`, or use `Custom` for exact settings.
-2. Confirm aspect ratio and dimensions.
-3. Use H.264 for broad compatibility unless you know the target supports another codec.
-4. Set a sensible bitrate for draft versus final output.
-5. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
-6. Click `Export Video`.
-7. Click `Show Export Log` if you need to follow FFmpeg progress or diagnose a failed render.
-8. Use `Export Log` inside the modal when you need the log as a separate text file.
+1. Finish Compose, Trim, scoring, overlay, review, and metrics checks for the active stage.
+2. Set the output profile and any stage-local export settings.
+3. Move to [queue.md](queue.md) to queue the stage and process one or more outputs.
 
-## What The Export Includes
+## Notes
 
-- Current primary video timing.
-- Overlay badge layout and colors.
-- Score summary and score-token colors.
-- Enabled markers.
-- Enabled review text boxes.
-- Enabled PiP media.
-
-## Common Fixes
-
-| Problem | Fix |
-| --- | --- |
-| Export fails immediately. | Check output path, extension, and folder permissions. |
-| FFmpeg is missing. | Install `ffmpeg` and `ffprobe`, then relaunch SplitShot. |
-| PiP is missing from the output. | Turn on `Enable added media export` in [pip.md](pip.md). |
-| Review boxes are missing. | Enable the box in [review.md](review.md). |
-| Output is larger than expected. | Lower bitrate, use a slower FFmpeg preset, or choose a more appropriate preset. |
+- Export settings are stage-local.
+- Selecting a saved profile applies its framing and ffmpeg settings to the active stage. If that stage is queued, it changes to `Needs requeue`.
+- Profiles never store output paths, logs, or errors.
+- Export changes settings only. Queue is the only export execution surface.
+- Review the stage here, then queue and process it downstream.
 
 ## Related Guides
 
 Previous: [review.md](review.md)
-Next: [settings.md](settings.md)
-
+Next: [queue.md](queue.md)

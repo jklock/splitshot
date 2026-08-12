@@ -134,7 +134,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
 
                 toggle_button.click()
                 page.wait_for_function(
-                    "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
+                    "() => document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
                 assert toggle_button.text_content() == "▶"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
@@ -150,14 +150,107 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
 
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
-                    "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
+                    "() => document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
                 page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
                 assert page.locator('.tool-item.active[data-tool="settings"]').count() == 1
                 assert page.locator("#toggle-rail").text_content() == "▶"
-                assert page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
+                assert (
+                    page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
+                )
                 assert page.evaluate("localStorage.getItem('splitshot.activeTool')") == "settings"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.parametrize("resolution", [(640, 360), (360, 640)])
+def test_review_video_frame_stays_contained_at_scaled_effective_viewports(
+    synthetic_video_factory,
+    resolution: tuple[int, int],
+) -> None:
+    primary_path = Path(
+        synthetic_video_factory(
+            name=f"viewport-{resolution[0]}x{resolution[1]}",
+            resolution=resolution,
+        )
+    )
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "review")
+                for viewport in (
+                    {"width": 1024, "height": 700},
+                    {"width": 819, "height": 560},
+                    {"width": 683, "height": 467},
+                    {"width": 512, "height": 350},
+                ):
+                    page.set_viewport_size(viewport)
+                    page.evaluate("renderViewportLayout()")
+                    page.wait_for_timeout(100)
+                    geometry = page.evaluate(
+                        """() => {
+                          const video = document.getElementById('primary-video');
+                          const stage = document.getElementById('video-stage');
+                          const shell = document.querySelector('.cockpit-shell');
+                          const frame = previewFrameClientRect(video, stage);
+                          const stageRect = stage.getBoundingClientRect();
+                          const shellRect = shell.getBoundingClientRect();
+                          const sampleRect = (x, y) => ({
+                            left: frame.left + (frame.width * x) - 1,
+                            right: frame.left + (frame.width * x) + 1,
+                            top: frame.top + (frame.height * y) - 1,
+                            bottom: frame.top + (frame.height * y) + 1,
+                            width: 2,
+                            height: 2,
+                          });
+                          return {
+                            frame: {
+                              left: frame.left,
+                              right: frame.left + frame.width,
+                              top: frame.top,
+                              bottom: frame.top + frame.height,
+                              width: frame.width,
+                              height: frame.height,
+                            },
+                            stage: { left: stageRect.left, right: stageRect.right, top: stageRect.top, bottom: stageRect.bottom },
+                            shell: { left: shellRect.left, right: shellRect.right, top: shellRect.top, bottom: shellRect.bottom },
+                            viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight },
+                            documentScroll: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+                            expectedRatio: currentPreviewAspectRatio(video),
+                            mapped: [
+                              resolveNormalizedPointFromRect(sampleRect(0, 0), frame),
+                              resolveNormalizedPointFromRect(sampleRect(0.5, 0.5), frame),
+                              resolveNormalizedPointFromRect(sampleRect(1, 1), frame),
+                            ],
+                          };
+                        }"""
+                    )
+                    frame = geometry["frame"]
+                    stage = geometry["stage"]
+                    assert frame["width"] > 0 and frame["height"] > 0
+                    assert frame["left"] >= stage["left"] - 1
+                    assert frame["right"] <= stage["right"] + 1
+                    assert frame["top"] >= stage["top"] - 1
+                    assert frame["bottom"] <= stage["bottom"] + 1
+                    assert frame["right"] <= geometry["viewport"]["width"] + 1
+                    assert frame["bottom"] <= geometry["viewport"]["height"] + 1
+                    assert frame["width"] / frame["height"] == pytest.approx(
+                        geometry["expectedRatio"], rel=0.03
+                    )
+                    assert geometry["shell"]["right"] <= geometry["viewport"]["width"] + 1
+                    assert geometry["shell"]["bottom"] <= geometry["viewport"]["height"] + 1
+                    assert geometry["documentScroll"]["width"] <= geometry["viewport"]["width"] + 1
+                    assert geometry["documentScroll"]["height"] <= geometry["viewport"]["height"] + 1
+                    assert geometry["mapped"][0] == pytest.approx({"x": 0, "y": 0}, abs=0.01)
+                    assert geometry["mapped"][1] == pytest.approx({"x": 0.5, "y": 0.5}, abs=0.01)
+                    assert geometry["mapped"][2] == pytest.approx({"x": 1, "y": 1}, abs=0.01)
             finally:
                 browser.close()
     finally:
@@ -213,13 +306,17 @@ def test_scoring_edit_button_opens_and_closes_workbench() -> None:
                 page.locator('button[data-tool="scoring"]').click()
                 page.locator('[data-tool-pane="scoring"]').wait_for(state="visible")
 
-                page.locator('#expand-scoring').click()
-                workbench = page.locator('#scoring-workbench')
+                page.locator("#expand-scoring").click()
+                workbench = page.locator("#scoring-workbench")
                 workbench.wait_for(state="visible")
-                assert page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is False
+                assert (
+                    page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is False
+                )
 
-                page.locator('#collapse-scoring').click()
-                page.wait_for_function("document.querySelector('#scoring-workbench')?.hidden === true")
+                page.locator("#collapse-scoring").click()
+                page.wait_for_function(
+                    "document.querySelector('#scoring-workbench')?.hidden === true"
+                )
                 assert page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is True
             finally:
                 browser.close()
@@ -244,13 +341,18 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
                 assert toggle_button.text_content() == "🔓"
                 assert toggle_button.get_attribute("aria-label") == "Lock video layout"
-                assert shell.evaluate("element => element.classList.contains('layout-unlocked')") is True
+                assert (
+                    shell.evaluate("element => element.classList.contains('layout-unlocked')")
+                    is True
+                )
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'true'")
                 assert toggle_button.text_content() == "🔒"
                 assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
-                assert shell.evaluate("element => element.classList.contains('layout-locked')") is True
+                assert (
+                    shell.evaluate("element => element.classList.contains('layout-locked')") is True
+                )
             finally:
                 browser.close()
     finally:
@@ -276,10 +378,19 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                 assert video_box is not None
 
                 assert status_box["x"] <= toggle_box["x"]
-                assert toggle_box["x"] + toggle_box["width"] <= status_box["x"] + status_box["width"] + 1
+                assert (
+                    toggle_box["x"] + toggle_box["width"]
+                    <= status_box["x"] + status_box["width"] + 1
+                )
                 assert status_box["y"] <= toggle_box["y"]
-                assert toggle_box["y"] + toggle_box["height"] <= status_box["y"] + status_box["height"] + 1
-                assert toggle_box["x"] >= status_box["x"] + status_box["width"] - toggle_box["width"] - 28
+                assert (
+                    toggle_box["y"] + toggle_box["height"]
+                    <= status_box["y"] + status_box["height"] + 1
+                )
+                assert (
+                    toggle_box["x"]
+                    >= status_box["x"] + status_box["width"] - toggle_box["width"] - 28
+                )
                 assert toggle_box["y"] + toggle_box["height"] <= video_box["y"] + 1
 
                 page.evaluate(
@@ -287,7 +398,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                         window.__finishTopbarProcessing = beginProcessing('Importing video', 'Working locally', '/api/import/primary');
                     }"""
                 )
-                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('processing-bar')?.hidden === false"
+                )
 
                 processing_box = page.locator("#processing-bar").bounding_box()
                 assert processing_box is not None
@@ -299,7 +412,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                 page.evaluate("""() => {
                     forceHideProcessingBar('Ready.');
                 }""")
-                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('processing-bar')?.hidden === true"
+                )
             finally:
                 browser.close()
     finally:
@@ -310,8 +425,22 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
     ("handle_id", "panel_selector", "storage_key", "css_var", "delta_x", "delta_y"),
     [
         ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
-        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", "--waveform-height", 0, -120),
-        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", "--inspector-width", 120, 0),
+        (
+            "resize-waveform",
+            ".waveform-panel",
+            "splitshot.layout.waveformHeight",
+            "--waveform-height",
+            0,
+            -120,
+        ),
+        (
+            "resize-sidebar",
+            ".inspector",
+            "splitshot.layout.inspectorWidth",
+            "--inspector-width",
+            120,
+            0,
+        ),
     ],
 )
 def test_layout_resize_handles_persist_layout_sizes(
@@ -333,7 +462,9 @@ def test_layout_resize_handles_persist_layout_sizes(
                 panel = page.locator(panel_selector)
                 handle = page.locator(f"#{handle_id}")
                 initial_panel_box = panel.bounding_box()
-                initial_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                initial_size = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
                 initial_css = page.evaluate(
                     "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
                     css_var,
@@ -356,7 +487,9 @@ def test_layout_resize_handles_persist_layout_sizes(
                 )
 
                 updated_panel_box = panel.bounding_box()
-                updated_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                updated_size = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
                 updated_css = page.evaluate(
                     "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
                     css_var,
@@ -370,7 +503,106 @@ def test_layout_resize_handles_persist_layout_sizes(
         server.shutdown()
 
 
-def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(synthetic_video_factory) -> None:
+@pytest.mark.parametrize(
+    ("handle_id", "storage_key", "state_field", "delta_x", "delta_y"),
+    [
+        ("resize-rail", "splitshot.layout.railWidth", "rail_width", 16, 0),
+        (
+            "resize-waveform",
+            "splitshot.layout.waveformHeight",
+            "waveform_height",
+            0,
+            -60,
+        ),
+        (
+            "resize-sidebar",
+            "splitshot.layout.inspectorWidth",
+            "inspector_width",
+            100,
+            0,
+        ),
+    ],
+)
+def test_locked_layout_resize_uses_first_drag_and_survives_reload(
+    handle_id: str,
+    storage_key: str,
+    state_field: str,
+    delta_x: float,
+    delta_y: float,
+) -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.wait_for_function(
+                    "() => localStorage.getItem('splitshot.layoutLocked') === 'true'"
+                )
+                handle_box = page.locator(f"#{handle_id}").bounding_box()
+                assert handle_box is not None
+                before = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
+                cx = handle_box["x"] + handle_box["width"] / 2
+                cy = handle_box["y"] + handle_box["height"] / 2
+                target_x = cx + delta_x
+                target_y = cy + delta_y
+                if handle_id == "resize-waveform":
+                    assert page.evaluate("() => markersWorkbenchShown()") is False
+
+                page.mouse.move(cx, cy)
+                page.mouse.down()
+                page.mouse.move(target_x, target_y, steps=8)
+                preview_size = page.evaluate(
+                    """(field) => ({
+                        size: Number(layoutSizes[field]),
+                        active: activeResize,
+                    })""",
+                    {
+                        "rail_width": "railWidth",
+                        "waveform_height": "waveformHeight",
+                        "inspector_width": "inspectorWidth",
+                    }[state_field],
+                )
+                assert preview_size["size"] != before, preview_size
+                page.mouse.up()
+
+                page.wait_for_function(
+                    """({ key, before }) => {
+                        const stored = Number(localStorage.getItem(key));
+                        return localStorage.getItem('splitshot.layoutLocked') === 'false'
+                            && stored > 0
+                            && stored !== before;
+                    }""",
+                    arg={"key": storage_key, "before": before},
+                )
+                persisted = page.evaluate(
+                    "({ key }) => Number(localStorage.getItem(key))",
+                    {"key": storage_key},
+                )
+                page.wait_for_function(
+                    """({ field, expected }) =>
+                        Number(state?.project?.ui_state?.[field]) === expected""",
+                    arg={"field": state_field, "expected": persisted},
+                )
+                page.wait_for_timeout(450)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function(
+                    """({ key, field, expected }) =>
+                        Number(localStorage.getItem(key)) === expected
+                        && Number(state?.project?.ui_state?.[field]) === expected""",
+                    arg={"key": storage_key, "field": state_field, "expected": persisted},
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-workbench-layout-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -423,16 +655,26 @@ def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_heigh
                 assert video_after is not None
                 assert workbench_after["height"] > workbench_before["height"] + 20
                 assert video_after["height"] < video_before["height"] - 20
-                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
+                assert (
+                    page.evaluate("state?.project?.ui_state?.waveform_height")
+                    == initial_waveform_height
+                )
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
                 waveform_panel.wait_for(state="visible")
 
                 restored_waveform_box = waveform_panel.bounding_box()
                 assert restored_waveform_box is not None
-                assert restored_waveform_box["height"] == pytest.approx(initial_waveform_box["height"], abs=4)
-                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
+                assert restored_waveform_box["height"] == pytest.approx(
+                    initial_waveform_box["height"], abs=4
+                )
+                assert (
+                    page.evaluate("state?.project?.ui_state?.waveform_height")
+                    == initial_waveform_height
+                )
             finally:
                 browser.close()
     finally:

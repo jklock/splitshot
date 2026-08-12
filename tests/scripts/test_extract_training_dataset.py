@@ -85,7 +85,9 @@ def _manifest_payload(video_path: Path) -> dict[str, object]:
     }
 
 
-def test_extract_training_dataset_from_verified_manifest(tmp_path: Path, synthetic_video_factory) -> None:
+def test_extract_training_dataset_from_verified_manifest(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="dataset-verified")
     manifest_path = tmp_path / "shotml-label-manifest.json"
     output_path = tmp_path / "training-dataset.npz"
@@ -123,7 +125,9 @@ def test_extract_training_dataset_from_verified_manifest(tmp_path: Path, synthet
     assert summary["label_source_counts"]["detector_draft"] == 0
 
 
-def test_extract_training_dataset_can_use_detector_drafts(tmp_path: Path, synthetic_video_factory) -> None:
+def test_extract_training_dataset_can_use_detector_drafts(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="dataset-draft")
     manifest = _manifest_payload(video_path)
     manifest["videos"][0]["labels"]["status"] = "needs_review"
@@ -152,7 +156,9 @@ def test_extract_training_dataset_can_use_detector_drafts(tmp_path: Path, synthe
     assert set(archive["label_sources"].tolist()) == {"detector_draft"}
 
 
-def test_extract_training_dataset_can_use_auto_consensus_labels(tmp_path: Path, synthetic_video_factory) -> None:
+def test_extract_training_dataset_can_use_auto_consensus_labels(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="dataset-auto")
     manifest = _manifest_payload(video_path)
     manifest["videos"][0]["labels"]["status"] = "auto_labeled"
@@ -162,7 +168,9 @@ def test_extract_training_dataset_can_use_auto_consensus_labels(tmp_path: Path, 
     manifest["videos"][0]["labels"]["auto_shot_times_ms"] = [810, 1110, 1460]
     manifest["videos"][0]["labels"]["auto_label_score"] = 0.88
     manifest["videos"][0]["labels"]["auto_label_method"] = "pair_consensus"
-    manifest["videos"][0]["labels"]["auto_label_reasons"] = ["beep_pair_agreement:primary_detector+tone"]
+    manifest["videos"][0]["labels"]["auto_label_reasons"] = [
+        "beep_pair_agreement:primary_detector+tone"
+    ]
     manifest_path = tmp_path / "shotml-label-manifest.json"
     output_path = tmp_path / "training-dataset-auto.npz"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -185,7 +193,9 @@ def test_extract_training_dataset_can_use_auto_consensus_labels(tmp_path: Path, 
     assert set(archive["label_sources"].tolist()) == {"auto_consensus"}
 
 
-def test_extract_training_dataset_can_augment_event_windows(tmp_path: Path, synthetic_video_factory) -> None:
+def test_extract_training_dataset_can_augment_event_windows(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="dataset-augment")
     manifest_path = tmp_path / "shotml-label-manifest.json"
     output_path = tmp_path / "training-dataset.npz"
@@ -210,7 +220,9 @@ def test_extract_training_dataset_can_augment_event_windows(tmp_path: Path, synt
     assert archive["features"].shape[0] >= 8
 
 
-def test_extract_training_dataset_review_clean_blocks_flagged_detector_drafts(tmp_path: Path, synthetic_video_factory) -> None:
+def test_extract_training_dataset_review_clean_blocks_flagged_detector_drafts(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="dataset-flagged-draft")
     manifest = _manifest_payload(video_path)
     manifest["videos"][0]["labels"]["status"] = "needs_review"

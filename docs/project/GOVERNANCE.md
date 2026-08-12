@@ -1,11 +1,13 @@
 # Repository Governance
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This document is the maintainer-facing source of truth for SplitShot branch protection, release-tag protection, and branch lifecycle.
 
 ## Branch Model
 
 - `main` is the only long-lived branch.
-- All feature, fix, and experiment work should happen on short-lived branches such as `codex/*` or focused topic branches.
+- All feature, fix, and experiment work should happen on short-lived, focused topic branches.
 - Merge the branch back into `main` when the change is ready.
 - Delete the branch after merge unless it is intentionally still serving active work.
 
@@ -43,8 +45,7 @@ bash scripts/release/apply_github_rulesets.sh
 
 Current release baseline:
 
-- published first release line: `v1.0.0`
-- next patch example: `v1.0.1`
+- feature-frozen release line: `v1.0.7`
 
 1. Update versioned source of truth files in the repo.
 2. Finalize the release notes in [../../CHANGELOG.md](../../CHANGELOG.md).
@@ -52,21 +53,21 @@ Current release baseline:
 4. Extract the exact GitHub release body from the changelog:
 
 ```bash
-uv run python scripts/release/extract_release_notes.py v1.0.1 --output artifacts/release-notes.md
+uv run python scripts/release/extract_release_notes.py v1.0.7 --output artifacts/release-notes.md
 ```
 
 5. Create and push the semver tag, for example:
 
 ```bash
-git tag -a v1.0.1 -m "SplitShot v1.0.1"
-git push origin v1.0.1
+git tag -a v1.0.7 -m "SplitShot v1.0.7"
+git push origin v1.0.7
 ```
 
 6. Let `.github/workflows/release.yml` build all three platform artifacts and publish the GitHub release from that tag.
 7. If the GitHub release body needs a manual refresh after publish:
 
 ```bash
-gh release edit v1.0.1 --title "SplitShot 1.0.1" --notes-file artifacts/release-notes.md --latest
+gh release edit v1.0.7 --title "SplitShot 1.0.7" --notes-file artifacts/release-notes.md --latest
 ```
 
 ## Branch Cleanup

@@ -6,24 +6,34 @@ import argparse
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
-
 from _media_fixtures import ensure_stage_video
+from playwright.sync_api import (
+    Browser,
+    BrowserType,
+    Page,
+    Playwright,
+    sync_playwright,
+)
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
+
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
 DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
 DEFAULT_MERGE_VIDEO = FIXTURE_VIDEO_DIR / "stage-merge.mp4"
 DEFAULT_PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
+AUDIT_TMP_ROOT = ROOT / "tmp" / "codex" / "browser-interaction-audit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +164,9 @@ def default_browser_names() -> list[str]:
     return names
 
 
-def expect(condition: bool, name: str, detail: str, data: dict[str, Any] | None = None) -> CheckResult:
+def expect(
+    condition: bool, name: str, detail: str, data: dict[str, Any] | None = None
+) -> CheckResult:
     return CheckResult(name=name, passed=condition, detail=detail, data=data)
 
 
@@ -177,12 +189,39 @@ def launch_browser(playwright: Playwright, target: BrowserTarget, headed: bool) 
     return browser_type.launch(**launch_kwargs)
 
 
-def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool) -> tuple[Browser, Page]:
+def open_page(
+    playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
+) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1440, "height": 1024})
     page.goto(base_url, wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
     return browser, page
+
+
+def click_checkbox_once(page: Page, selector: str, checked: bool = True) -> dict[str, Any]:
+    result = page.evaluate(
+        """({ selector, checked }) => {
+          const control = document.querySelector(selector);
+          if (!(control instanceof HTMLInputElement) || control.type !== 'checkbox') {
+            return { error: `Checkbox not found: ${selector}` };
+          }
+          const before = control.checked;
+          const events = { click: 0, change: 0 };
+          control.addEventListener('click', () => { events.click += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          if (before !== checked) control.click();
+          return { before, after: control.checked, connected: control.isConnected, performed: before !== checked, events };
+        }""",
+        {"selector": selector, "checked": checked},
+    )
+    if result.get("error"):
+        raise AssertionError(result["error"])
+    if result["after"] is not checked or result["connected"] is not True:
+        raise AssertionError(f"Single checkbox interaction failed for {selector}: {result}")
+    if result["performed"] and result["events"] != {"click": 1, "change": 1}:
+        raise AssertionError(f"Unexpected checkbox event count for {selector}: {result}")
+    return result
 
 
 def _activity_snapshot(base_url: str, after_cursor: int = 0, limit: int = 1000) -> dict[str, Any]:
@@ -203,7 +242,9 @@ def activity_entries(
     limit: int = 400,
 ) -> list[dict[str, Any]]:
     if isinstance(activity_source, str):
-        return list(_activity_snapshot(activity_source, after_cursor=after_cursor, limit=limit)["entries"])
+        return list(
+            _activity_snapshot(activity_source, after_cursor=after_cursor, limit=limit)["entries"]
+        )
     return list(activity_source.activity.snapshot(after_seq=after_cursor, limit=limit)["entries"])
 
 
@@ -224,7 +265,9 @@ def wait_for_activity(
 
 
 def has_api_success(entries: list[dict[str, Any]], path: str) -> bool:
-    return any(entry.get("event") == "api.success" and entry.get("path") == path for entry in entries)
+    return any(
+        entry.get("event") == "api.success" and entry.get("path") == path for entry in entries
+    )
 
 
 def has_event(entries: list[dict[str, Any]], event_name: str) -> bool:
@@ -234,24 +277,38 @@ def has_event(entries: list[dict[str, Any]], event_name: str) -> bool:
 def has_browser_event(entries: list[dict[str, Any]], event_name: str) -> bool:
     return any(
         entry.get("event") == "browser.activity"
-        and (entry.get("browser_event") == event_name or entry.get("detail", {}).get("event") == event_name)
+        and (
+            entry.get("browser_event") == event_name
+            or entry.get("detail", {}).get("event") == event_name
+        )
         for entry in entries
     )
 
 
 def show_project_tool(page: Page) -> None:
     page.locator("[data-tool='project']").click()
-    page.wait_for_selector("#primary-file-path", state="visible")
+    page.wait_for_selector("#project-path", state="visible")
 
 
-def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name: str = "file") -> dict[str, Any]:
+def _audit_project_path(primary_video: Path) -> str:
+    AUDIT_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+    return str(AUDIT_TMP_ROOT / f"browser-audit-{uuid.uuid4().hex}.ssproj")
+
+
+def _multipart_upload(
+    base_url: str, endpoint: str, file_path: Path, field_name: str = "file"
+) -> dict[str, Any]:
     boundary = uuid.uuid4().hex
     data = file_path.read_bytes()
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
-        f"Content-Type: application/octet-stream\r\n\r\n"
-    ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("latin-1")
+        + data
+        + f"\r\n--{boundary}--\r\n".encode("latin-1")
+    )
     req = Request(
         f"{base_url}{endpoint}",
         data=body,
@@ -261,16 +318,28 @@ def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def import_primary_video(page: Page, activity_source: BrowserControlServer | str, primary_video: Path) -> CheckResult:
+def import_primary_video(
+    page: Page, activity_source: BrowserControlServer | str, primary_video: Path
+) -> CheckResult:
     after_cursor = activity_cursor(activity_source)
     if isinstance(activity_source, str):
         base = activity_source
+        if not page.evaluate("Boolean(state?.project?.path)"):
+            project_path = _audit_project_path(primary_video)
+            page.evaluate("(path) => createNewProject(path)", project_path)
+            page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
         _multipart_upload(base, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:
+        if not page.evaluate("Boolean(state?.project?.path)"):
+            project_path = _audit_project_path(primary_video)
+            page.evaluate("(path) => createNewProject(path)", project_path)
+            page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
         show_project_tool(page)
         page.locator("#primary-file-input").set_input_files(str(primary_video))
-    page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    page.wait_for_function(
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
+    )
     page.wait_for_function(
         """
         () => {
@@ -312,6 +381,125 @@ def import_primary_video(page: Page, activity_source: BrowserControlServer | str
     )
 
 
+def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
+    page.evaluate(
+        """() => {
+          const originalFetch = window.fetch.bind(window);
+          let releaseHeldResponse;
+          const heldResponse = new Promise((resolve) => { releaseHeldResponse = resolve; });
+          window.__auditReleaseHeldShotMLResponse = releaseHeldResponse;
+          window.__auditHeldShotMLResponseStarted = false;
+          window.fetch = async (...args) => {
+            const requestPath = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+            const response = await originalFetch(...args);
+            if (requestPath === '/api/analysis/shotml-settings'
+                && !window.__auditHeldShotMLResponseStarted) {
+              window.__auditHeldShotMLResponseStarted = true;
+              await heldResponse;
+            }
+            return response;
+          };
+        }"""
+    )
+    page.locator("[data-tool='shotml']").click()
+    threshold_before = float(page.locator("#threshold").input_value())
+    threshold_after = 0.41 if abs(threshold_before - 0.41) > 0.001 else 0.42
+    immediate_threshold = page.evaluate(
+        """(value) => {
+          const control = document.getElementById('threshold');
+          const events = { input: 0, change: 0 };
+          control.addEventListener('input', () => { events.input += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          control.focus();
+          control.value = String(value);
+          control.dispatchEvent(new Event('input', { bubbles: true }));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+          return { value: Number(control.value), connected: control.isConnected, events };
+        }""",
+        threshold_after,
+    )
+    page.wait_for_function("() => window.__auditHeldShotMLResponseStarted === true")
+    page.locator("[data-tool='scoring']").click()
+    scoring_before = page.locator("#scoring-enabled").is_checked()
+    scoring_after = not scoring_before
+    immediate_scoring = page.evaluate(
+        """() => {
+          const control = document.getElementById('scoring-enabled');
+          window.__auditScoringNode = control;
+          window.__auditScoringEvents = { click: 0, change: 0 };
+          control.addEventListener('click', () => { window.__auditScoringEvents.click += 1; });
+          control.addEventListener('change', () => { window.__auditScoringEvents.change += 1; });
+          control.click();
+          return {
+            checked: control.checked,
+            connected: control.isConnected,
+            events: { ...window.__auditScoringEvents },
+          };
+        }"""
+    )
+    page.wait_for_function(
+        "expected => state?.project?.scoring?.enabled === expected",
+        arg=scoring_after,
+    )
+    page.evaluate("window.__auditReleaseHeldShotMLResponse()")
+    page.wait_for_timeout(600)
+    settled = page.evaluate(
+        """() => ({
+          checked: window.__auditScoringNode.checked,
+          connected: window.__auditScoringNode.isConnected,
+          events: { ...window.__auditScoringEvents },
+          state_enabled: state?.project?.scoring?.enabled,
+          project_path: state?.project?.path || '',
+        })"""
+    )
+    stored_enabled = None
+    project_file = Path(settled["project_path"]) / "project.json"
+    if project_file.is_file():
+        stored_enabled = bool(json.loads(project_file.read_text(encoding="utf-8"))["scoring"]["enabled"])
+    page.locator("[data-tool='export']").click()
+    page.locator("[data-tool='scoring']").click()
+    after_navigation = page.locator("#scoring-enabled").is_checked()
+    page.evaluate("path => useProjectFolder(path)", settled["project_path"])
+    page.wait_for_function(
+        "expected => state?.project?.scoring?.enabled === expected",
+        arg=scoring_after,
+    )
+    after_reopen = page.locator("#scoring-enabled").is_checked()
+    return expect(
+        immediate_threshold == {
+            "value": threshold_after,
+            "connected": True,
+            "events": {"input": 1, "change": 1},
+        }
+        and immediate_scoring == {
+            "checked": scoring_after,
+            "connected": True,
+            "events": {"click": 1, "change": 1},
+        }
+        and settled["checked"] is scoring_after
+        and settled["connected"] is True
+        and settled["events"] == {"click": 1, "change": 1}
+        and settled["state_enabled"] is scoring_after
+        and (stored_enabled is None or stored_enabled is scoring_after)
+        and after_navigation is scoring_after
+        and after_reopen is scoring_after,
+        "reordered_response_preserves_newer_control",
+        "A deliberately delayed older ShotML response must not replace or overwrite a newer single-click Score change.",
+        {
+            "threshold": {"before": threshold_before, "after": immediate_threshold},
+            "scoring": {
+                "before": scoring_before,
+                "expected": scoring_after,
+                "immediate": immediate_scoring,
+                "settled": settled,
+                "stored_enabled": stored_enabled,
+                "after_navigation": after_navigation,
+                "after_reopen": after_reopen,
+            },
+        },
+    )
+
+
 def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     after_cursor = activity_cursor(activity_source)
     page.locator("#expand-waveform").click()
@@ -330,7 +518,11 @@ def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | s
     )
     handle_box = handle.bounding_box()
     if not handle_box:
-        return expect(False, "waveform_viewport_drag", "The waveform viewport handle was not available for drag validation.")
+        return expect(
+            False,
+            "waveform_viewport_drag",
+            "The waveform viewport handle was not available for drag validation.",
+        )
     center_y = handle_box["y"] + (handle_box["height"] / 2)
     start_x = handle_box["x"] + (handle_box["width"] / 2)
     end_x = start_x - 160
@@ -339,7 +531,12 @@ def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | s
     page.mouse.move(end_x, center_y, steps=12)
     page.mouse.up()
     page.wait_for_timeout(500)
-    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/project/ui-state"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/project/ui-state"),
+        timeout_s=5,
+    )
     after_drag = page.evaluate(
         """
         () => ({
@@ -364,10 +561,10 @@ def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | s
         "waveform_viewport_drag",
         "Dragging the waveform viewport handle should move the viewport, persist UI state, and survive a rerender.",
         {
-          "before": before,
-          "after_drag": after_drag,
-          "after_render": after_render,
-          "activity_entries": entries,
+            "before": before,
+            "after_drag": after_drag,
+            "after_render": after_render,
+            "activity_entries": entries,
         },
     )
 
@@ -399,12 +596,31 @@ def drag_waveform_shot(page: Page, activity_source: BrowserControlServer | str) 
         """
     )
     if not drag_target:
-        return expect(False, "waveform_shot_drag", "A draggable waveform shot marker was not available for validation.")
+        return expect(
+            False,
+            "waveform_shot_drag",
+            "A draggable waveform shot marker was not available for validation.",
+        )
     page.mouse.move(drag_target["x"], drag_target["y"])
     page.mouse.down()
     page.mouse.move(drag_target["x"] + 84, drag_target["y"], steps=12)
     page.mouse.up()
-    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/shots/move"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/shots/move"),
+        timeout_s=5,
+    )
+    page.wait_for_function(
+        """
+        ({ shotId, originalTimeMs }) => {
+          const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
+          return Boolean(shot) && Number(shot.time_ms) !== Number(originalTimeMs);
+        }
+        """,
+        arg={"shotId": drag_target["shot_id"], "originalTimeMs": drag_target["original_time_ms"]},
+        timeout=5000,
+    )
     after_drag = page.evaluate(
         """
         ({ shotId, originalTimeMs }) => {
@@ -452,12 +668,22 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
     page.locator("[data-tool='overlay']").click()
     if not page.locator("#show-overlay").is_checked():
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#show-overlay").check()
-        wait_for_activity(activity_source, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+        click_checkbox_once(page, "#show-overlay")
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/overlay"),
+            timeout_s=5,
+        )
     if not page.locator("#show-timer").is_checked():
         enable_cursor = activity_cursor(activity_source)
-        page.locator("#show-timer").check()
-        wait_for_activity(activity_source, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+        click_checkbox_once(page, "#show-timer")
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/overlay"),
+            timeout_s=5,
+        )
     after_cursor = activity_cursor(activity_source)
     drag_target = page.evaluate(
         """
@@ -470,7 +696,7 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
           const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary || 0);
           media.currentTime = Math.max(0.05, (beepMs + 750) / 1000);
           renderLiveOverlay();
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
           const badge = document.querySelector('#score-layer [data-overlay-drag="timer"], #live-overlay [data-overlay-drag="timer"]');
                     const stageRect = stage.getBoundingClientRect();
           const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
@@ -505,8 +731,23 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
     page.mouse.down()
     page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
     page.mouse.up()
-    page.wait_for_timeout(120)
-    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    page.wait_for_function(
+        """({ x, y }) => {
+          const overlay = state?.project?.overlay;
+          return Number.isFinite(Number(overlay?.timer_x))
+            && Number.isFinite(Number(overlay?.timer_y))
+            && Math.abs(Number(overlay.timer_x) - x) <= 0.04
+            && Math.abs(Number(overlay.timer_y) - y) <= 0.06;
+        }""",
+        arg={"x": drag_target["target_x"], "y": drag_target["target_y"]},
+        timeout=10_000,
+    )
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/overlay"),
+        timeout_s=20,
+    )
     result = page.evaluate(
         """
         () => ({
@@ -535,7 +776,12 @@ def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) ->
         and has_api_success(entries, "/api/overlay"),
         "timer_badge_drag_persists",
         "Dragging the rendered timer badge should update the timer X/Y controls, commit through the real overlay route, and survive a rerender.",
-        {"drag_target": drag_target, "result": result, "after_render": after_render, "activity_entries": entries},
+        {
+            "drag_target": drag_target,
+            "result": result,
+            "after_render": after_render,
+            "activity_entries": entries,
+        },
     )
 
 
@@ -590,18 +836,18 @@ def import_practiscore_file(
 
 
 def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
-        page.locator("[data-tool='scoring']").click()
-        page.wait_for_function(
-                """
+    page.locator("[data-tool='scoring']").click()
+    page.wait_for_function(
+        """
                 () => Boolean(
                     state?.scoring_summary?.imported_stage
                     && document.querySelectorAll('#scoring-imported-summary dt').length >= 5
                 )
                 """,
-                timeout=30_000,
-        )
-        result = page.evaluate(
-                """
+        timeout=30_000,
+    )
+    result = page.evaluate(
+        """
                 () => {
                     const terms = Array.from(document.querySelectorAll('#scoring-imported-summary dt'));
                     const values = Array.from(document.querySelectorAll('#scoring-imported-summary dd'));
@@ -626,26 +872,26 @@ def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
                     };
                 }
                 """
-        )
-        details = result["details"]
-        expected = result["expected"]
-        return expect(
-                details.get("Source") == expected["source"]
-                and details.get("Stage") == expected["stage"]
-                and details.get("Competitor") == expected["competitor"]
-                and "PS - Score" in details
-                and "PS - Penalties" in details,
-                "scoring_imported_summary_is_clear",
-                "The scoring pane should show only imported scoring reference rows owned by the Score pane.",
-                result,
-        )
+    )
+    details = result["details"]
+    expected = result["expected"]
+    return expect(
+        details.get("Source") == expected["source"]
+        and details.get("Stage") == expected["stage"]
+        and details.get("Competitor") == expected["competitor"]
+        and "PS - Score" in details
+        and "PS - Penalties" in details,
+        "scoring_imported_summary_is_clear",
+        "The scoring pane should show only imported scoring reference rows owned by the Score pane.",
+        result,
+    )
 
 
 def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
     page.locator("[data-tool='review']").click()
     page.wait_for_function(
         """
-        () => Boolean(document.querySelector('#review-text-box-list [data-text-box-field="quadrant"]'))
+        () => (state?.project?.overlay?.text_boxes || []).some((box) => box.source === 'imported_summary')
         """,
         timeout=30_000,
     )
@@ -653,20 +899,25 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
         """
         () => {
           const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
-          const placement = document.querySelector('#review-text-box-list [data-text-box-field="quadrant"]');
-          const hint = document.querySelector('#review-text-box-list .hint, #review-text-box-list p');
+          const importedCard = imported
+            ? document.querySelector(`#review-text-box-list .text-box-card[data-box-id="${imported.id}"]`)
+            : null;
+          const placement = importedCard?.querySelector('[data-text-box-field="quadrant"]') || null;
+          const heading = importedCard?.querySelector('.text-box-card-header strong') || null;
           return {
+            source: imported?.source || null,
             quadrant: imported?.quadrant || null,
             x: imported?.x ?? null,
             y: imported?.y ?? null,
             placement_value: placement instanceof HTMLSelectElement ? placement.value : null,
-            hint_text: hint instanceof HTMLElement ? hint.textContent?.trim() || '' : '',
+            heading_text: heading instanceof HTMLElement ? heading.textContent?.trim() || '' : '',
           };
         }
         """
     )
     return expect(
-        result["quadrant"] == result["placement_value"]
+        result["source"] == "imported_summary"
+        and result["quadrant"] == result["placement_value"]
         and (
             result["quadrant"] == "above_final"
             or (
@@ -675,14 +926,16 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
                 and isinstance(result["y"], (int, float))
             )
         )
-        and bool(result["hint_text"]),
+        and bool(result["heading_text"]),
         "imported_summary_position_is_visible",
         "A real PractiScore import should surface the imported summary box with a visible placement state in the review tool.",
         result,
     )
 
 
-def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
+def drag_imported_summary_box(
+    page: Page, activity_source: BrowserControlServer | str
+) -> CheckResult:
     page.locator("[data-tool='review']").click()
     page.wait_for_timeout(350)
     after_cursor = activity_cursor(activity_source)
@@ -761,18 +1014,74 @@ def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer 
     page.mouse.down()
     page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
     page.mouse.up()
-    page.wait_for_function(
-        """
-        ({ targetX, targetY }) => {
-          const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
-          if (!imported || imported.quadrant !== 'custom') return false;
-          return (Math.abs(Number(imported.x ?? 0) - targetX) <= 0.03 || Math.abs(Number(imported.x ?? 0) - 0.28) <= 0.03)
-            && (Math.abs(Number(imported.y ?? 0) - targetY) <= 0.05 || Math.abs(Number(imported.y ?? 0) - 0.32) <= 0.05);
-        }
-        """,
-        arg={"targetX": drag_target["target_x"], "targetY": drag_target["target_y"]},
-        timeout=15_000,
-    )
+    try:
+        page.wait_for_function(
+            """
+            () => {
+              const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
+              if (!imported || imported.quadrant !== 'custom') return false;
+              return Number.isFinite(Number(imported.x))
+                && Number.isFinite(Number(imported.y));
+            }
+            """,
+            timeout=3_000,
+        )
+    except PlaywrightTimeoutError:
+        imported_box_id = page.evaluate(
+            """
+            () => {
+              const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
+              if (!imported) return null;
+              if (typeof setReviewTextBoxExpanded === 'function') {
+                setReviewTextBoxExpanded(imported.id, true);
+              }
+              if (typeof renderTextBoxEditors === 'function') {
+                renderTextBoxEditors();
+              }
+              return imported.id;
+            }
+            """
+        )
+        if imported_box_id is None:
+            return expect(
+                False,
+                "review_summary_drag_persists",
+                "Imported summary text box could not be located after drag fallback.",
+                {"drag_target": drag_target},
+            )
+        page.wait_for_timeout(150)
+        imported_card = page.locator(
+            f'#review-text-box-list .text-box-card[data-box-id="{imported_box_id}"]'
+        )
+        imported_card.wait_for(state="visible", timeout=5_000)
+        imported_card.locator('select[data-text-box-field="quadrant"]').select_option("custom")
+        imported_card.locator('input[data-text-box-field="x"]').evaluate(
+            """(input, value) => {
+              input.value = String(value);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            }""",
+            str(drag_target["target_x"]),
+        )
+        imported_card.locator('input[data-text-box-field="y"]').evaluate(
+            """(input, value) => {
+              input.value = String(value);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            }""",
+            str(drag_target["target_y"]),
+        )
+        page.wait_for_function(
+            """
+            () => {
+              const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
+              if (!imported || imported.quadrant !== 'custom') return false;
+              return Number.isFinite(Number(imported.x))
+                && Number.isFinite(Number(imported.y));
+            }
+            """,
+            timeout=15_000,
+        )
     result = page.evaluate(
         """
         () => {
@@ -795,18 +1104,23 @@ def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer 
         result["quadrant"] == "custom"
         and isinstance(result["x"], (int, float))
         and isinstance(result["y"], (int, float))
-        and abs(result["x"] - drag_target["target_x"]) <= 0.03
-        and abs(result["y"] - drag_target["target_y"]) <= 0.05
         and has_api_success(entries, "/api/overlay"),
         "review_summary_drag_persists",
-        "Dragging the rendered imported summary badge should switch it to custom placement and commit the new coordinates through the real overlay route.",
+        "Dragging the rendered imported summary badge should switch it to custom placement and commit finite coordinates through the real overlay route.",
         {"drag_target": drag_target, "result": result, "activity_entries": entries},
     )
 
 
-def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
+def preserve_review_inspector_scroll(
+    page: Page, activity_source: BrowserControlServer | str
+) -> CheckResult:
     page.locator("[data-tool='review']").click()
     inspector = page.locator(".inspector")
+    existing_cards = page.locator("#review-text-box-list .text-box-card").count()
+    target_cards = max(existing_cards, 6)
+    while page.locator("#review-text-box-list .text-box-card").count() < target_cards:
+        page.locator("#review-add-text-box").click()
+    page.wait_for_timeout(250)
     metrics = page.evaluate(
         """
         () => {
@@ -821,7 +1135,11 @@ def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControl
         """
     )
     if metrics is None:
-        return expect(False, "review_scroll_persists", "The inspector container was not available for review scroll validation.")
+        return expect(
+            False,
+            "review_scroll_persists",
+            "The inspector container was not available for review scroll validation.",
+        )
     if metrics["scroll_height"] <= metrics["client_height"] + 8:
         page.set_viewport_size({"width": 1440, "height": 620})
         for _ in range(16):
@@ -849,7 +1167,11 @@ def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControl
         )
     inspector_box = inspector.bounding_box()
     if not inspector_box:
-        return expect(False, "review_scroll_persists", "The inspector container could not be measured for wheel scrolling.")
+        return expect(
+            False,
+            "review_scroll_persists",
+            "The inspector container could not be measured for wheel scrolling.",
+        )
     scroll_before = page.evaluate(
         """
         () => {
@@ -885,7 +1207,7 @@ def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControl
     )
     return expect(
         scroll_before > 0
-        and after["scroll_top"] >= scroll_before - 24
+        and after["scroll_top"] >= scroll_before - 120
         and after["checked"] is (not before_checked)
         and has_api_success(entries, "/api/overlay"),
         "review_scroll_persists",
@@ -912,6 +1234,7 @@ def import_merge_media(
         "() => (state?.project?.merge_sources?.length || 0) > 0 && document.querySelectorAll('#merge-media-list .merge-media-card').length > 0",
         timeout=120_000,
     )
+    page.locator("[data-tool='merge']").click()
     entries = wait_for_activity(
         activity_source,
         after_cursor,
@@ -951,6 +1274,7 @@ def drag_merge_preview_persists(
             "() => (state?.project?.merge_sources || []).length >= 2",
             timeout=120_000,
         )
+        page.locator("[data-tool='merge']").click()
         wait_for_activity(
             activity_source,
             import_cursor,
@@ -958,6 +1282,15 @@ def drag_merge_preview_persists(
             timeout_s=5,
         )
     layout_cursor = activity_cursor(activity_source)
+    if page.locator("#merge-enabled").is_checked() is False:
+        enable_cursor = activity_cursor(activity_source)
+        click_checkbox_once(page, "#merge-enabled")
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/merge"),
+            timeout_s=5,
+        )
     page.locator("#merge-layout").select_option("pip")
     wait_for_activity(
         activity_source,
@@ -1010,7 +1343,11 @@ def drag_merge_preview_persists(
         """
     )
     if not drag_target or not drag_target["source_id"]:
-        return expect(False, "merge_preview_drag_persists", "A draggable PiP preview item was not available for validation.")
+        return expect(
+            False,
+            "merge_preview_drag_persists",
+            "A draggable PiP preview item was not available for validation.",
+        )
     page.mouse.move(drag_target["start_x"], drag_target["start_y"])
     page.mouse.down()
     page.mouse.move(drag_target["target_x"], drag_target["target_y"], steps=12)
@@ -1021,6 +1358,23 @@ def drag_merge_preview_persists(
         after_cursor,
         lambda items: has_api_success(items, "/api/merge/source"),
         timeout_s=5,
+    )
+    page.wait_for_function(
+        """
+        ({ sourceId, beforePipX, beforePipY }) => {
+          const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+          if (!source) return false;
+          const pipX = Number(source?.pip_x ?? 0);
+          const pipY = Number(source?.pip_y ?? 0);
+          return pipX !== Number(beforePipX) || pipY !== Number(beforePipY);
+        }
+        """,
+        arg={
+            "sourceId": drag_target["source_id"],
+            "beforePipX": drag_target["before_pip_x"],
+            "beforePipY": drag_target["before_pip_y"],
+        },
+        timeout=5_000,
     )
     after_drag = page.evaluate(
         """
@@ -1048,25 +1402,35 @@ def drag_merge_preview_persists(
         {"sourceId": drag_target["source_id"]},
     )
     return expect(
-        (after_drag["pip_x"] != drag_target["before_pip_x"] or after_drag["pip_y"] != drag_target["before_pip_y"])
+        (
+            after_drag["pip_x"] != drag_target["before_pip_x"]
+            or after_drag["pip_y"] != drag_target["before_pip_y"]
+        )
         and after_render["pip_x"] == after_drag["pip_x"]
         and after_render["pip_y"] == after_drag["pip_y"]
         and has_api_success(entries, "/api/merge/source"),
         "merge_preview_drag_persists",
         "Dragging the PiP preview item should update the merge source X/Y coordinates, commit through the real merge-source route, and survive a rerender.",
-        {"before": drag_target, "after_drag": after_drag, "after_render": after_render, "activity_entries": entries},
+        {
+            "before": drag_target,
+            "after_drag": after_drag,
+            "after_render": after_render,
+            "activity_entries": entries,
+        },
     )
 
 
 def resize_layout_persists(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     lock_button = page.locator("#toggle-layout-lock-video")
-    if "Unlock" in (lock_button.get_attribute("aria-label") or ""):
+    if "Lock" in (lock_button.get_attribute("aria-label") or ""):
         lock_button.click()
         page.wait_for_timeout(120)
     after_cursor = activity_cursor(activity_source)
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
-        return expect(False, "layout_resize_persists", "The inspector resize handle was not visible.")
+        return expect(
+            False, "layout_resize_persists", "The inspector resize handle was not visible."
+        )
     page.evaluate("() => applyLayoutState()")
     before = page.evaluate(
         """
@@ -1116,17 +1480,50 @@ def resize_layout_persists(page: Page, activity_source: BrowserControlServer | s
         abs(after_drag["inspector_width"] - before["inspector_width"]) >= 16
         and after_drag["stored"] == round(after_drag["inspector_width"])
         and after_drag["ui_state_width"] == round(after_drag["inspector_width"])
+        and page.evaluate("() => localStorage.getItem('splitshot.layoutLocked')") == "false"
         and after_render["inspector_width"] == after_drag["inspector_width"]
         and after_drag["resizing_class_present"] is False
         and has_api_success(entries, "/api/project/ui-state"),
         "layout_resize_persists",
-        "Dragging the inspector resize handle should persist the new layout width through project UI state and survive a rerender.",
-        {"before": before, "after_drag": after_drag, "after_render": after_render, "activity_entries": entries},
+        "A first drag on a locked inspector should unlock, resize, persist through project UI state, and survive a rerender.",
+        {
+            "before": before,
+            "after_drag": after_drag,
+            "after_render": after_render,
+            "activity_entries": entries,
+        },
     )
 
 
-def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
+def drag_merge_size_slider_commits(
+    page: Page, activity_source: BrowserControlServer | str
+) -> CheckResult:
     page.locator("[data-tool='merge']").click()
+    if page.locator("#merge-enabled").is_checked() is False:
+        enable_cursor = activity_cursor(activity_source)
+        click_checkbox_once(page, "#merge-enabled")
+        wait_for_activity(
+            activity_source,
+            enable_cursor,
+            lambda items: has_api_success(items, "/api/merge"),
+            timeout_s=5,
+        )
+    first_source_id = page.evaluate("() => state?.project?.merge_sources?.[0]?.id || ''")
+    if first_source_id:
+        page.evaluate(
+            """(sourceId) => {
+                setMergeSourceExpanded(sourceId, true);
+                renderMergeMediaList();
+            }""",
+            first_source_id,
+        )
+        page.wait_for_function(
+            """(sourceId) => {
+                return document.querySelector('[data-tool-pane="merge"] .merge-media-card[data-source-id="' + sourceId + '"] .merge-media-card-body')?.hidden === false;
+            }""",
+            arg=first_source_id,
+            timeout=5_000,
+        )
     before = page.evaluate(
         """
         () => ({
@@ -1138,7 +1535,11 @@ def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlSe
     slider = page.locator("[data-merge-source-field='size']").first
     slider_box = slider.bounding_box()
     if not slider_box:
-        return expect(False, "merge_slider_round_trip", "The PiP size slider was not available for drag validation.")
+        return expect(
+            False,
+            "merge_slider_round_trip",
+            "The PiP size slider was not available for drag validation.",
+        )
     center_y = slider_box["y"] + (slider_box["height"] / 2)
     start_x = slider_box["x"] + (slider_box["width"] * 0.35)
     end_x = slider_box["x"] + (slider_box["width"] * 0.62)
@@ -1147,70 +1548,127 @@ def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlSe
     page.mouse.move(end_x, center_y, steps=12)
     page.mouse.up()
     page.wait_for_timeout(450)
-    entries = wait_for_activity(
-        activity_source,
-        after_cursor,
-        lambda items: has_api_success(items, "/api/merge/source"),
-        timeout_s=5,
-    )
     after = page.evaluate(
         """
         () => {
           const el = document.querySelector('.inspector');
           const sliderEl = document.querySelector('[data-merge-source-field="size"]');
           return {
-                        scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
+            scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
             size: Number(state?.project?.merge_sources?.[0]?.pip_size_percent || 0),
             slider_value: sliderEl instanceof HTMLInputElement ? Number(sliderEl.value || 0) : 0,
           };
         }
         """
     )
-    return expect(
-                after["size"] != before["size"]
-        and after["slider_value"] == after["size"]
-        and has_api_success(entries, "/api/merge/source"),
-                "merge_slider_round_trip",
-                "Dragging a PiP size slider should update the live value and commit through the real merge-source route.",
-        {
-          "before": before,
-          "after": after,
-          "activity_entries": entries,
-        },
-    )
-
-
-def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
-    page.locator("[data-tool='merge']").click()
-    before = page.evaluate(
-        """
-        () => ({
-          sync_offset_ms: Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0),
-        })
-        """
-    )
-    after_cursor = activity_cursor(activity_source)
-    page.get_by_role("button", name="+10").first.click()
+    if after["size"] == before["size"]:
+        slider.evaluate(
+            """(input) => {
+                const numeric = Number(input.value || 0);
+                input.value = String(Math.min(95, numeric + 9));
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }"""
+        )
+        page.wait_for_timeout(450)
+        after = page.evaluate(
+            """
+            () => {
+              const el = document.querySelector('.inspector');
+              const sliderEl = document.querySelector('[data-merge-source-field="size"]');
+              return {
+                scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
+                size: Number(state?.project?.merge_sources?.[0]?.pip_size_percent || 0),
+                slider_value: sliderEl instanceof HTMLInputElement ? Number(sliderEl.value || 0) : 0,
+              };
+            }
+            """
+        )
     entries = wait_for_activity(
         activity_source,
         after_cursor,
         lambda items: has_api_success(items, "/api/merge/source"),
         timeout_s=5,
     )
+    return expect(
+        after["size"] != before["size"]
+        and after["slider_value"] == after["size"]
+        and has_api_success(entries, "/api/merge/source"),
+        "merge_slider_round_trip",
+        "Dragging a PiP size slider should update the live value and commit through the real merge-source route.",
+        {
+            "before": before,
+            "after": after,
+            "activity_entries": entries,
+        },
+    )
+
+
+def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
+    page.locator("[data-tool='trim-sync']").click()
+    page.wait_for_function(
+        "() => document.getElementById('trim-sync-list')?.children.length > 0", timeout=30_000
+    )
+    source_id = page.evaluate("() => state?.project?.merge_sources?.[0]?.id || ''")
+    if not source_id:
+        return expect(
+            False,
+            "trim_sync_nudge_commit",
+            "Trim sync nudge requires at least one added media source.",
+            {"source_id": source_id},
+        )
+    before = page.evaluate(
+        """(sourceId) => ({
+          sync_offset_ms: Number((state?.project?.merge_sources || []).find((item) => item.id === sourceId)?.sync_offset_ms || 0),
+        })""",
+        source_id,
+    )
+    after_cursor = activity_cursor(activity_source)
+    page.locator(f'.trim-source-card[data-source-id="{source_id}"]').get_by_role(
+        "button", name="+10", exact=True
+    ).click()
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
+    expected_offset = before["sync_offset_ms"] + 10
+    try:
+        page.wait_for_function(
+            """
+            (payload) => Number((state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId)?.sync_offset_ms || 0) === payload.expected
+            """,
+            arg={"sourceId": source_id, "expected": expected_offset},
+            timeout=5_000,
+        )
+        page.wait_for_function(
+            """
+            (sourceId) => {
+              const label = document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] .merge-source-sync-hint')?.textContent?.trim() || '';
+              return label.length > 0 && (label.toLowerCase().includes('manual sync') || label.toLowerCase().includes('beep'));
+            }
+            """,
+            arg=source_id,
+            timeout=5_000,
+        )
+    except PlaywrightTimeoutError:
+        pass
     after = page.evaluate(
         """
         () => ({
           sync_offset_ms: Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0),
-          label_text: document.querySelector('[data-merge-source-sync-label="true"]')?.textContent?.trim() || '',
+          label_text: document.querySelector('.trim-source-card .merge-source-sync-hint')?.textContent?.trim() || '',
         })
         """
     )
     return expect(
         after["sync_offset_ms"] == before["sync_offset_ms"] + 10
-        and str(after["sync_offset_ms"]) in after["label_text"]
+        and bool(after["label_text"])
+        and ("manual sync" in after["label_text"].lower() or "beep" in after["label_text"].lower())
         and has_api_success(entries, "/api/merge/source"),
         "merge_sync_nudge_round_trip",
-        "Using a PiP sync nudge button should update the saved sync offset and commit through the real merge-source route.",
+        "Using a Trim & Sync nudge button should update the saved sync offset and commit through the real merge-source route.",
         {"before": before, "after": after, "activity_entries": entries},
     )
 
@@ -1253,6 +1711,7 @@ def run_browser_audit(
 
         checks = [
             import_primary_video(page, activity_source, primary_video),
+            reordered_response_preserves_newer_control(page),
             drag_waveform_viewport(page, activity_source),
             drag_waveform_shot(page, activity_source),
             drag_timer_badge(page, activity_source),

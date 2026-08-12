@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import ImportedStageScore
 from splitshot.scoring.practiscore_web_extract import (
     MISSING_REQUIRED_REMOTE_ARTIFACT_ERROR,
     PractiScoreSyncError,
@@ -18,6 +19,49 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
+
+
+def test_practiscore_identity_fields_can_clear_and_survive_stage_override_restore() -> None:
+    controller = ProjectController()
+    controller.create_stage()
+    controller.project.scoring.classification = "Master"
+    controller.project.scoring.division = "Carry Optics"
+    controller.set_practiscore_context(classification="", division="", competitor_place=0)
+    assert controller.project.scoring.classification == ""
+    assert controller.project.scoring.division == ""
+    assert controller.project.scoring.competitor_place is None
+
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        competitor_name="Shooter",
+        classification="A",
+        division="Limited",
+    )
+    controller.project.scoring.competitor_name = "Shooter"
+    controller.project.scoring.classification = "B"
+    controller.project.scoring.division = "Open"
+    overrides = controller._active_stage_practiscore_overrides()
+    controller.project.scoring.classification = "A"
+    controller.project.scoring.division = "Limited"
+    controller._restore_active_stage_practiscore_overrides(overrides)
+    assert controller.project.scoring.classification == "B"
+    assert controller.project.scoring.division == "Open"
+
+
+def test_open_project_rebuilds_practiscore_comparison_competitors(tmp_path: Path) -> None:
+    source = tmp_path / "IDPA.csv"
+    shutil.copyfile(EXAMPLES_DIR / "IDPA" / "IDPA.csv", source)
+    project_path = tmp_path / "comparison-restore.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.import_practiscore_file(str(source), source.name)
+    controller.save_project(str(project_path))
+    expected_count = len(controller.practiscore_browser_state()["comparison_competitors"])
+    assert expected_count > 1
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+    restored = reopened.practiscore_browser_state()["comparison_competitors"]
+    assert len(restored) == expected_count
 
 
 def _get_json(url: str) -> dict:
@@ -51,7 +95,9 @@ class _FakeStatus:
 
 
 class _FakeSessionManager:
-    def __init__(self, tmp_path: Path, *, state: str = "authenticated_ready", message: str | None = None) -> None:
+    def __init__(
+        self, tmp_path: Path, *, state: str = "authenticated_ready", message: str | None = None
+    ) -> None:
         self.profile_paths = type("ProfilePaths", (), {"app_dir": tmp_path})()
         self._state = state
         self._message = message or {
@@ -126,7 +172,9 @@ def _build_downloaded_artifacts(tmp_path: Path, remote_id: str) -> SelectedRemot
     )
 
 
-def test_practiscore_match_list_route_exposes_sync_payload_shape(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_match_list_route_exposes_sync_payload_shape(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "discover_remote_matches",
@@ -165,7 +213,9 @@ def test_practiscore_match_list_route_exposes_sync_payload_shape(monkeypatch, tm
     assert state_payload["practiscore_sync"]["state"] == "match_list_ready"
 
 
-def test_practiscore_selected_match_import_route_exposes_success_payload_shape(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_selected_match_import_route_exposes_success_payload_shape(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "discover_remote_matches",
@@ -182,7 +232,9 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(m
     monkeypatch.setattr(
         controller_module,
         "download_remote_match_artifacts",
-        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_downloaded_artifacts(tmp_path, remote_id),
+        lambda browser_context, remote_id, cache_root, match_catalog=None: (
+            _build_downloaded_artifacts(tmp_path, remote_id)
+        ),
     )
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
@@ -209,7 +261,9 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(m
     assert state_payload["practiscore_options"]["has_source"] is True
 
 
-def test_practiscore_match_list_route_reports_expired_session_error(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_match_list_route_reports_expired_session_error(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(controller_module, "discover_remote_matches", lambda browser_context: [])
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
@@ -226,7 +280,9 @@ def test_practiscore_match_list_route_reports_expired_session_error(monkeypatch,
     assert payload["practiscore_sync"]["error_category"] == "expired_authentication"
 
 
-def test_practiscore_selected_match_import_route_reports_missing_artifact_error(monkeypatch, tmp_path: Path) -> None:
+def test_practiscore_selected_match_import_route_reports_missing_artifact_error(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         controller_module,
         "download_remote_match_artifacts",

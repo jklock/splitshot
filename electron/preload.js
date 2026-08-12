@@ -14,6 +14,7 @@ const splitshotBridge = {
   getVersion: () => ipcRenderer.invoke('get-version'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   openFile: () => ipcRenderer.invoke('open-file'),
+  openInOutVideoDialog: () => ipcRenderer.invoke('open-in-out-video-dialog'),
   openProjectDialog: () => ipcRenderer.invoke('open-project-dialog'),
   onOpenProject: (callback) => {
     if (_pendingProjectPath !== null && typeof _pendingProjectPath !== 'function') {

@@ -8,7 +8,9 @@ import numpy as np
 from splitshot.media.ffmpeg import MediaError, run_ffmpeg
 
 
-def extract_audio_wav(video_path: str | Path, wav_path: str | Path, sample_rate: int = 22050) -> Path:
+def extract_audio_wav(
+    video_path: str | Path, wav_path: str | Path, sample_rate: int = 22050
+) -> Path:
     output_path = Path(wav_path)
     run_ffmpeg(
         [

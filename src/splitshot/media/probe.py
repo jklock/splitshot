@@ -66,7 +66,9 @@ def _still_image_asset(path: Path, width: int, height: int) -> VideoAsset:
     )
 
 
-def _video_stream_looks_like_still_image(video_stream: dict[str, object], format_info: dict[str, object]) -> bool:
+def _video_stream_looks_like_still_image(
+    video_stream: dict[str, object], format_info: dict[str, object]
+) -> bool:
     codec_name = str(video_stream.get("codec_name", "")).lower()
     codec_long_name = str(video_stream.get("codec_long_name", "")).lower()
     format_name = str(format_info.get("format_name", "")).lower()
@@ -94,18 +96,16 @@ def probe_video(path: str | Path) -> VideoAsset:
         raise ValueError(f"No video stream found in {input_path}")
 
     if input_path.suffix.lower() == ".gif":
-        duration_seconds = float(
-            video_stream.get("duration")
-            or format_info.get("duration")
-            or 0.0
-        )
+        duration_seconds = float(video_stream.get("duration") or format_info.get("duration") or 0.0)
         return VideoAsset(
             path=str(input_path),
             duration_ms=seconds_to_ms(duration_seconds),
             width=int(video_stream.get("width", 0)),
             height=int(video_stream.get("height", 0)),
             fps=_parse_fraction(video_stream.get("avg_frame_rate"), 30.0),
-            audio_sample_rate=int(audio_stream.get("sample_rate", 22050)) if audio_stream else 22050,
+            audio_sample_rate=int(audio_stream.get("sample_rate", 22050))
+            if audio_stream
+            else 22050,
             rotation=0,
             is_still_image=False,
             media_kind="animated_gif",
@@ -118,11 +118,7 @@ def probe_video(path: str | Path) -> VideoAsset:
             int(video_stream.get("height", 0)),
         )
 
-    duration_seconds = float(
-        video_stream.get("duration")
-        or format_info.get("duration")
-        or 0.0
-    )
+    duration_seconds = float(video_stream.get("duration") or format_info.get("duration") or 0.0)
     rotation_tags = video_stream.get("tags", {})
     rotation = int(rotation_tags.get("rotate", 0)) if rotation_tags else 0
 

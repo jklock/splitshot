@@ -58,7 +58,9 @@ def _manifest_payload(video_path: Path) -> dict[str, object]:
     }
 
 
-def test_evaluate_timing_accuracy_emits_json_summary(tmp_path: Path, synthetic_video_factory) -> None:
+def test_evaluate_timing_accuracy_emits_json_summary(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="timing-json")
     manifest_path = tmp_path / "shotml-label-manifest.json"
     manifest_path.write_text(json.dumps(_manifest_payload(video_path), indent=2), encoding="utf-8")

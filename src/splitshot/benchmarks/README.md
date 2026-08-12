@@ -1,5 +1,7 @@
 # Benchmarks
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns benchmark-oriented stage analysis and CSV export helpers.
 
 ## Purpose

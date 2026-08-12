@@ -1,71 +1,58 @@
 # Project Pane
 
-The Project pane is the setup surface for a SplitShot run. It chooses the project folder, stores project details, stages PractiScore context from a local CSV/TXT export, offers a quick browser shortcut to PractiScore, and imports the primary video.
+<!-- Documentation reviewed: 2026-08-11 -->
 
-<img src="../../screenshots/ProjectPane.png" alt="Project pane with project name, PractiScore browser opener, import controls, primary video path, and project folder controls" width="960">
+The Project pane owns project metadata, PractiScore import, competitor identity selectors, and the compact imported summary. It does not own stage media intake, stage file rows, primary designation, or queue controls.
 
-## When To Use This Pane
+<img src="../../screenshots/ProjectPane.png" alt="Project pane with project-folder controls, project metadata, PractiScore import, and competitor selection" width="960">
 
-- Start a new run.
-- Load or replace the primary stage video.
-- Open PractiScore in your browser when you need to log in or download results.
-- Import official stage context from a local PractiScore CSV or TXT file.
-- Create, select, or delete the saved project metadata for a bundle.
+## Use This Pane For
+
+- Creating or opening a project folder.
+- Naming the project and storing notes.
+- Importing a PractiScore CSV/TXT source.
+- Selecting the imported stage for context lookup.
+- Choosing the competitor name and competitor place.
+- Checking the compact imported match summary (name, place, match time, division).
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Project folder` | Shows the current project folder name. Before a project exists it stays blank and prompts you to create or select one. |
-| `Select Project` | Opens an existing project bundle or adopts a folder for the current run, then keeps you on the Project pane so setup can continue immediately. |
-| `Create Project` | Clears the current session, saves a new project into the selected folder, and keeps you on the Project pane for the next setup steps. |
-| `Delete Project` | Removes only `project.json`, resets the current session, and leaves the project folders and files on disk. |
-| `Project name` | Sets the saved name shown in the app and metrics/export filenames. |
-| `Project description` | Stores project notes, stage reminders, or edit plans. |
-| `PractiScore Import` | Groups the browser shortcut, local file import, and staged match-context controls while showing whether stage data is imported. |
-| `Open PractiScore Dashboard` | Opens `https://practiscore.com/dashboard/home` in your system browser so you can log in or download results. Disabled until a project is active. |
-| `Select PractiScore File` | Imports a local PractiScore CSV/TXT file as the active staged source. Disabled until a project is active. |
-| `Match type` | Chooses the scoring family for the staged file, such as IDPA, USPSA, or IPSC. |
-| `Stage #` | Selects the stage from the imported match file. |
-| `Competitor name` | Selects the competitor record from the staged data. |
-| `Place` | Selects the matching place entry when duplicate competitor rows exist. `Competitor name` and `Place` stay synchronized. |
-| Imported summary rows | Show source file, match type, official raw time, SplitShot raw time, raw delta, final value, and official final value. |
-| `Primary Video` | Shows the current primary path and accepts a pasted local path. Press Enter after pasting. Disabled until a project is active. |
-| `Select Primary Video` | Opens the file picker for the primary video. Disabled until a project is active. |
+| `Project folder` | Shows the current project directory. |
+| `Select Project` | Selects a directory. It opens the project when `project.json` exists or offers to initialize the directory when it does not. |
+| `Create Project` | Selects a directory, initializes a blank project there, and resets the current session. If a project already exists there, SplitShot asks before replacing it. |
+| `Open Project` | Selects and opens an existing SplitShot project directory. |
+| `Delete Project` | Deletes the saved project metadata without deleting the surrounding folder. |
+| `Project name` | Sets the saved project name. |
+| `Project description` | Stores project notes. |
+| `Open PractiScore Dashboard` | Opens PractiScore in your system browser. |
+| `Select PractiScore File` | Opens in the project `CSV/` folder and imports a project-managed CSV/TXT file. Files selected elsewhere are copied into `CSV/`. |
+| `Match type` | Shows the scoring family inferred from the imported CSV/TXT; it can be changed manually when working without an import. |
+| Stage selector | Chooses the imported stage for context lookup. |
+| Competitor name selector | Selects the imported competitor by name. |
+| Competitor place selector | Selects the imported competitor by place. |
+| `PractiScore summary` | Shows the imported name, place, match time, and division. |
 
-## How To Use It
+## Workflow
 
-1. Click `Create Project` or `Select Project` first. The PractiScore and primary-video buttons stay disabled until a project is active, and SplitShot keeps you on the Project pane right after the project switch so you can keep setting things up.
-2. Enter `Project name` and `Project description` before deeper editing so screenshots, exports, and metrics have meaningful labels.
-3. If you need a PractiScore export, click `Open PractiScore Dashboard`, use your browser to download the relevant CSV/TXT result, then return to SplitShot.
-4. Click `Select PractiScore File` and choose the exported CSV/TXT file.
-5. Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
-6. When a competitor name is unique, selecting it also selects the matching `Place`. Selecting a duplicate `Place` backfills the matching competitor row.
-7. Click `Select Primary Video`, or paste the absolute path into `Primary Video` and press Enter.
-8. Wait for local analysis to finish. The waveform, shot list, metrics, score rows, and overlays depend on that analysis.
-9. Use `Create Project` for a clean session and `Delete Project` when the saved metadata should be removed without deleting the folder contents.
+1. Create or open the project first.
+   Creating a project also creates `Input/`, `CSV/`, `Markers/`, `IntroOutro/`, and `Output/`.
+2. Set `Project name` and `Project description`.
+3. Import the PractiScore CSV/TXT file if stage results are needed.
+4. Select the imported stage, competitor name, and competitor place.
+5. Confirm the compact imported summary.
+6. Move to [media.md](media.md) to pair stage media and manage files per stage.
+
+The selected directory is the root for the rest of the workflow. Media pickers start in `Input/`, PractiScore starts in `CSV/`, marker images start in `Markers/`, and output selection starts in `Output/`. A supported file selected elsewhere is copied into its owned project subfolder before it is attached. SplitShot then saves a project-relative path in `project.json`, so the project does not depend on the source file's Windows, macOS, or Linux absolute path.
 
 ## Downstream Effects
 
-- Primary video import creates the waveform, detected shots, beep marker, and timing rows.
-- PractiScore context from the imported local CSV/TXT file feeds Score, Review summary boxes, Overlay final results, Export, and Metrics.
-- Replacing the primary video resets media-bound state such as timing, PiP media, and export logs.
-- The project folder is the persistent home for the current bundle.
-
-## Common Fixes
-
-| Problem | Fix |
-| --- | --- |
-| The video path changed but nothing imported. | Press Enter in `Primary Video`, or use `Select Primary Video`. |
-| A large file imports slowly through the browser picker. | Paste the direct local path instead. |
-| PractiScore dashboard does not open. | Click `Open PractiScore Dashboard` again. If your browser blocks the launch, open `https://practiscore.com/dashboard/home` manually. |
-| The imported result is for the wrong run. | Click `Select PractiScore File` again with the correct CSV/TXT export. |
-| The imported stage is right but the competitor row is wrong. | Recheck `Match type`, `Stage #`, `Competitor name`, and `Place`. |
-| A previous project reopened unexpectedly. | Confirm the `Project folder` before using `Select Project`, then review the Settings pane if you want a different landing pane after a later reload. |
-| The app looks empty after `Create Project`. | Import a primary video again. |
+- Imported PractiScore data infers the match type and hydrates every imported stage with its own stage result, competitor standings context, and Review summary metrics.
+- Stage media intake, file rows, primary designation, file removal, and active-stage selection live in Media.
+- Queue and export processing live downstream in Queue, not here.
+- Autosave updates `project.json`; it does not copy or relocate project files.
 
 ## Related Guides
 
-Previous: [../USER_GUIDE.md](../USER_GUIDE.md)
-Next: [shotml.md](shotml.md)
-
+Next: [media.md](media.md)

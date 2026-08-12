@@ -21,6 +21,29 @@ const launchIntentRouter = createLaunchIntentRouter(dispatchLaunchIntent);
 const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
 let appReadyRecorded = false;
+let testInOutPathIndex = 0;
+
+if (process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR));
+}
+
+// In packaged apps launched from Finder (not a terminal), stdout/stderr may be
+// pipes that throw EPIPE when written to. Wrap console calls that run inside
+// child-process event handlers so an uncaught exception does not crash the app.
+function safeLog(...args) {
+  try {
+    console.log(...args);
+  } catch {
+    /* ignore EPIPE / broken stdout */
+  }
+}
+function safeError(...args) {
+  try {
+    console.error(...args);
+  } catch {
+    /* ignore EPIPE / broken stderr */
+  }
+}
 
 // On Windows, requestSingleInstanceLock() silently fails when elevated (admin/SYSTEM).
 // GitHub Actions runners run elevated, causing app.quit() immediately.
@@ -120,6 +143,7 @@ function startPythonBackend(initialProjectPath = null) {
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
     env.PYTHONNOUSERSITE = '1';
+    env.PYTHONDONTWRITEBYTECODE = '1';
     prependPathEntries(env, [getBundledFfmpegDir(bundlePath)]);
     if (process.platform === 'win32') {
       const pythonHome = path.join(bundlePath, 'python');
@@ -145,16 +169,16 @@ function startPythonBackend(initialProjectPath = null) {
   }
 
   pythonProcess.stdout.on('data', (data) => {
-    console.log(`[python] ${data}`);
+    safeLog(`[python] ${data}`);
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    console.error(`[python] ${data}`);
+    safeError(`[python] ${data}`);
   });
 
   pythonProcess.on('exit', (code) => {
     appendTestEvent('backend-exit', { code });
-    console.log(`Python backend exited with code ${code}`);
+    safeLog(`Python backend exited with code ${code}`);
     if (!app.isQuitting) {
       app.quit();
     }
@@ -162,11 +186,11 @@ function startPythonBackend(initialProjectPath = null) {
 
   pythonProcess.on('error', (error) => {
     appendTestEvent('backend-spawn-error', { error: String(error) });
-    console.error(`Python backend spawn failed: ${error}`);
+    safeError(`Python backend spawn failed: ${error}`);
   });
 }
 
-function waitForServer(retries = 30) {
+function waitForServer(retries = 240) {
   return new Promise((resolve, reject) => {
     const tryConnect = (attempt) => {
       if (attempt >= retries) {
@@ -208,6 +232,10 @@ function createWindow() {
   mainWindow.loadURL(PYTHON_URL);
 
   mainWindow.webContents.once('did-finish-load', () => {
+    // Chromium persists per-origin zoom between desktop sessions. Always open
+    // SplitShot at the layout's designed scale; users can still zoom from the
+    // standard View menu after launch.
+    mainWindow.webContents.setZoomFactor(1);
     windowLoaded = true;
     launchIntentRouter.setWindowReady(true);
     appendTestEvent('window-loaded', { url: PYTHON_URL });
@@ -379,6 +407,29 @@ ipcMain.handle('open-file', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('open-in-out-video-dialog', async () => {
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS) {
+    const paths = JSON.parse(process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS);
+    if (!Array.isArray(paths) || paths.some((item) => typeof item !== 'string')) {
+      throw new Error('SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS must be a JSON array of paths');
+    }
+    const selected = paths[testInOutPathIndex] || null;
+    testInOutPathIndex += 1;
+    return selected;
+  }
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH) {
+    return process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose Intro / Outro video',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Videos', extensions: ['mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
 ipcMain.handle('open-project-dialog', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
@@ -433,14 +484,14 @@ app.on('ready', async () => {
   startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
   try {
     await waitForServer();
-    console.log('Python backend is ready');
+    safeLog('Python backend is ready');
     launchIntentRouter.setBackendReady(true);
     appendTestEvent('backend-ready', { url: PYTHON_URL });
     maybeRecordAppReady();
     createWindow();
   } catch (err) {
     appendTestEvent('startup-error', { error: String(err) });
-    console.error(err);
+    safeError(err);
     dialog.showErrorBox('Startup Error', 'Failed to start the SplitShot backend. Please try reinstalling the application.');
     app.quit();
   }

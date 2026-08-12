@@ -1,7 +1,18 @@
 .DS_Store
-.codex/config.toml
+.codex/
+.opencode/
+.vscode/
+AGENTS.md
+.github/copilot-instructions.md
+.github/instructions/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
 .venv/
 __pycache__/
 *.pyc
@@ -13,17 +24,46 @@ dist/
 htmlcov/
 coverage.xml
 projects/
-tmp/
+tmp/*
+!tmp/.gitkeep
+!tmp/codex/
+tmp/codex/*
+!tmp/codex/.gitkeep
 logs/
+*.log
+output.txt
+playwright-report/
+test-results/
+*.ssproj/
+*.keychain-db
+*.p12
+*.p8
+*.pem
+*.cer
 .training/
+*.avi
+*.m4v
+*.mkv
+*.mov
+*.mp4
+*.MP4
+*.webm
+*.wav
 Stage*.MP4
 Stage*.mp4
+05072026/
 !tests/fixtures/media/stage.mp4
 !tests/fixtures/media/stage-merge.mp4
+!tests/fixtures/media/e2e-stage.mp4
+!tests/release_data/primary.MP4
+!tests/release_data/secondary.MP4
 artifacts/*.png
 artifacts/
 development/
 .archive/
+browser-audit*.ssproj/
+tests/docs/
+scripts/v*_export_demo.py
 
 # Electron
 electron/bundle/
@@ -35,3 +75,7 @@ ci-artifacts*/
 
 # Flutter rewrite lives on its own branch/worktree, never on main
 flutter_app/
+
+# Test artifacts
+.tmp_tests/
+pytest-of-*/

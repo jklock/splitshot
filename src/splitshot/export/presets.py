@@ -39,7 +39,7 @@ EXPORT_PRESETS: dict[str, ExportPresetDefinition] = {
     ExportPreset.SOURCE.value: ExportPresetDefinition(
         id=ExportPreset.SOURCE.value,
         name="Source MP4",
-        description="H.264 MP4 using source dimensions and source frame rate.",
+        description="",
         quality=ExportQuality.HIGH,
         aspect_ratio=AspectRatio.ORIGINAL,
         target_width=None,
@@ -191,6 +191,7 @@ def export_settings_summary(settings: ExportSettings) -> dict[str, object]:
         "audio_bitrate_kbps": settings.audio_bitrate_kbps,
         "color_space": settings.color_space.value,
         "two_pass": settings.two_pass,
+        "multi_track": settings.multi_track,
         "ffmpeg_preset": settings.ffmpeg_preset,
         "last_log": settings.last_log,
         "last_error": settings.last_error,

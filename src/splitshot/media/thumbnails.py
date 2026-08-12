@@ -5,7 +5,9 @@ from pathlib import Path
 from splitshot.media.ffmpeg import run_ffmpeg
 
 
-def generate_thumbnail(video_path: str | Path, image_path: str | Path, timestamp_seconds: float = 1.0) -> Path:
+def generate_thumbnail(
+    video_path: str | Path, image_path: str | Path, timestamp_seconds: float = 1.0
+) -> Path:
     output_path = Path(image_path)
     run_ffmpeg(
         [

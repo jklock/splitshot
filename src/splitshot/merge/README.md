@@ -1,6 +1,8 @@
 # Merge
 
-This package owns layout geometry for side-by-side, above-below, and PiP composition.
+<!-- Documentation reviewed: 2026-08-11 -->
+
+This package owns layout geometry for side-by-side, above-below, and picture-in-picture composition shown in the Compose pane.
 
 ## Purpose
 
@@ -32,4 +34,4 @@ Use it when the change affects added-media placement, merge canvas sizing, or ex
 ## Related Docs
 
 - [../export/README.md](../export/README.md)
-- [../../../docs/userfacing/panes/pip.md](../../../docs/userfacing/panes/pip.md)
+- [../../../docs/userfacing/panes/compose.md](../../../docs/userfacing/panes/compose.md)

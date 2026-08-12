@@ -1,12 +1,58 @@
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-
 INDEX_HTML = Path("src/splitshot/browser/static/index.html")
-INVENTORY_PLAN = Path("docs/project/browser-control-coverage-plan.md")
-FULL_E2E_PLAN = Path("docs/project/browser-full-e2e-qa-plan.md")
+STATIC_ROOT = Path("src/splitshot/browser/static")
+
+# JavaScript-rendered controls are not present in index.html and were previously
+# invisible to this guard. Counts are source definitions, not runtime instances:
+# repeated stages, sources, shots, markers, and boxes must be parameterized by
+# the interaction audit.
+EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
+    "app.js": 39,
+    "lib/shell-runtime.js": 5,
+    "panes/intro-outro-pane.js": 25,
+    "panes/media-pane.js": 13,
+    "panes/queue-pane.js": 9,
+    "panes/review-pane.js": 17,
+    "panes/trim-sync-pane.js": 26,
+}
+
+EXPECTED_PROGRAMMATIC_CONTROL_FAMILIES = {
+    "app.js:ensureSectionToggle:button:toggle:1",
+    "app.js:renderColorPickerSwatches:button:button:1",
+    "app.js:renderPopupTimeline:button:bar:1",
+    "app.js:renderTimingTable:button:handle:1",
+    "app.js:renderTimingTable:input:input:1",
+    "components/waveform.js:renderWaveformShotList:button:deleteBtn:1",
+    "components/waveform.js:renderWaveformShotList:button:item:1",
+    "lib/shell-runtime.js:renderStyleControls:button:input:1",
+    "lib/shell-runtime.js:renderStyleControls:input:hex:1",
+    "panes/markers-pane.js:renderPopupKeyframeOverlay:button:handle:1",
+    "panes/merge-pane.js:renderMergeMediaList:button:toggle:1",
+    "panes/merge-pane.js:renderMergeMediaList:input:input:1",
+    "panes/merge-pane.js:renderMergeMediaList:input:input:2",
+    "panes/merge-pane.js:renderMergeMediaList:input:sizeInput:1",
+    "panes/merge-pane.js:renderMergeMediaList:select:placementModeSelect:1",
+    "panes/metrics-pane.js:renderStageMetricsTree:details:details:1",
+    "panes/scoring-pane.js:appendPenaltyRow:button:add:1",
+    "panes/scoring-pane.js:appendPenaltyRow:button:remove:1",
+    "panes/scoring-pane.js:appendPenaltyRow:select:select:1",
+    "panes/scoring-pane.js:buildScoringDeleteCell:button:button:1",
+    "panes/scoring-pane.js:buildScoringRestoreCell:button:button:1",
+    "panes/scoring-pane.js:buildScoringRowControlCell:button:button:1",
+    "panes/scoring-pane.js:renderScoringTable:select:select:1",
+    "panes/shotml-pane.js:renderShotMLProposals:button:apply:1",
+    "panes/shotml-pane.js:renderShotMLProposals:button:discard:1",
+    "panes/timing-pane.js:buildSplitRowActionCell:button:remove:1",
+    "panes/timing-pane.js:buildTimingDeleteCell:button:deleteShot:1",
+    "panes/timing-pane.js:buildTimingRestoreCell:button:restore:1",
+    "panes/timing-pane.js:buildTimingRowControlCell:button:lockButton:1",
+    "panes/timing-pane.js:renderTimingEventList:button:remove:1",
+}
 
 EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     line.strip()
@@ -80,28 +126,35 @@ data-shotml-setting:weak_onset_support_threshold
 data-shotml-setting:weak_support_penalty
 data-shotml-setting:window_size
 data-tool-pane:export
+data-tool-pane:intro-outro
+data-tool-pane:media
 data-tool-pane:markers
 data-tool-pane:merge
 data-tool-pane:metrics
 data-tool-pane:overlay
 data-tool-pane:project
+data-tool-pane:queue
 data-tool-pane:review
 data-tool-pane:scoring
 data-tool-pane:settings
 data-tool-pane:shotml
 data-tool-pane:timing
+data-tool-pane:trim-sync
 data-tool:export
+data-tool:intro-outro
+data-tool:media
 data-tool:markers
 data-tool:merge
 data-tool:metrics
 data-tool:overlay
 data-tool:project
+data-tool:queue
 data-tool:review
 data-tool:scoring
 data-tool:settings
 data-tool:shotml
 data-tool:timing
-id:add-merge-media
+data-tool:trim-sync
 id:add-timing-event
 id:amp-waveform-in
 id:amp-waveform-out
@@ -111,8 +164,7 @@ id:audio-bitrate
 id:audio-codec
 id:audio-sample-rate
 id:badge-size
-id:browse-export-path
-id:browse-primary-path
+id:browse-project-output-root
 id:browse-project-path
 id:bubble-height
 id:bubble-width
@@ -126,6 +178,9 @@ id:color-picker-hue
 id:color-picker-lightness
 id:color-picker-saturation
 id:color-space
+id:create-output-profile
+id:delete-output-profile
+id:save-output-profile
 id:delete-project
 id:timing-enabled
 id:draw-lock-to-stack
@@ -135,28 +190,34 @@ id:expand-metrics
 id:expand-scoring
 id:expand-timing
 id:expand-waveform
+id:export-badges
 id:export-export-log
-id:export-path
 id:export-preset
-id:export-video
 id:ffmpeg-preset
 id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
 id:open-practiscore-dashboard
+id:open-project
+id:match-type
+id:match-class
 id:match-competitor-name
 id:match-competitor-place
-id:match-stage-number
-id:match-type
+id:match-division
 id:max-visible-shots
 id:markers-enable
 id:markers-workbench-filter
 id:merge-enabled
 id:merge-layout
 id:merge-media-input
+id:media-add-more-input
 id:metrics-export-csv
 id:metrics-export-text
 id:new-project
+id:output-profile-frame
+id:output-profile-name
+id:output-profile-select
+id:output-profile-type
 id:overlay-custom-x
 id:overlay-custom-y
 id:overlay-font-bold
@@ -178,14 +239,20 @@ id:popup-prev-workbench
 id:popup-add-selected-shot-workbench
 id:practiscore-file-input
 id:primary-file-input
-id:primary-file-path
 id:project-description
 id:project-name
 id:project-path
+id:project-output-root
 id:quality
 id:reset-shotml-defaults
 id:restore-merge-defaults
 id:reset-waveform-view
+id:trim-global-apply
+id:trim-global-clear
+id:trim-global-defaults-btn
+id:trim-global-end
+id:trim-global-start
+id:trim-global-undo
 id:resize-rail
 id:resize-sidebar
 id:resize-waveform
@@ -223,6 +290,7 @@ id:settings-marker-content-type
 id:settings-marker-duration
 id:settings-marker-enabled
 id:settings-marker-follow-motion
+id:settings-marker-quadrant
 id:settings-marker-use-shot-split-duration
 id:settings-marker-height
 id:settings-marker-opacity
@@ -265,11 +333,11 @@ id:settings-use-current-layout
 id:shot-direction
 id:shot-quadrant
 id:show-draw
-id:show-export-log
 id:show-markers
 id:show-overlay
 id:show-pip
 id:show-score
+id:show-shot-scores
 id:show-shots
 id:show-timer
 id:target-height
@@ -288,6 +356,10 @@ id:video-bitrate
 id:video-codec
 id:zoom-waveform-in
 id:zoom-waveform-out
+data-tool:media
+data-tool:queue
+data-tool-pane:media
+data-tool-pane:queue
 """.splitlines()
     if line.strip()
 }
@@ -314,11 +386,17 @@ class _InteractiveControlParser(HTMLParser):
         control_id = attr_map.get("id")
         if not control_id or tag == "section":
             return
-        if tag == "input" and attr_map.get("type") == "hidden" and control_id not in {
-            "primary-file-input",
-            "merge-media-input",
-            "practiscore-file-input",
-        }:
+        if (
+            tag == "input"
+            and attr_map.get("type") == "hidden"
+            and control_id
+            not in {
+                "primary-file-input",
+                "merge-media-input",
+                "media-add-more-input",
+                "practiscore-file-input",
+            }
+        ):
             return
         if tag not in {"button", "input", "select", "textarea"}:
             return
@@ -342,25 +420,66 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
     unexpected = actual_identifiers - EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
-    assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
+    assert not unexpected, (
+        f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
+    )
     assert len(actual_identifiers) == len(EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS)
 
 
-def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
-    inventory_plan = INVENTORY_PLAN.read_text(encoding="utf-8")
-    full_e2e_plan = FULL_E2E_PLAN.read_text(encoding="utf-8")
+_INTERACTIVE_TAG_RE = re.compile(
+    r"<(button|input|select|textarea|details|video)\b([^>]*)>", re.IGNORECASE | re.DOTALL
+)
+_FUNCTION_RE = re.compile(r"(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(")
+_PROGRAMMATIC_CONTROL_RE = re.compile(
+    r"(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*=\s*"
+    r"(?:documentObject|document)\.createElement\([\"']"
+    r"(button|input|select|textarea|details|video)[\"']\)"
+)
 
-    assert "For the phase-gated execution plan that defines what counts as truthful full-control end-to-end coverage" in inventory_plan
-    assert "A full-app end-to-end QA claim requires satisfying the stricter exit criteria" in inventory_plan
 
-    for snippet in [
-        "Phase 0: Lock The Truth Boundary",
-        "Phase 1: Shared Shell And Drag/Layout Interactions",
-        "Phase 2: Splits And Score End-To-End Closeout",
-        "Phase 3: Markers, Review, Overlay, And Color Picker",
-        "Phase 4: PiP, Merge, Export Settings, And Export Log",
-        "Phase 5: Settings And ShotML Full Coverage",
-        "Phase 6: Cross-Surface Final Truth Gate",
-        "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",
-    ]:
-        assert snippet in full_e2e_plan
+def _dynamic_literal_control_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for path in sorted(STATIC_ROOT.rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        count = 0
+        for match in _INTERACTIVE_TAG_RE.finditer(text):
+            attributes = match.group(2)
+            if re.search(r"\breadonly(?:\s|>|$)", attributes):
+                continue
+            if re.search(r"\bdisabled(?:\s|>|$)", attributes) and not re.search(
+                r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes
+            ):
+                continue
+            count += 1
+            assert re.search(
+                r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes
+            ), (
+                "JavaScript-rendered interactive control needs a stable id, class, or data owner: "
+                f"{path}:{text.count(chr(10), 0, match.start()) + 1}"
+            )
+        if count:
+            counts[str(path.relative_to(STATIC_ROOT))] = count
+    return counts
+
+
+def _programmatic_control_families() -> set[str]:
+    families: set[str] = set()
+    for path in sorted(STATIC_ROOT.rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        function_matches = list(_FUNCTION_RE.finditer(text))
+        occurrences: dict[tuple[str, str, str], int] = {}
+        for match in _PROGRAMMATIC_CONTROL_RE.finditer(text):
+            enclosing = [item for item in function_matches if item.start() < match.start()]
+            function_name = enclosing[-1].group(1) if enclosing else "<module>"
+            variable, tag = match.groups()
+            key = (function_name, tag, variable)
+            occurrences[key] = occurrences.get(key, 0) + 1
+            families.add(
+                f"{path.relative_to(STATIC_ROOT)}:{function_name}:{tag}:{variable}:{occurrences[key]}"
+            )
+    return families
+
+
+def test_javascript_rendered_mutable_control_inventory_is_exhaustive() -> None:
+    assert _dynamic_literal_control_counts() == EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS
+    assert _programmatic_control_families() == EXPECTED_PROGRAMMATIC_CONTROL_FAMILIES

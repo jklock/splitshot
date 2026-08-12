@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from splitshot.domain.models import PopupBubble, PopupMotionPoint, Project, ScoreLetter, ScoreMark, ShotEvent, ShotSource
+from splitshot.domain.models import (
+    PopupBubble,
+    PopupMotionPoint,
+    Project,
+    ScoreLetter,
+    ScoreMark,
+    ShotEvent,
+    ShotSource,
+)
 from splitshot.presentation.popups import (
     popup_bubble_display_text,
     popup_bubble_is_visible_at,
@@ -47,8 +55,16 @@ def test_popup_bubble_display_text_uses_live_shot_score_and_penalties() -> None:
 def test_popup_bubble_display_text_falls_back_for_missing_shot_or_time_anchor() -> None:
     project = Project()
 
-    assert popup_bubble_display_text(project, PopupBubble(anchor_mode="time", text="Manual")) == "Manual"
-    assert popup_bubble_display_text(project, PopupBubble(anchor_mode="shot", shot_id="missing", text="Fallback")) == "Fallback"
+    assert (
+        popup_bubble_display_text(project, PopupBubble(anchor_mode="time", text="Manual"))
+        == "Manual"
+    )
+    assert (
+        popup_bubble_display_text(
+            project, PopupBubble(anchor_mode="shot", shot_id="missing", text="Fallback")
+        )
+        == "Fallback"
+    )
 
 
 def test_popup_bubble_motion_interpolates_and_dedupes_points() -> None:
@@ -84,7 +100,9 @@ def test_popup_bubble_motion_interpolates_and_dedupes_points() -> None:
         ("bogus", 500, (0.5, 0.6)),
     ],
 )
-def test_popup_bubble_motion_supports_easing_modes(easing: str, position_ms: int, expected: tuple[float, float]) -> None:
+def test_popup_bubble_motion_supports_easing_modes(
+    easing: str, position_ms: int, expected: tuple[float, float]
+) -> None:
     project = Project()
     popup = PopupBubble(
         anchor_mode="time",

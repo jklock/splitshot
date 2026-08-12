@@ -57,6 +57,9 @@ if [ "${SKIP_FFMPEG:-0}" != "1" ]; then
   packages=(ffmpeg "${packages[@]}")
 fi
 
+# tesseract binary is needed by packaged E2E OCR tests
+packages=(tesseract-ocr "${packages[@]}")
+
 packages+=("$(choose_package libegl1-mesa libegl1 libegl-mesa0)")
 packages+=("$(choose_package libgl1-mesa libgl1 libgl1-mesa-glx)")
 packages+=("$(choose_package libasound2t64 libasound2)")

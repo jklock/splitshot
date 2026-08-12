@@ -7,7 +7,9 @@ from splitshot.benchmarks.stage_suite import default_stage_paths, write_stage_su
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Export SplitShot stage benchmark detections to CSV.")
+    parser = argparse.ArgumentParser(
+        description="Export SplitShot stage benchmark detections to CSV."
+    )
     parser.add_argument(
         "videos",
         nargs="*",

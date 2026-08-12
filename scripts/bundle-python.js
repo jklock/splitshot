@@ -336,7 +336,12 @@ print("- bundle verification: OK" if ok else "- bundle verification: WARN (non-c
 exit(0 if ok else 1)
 	`;
   fs.writeFileSync(verifyScript, verifyCode, 'utf8');
-  const env = { ...process.env, PYTHONPATH: BUNDLE_SRC_DIR, PYTHONNOUSERSITE: '1' };
+  const env = {
+    ...process.env,
+    PYTHONPATH: BUNDLE_SRC_DIR,
+    PYTHONNOUSERSITE: '1',
+    PYTHONDONTWRITEBYTECODE: '1',
+  };
   prependPathEntries(env, [bundledFfmpegDir()]);
   if (process.platform === 'win32') {
     env.PYTHONHOME = WINDOWS_PYTHON_DIR;
@@ -347,7 +352,7 @@ exit(0 if ok else 1)
     env.PYTHONHOME = venvHome;
     env.PYTHONPATH += ':' + bundledSitePackagesDir(getPythonVersion());
   }
-  run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
+  run(`"${pythonBin}" -B "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
   fs.rmSync(verifyScript);
 }
 
@@ -443,6 +448,7 @@ function main() {
 
     pruneBundle();
     verifyBundle(pythonExe);
+    pruneBundle();
   } else {
     verifyBundle(pythonBin);
   }
@@ -455,8 +461,8 @@ function main() {
 }
 
 function pruneBundle() {
-  const pruneDirs = ['__pycache__', '.pytest_cache', '.ruff_cache', 'node_modules'];
-  const pruneExts = ['.pyc', '.pyo'];
+  const pruneDirs = ['__pycache__', '.pytest_cache', '.ruff_cache', 'node_modules', '_CodeSignature'];
+  const pruneExts = ['.pyc', '.pyo', '.a'];
 
   function walkAndPrune(dir) {
     if (!fs.existsSync(dir)) return;

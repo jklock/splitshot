@@ -1,12 +1,14 @@
-# ShotML Tab Architecture
+# ShotML Pane Architecture
 
-This document describes the ShotML tab implementation from the project model through detection, controller orchestration, browser API, static UI, persistence, and tests. It is written for engineers who need to maintain or extend the ShotML detector workflow.
+<!-- Documentation reviewed: 2026-08-11 -->
+
+This document describes the v1.0.7 ShotML pane from the project model through detection, controller orchestration, browser API, static UI, persistence, and tests.
 
 ## Executive Summary
 
-ShotML is now a project-scoped detector configuration and timing proposal workflow. The authoritative settings live on `Project.analysis.shotml_settings`, pending timing changes live on `Project.analysis.timing_change_proposals`, and the browser ShotML tab edits those values through controller-backed JSON APIs.
+ShotML is a project-scoped detector configuration and timing proposal workflow. The authoritative settings live on `Project.analysis.shotml_settings`, pending timing changes live on `Project.analysis.timing_change_proposals`, and the browser ShotML pane edits those values through controller-backed JSON APIs.
 
-The detector still owns automatic beep and shot discovery. The Splits pane remains the manual timing editor. The ShotML pane sits directly below Splits in the left rail and owns the threshold, advanced detector knobs, explicit reruns, and proposal generation.
+The detector owns automatic beep and shot discovery. The Splits pane remains the manual timing editor. ShotML appears between Metrics and Settings in the v1.0.7 rail and owns the threshold, advanced detector settings, explicit reruns, and proposal generation.
 
 ## Data Model
 
@@ -27,15 +29,9 @@ The detection threshold is intentionally treated as a factory default instead of
 
 The important design rule is: project settings are authoritative for an open project. App defaults only seed new projects or reset a project when the user requests it.
 
-## Default Settings Review
+## Default Settings
 
-The current default threshold is `0.35` because `artifacts/timing-accuracy-summary.json` recommends `0.35` as the lowest timing score with 0 missed shots, 0 extra shots, 304 matched shots at 0 ms mean absolute shot error, and 4.188 ms mean absolute beep/stage-time error across 16 auto-consensus videos.
-
-The model training artifacts support keeping the rest of the detector defaults conservative:
-
-- `artifacts/model-training-auto-summary.json` reports 1.0 validation accuracy and 1.0 validation macro recall, with leave-one-source-out robustness at 0.977 accuracy, 0.926 macro recall, 0.8125 beep recall, and 0.9967 shot recall.
-- `artifacts/model-training-auto-clean-summary.json` is stricter and smaller. It has 401 clean samples and shows strong shot recall, but weak beep recall because the clean set contains only 9 beep samples. That supports the existing hybrid beep path, which uses tonal heuristics plus model probability instead of trusting the beep class alone.
-- The available timing sweep evaluates threshold, not every advanced tunable. Because the non-threshold defaults are the values that produced the timing artifact and are not independently swept in the committed results, they remain unchanged.
+The v1.0.7 factory threshold is `0.35`. All other detector defaults are defined by `ShotMLSettings`; the model and hybrid tonal/model beep path consume that single settings object. Treat committed source defaults and their tests as release truth rather than relying on generated training or benchmark artifacts.
 
 ## Detection Pipeline
 
@@ -100,11 +96,11 @@ Every successful POST returns the normal browser state payload, so the UI refres
 
 ## Static Browser UI
 
-The ShotML tab is plain HTML plus the existing app.js state synchronization pattern.
+The ShotML pane is plain HTML plus the pane module and shared shell state synchronization pattern.
 
 | Surface | Code proof |
 | --- | --- |
-| Left rail includes ShotML directly below Splits. | `src/splitshot/browser/static/index.html:17` through `src/splitshot/browser/static/index.html:20`. |
+| Left rail includes ShotML after Metrics and before Settings. | `src/splitshot/browser/static/index.html`. |
 | Splits no longer contains the threshold control. | `src/splitshot/browser/static/index.html:178` through `src/splitshot/browser/static/index.html:199` contains selected-shot controls and table only. |
 | The ShotML pane contains threshold, all settings groups, Timing Changer, and Advanced Runtime. | `src/splitshot/browser/static/index.html:201` through `src/splitshot/browser/static/index.html:342`. |
 | Controls use `data-shotml-setting`, so one generic JS reader/writer handles all settings fields. | `src/splitshot/browser/static/app.js:4955` through `src/splitshot/browser/static/app.js:4986`. |
@@ -114,18 +110,6 @@ The ShotML tab is plain HTML plus the existing app.js state synchronization patt
 | The processing banner only says ShotML is rerunning when the settings payload has `rerun: true`. | `src/splitshot/browser/static/app.js:2494` through `src/splitshot/browser/static/app.js:2504`. |
 
 The threshold input keeps its `id="threshold"` for compatibility with existing browser tests and shortcut code, but it now lives in ShotML.
-
-## Browser Media Error Handling
-
-Browser video playback can abandon a media request while the local server is still writing a large chunk. SplitShot treats broken pipes, aborted connections, connection resets, and macOS `ENOBUFS` no-buffer-space writes as expected client disconnects.
-
-| Behavior | Code proof |
-| --- | --- |
-| Expected disconnect error classes and errnos are centralized. | `src/splitshot/browser/server.py:38` through `src/splitshot/browser/server.py:39`. |
-| `is_expected_disconnect_error` recognizes both exception classes and expected `OSError.errno` values. | `src/splitshot/browser/server.py:263` through `src/splitshot/browser/server.py:266`. |
-| Media streaming logs expected write failures as `media.client_disconnect` warnings instead of raising a traceback. | `src/splitshot/browser/server.py:953` through `src/splitshot/browser/server.py:965`. |
-
-The large run log `logs/splitshot-browser-20260420-003128-a784f259.log` already shows a prior `media.client_disconnect` event for an abandoned proxy stream at sequence 3001. The pasted `OSError: [Errno 55] No buffer space available` followed the same client-disconnect shape but was not previously classified as expected because `ENOBUFS` was missing from the helper.
 
 ## Persistence And Serialization
 
@@ -150,10 +134,10 @@ This means saved projects can reopen with the exact detector settings and pendin
 | Project save/open round-trips settings, run summary, and proposals. | `tests/persistence/test_persistence.py::test_project_round_trip_preserves_feature_state`. |
 | Static UI contains ShotML, moved threshold, and wired buttons. | `tests/browser/test_browser_static_ui.py`. |
 
-## Extension Notes
+## Maintenance Rules
 
-- Add new detector knobs by adding a field to `ShotMLSettings`, reading it in detection, adding one `data-shotml-setting` control, and extending tests.
-- Add proposal types by updating `TimingChangeProposal`, `timing_change_proposals_from_review_suggestions`, `ProjectController.apply_timing_change_proposal`, and the browser label/preview helpers.
+- Keep any maintenance change to detector settings synchronized across `ShotMLSettings`, detection, the `data-shotml-setting` controls, persistence, and tests.
+- Keep proposal maintenance synchronized across `TimingChangeProposal`, `timing_change_proposals_from_review_suggestions`, `ProjectController.apply_timing_change_proposal`, and the browser label/preview helpers.
 - Keep proposal application delegated to existing controller mutation methods when possible. That avoids duplicating scoring, timeline, selection, and autosave side effects.
 - Keep browser state authoritative from the server response. The ShotML UI should render from `project.analysis`, not from unsaved local-only state.
 

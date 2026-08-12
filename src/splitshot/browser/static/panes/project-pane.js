@@ -3,13 +3,14 @@ export function createProjectPane({
   windowObject = window,
   documentObject = document,
   getState = () => null,
-  getProjectDetailsDraft = () => ({ name: null, description: null }),
+  getProjectDetailsDraft = () => ({ name: null, description: null, output_root: null }),
   setProjectDetailsDraft = () => {},
   getProjectFolderProbeRequestId = () => 0,
   setProjectFolderProbeRequestId = () => {},
   controlIsActive = (control) => Boolean(control) && documentObject.activeElement === control,
   normalizeToolId = (tool) => String(tool || "project"),
   setActiveTool = () => {},
+  readProjectUiStatePayload = () => ({}),
   applyProjectUiStatePayload = async () => null,
   cancelPendingExportDrafts = () => {},
   flushPendingSettingsDefaults = async () => {},
@@ -30,6 +31,12 @@ export function createProjectPane({
   fileName = (value) => String(value || ""),
   splitSeconds = (value) => String(value ?? ""),
   formatNumber = (value) => String(value ?? ""),
+  formatMatchType = (matchType) => ({
+    uspsa: "USPSA",
+    ipsc: "IPSC",
+    idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
+  }[String(matchType || "").toLowerCase()] || "PractiScore"),
   formatPractiScoreTime = (value) => String(value ?? ""),
   autoApplyProjectDetails = () => {},
   autoApplyPractiScoreContext = () => {},
@@ -47,13 +54,14 @@ export function createProjectPane({
     const draft = getProjectDetailsDraft();
     return draft && typeof draft === "object"
       ? draft
-      : { name: null, description: null };
+      : { name: null, description: null, output_root: null };
   }
 
   function setProjectDetailsDraftPatch(patch = {}) {
     const nextDraft = {
       name: null,
       description: null,
+      output_root: null,
       ...currentProjectDetailsDraft(),
       ...patch,
     };
@@ -88,6 +96,12 @@ export function createProjectPane({
       nextDraft.description = nextDescriptionDraft === savedDescription ? null : nextDescriptionDraft;
       if (project) project.description = nextDescriptionDraft;
     }
+    if (Object.prototype.hasOwnProperty.call(payload, "output_root")) {
+      const nextOutputRootDraft = String(payload.output_root ?? "");
+      const savedOutputRoot = String(project?.output_root || "");
+      nextDraft.output_root = nextOutputRootDraft === savedOutputRoot ? null : nextOutputRootDraft;
+      if (project) project.output_root = nextOutputRootDraft;
+    }
     setProjectDetailsDraftPatch(nextDraft);
   }
 
@@ -108,6 +122,14 @@ export function createProjectPane({
         nextDraft.description = null;
       } else {
         project.description = draftDescription;
+      }
+    }
+    if (nextDraft.output_root !== null) {
+      const draftOutputRoot = String(nextDraft.output_root);
+      if (draftOutputRoot === String(project.output_root || "")) {
+        nextDraft.output_root = null;
+      } else {
+        project.output_root = draftOutputRoot;
       }
     }
     setProjectDetailsDraftPatch(nextDraft);
@@ -158,115 +180,134 @@ export function createProjectPane({
     return practiScoreSelectionValue(fallbackValue);
   }
 
+  function ensurePractiScoreSelectionControls() {
+    const options = currentState()?.practiscore_options;
+    if (!options?.competitors?.length) return;
+    const competitorSelect = $("match-competitor-name");
+    const classSelect = $("match-class");
+    const divisionSelect = $("match-division");
+    if (!competitorSelect && !classSelect && !divisionSelect) return;
+
+    const competitors = practiScoreCompetitors();
+    const competitorNames = [...new Set(competitors.map((c) => String(c.name || "").trim()).filter(Boolean))];
+    const classValues = [...new Set(competitors.map((c) => String(c.classification || "").trim()).filter(Boolean))];
+    const divisionValues = [...new Set(competitors.map((c) => String(c.division || "").trim()).filter(Boolean))];
+
+    if (competitorSelect && competitorSelect.options.length <= 1) {
+      renderPractiScoreSelect("match-competitor-name", competitorNames, "Select competitor", currentState()?.project?.scoring?.competitor_name || "");
+    }
+    if (classSelect && classSelect.options.length <= 1) {
+      renderPractiScoreSelect("match-class", classValues, "Class", currentState()?.project?.scoring?.classification || "");
+    }
+    if (divisionSelect && divisionSelect.options.length <= 1) {
+      renderPractiScoreSelect("match-division", divisionValues, "Division", currentState()?.project?.scoring?.division || "");
+    }
+  }
+
   function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = "") {
     const select = $(selectId);
-    if (!(select instanceof HTMLSelectElement)) return;
-    const optionValues = [...new Set((values || []).map((value) => practiScoreSelectionValue(value)).filter(Boolean))];
-    const desiredValue = practiScoreSelectionValue(selectedValue);
-    const activeValue = controlIsActive(select) ? practiScoreSelectionValue(select.value) : "";
-    const preservedValue = activeValue || desiredValue;
-    if (preservedValue && !optionValues.includes(preservedValue)) optionValues.unshift(preservedValue);
-    select.innerHTML = "";
+    if (!(select instanceof HTMLSelectElement)) return { selectId, values, emptyLabel, selectedValue };
+    const currentValue = select.value || selectedValue;
+    select.replaceChildren();
     const emptyOption = documentObject.createElement("option");
     emptyOption.value = "";
     emptyOption.textContent = emptyLabel;
     select.appendChild(emptyOption);
-    optionValues.forEach((value) => {
+    values.forEach((value) => {
       const option = documentObject.createElement("option");
       option.value = value;
       option.textContent = value;
       select.appendChild(option);
     });
-    select.value = preservedValue && optionValues.includes(preservedValue) ? preservedValue : "";
+    const hasSelected = Array.from(select.options).some((option) => option.value === currentValue);
+    if (hasSelected) select.value = currentValue;
+    return { selectId, values, emptyLabel, selectedValue: select.value };
   }
 
   function renderPractiScoreOptionLists(selectedValues = {}) {
-    renderPractiScoreSelect(
-      "match-stage-number",
-      practiScoreStageValues(),
-      "Select stage",
-      preferredPractiScoreSelection(selectedValues.stage_number, "match-stage-number", currentState()?.project?.scoring?.stage_number),
-    );
-    renderPractiScoreSelect(
-      "match-competitor-name",
-      practiScoreNameValues(),
-      "Select competitor",
-      preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", currentState()?.project?.scoring?.competitor_name),
-    );
-    renderPractiScoreSelect(
-      "match-competitor-place",
-      practiScorePlaceValues(),
-      "Select place",
-      preferredPractiScoreSelection(selectedValues.competitor_place, "match-competitor-place", currentState()?.project?.scoring?.competitor_place),
-    );
+    const options = currentState()?.practiscore_options;
+    if (!options?.competitors?.length) {
+      ["match-competitor-name", "match-competitor-place", "match-class", "match-division"].forEach((id) => {
+        const select = $(id);
+        if (select instanceof HTMLSelectElement) {
+          select.replaceChildren();
+          const emptyOption = documentObject.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = id === "match-competitor-name" ? "No competitor data" : "--";
+          select.appendChild(emptyOption);
+        }
+      });
+      return selectedValues;
+    }
+
+    const competitors = practiScoreCompetitors();
+    const competitorNames = [...new Set(competitors.map((c) => String(c.name || "").trim()).filter(Boolean))];
+    const placeValues = [...new Set(competitors.map((c) => normalizedPractiScorePlaceValue(c.place)).filter((v) => v !== null))].sort((a, b) => a - b).map(String);
+    const classValues = [...new Set(competitors.map((c) => String(c.classification || "").trim()).filter(Boolean))];
+    const divisionValues = [...new Set(competitors.map((c) => String(c.division || "").trim()).filter(Boolean))];
+
+    renderPractiScoreSelect("match-competitor-name", competitorNames, "Select competitor", selectedValues.competitor_name || currentState()?.project?.scoring?.competitor_name || "");
+    renderPractiScoreSelect("match-competitor-place", placeValues, "Place", selectedValues.competitor_place || String(currentState()?.project?.scoring?.competitor_place || ""));
+    renderPractiScoreSelect("match-class", classValues, "Class", selectedValues.classification || currentState()?.project?.scoring?.classification || "");
+    renderPractiScoreSelect("match-division", divisionValues, "Division", selectedValues.division || currentState()?.project?.scoring?.division || "");
+    return { ...selectedValues, competitor_name: $("match-competitor-name")?.value || "", competitor_place: $("match-competitor-place")?.value || "", classification: $("match-class")?.value || "", division: $("match-division")?.value || "" };
   }
 
   function syncPractiScoreSelectionFields(changedField) {
     const competitors = practiScoreCompetitors();
-    const stageSelect = $("match-stage-number");
+    if (!competitors.length) return changedField;
+
     const nameSelect = $("match-competitor-name");
     const placeSelect = $("match-competitor-place");
-    if (!(nameSelect instanceof HTMLSelectElement) || !(placeSelect instanceof HTMLSelectElement)) {
-      renderPractiScoreOptionLists();
-      return;
-    }
+    const classSelect = $("match-class");
+    const divisionSelect = $("match-division");
 
-    if (competitors.length === 0) {
-      renderPractiScoreOptionLists({
-        stage_number: practiScoreSelectionValue(stageSelect?.value),
-        competitor_name: nameSelect.value,
-        competitor_place: placeSelect.value,
-      });
-      return;
-    }
-
-    const selectedName = nameSelect.value.trim();
-    const selectedPlace = normalizedPractiScorePlaceValue(placeSelect.value);
-    if (changedField === "name") {
-      const matches = competitors.filter((option) => option.name === selectedName);
-      if (!selectedName || matches.length === 0) {
-        placeSelect.value = "";
-      } else if (matches.length === 1 && matches[0].place !== null) {
-        placeSelect.value = String(matches[0].place);
-      } else if (selectedPlace !== null && !matches.some((option) => Number(option.place) === selectedPlace)) {
-        placeSelect.value = "";
+    if (changedField === "match-competitor-name") {
+      const selectedName = nameSelect?.value || "";
+      const matchingCompetitors = competitors.filter((c) => String(c.name || "").trim() === selectedName);
+      if (matchingCompetitors.length === 1) {
+        const competitor = matchingCompetitors[0];
+        if (competitor.place && placeSelect) placeSelect.value = String(competitor.place);
+        if (competitor.classification && classSelect) {
+          const classOpt = [...classSelect.options].find((o) => o.value === competitor.classification);
+          if (classOpt) classSelect.value = competitor.classification;
+        }
+        if (competitor.division && divisionSelect) {
+          const divOpt = [...divisionSelect.options].find((o) => o.value === competitor.division);
+          if (divOpt) divisionSelect.value = competitor.division;
+        }
       }
-    }
-    if (changedField === "place") {
-      if (selectedPlace === null) {
-        nameSelect.value = "";
-      } else {
-        const matches = competitors.filter((option) => Number(option.place) === selectedPlace);
-        if (matches.length === 0) {
-          nameSelect.value = "";
-        } else if (matches.length === 1) {
-          nameSelect.value = matches[0].name;
-        } else if (selectedName && !matches.some((option) => option.name === selectedName)) {
-          nameSelect.value = "";
+    } else if (changedField === "match-competitor-place") {
+      const selectedPlace = normalizedPractiScorePlaceValue(placeSelect?.value);
+      if (selectedPlace !== null) {
+        const matchingCompetitors = competitors.filter((c) => c.place === selectedPlace);
+        if (matchingCompetitors.length === 1 && nameSelect) {
+          nameSelect.value = String(matchingCompetitors[0].name || "");
+          if (matchingCompetitors[0].classification && classSelect) classSelect.value = matchingCompetitors[0].classification;
+          if (matchingCompetitors[0].division && divisionSelect) divisionSelect.value = matchingCompetitors[0].division;
         }
       }
     }
 
-    renderPractiScoreOptionLists({
-      stage_number: practiScoreSelectionValue(stageSelect?.value),
-      competitor_name: nameSelect.value,
-      competitor_place: placeSelect.value,
-    });
+    return changedField;
   }
 
   function readProjectDetailsPayload() {
     return {
       name: $("project-name")?.value ?? projectDetailValue("name"),
       description: $("project-description")?.value ?? projectDetailValue("description"),
+      output_root: $("project-output-root")?.value ?? String(currentState()?.project?.output_root || ""),
     };
   }
 
   function readPractiScoreContextPayload() {
+    const scoring = currentState()?.project?.scoring || {};
     return {
-      match_type: $("match-type")?.value || "",
-      stage_number: $("match-stage-number")?.value ? Number($("match-stage-number").value) : "",
-      competitor_name: $("match-competitor-name")?.value.trim() || "",
-      competitor_place: normalizedPractiScorePlaceValue($("match-competitor-place")?.value) ?? "",
+      match_type: $("match-type")?.value || String(scoring.match_type || ""),
+      competitor_name: $("match-competitor-name")?.value || String(scoring.competitor_name || ""),
+      competitor_place: $("match-competitor-place")?.value || String(scoring.competitor_place ?? ""),
+      classification: $("match-class")?.value || String(scoring.classification || ""),
+      division: $("match-division")?.value || String(scoring.division || ""),
     };
   }
 
@@ -290,10 +331,24 @@ export function createProjectPane({
   async function flushPendingProjectDrafts(options = {}) {
     if (!currentState()?.project) return;
     const primaryImport = Boolean(options?.primaryImport);
+    const scoringRuleset = $("scoring-preset")?.value || "";
+    const captured = {
+      shotml: readShotMLSettingsPayload(),
+      projectDetails: readProjectDetailsPayload(),
+      practiscore: readPractiScoreContextPayload(),
+      projectUiState: readProjectUiStatePayload(),
+      overlay: readOverlayPayload(),
+      merge: readMergePayload(),
+      exportLayout: readExportLayoutPayload(),
+      exportSettings: readExportSettingsPayload(),
+      scoring: readScoringPayload(),
+      scoringRuleset,
+      scoringRulesetChanged: scoringRuleset !== String(currentState()?.project?.scoring?.ruleset || ""),
+    };
     cancelPendingExportDrafts();
     await flushPendingSettingsDefaults();
     if (!primaryImport || shouldSyncShotMLSettingsBeforePrimaryImport()) {
-      await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
+      await callApi("/api/analysis/shotml-settings", { settings: captured.shotml, rerun: false });
     }
     if (primaryImport) {
       if (hasPendingPrimaryImportKeepaliveDrafts()) {
@@ -301,16 +356,18 @@ export function createProjectPane({
       }
       return;
     }
-    await callApi("/api/project/details", readProjectDetailsPayload());
-    await callApi("/api/project/practiscore", readPractiScoreContextPayload());
-    await applyProjectUiStatePayload();
-    await callApi("/api/overlay", readOverlayPayload());
-    await callApi("/api/merge", readMergePayload());
+    await callApi("/api/project/details", captured.projectDetails);
+    await callApi("/api/project/practiscore", captured.practiscore);
+    await applyProjectUiStatePayload(captured.projectUiState);
+    await callApi("/api/overlay", captured.overlay);
+    await callApi("/api/merge", captured.merge);
     await flushPendingMergeSourceCommits();
-    await callApi("/api/export/settings", readExportLayoutPayload());
-    await callApi("/api/export/settings", readExportSettingsPayload());
-    await callApi("/api/scoring/profile", { ruleset: $("scoring-preset")?.value || "" });
-    await callApi("/api/scoring", readScoringPayload());
+    await callApi("/api/export/settings", captured.exportLayout);
+    await callApi("/api/export/settings", captured.exportSettings);
+    if (captured.scoringRulesetChanged) {
+      await callApi("/api/scoring/profile", { ruleset: captured.scoringRuleset });
+    }
+    await callApi("/api/scoring", captured.scoring);
   }
 
   function flushPendingProjectDraftsKeepalive() {
@@ -378,37 +435,18 @@ export function createProjectPane({
     const imported = state.scoring_summary?.imported_stage;
     const stagedSource = state.practiscore_options?.source_name || "";
     const stagedMatchType = state.practiscore_options?.detected_match_type || "";
-    const stagedStages = Array.isArray(state.practiscore_options?.stage_numbers)
-      ? state.practiscore_options.stage_numbers
-      : [];
-    const stagedCompetitorCount = practiScoreCompetitors().length;
+    const scoring = state?.project?.scoring || {};
     const status = $("practiscore-status");
-    if (!imported) {
-      if (status) status.textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
-      renderOwnedSummaryList("practiscore-import-summary", stagedSource ? [
-        ["Stage Start (Beep)", "--"],
-        ["Shots in Stage", stagedCompetitorCount > 0 ? "0" : "0"],
-        ["SS Stage Time", "--"],
-        ["PS Stage Time", "--"],
-        ["Video Length", "--"],
-        ["ShotML Confidence", "--"],
-      ] : [], "project-practiscore-summary");
-      return;
+    if (stagedSource) {
+      if (status) status.textContent = imported ? `${formatMatchType(stagedMatchType)} imported` : `${stagedSource} loaded`;
+    } else if (status) {
+      status.textContent = "No results imported";
     }
-    const beepMs = state.project?.analysis?.beep_time_ms_primary;
-    const shots = Array.isArray(state.project?.analysis?.shots) ? state.project.analysis.shots : [];
-    const ssStageSeconds = ssStageTimeSeconds(state);
-    const psStageSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
-    const videoDurationMs = state.project?.primary_video?.duration_ms;
-    if (status) status.textContent = `${stagedMatchType ? stagedMatchType.toUpperCase() : "PractiScore"} Stage ${imported.stage_number} imported`;
-    renderOwnedSummaryList("practiscore-import-summary", [
-      ["Stage Start (Beep)", splitSeconds(beepMs)],
-      ["Shots in Stage", shots.length > 0 ? String(shots.length) : "0"],
-      ["SS Stage Time", formatPractiScoreTime(ssStageSeconds)],
-      ["PS Stage Time", formatPractiScoreTime(psStageSeconds)],
-      ["Video Length", splitSeconds(videoDurationMs)],
-      ["ShotML Confidence", formatShotMlConfidenceSummary(shots)],
-    ], "project-practiscore-summary");
+    const summary = $("practiscore-import-summary");
+    if (summary) {
+      summary.textContent = "";
+      summary.hidden = true;
+    }
   }
 
   function hasActiveProject() {
@@ -421,7 +459,7 @@ export function createProjectPane({
 
   function setProjectActionAvailability() {
     const enabled = hasActiveProject();
-    ["open-practiscore-dashboard", "import-practiscore", "browse-primary-path", "primary-file-path"].forEach((id) => {
+    ["open-practiscore-dashboard", "import-practiscore"].forEach((id) => {
       const control = $(id);
       if (control && "disabled" in control) control.disabled = !enabled;
     });
@@ -612,6 +650,7 @@ export function createProjectPane({
     practiScorePlaceValues,
     practiScoreSelectionValue,
     preferredPractiScoreSelection,
+    ensurePractiScoreSelectionControls,
     renderPractiScoreSelect,
     renderPractiScoreOptionLists,
     syncPractiScoreSelectionFields,

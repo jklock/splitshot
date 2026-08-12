@@ -88,10 +88,6 @@ export function createShotMLPane({
       : "No pending proposals.";
     list.replaceChildren();
     if (!proposals.length) {
-      const empty = document.createElement("p");
-      empty.className = "hint";
-      empty.textContent = "Generate proposals after a ShotML run, then apply only the changes that match the video.";
-      list.appendChild(empty);
       return;
     }
     proposals.forEach((proposal) => {
@@ -146,11 +142,8 @@ export function createShotMLPane({
     syncShotMLControls();
     renderCollapsibleInspectorSections();
     const summary = $("shotml-run-summary");
-    const lastRun = currentState()?.project?.analysis?.last_shotml_run_summary || {};
     if (summary) {
-      summary.textContent = lastRun.shot_count === undefined
-        ? "No ShotML run yet."
-        : `${lastRun.shot_count} shots at threshold ${Number(lastRun.threshold ?? shotmlSettings().detection_threshold ?? 0.5).toFixed(2)}.`;
+      summary.textContent = "";
     }
     renderShotMLProposals();
   }

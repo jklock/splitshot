@@ -1,13 +1,192 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
+from splitshot.domain.models import (
+    ImportedStageScore,
+    Project,
+    ProjectStage,
+    ScoreLetter,
+    ScoreMark,
+    ShotEvent,
+)
 from splitshot.scoring.logic import apply_scoring_preset
-
+from splitshot.persistence.projects import save_project
+from splitshot.ui.controller import ProjectController
 
 STATIC_ROOT = Path("src/splitshot/browser/static")
+EXAMPLE_IDPA = Path("example_data/IDPA/IDPA.csv")
+
+
+def test_browser_state_exposes_per_stage_and_combined_match_metrics() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=1_000, score=ScoreMark(letter=ScoreLetter.A)),
+        ShotEvent(time_ms=1_500, score=ScoreMark(letter=ScoreLetter.A)),
+    ]
+    apply_scoring_preset(project, "uspsa_minor")
+    first = ProjectStage(
+        id="stage-1",
+        label="Stage 1",
+        order_index=1,
+        analysis=deepcopy(project.analysis),
+        scoring=deepcopy(project.scoring),
+    )
+    project.analysis.shots = [
+        ShotEvent(time_ms=2_000, score=ScoreMark(letter=ScoreLetter.A)),
+    ]
+    second = ProjectStage(
+        id="stage-2",
+        label="Stage 2",
+        order_index=2,
+        analysis=deepcopy(project.analysis),
+        scoring=deepcopy(project.scoring),
+    )
+    project.stages = [second, first]
+    project.active_stage_id = first.id
+    project.analysis = deepcopy(first.analysis)
+    project.scoring = deepcopy(first.scoring)
+
+    payload = browser_state(project, "Ready.")
+
+    assert [entry["stage_id"] for entry in payload["stage_metrics"]] == ["stage-1", "stage-2"]
+    assert payload["match_metrics"]["stage_count"] == 2
+    assert payload["match_metrics"]["total_shots"] == 3
+    assert payload["match_metrics"]["raw_time_ms"] == 3500
+    assert payload["match_metrics"]["draw_ms"] == 1500
+    assert payload["match_metrics"]["result_label"] == "Combined HF"
+
+
+def test_browser_state_uses_spreadsheet_match_totals_instead_of_partial_stage_sums() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.imported_stage = ImportedStageScore(
+        source_name="IDPA.csv",
+        match_type="idpa",
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+        division="CO",
+        classification="UN",
+        stage_number=2,
+        raw_seconds=29.83,
+        aggregate_points=5.0,
+        final_time=39.83,
+        match_final_time=83.01,
+        match_points_down=11.0,
+        match_penalties=2.0,
+        match_stage_count=4,
+        match_penalty_counts={"non_threats": 1.0, "procedural_errors": 1.0},
+    )
+    project.scoring.comparison_competitors = [
+        {"name": "Division leader", "place": 1, "division": "CO", "classification": "SS"},
+        {"name": "Class peer", "place": 2, "division": "PCC", "classification": "UN"},
+        {"name": "Other", "place": 3, "division": "PCC", "classification": "SS"},
+    ]
+
+    payload = browser_state(project, "Ready.")
+    match = payload["match_metrics"]
+
+    assert match["spreadsheet_authoritative"] is True
+    assert match["stage_count"] == 4
+    assert match["result_label"] == "Final"
+    assert match["result_value"] == 83.01
+    assert match["display_value"] == "83.01"
+    assert match["raw_time_ms"] is None
+    assert match["score_label"] == "Points Down"
+    assert match["score_value"] == 11.0
+    assert match["points_down"] == 11.0
+    assert match["total_penalties"] == 2.0
+    assert match["penalty_counts"] == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
+    assert match["overall_place"] == 4
+    assert match["division"] == "CO"
+    assert match["classification"] == "UN"
+    assert match["division_placement"] == "2/2"
+    assert match["class_placement"] == "2/2"
+    assert match["overall_placement"] == "4/4"
+
+
+def test_browser_state_exposes_official_stage_metrics_and_stage_placements() -> None:
+    project = Project()
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.scoring.competitor_name = "Selected Shooter"
+    project.scoring.division = "CO"
+    project.scoring.classification = "SS"
+    project.scoring.imported_stage = ImportedStageScore(
+        source_name="IDPA.csv",
+        match_type="idpa",
+        competitor_name="Selected Shooter",
+        competitor_place=4,
+        stage_number=2,
+        division="CO",
+        classification="SS",
+        raw_seconds=29.44,
+        aggregate_points=3.0,
+        final_time=32.44,
+        score_counts={"Points Down": 3.0, "Non-Threat": 1.0},
+    )
+    project.scoring.comparison_competitors = [
+        {"name": "CO Peer", "place": 1, "division": "CO", "classification": "MA", "final_time": 31.0},
+        {"name": "SS Peer", "place": 2, "division": "PCC", "classification": "SS", "final_time": 33.0},
+    ]
+    stage = ProjectStage(
+        id="stage-2",
+        label="Stage 2",
+        order_index=1,
+        imported_stage_number=2,
+        scoring=deepcopy(project.scoring),
+    )
+    project.stages = [stage]
+    project.active_stage_id = stage.id
+
+    official = browser_state(project, "Ready.")["stage_metrics"][0]["official_metrics"]
+
+    assert official == {
+        "raw_time_ms": 29440,
+        "result_label": "Final",
+        "result_value": 32.44,
+        "display_value": "32.44",
+        "score_label": "Points Down",
+        "score_value": 3.0,
+        "points_down": 3.0,
+        "penalties": 1.0,
+        "division": "CO",
+        "classification": "SS",
+        "division_placement": "2/2",
+        "class_placement": "1/2",
+        "overall_placement": "2/3",
+        "spreadsheet_authoritative": True,
+    }
+
+
+def test_project_open_rehydrates_comparison_rows_for_every_imported_stage(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "comparison-rehydrate.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.import_practiscore_file(str(EXAMPLE_IDPA), source_name="IDPA.csv")
+    for stage in controller.project.stages:
+        stage.scoring.comparison_competitors = []
+    controller.project.scoring.comparison_competitors = []
+    save_project(controller.project, project_path)
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    imported_stages = [
+        stage for stage in reopened.project.stages if stage.scoring.imported_stage is not None
+    ]
+    assert imported_stages
+    assert all(len(stage.scoring.comparison_competitors) > 0 for stage in imported_stages)
 
 
 def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows() -> None:
@@ -117,6 +296,7 @@ def test_browser_state_defines_missing_beep_raw_time_and_confidence_projection()
 
 def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    metrics_pane_js = (STATIC_ROOT / "panes" / "metrics-pane.js").read_text()
 
     assert js.count("const rows = buildMetricsRows();") == 5
     assert "const confidence = splitRowShotMLConfidence(row);" in js
@@ -124,15 +304,15 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert 'title: "Split / Interval Bar Chart"' in js
     assert 'title: "Run Comparison Overlay"' in js
     assert 'title: "Stage Segment Breakdown"' in js
-    assert 'function buildMetricsStageSegments(points = []) {' in js
-    assert 'ShotML Reference' in js
-    assert 'return `${clamped.toFixed(1)}%`;' in js
+    assert "function buildMetricsStageSegments(points = []) {" in js
+    assert "ShotML Reference" in js
+    assert "return `${clamped.toFixed(1)}%`;" in js
     assert "estimated confidence" not in js
     assert "ShotML ${formatConfidenceValue(entry.confidence)}" in js
-    assert "scoreStatus.dataset.importedSource = imported.source_name || \"\";" in js
-    assert "scoreStatus.dataset.importedStage = imported.stage_number ?? \"\";" in js
-    assert "scoreStatus.dataset.importedCompetitor = imported.competitor_name || \"\";" in js
-    assert "scoreStatus.dataset.importedPlace = imported.competitor_place ?? \"\";" in js
+    assert 'scoreStatus.dataset.importedSource = imported.source_name || "";' in js
+    assert 'scoreStatus.dataset.importedStage = imported.stage_number ?? "";' in js
+    assert 'scoreStatus.dataset.importedCompetitor = imported.competitor_name || "";' in js
+    assert 'scoreStatus.dataset.importedPlace = imported.competitor_place ?? "";' in js
     assert '"result_label"' in js
     assert '"result_value"' in js
     assert '"raw_time_s"' in js
@@ -149,6 +329,21 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert '"Split Timeline"' in js
     assert '"Stage Segments"' in js
     assert '"Run Comparison Overlay"' in js
+    assert 'renderStageMetricsOverview($("metrics-stage-overview"))' in metrics_pane_js
+    assert "const viewHeight = timeline ? (compact ? 84 : 110)" in metrics_pane_js
+    assert 'name: "match_stats"' in metrics_pane_js
+    assert 'name: "stage_metrics"' in metrics_pane_js
+    assert 'metrics.score_label || "Shot Points"' in metrics_pane_js
+    assert 'match.points_down ?? ""' in metrics_pane_js
+    assert "metrics.division_placement" in metrics_pane_js
+    assert "metrics.class_placement" in metrics_pane_js
+    assert "metrics.overall_placement" in metrics_pane_js
+
+
+def test_bulk_trim_omits_redundant_timing_summary() -> None:
+    js = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
+    assert "Last shot" not in js
+    assert "formatTrimSummaryTime" not in js
 
 
 def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None:
@@ -158,8 +353,13 @@ def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None
 
     assert 'import { createScoringPane } from "./panes/scoring-pane.js";' in app_js
     assert "scoringPane = createScoringPane({" in app_js
-    assert "function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {" in app_js
-    assert "return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);" in app_js
+    assert (
+        "function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {" in app_js
+    )
+    assert (
+        "return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);"
+        in app_js
+    )
     assert 'function renderScoringTable(tableId = "scoring-table") {' in app_js
     assert "return scoringPane?.renderScoringTable(tableId);" in app_js
     assert "function renderScoringTables() {" in app_js
@@ -183,7 +383,10 @@ def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None
     assert '"PS - Penalties"' in scoring_js
     assert '"Stage Place"' not in scoring_js
     assert "function readScoringPayload() {" in scoring_js
-    assert "async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $(\"scoring-preset\")?.value || \"\") {" in scoring_js
+    assert (
+        'async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset")?.value || "") {'
+        in scoring_js
+    )
     assert "function scheduleScoringApply() {" in scoring_js
 
     assert "export function createPaneBase({" in pane_base_js

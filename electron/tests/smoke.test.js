@@ -124,11 +124,13 @@ async function main() {
   const protocolProject = createProjectBundle('protocol');
   console.log('  protocol bundle created');
   const testPort = await findFreePort();
+  const inOutVideo = path.join(REPO, 'tests', 'fixtures', 'media', 'e2e-stage.mp4');
   const env = {
     ...process.env,
     CI: '1',
     SPLITSHOT_ELECTRON_TEST: '1',
     SPLITSHOT_TEST_PORT: String(testPort),
+    SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH: inOutVideo,
   };
 
   console.log('Launching Electron...');
@@ -152,10 +154,17 @@ async function main() {
     await window.waitForLoadState('domcontentloaded', { timeout: ELECTRON_TIMEOUT });
     console.log('  DOM content loaded');
 
+    const zoomFactor = await electronApp.evaluate(({ BrowserWindow }) => (
+      BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
+    ));
+    assert.equal(zoomFactor, 1);
+    console.log('  launch zoom reset to 100%');
+
     console.log('Evaluating bridge API...');
     const bridge = await window.evaluate(() => ({
       getVersion: typeof window.splitshot?.getVersion === 'function',
       getPlatform: typeof window.splitshot?.getPlatform === 'function',
+      openInOutVideoDialog: typeof window.splitshot?.openInOutVideoDialog === 'function',
       openProjectDialog: typeof window.splitshot?.openProjectDialog === 'function',
       onOpenProject: typeof window.splitshot?.onOpenProject === 'function',
       testSimulateSecondInstance: typeof window.splitshot?.testSimulateSecondInstance === 'function',
@@ -164,6 +173,7 @@ async function main() {
     assert.deepEqual(bridge, {
       getVersion: true,
       getPlatform: true,
+      openInOutVideoDialog: true,
       openProjectDialog: true,
       onOpenProject: true,
       testSimulateSecondInstance: true,
@@ -174,6 +184,20 @@ async function main() {
     console.log('Waiting for startup project...');
     await waitForProjectPath(window, startupProject);
     console.log('  startup project loaded');
+
+    console.log('Selecting Intro video through native bridge...');
+    await window.locator("button[data-tool='intro-outro']").click();
+    await window.getByRole('button', { name: 'Select Video', exact: true }).click();
+    await window.waitForFunction(() => Boolean(state?.project?.intro_clip?.asset?.path));
+    assert.equal(
+      await window.locator('.intro-outro-file').innerText(),
+      path.basename(inOutVideo),
+    );
+    assert.match(await window.locator('#primary-video').getAttribute('src'), /\/media\/intro/);
+    await window.locator("button[data-tool='queue']").click();
+    assert.equal(await window.locator('#queue-include-intro').isEnabled(), true);
+    assert.equal(await window.locator('#queue-include-intro').isChecked(), true);
+    console.log('  native Intro video selection reached preview and Queue');
 
     console.log('Simulating second instance...');
     const queued = await window.evaluate(({ executablePath, targetPath }) => (

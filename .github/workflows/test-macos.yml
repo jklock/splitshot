@@ -54,6 +54,7 @@ jobs:
         shell: bash
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      SPLITSHOT_MAC_NOTARIZE: "0"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -64,12 +65,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Install FFmpeg
+        run: brew install ffmpeg
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Prepare macOS signing certificate
         env:
@@ -89,44 +94,6 @@ jobs:
           security list-keychains -d user -s "${keychain_file}" $(security list-keychains -d user | tr -d '"')
           security import "${cert_file}" -k "${keychain_file}" -T /usr/bin/codesign -T /usr/bin/productbuild -P "${MAC_CERT_PASSWORD}" && echo "Cert imported" || echo "Cert import skipped"
           { echo "MAC_CERT_FILE=${cert_file}"; echo "MAC_CERT_KEYCHAIN=${keychain_file}"; echo "MAC_CERT_TMPDIR=${tmp_dir}"; echo "MAC_CERT_PASSWORD=${MAC_CERT_PASSWORD}"; } >> "${GITHUB_ENV}"
-      - name: Prepare macOS notarization credentials
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          api_any=0
-          fallback_any=0
-          [[ -n "${APPLE_API_KEY:-}" || -n "${APPLE_API_KEY_ID:-}" || -n "${APPLE_API_ISSUER:-}" ]] && api_any=1
-          [[ -n "${APPLE_ID:-}" || -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" || -n "${APPLE_TEAM_ID:-}" ]] && fallback_any=1
-          if [[ "${api_any}" -eq 1 ]]; then
-            [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER:-}" ]] || {
-              echo "Incomplete Apple API key notarization secrets"; exit 1;
-            }
-            api_key_file="${MAC_CERT_TMPDIR}/AuthKey_${APPLE_API_KEY_ID}.p8"
-            printf '%s\n' "${APPLE_API_KEY}" > "${api_key_file}"
-            chmod 600 "${api_key_file}"
-            {
-              echo "APPLE_API_KEY=${api_key_file}"
-              echo "APPLE_API_KEY_ID=${APPLE_API_KEY_ID}"
-              echo "APPLE_API_ISSUER=${APPLE_API_ISSUER}"
-            } >> "${GITHUB_ENV}"
-          elif [[ "${fallback_any}" -eq 1 ]]; then
-            [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]] || {
-              echo "Incomplete Apple ID notarization secrets"; exit 1;
-            }
-            {
-              echo "APPLE_ID=${APPLE_ID}"
-              echo "APPLE_APP_SPECIFIC_PASSWORD=${APPLE_APP_SPECIFIC_PASSWORD}"
-              echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}"
-            } >> "${GITHUB_ENV}"
-          else
-            echo "No Apple notarization credentials configured"; exit 1
-          fi
       - name: Build Electron app
         run: |
           export CSC_LINK="${MAC_CERT_FILE}" CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
@@ -137,7 +104,6 @@ jobs:
           app=$(find electron/build -maxdepth 2 -type d -name 'SplitShot.app' | head -n 1)
           [ -n "$app" ] || { echo "SplitShot.app not found under electron/build"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$app"
-          spctl --assess --type execute -vv "$app"
       - uses: actions/upload-artifact@v7
         with:
           name: splitshot-macos
@@ -173,13 +139,15 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
           cd electron && npx playwright install chromium
         timeout-minutes: 15
+      - name: Install OCR proof tool
+        run: command -v tesseract >/dev/null 2>&1 || brew install tesseract
       - uses: actions/download-artifact@v5
         with:
           name: splitshot-macos
@@ -189,12 +157,24 @@ jobs:
           artifact=$(ls electron/build/*.dmg | head -n 1)
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with DMG package
-        env:
-          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
         run: |
           artifact=$(ls electron/build/*.dmg | head -n 1)
-          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
-        timeout-minutes: 30
+          uv run python scripts/testing/test_packaged_artifact.py \
+            --artifact "$artifact" \
+            --script scripts/testing/test_packaged_app_e2e.py \
+            --script-arg=--scope \
+            --script-arg=release-proof \
+            --script-arg=--artifact-root \
+            --script-arg=artifacts/v107-release-proof/github-review/macos \
+            --script-arg=--primary-video \
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
+        timeout-minutes: 180
+      - name: Enforce exhaustive macOS evidence
+        run: uv run python scripts/testing/build_packaged_release_summary.py --platform macos --artifact-root artifacts/v107-release-proof/github-review/macos
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

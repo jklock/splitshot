@@ -13,7 +13,9 @@ from splitshot.ui.controller import ProjectController
 
 def _open_test_page(playwright, server: BrowserControlServer, *, accept_downloads: bool = False):
     browser = playwright.chromium.launch(headless=True)
-    page = browser.new_page(viewport={"width": 1280, "height": 900}, accept_downloads=accept_downloads)
+    page = browser.new_page(
+        viewport={"width": 1280, "height": 900}, accept_downloads=accept_downloads
+    )
     page.goto(server.url, wait_until="domcontentloaded")
     return browser, page
 
@@ -46,6 +48,16 @@ def _set_input_value(locator, value: str) -> None:
             element.dispatchEvent(new Event('change', { bubbles: true }));
         }""",
         value,
+    )
+
+
+def _source_state(page, source_id: str) -> dict | None:
+    return page.evaluate(
+        """(targetSourceId) => {
+            const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+            return source ? JSON.parse(JSON.stringify(source)) : null;
+        }""",
+        source_id,
     )
 
 
@@ -155,20 +167,36 @@ def test_markers_pane_modularization_wrappers_are_source_visible() -> None:
     assert "return markersPane?.importShotPopups();" in app_js
     assert "function beginPopupBubbleDrag(event) {" in app_js
     assert "return markersPane?.beginPopupBubbleDrag(event);" in app_js
-    assert "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {" in app_js
-    assert "return markersPane?.renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs);" in app_js
+    assert (
+        "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {"
+        in app_js
+    )
+    assert (
+        "return markersPane?.renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs);"
+        in app_js
+    )
     assert "function setMarkersExpanded(expanded, { persistUiState = true } = {}) {" in app_js
     assert "return markersPane?.setMarkersExpanded(expanded, { persistUiState });" in app_js
 
     assert "export function createMarkersPane({" in markers_pane_js
-    assert "function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {" in markers_pane_js
+    assert (
+        "function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {"
+        in markers_pane_js
+    )
     assert "function importShotPopups() {" in markers_pane_js
     assert "function beginPopupBubbleDrag(event) {" in markers_pane_js
-    assert "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, _size, positionMs) {" in markers_pane_js
-    assert "function setMarkersExpanded(expanded, { persistUiState = true } = {}) {" in markers_pane_js
+    assert (
+        "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, _size, positionMs) {"
+        in markers_pane_js
+    )
+    assert (
+        "function setMarkersExpanded(expanded, { persistUiState = true } = {}) {" in markers_pane_js
+    )
 
 
-def test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes(synthetic_video_factory) -> None:
+def test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="waveform-shell-remaining-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -185,7 +213,9 @@ def test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes(
 
                 selected_shot = _select_visible_shot(page)
                 baseline_zoom = float(page.evaluate("waveformZoomX"))
-                baseline_amplitude = float(page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1"))
+                baseline_amplitude = float(
+                    page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1")
+                )
 
                 page.locator("#zoom-waveform-in").click()
                 page.wait_for_function("(before) => waveformZoomX > before", arg=baseline_zoom)
@@ -241,8 +271,12 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
     image_path = tmp_path / "popup-reference.png"
     image_path.write_bytes(b"fake-image")
 
-    def fake_path_chooser(kind: str, current: str | None) -> str:
+    def fake_path_chooser(
+        kind: str, current: str | None, default_root: str | None = None
+    ) -> str:
         assert kind == "popup_image"
+        assert default_root is not None
+        assert Path(default_root).name == "Markers"
         return str(image_path)
 
     server = BrowserControlServer(port=0, path_chooser=fake_path_chooser)
@@ -262,14 +296,16 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 popup_ids = page.evaluate(
                     """() => sortedPopupBubblesForTimeline(state?.project?.popups || []).map((item) => item.id)"""
                 )
-                shot_ids = page.evaluate("() => (state?.project?.analysis?.shots || []).map((item) => item.id)")
+                shot_ids = page.evaluate(
+                    "() => (state?.project?.analysis?.shots || []).map((item) => item.id)"
+                )
                 assert len(popup_ids) >= 3
                 assert len(shot_ids) >= 2
 
                 first_popup_id = popup_ids[0]
-                second_popup_id = popup_ids[1]
-                third_popup_id = popup_ids[2]
-                second_shot_id = next(shot_id for shot_id in shot_ids if shot_id != selected_shot["id"])
+                second_shot_id = next(
+                    shot_id for shot_id in shot_ids if shot_id != selected_shot["id"]
+                )
 
                 _open_markers_workbench(page)
                 page.evaluate(
@@ -282,7 +318,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     "(popupId) => document.querySelector('#markers-workbench-editor .popup-bubble-card')?.dataset?.popupId === popupId",
                     arg=first_popup_id,
                 )
-                first_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]')
+                first_card = page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]'
+                )
                 first_card.wait_for(state="visible")
 
                 _set_input_value(first_card.locator('[data-popup-field="name"]'), "Stage Callout")
@@ -358,7 +396,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     arg=first_popup_id,
                 )
 
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-field="follow_motion"]').check()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-field="follow_motion"]'
+                ).check()
                 page.wait_for_function(
                     "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.follow_motion === true",
                     arg=first_popup_id,
@@ -371,7 +411,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                         video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                     }"""
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="add_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="add_motion_step"]'
+                ).click()
                 page.wait_for_function(
                     "(popupId) => ((state?.project?.popups || []).find((item) => item.id === popupId)?.motion_path || []).length === 1",
                     arg=first_popup_id,
@@ -392,7 +434,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 assert first_motion_step is not None
                 assert first_motion_step["offsetMs"] is not None
 
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="prev_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="prev_motion_step"]'
+                ).click()
                 page.wait_for_function("() => selectedPopupKeyframeOffsetMs === 0")
                 page.wait_for_function(
                     """(targetMs) => {
@@ -401,7 +445,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     }""",
                     arg=first_motion_step["startMs"],
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="next_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="next_motion_step"]'
+                ).click()
                 page.wait_for_function(
                     "(offsetMs) => selectedPopupKeyframeOffsetMs === offsetMs",
                     arg=first_motion_step["offsetMs"],
@@ -421,13 +467,17 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                         video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                     }"""
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="add_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-action="add_motion_step"]'
+                ).click()
                 page.wait_for_function(
                     "(popupId) => ((state?.project?.popups || []).find((item) => item.id === popupId)?.motion_path || []).length === 2",
                     arg=first_popup_id,
                 )
 
-                first_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]')
+                first_card = page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]'
+                )
                 _set_input_value(first_card.locator('[data-popup-field="x"]'), "0.2")
                 _set_input_value(first_card.locator('[data-popup-field="y"]'), "0.8")
                 _set_input_value(first_card.locator('[data-popup-field="width"]'), "222")
@@ -463,9 +513,13 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     "(popupId) => document.querySelector('#markers-workbench-editor .popup-bubble-card')?.dataset?.popupId === popupId",
                     arg=copy_target_popup_id,
                 )
-                second_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"]')
+                second_card = page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"]'
+                )
                 second_card.wait_for(state="visible")
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-field="follow_motion"]').check()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-field="follow_motion"]'
+                ).check()
                 page.wait_for_function(
                     "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.follow_motion === true",
                     arg=copy_target_popup_id,
@@ -477,12 +531,16 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                         video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                     }"""
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-action="add_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-action="add_motion_step"]'
+                ).click()
                 page.wait_for_function(
                     "(popupId) => ((state?.project?.popups || []).find((item) => item.id === popupId)?.motion_path || []).length > 0",
                     arg=copy_target_popup_id,
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-action="clear_motion_path"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"] [data-popup-action="clear_motion_path"]'
+                ).click()
                 page.wait_for_function(
                     """(popupId) => {
                         const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -513,7 +571,9 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
         server.shutdown()
 
 
-def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(synthetic_video_factory) -> None:
+def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="review-color-picker-remaining-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -526,12 +586,14 @@ def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(sy
                 _ensure_overlay_visible(page)
 
                 page.locator("#review-add-text-box").click()
-                page.wait_for_function("() => (state?.project?.overlay?.text_boxes || []).length === 1")
+                page.wait_for_function(
+                    "() => (state?.project?.overlay?.text_boxes || []).length === 1"
+                )
                 box_id = page.evaluate("() => state?.project?.overlay?.text_boxes?.[0]?.id || null")
                 assert box_id is not None
 
                 card = _ensure_text_box_card_open(page, box_id)
-                card.locator('textarea[data-text-box-field="text"]').fill('Test label')
+                card.locator('textarea[data-text-box-field="text"]').fill("Test label")
                 page.wait_for_function(
                     "(boxId) => (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId)?.text === 'Test label'",
                     arg=box_id,
@@ -547,9 +609,9 @@ def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(sy
                         input.value = value;
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     }""",
-                    {"value": '#112233'},
+                    {"value": "#112233"},
                 )
-                page.locator('#close-color-picker').click()
+                page.locator("#close-color-picker").click()
                 page.wait_for_function(
                     "() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null"
                 )
@@ -559,7 +621,7 @@ def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(sy
                 )
 
                 preview = page.locator(f'#custom-overlay [data-text-box-id="{box_id}"]')
-                preview.wait_for(state='visible')
+                preview.wait_for(state="visible")
                 page.wait_for_function(
                     """(boxId) => {
                         const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
@@ -574,14 +636,16 @@ def test_review_text_box_style_controls_and_color_picker_modal_commit_preview(sy
                         return { background: styles.backgroundColor, color: styles.color, opacity: styles.opacity };
                     }"""
                 )
-                assert '17, 34, 51' in preview_style['color']
+                assert "17, 34, 51" in preview_style["color"]
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(synthetic_video_factory) -> None:
+def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="overlay-badge-style-remaining-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -594,23 +658,47 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(sy
                 _open_tool(page, "overlay")
                 _ensure_overlay_visible(page)
 
-                for control_id in ['show-timer', 'show-shots', 'show-score']:
-                    _set_checkbox(page, f'#{control_id}', True)
+                for control_id in ["show-timer", "show-shots", "show-score"]:
+                    _set_checkbox(page, f"#{control_id}", True)
 
-                page.locator('#overlay-font-family').select_option('Courier New')
-                page.wait_for_function("() => state?.project?.overlay?.font_family === 'Courier New'")
+                page.locator("#overlay-font-family").select_option("Courier New")
+                page.wait_for_function(
+                    "() => state?.project?.overlay?.font_family === 'Courier New'"
+                )
 
                 badge_updates = {
-                    'timer_badge': ('#220000', '#ffeeaa', '61'),
-                    'shot_badge': ('#002244', '#ccf2ff', '73'),
-                    'current_shot_badge': ('#440022', '#ffd6f5', '82'),
+                    "timer_badge": ("#220000", "#ffeeaa", "61"),
+                    "shot_badge": ("#002244", "#ccf2ff", "73"),
+                    "current_shot_badge": ("#440022", "#ffd6f5", "82"),
                 }
 
                 for badge_name, (background, text, opacity_percent) in badge_updates.items():
                     card = page.locator(f'#badge-style-grid .style-card[data-badge="{badge_name}"]')
-                    _set_input_value(card.locator('button[data-field="background_color"] + input'), background)
+                    _set_input_value(
+                        card.locator('button[data-field="background_color"] + input'), background
+                    )
                     _set_input_value(card.locator('button[data-field="text_color"] + input'), text)
                     _set_input_value(card.locator('[data-field="opacity"]'), opacity_percent)
+
+                alpha_layout = page.locator(
+                    '#badge-style-grid .style-card[data-badge="timer_badge"] .opacity-percent-field'
+                ).evaluate(
+                    """field => {
+                        const input = field.querySelector('.opacity-percent-input');
+                        const suffix = field.querySelector('.opacity-percent-suffix');
+                        const inputRect = input.getBoundingClientRect();
+                        const suffixRect = suffix.getBoundingClientRect();
+                        return {
+                            inputWidth: inputRect.width,
+                            suffixGap: suffixRect.left - inputRect.right,
+                            paddingRight: parseFloat(getComputedStyle(input).paddingRight),
+                        };
+                    }"""
+                )
+                assert alpha_layout["inputWidth"] >= 76
+                assert alpha_layout["suffixGap"] >= 8
+                assert alpha_layout["paddingRight"] >= 28
+                page.screenshot(path="artifacts/overlay-alpha-spacing.png", full_page=True)
 
                 page.evaluate(
                     """() => {
@@ -621,8 +709,8 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(sy
                     }"""
                 )
 
-                timer_badge = page.locator('#live-overlay .timer-badge').first
-                timer_badge.wait_for(state='visible')
+                timer_badge = page.locator("#live-overlay .timer-badge").first
+                timer_badge.wait_for(state="visible")
                 timer_style = timer_badge.evaluate(
                     """badge => ({
                         background: badge.style.background,
@@ -630,26 +718,42 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(sy
                         fontFamily: badge.style.fontFamily || window.getComputedStyle(badge).fontFamily,
                     })"""
                 )
-                assert '34, 0, 0' in timer_style['background']
-                assert '255, 238, 170' in timer_style['color']
-                assert 'Courier New' in timer_style['fontFamily']
+                assert "34, 0, 0" in timer_style["background"]
+                assert "255, 238, 170" in timer_style["color"]
+                assert "Courier New" in timer_style["fontFamily"]
 
-                shot_badges = page.locator('#live-overlay .shot-badge')
-                page.wait_for_function("() => document.querySelectorAll('#live-overlay .shot-badge').length >= 1")
+                shot_badges = page.locator("#live-overlay .shot-badge")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#live-overlay .shot-badge').length >= 1"
+                )
                 first_shot_style = shot_badges.first.evaluate(
                     "badge => ({ background: badge.style.background, color: badge.style.color })"
                 )
-                assert first_shot_style['color'] in {'rgb(204, 242, 255)', 'rgb(255, 214, 245)', 'rgb(249, 250, 251)'}
+                assert first_shot_style["color"] in {
+                    "rgb(204, 242, 255)",
+                    "rgb(255, 214, 245)",
+                    "rgb(249, 250, 251)",
+                }
 
-                assert page.evaluate("Boolean(state.project.overlay.hit_factor_badge?.background_color)") is True
-                assert page.evaluate("Boolean(state.project.overlay.hit_factor_badge?.text_color)") is True
+                assert (
+                    page.evaluate(
+                        "Boolean(state.project.overlay.hit_factor_badge?.background_color)"
+                    )
+                    is True
+                )
+                assert (
+                    page.evaluate("Boolean(state.project.overlay.hit_factor_badge?.text_color)")
+                    is True
+                )
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_video_factory) -> None:
+def test_merge_remaining_controls_commit_default_and_per_source_state(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="merge-remaining-primary-ui"))
     secondary_path = Path(synthetic_video_factory(name="merge-remaining-secondary-ui"))
     tertiary_path = Path(synthetic_video_factory(name="merge-remaining-tertiary-ui"))
@@ -660,43 +764,67 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
             browser, page = _open_test_page(playwright, server)
             try:
                 _load_primary_video(page, primary_path)
-                _open_tool(page, 'merge')
+                _open_tool(page, "merge")
 
-                page.locator('#merge-media-input').set_input_files([str(secondary_path), str(tertiary_path)])
+                page.locator("#merge-media-input").set_input_files(
+                    [str(secondary_path), str(tertiary_path)]
+                )
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+                _open_tool(page, "merge")
 
-                page.locator('#merge-enabled').check()
+                page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
 
-                for layout in ['side_by_side', 'above_below', 'pip']:
-                    page.locator('#merge-layout').select_option(layout)
-                    page.wait_for_function('(value) => state?.project?.merge?.layout === value', arg=layout)
+                for layout in ["side_by_side", "above_below", "pip"]:
+                    page.locator("#merge-layout").select_option(layout)
+                    page.wait_for_function(
+                        "(value) => state?.project?.merge?.layout === value", arg=layout
+                    )
 
-                _set_input_value(page.locator('#pip-size'), '50')
-                _set_input_value(page.locator('#pip-x'), '0.25')
-                _set_input_value(page.locator('#pip-y'), '0.75')
-                assert page.locator('#pip-size-label').text_content().strip() == '50%'
-                page.locator('[data-inspector-section="pip-defaults"] button[aria-label="Hide section"]').click()
+                source_defaults_before = page.evaluate(
+                    """() => (state?.project?.merge_sources || []).map((item) => ({
+                        id: item.id,
+                        pip_size_percent: Number(item?.pip_size_percent || 0),
+                        pip_x: Number(item?.pip_x || 0),
+                        pip_y: Number(item?.pip_y || 0),
+                    }))"""
+                )
+                _set_input_value(page.locator("#pip-size"), "50")
+                _set_input_value(page.locator("#pip-x"), "0.25")
+                _set_input_value(page.locator("#pip-y"), "0.75")
+                assert page.locator("#pip-size-label").text_content().strip() == "50%"
+                page.wait_for_function(
+                    """() => Number(state?.project?.merge?.pip_size_percent || 0) === 50
+                        && Math.abs(Number(state?.project?.merge?.pip_x || 0) - 0.25) < 0.001
+                        && Math.abs(Number(state?.project?.merge?.pip_y || 0) - 0.75) < 0.001
+                    """
+                )
+                page.wait_for_function(
+                    """(expected) => (state?.project?.merge_sources || []).every((item, index) =>
+                        Number(item?.pip_size_percent || 0) === Number(expected[index]?.pip_size_percent || 0)
+                          && Math.abs(Number(item?.pip_x || 0) - Number(expected[index]?.pip_x || 0)) < 0.001
+                          && Math.abs(Number(item?.pip_y || 0) - Number(expected[index]?.pip_y || 0)) < 0.001
+                    )""",
+                    arg=source_defaults_before,
+                )
+                page.locator(
+                    '[data-inspector-section="pip-defaults"] button[aria-label="Hide section"]'
+                ).click()
                 page.wait_for_function(
                     "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
                 )
 
-                first_card = page.locator('.merge-media-card').first
-                first_body = first_card.locator('.merge-media-card-body')
-                source_id = first_card.get_attribute('data-source-id')
-                if first_body.evaluate('body => body.hidden'):
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
-                    page.wait_for_function(
-                        "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
-                        arg=source_id,
-                    )
-                else:
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
-                    page.wait_for_function(
-                        "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === true",
-                        arg=source_id,
-                    )
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                page.wait_for_selector(
+                    '.merge-media-card button[aria-label*="stage media controls"]', state="visible"
+                )
+
+                first_card = page.locator(".merge-media-card").first
+                source_id = first_card.get_attribute("data-source-id")
+                first_body_hidden = first_card.locator(".merge-media-card-body").evaluate(
+                    "body => body.hidden"
+                )
+                if first_body_hidden:
+                    page.locator('button[aria-label*="stage media controls"]').first.click()
                     page.wait_for_function(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=source_id,
@@ -704,22 +832,41 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                 page.wait_for_function(
                     "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
                 )
-                first_body.wait_for(state='visible')
+                first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
 
-                _set_input_value(first_card.locator('[data-merge-source-field="size"]'), '60')
-                _set_input_value(first_card.locator('[data-merge-source-field="opacity"]'), '80')
-                _set_input_value(first_card.locator('[data-merge-source-field="x"]'), '0.1')
-                _set_input_value(first_card.locator('[data-merge-source-field="y"]'), '0.2')
+                _set_input_value(first_card.locator('[data-merge-source-field="size"]'), "60")
+                _set_input_value(first_card.locator('[data-merge-source-field="opacity"]'), "80")
+                _set_input_value(first_card.locator('[data-merge-source-field="x"]'), "0.1")
+                _set_input_value(first_card.locator('[data-merge-source-field="y"]'), "0.2")
 
-                for label, expected in [('-10', -10), ('-1', -11), ('+1', -10), ('+10', 0)]:
-                    first_card.get_by_role('button', name=label, exact=True).click()
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option(
+                    "above_below"
+                )
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        return Boolean(source)
+                            && source.placement?.mode === 'above_below';
+                    }""",
+                    arg=source_id,
+                )
+
+                _open_tool(page, "trim-sync")
+                page.wait_for_function(
+                    "() => document.getElementById('trim-sync-list')?.children.length > 0"
+                )
+                trim_sync_card = page.locator(f'.trim-source-card[data-source-id="{source_id}"]')
+                trim_sync_card.wait_for(state="attached")
+
+                for label, expected in [("-10", -10), ("-1", -11), ("+1", -10), ("+10", 0)]:
+                    trim_sync_card.get_by_role("button", name=label, exact=True).click()
                     page.wait_for_function(
                         "(payload) => (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId)?.sync_offset_ms === payload.expected",
-                        arg={'sourceId': first_card.get_attribute('data-source-id'), 'expected': expected},
+                        arg={"sourceId": source_id, "expected": expected},
                     )
 
-                analyze_button = first_card.locator('button:has-text("beep sync")').first
-                analyze_button.wait_for(state='visible')
+                analyze_button = trim_sync_card.locator(".trim-analyze-btn").first
+                analyze_button.wait_for(state="visible")
                 analyze_button.click()
                 page.wait_for_function(
                     """(sourceId) => {
@@ -730,28 +877,72 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                             && source.sync_offset_source === 'auto'
                             && source.secondary_beep_time_ms !== null;
                     }""",
-                    arg=first_card.get_attribute('data-source-id'),
+                    arg=source_id,
                 )
 
+                _set_input_value(trim_sync_card.locator("input[data-trim-start]"), "0.1")
+                _set_input_value(trim_sync_card.locator("input[data-trim-end]"), "0.5")
+                trim_sync_card.get_by_role("button", name="Apply", exact=True).click()
                 page.wait_for_function(
                     """(sourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
-                        return Boolean(source)
-                            && source.pip_size_percent === 60
-                            && source.opacity === 0.8
-                            && source.pip_x === 0.1
-                            && source.pip_y === 0.2;
+                        const trim = source?.trim_derivative;
+                        return Boolean(trim?.derivative_path)
+                            && trim.active_path_kind === 'local_derivative'
+                            && document.querySelector('.trim-source-card[data-source-id="' + sourceId + '"] .trim-active-path-state')?.textContent.includes('Using trimmed media');
                     }""",
-                    arg=first_card.get_attribute('data-source-id'),
+                    arg=source_id,
+                    timeout=120000,
+                )
+                trimmed_source = _source_state(page, source_id)
+                assert trimmed_source is not None
+                assert trimmed_source["asset"]["path"]
+                assert trimmed_source["trim_derivative"]["derivative_path"]
+                assert Path(trimmed_source["trim_derivative"]["derivative_path"]).exists()
+                assert (
+                    trimmed_source["trim_derivative"].get(
+                        "original_path", trimmed_source["asset"]["path"]
+                    )
+                    == trimmed_source["asset"]["path"]
                 )
 
-                second_source_id = page.locator('.merge-media-card').nth(1).get_attribute('data-source-id')
-                page.locator('.merge-media-card').nth(1).locator('[data-merge-source-remove]').click()
+                _set_input_value(page.locator("#trim-global-start"), "0.1")
+                _set_input_value(page.locator("#trim-global-end"), "0.6")
+                page.locator("#trim-global-apply").click()
                 page.wait_for_function(
-                    "(sourceId) => !(state?.project?.merge_sources || []).some((item) => item.id === sourceId)",
-                    arg=second_source_id,
+                    "() => (state?.project?.merge_sources || []).every((item) => item?.trim_derivative?.active_path_kind === 'local_derivative')",
+                    timeout=120000,
                 )
-                assert page.locator('.merge-media-card').count() == 1
+
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "trim-sync")
+                reloaded_trim_card = page.locator(
+                    f'.trim-source-card[data-source-id="{source_id}"]'
+                )
+                reloaded_trim_card.wait_for(state="attached")
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(source)
+                            && trim?.active_path_kind === 'local_derivative';
+                    }""",
+                    arg=source_id,
+                )
+
+                reloaded_trim_card.get_by_role("button", name="Clear", exact=True).click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(source)
+                            && source.asset?.path
+                            && (!trim?.derivative_path)
+                            && trim?.active_path_kind !== 'local_derivative';
+                    }""",
+                    arg=source_id,
+                )
             finally:
                 browser.close()
     finally:
@@ -763,37 +954,47 @@ def test_export_remaining_encoding_controls_drive_export_payload(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    primary_path = Path(synthetic_video_factory(name='export-remaining-ui'))
-    output_path = tmp_path / 'remaining-controls-export.mp4'
+    primary_path = Path(synthetic_video_factory(name="export-remaining-ui"))
+    output_path = tmp_path / "remaining-controls-export.mp4"
     captured: dict[str, object] = {}
 
     def fake_export_project(project, output_target, progress_callback=None, log_callback=None):
         captured.update(
             {
-                'output_path': str(output_target),
-                'quality': getattr(project.export.quality, 'value', project.export.quality),
-                'aspect_ratio': getattr(project.export.aspect_ratio, 'value', project.export.aspect_ratio),
-                'target_width': project.export.target_width,
-                'target_height': project.export.target_height,
-                'frame_rate': getattr(project.export.frame_rate, 'value', project.export.frame_rate),
-                'video_codec': getattr(project.export.video_codec, 'value', project.export.video_codec),
-                'video_bitrate_mbps': project.export.video_bitrate_mbps,
-                'audio_codec': getattr(project.export.audio_codec, 'value', project.export.audio_codec),
-                'audio_sample_rate': project.export.audio_sample_rate,
-                'audio_bitrate_kbps': project.export.audio_bitrate_kbps,
-                'color_space': getattr(project.export.color_space, 'value', project.export.color_space),
-                'ffmpeg_preset': project.export.ffmpeg_preset,
-                'two_pass': project.export.two_pass,
+                "output_path": str(output_target),
+                "quality": getattr(project.export.quality, "value", project.export.quality),
+                "aspect_ratio": getattr(
+                    project.export.aspect_ratio, "value", project.export.aspect_ratio
+                ),
+                "target_width": project.export.target_width,
+                "target_height": project.export.target_height,
+                "frame_rate": getattr(
+                    project.export.frame_rate, "value", project.export.frame_rate
+                ),
+                "video_codec": getattr(
+                    project.export.video_codec, "value", project.export.video_codec
+                ),
+                "video_bitrate_mbps": project.export.video_bitrate_mbps,
+                "audio_codec": getattr(
+                    project.export.audio_codec, "value", project.export.audio_codec
+                ),
+                "audio_sample_rate": project.export.audio_sample_rate,
+                "audio_bitrate_kbps": project.export.audio_bitrate_kbps,
+                "color_space": getattr(
+                    project.export.color_space, "value", project.export.color_space
+                ),
+                "ffmpeg_preset": project.export.ffmpeg_preset,
+                "two_pass": project.export.two_pass,
             }
         )
         target = Path(output_target)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(b'fake mp4')
-        project.export.last_log = 'remaining export log'
+        target.write_bytes(b"fake mp4")
+        project.export.last_log = "remaining export log"
         project.export.last_error = None
         return target
 
-    monkeypatch.setattr('splitshot.browser.server.export_project', fake_export_project)
+    monkeypatch.setattr("splitshot.browser.server.export_project", fake_export_project)
 
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -802,10 +1003,10 @@ def test_export_remaining_encoding_controls_drive_export_payload(
             browser, page = _open_test_page(playwright, server)
             try:
                 _load_primary_video(page, primary_path)
-                _open_tool(page, 'export')
+                _open_tool(page, "export")
 
                 expected_audio_codec = page.evaluate(
-                    """(path) => {
+                    """async () => {
                         const setControl = (id, value) => {
                             const element = document.getElementById(id);
                             if (!element) {
@@ -816,6 +1017,8 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                             } else {
                                 element.value = String(value);
                             }
+                            element.dispatchEvent(new Event('input', { bubbles: true }));
+                            element.dispatchEvent(new Event('change', { bubbles: true }));
                         };
                         const audioCodec = document.getElementById('audio-codec');
                         const alternateAudioCodec = [...audioCodec.options].find(
@@ -834,31 +1037,65 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                         setControl('color-space', 'bt709_sdr');
                         setControl('ffmpeg-preset', 'slow');
                         setControl('two-pass', true);
-                        setControl('export-path', path);
+                        await callApi('/api/export/settings', readExportLayoutPayload());
+                        await callApi('/api/export/settings', readExportSettingsPayload());
                         return alternateAudioCodec;
+                    }""",
+                )
+                output_root = str(output_path.parent)
+                page.evaluate(
+                    """async (path) => {
+                        await callApi('/api/project/details', { output_root: path });
+                    }""",
+                    output_root,
+                )
+                page.wait_for_function(
+                    """({ outputRoot }) => {
+                        const exportState = state?.project?.export || {};
+                        return state?.project?.output_root === outputRoot
+                            && exportState.preset === 'custom'
+                            && exportState.target_width === 1440
+                            && exportState.target_height === 1440
+                            && String(exportState.frame_rate) === '60'
+                            && String(exportState.video_codec) === 'hevc'
+                            && Number(exportState.video_bitrate_mbps) === 20
+                            && Number(exportState.audio_sample_rate) === 44100
+                            && Number(exportState.audio_bitrate_kbps) === 256
+                            && String(exportState.color_space) === 'bt709_sdr'
+                            && String(exportState.ffmpeg_preset) === 'slow'
+                            && exportState.two_pass === true;
+                    }""",
+                    arg={"outputRoot": output_root},
+                )
+
+                page.evaluate(
+                    """async (path) => {
+                        await callApi('/api/export', { path });
                     }""",
                     str(output_path),
                 )
-
-                page.locator('#export-video').click()
-                page.wait_for_function("() => state?.project?.export?.last_log === 'remaining export log'")
-                page.wait_for_function('(path) => state?.project?.export?.output_path === path', arg=str(output_path))
+                page.wait_for_function(
+                    "() => state?.project?.export?.last_log === 'remaining export log'"
+                )
+                page.wait_for_function(
+                    "(path) => state?.project?.output_root === path", arg=output_root
+                )
 
                 assert captured == {
-                    'output_path': str(output_path),
-                    'quality': 'low',
-                    'aspect_ratio': '1:1',
-                    'target_width': 1440,
-                    'target_height': 1440,
-                    'frame_rate': '60',
-                    'video_codec': 'hevc',
-                    'video_bitrate_mbps': 20,
-                    'audio_codec': expected_audio_codec,
-                    'audio_sample_rate': 44100,
-                    'audio_bitrate_kbps': 256,
-                    'color_space': 'bt709_sdr',
-                    'ffmpeg_preset': 'slow',
-                    'two_pass': True,
+                    "output_path": str(output_path),
+                    "quality": "low",
+                    "aspect_ratio": "1:1",
+                    "target_width": 1440,
+                    "target_height": 1440,
+                    "frame_rate": "60",
+                    "video_codec": "hevc",
+                    "video_bitrate_mbps": 20,
+                    "audio_codec": expected_audio_codec,
+                    "audio_sample_rate": 44100,
+                    "audio_bitrate_kbps": 256,
+                    "color_space": "bt709_sdr",
+                    "ffmpeg_preset": "slow",
+                    "two_pass": True,
                 }
             finally:
                 browser.close()
@@ -867,7 +1104,7 @@ def test_export_remaining_encoding_controls_drive_export_payload(
 
 
 def test_shotml_remaining_numeric_controls_commit_from_browser(synthetic_video_factory) -> None:
-    primary_path = Path(synthetic_video_factory(name='shotml-remaining-settings-ui'))
+    primary_path = Path(synthetic_video_factory(name="shotml-remaining-settings-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -875,9 +1112,11 @@ def test_shotml_remaining_numeric_controls_commit_from_browser(synthetic_video_f
             browser, page = _open_test_page(playwright, server)
             try:
                 _load_primary_video(page, primary_path)
-                _open_tool(page, 'shotml')
+                _open_tool(page, "shotml")
 
-                page.locator('[data-shotml-section="threshold"] button[data-section-toggle]').click()
+                page.locator(
+                    '[data-shotml-section="threshold"] button[data-section-toggle]'
+                ).click()
                 page.wait_for_function(
                     "() => !document.querySelector('[data-shotml-section=\"threshold\"]')?.classList.contains('collapsed')"
                 )
@@ -939,7 +1178,7 @@ def test_shotml_remaining_numeric_controls_commit_from_browser(synthetic_video_f
                     arg=updates,
                 )
 
-                committed = page.evaluate('state?.project?.analysis?.shotml_settings || {}')
+                committed = page.evaluate("state?.project?.analysis?.shotml_settings || {}")
                 for key, value in updates.items():
                     assert committed[key] == value
             finally:
@@ -951,27 +1190,29 @@ def test_shotml_remaining_numeric_controls_commit_from_browser(synthetic_video_f
 def test_shotml_section_toggles_persist_routes_and_proposal_actions_apply_or_discard() -> None:
     controller = ProjectController()
     controller.project.analysis.shots = [
-        ShotEvent(id='shot-1', time_ms=1000, shotml_time_ms=1000, source=ShotSource.AUTO, confidence=0.9),
+        ShotEvent(
+            id="shot-1", time_ms=1000, shotml_time_ms=1000, source=ShotSource.AUTO, confidence=0.9
+        ),
     ]
     controller.project.analysis.timing_change_proposals = [
         TimingChangeProposal(
-            id='move-shot-1',
-            proposal_type='move_shot',
-            shot_id='shot-1',
+            id="move-shot-1",
+            proposal_type="move_shot",
+            shot_id="shot-1",
             shot_number=1,
             source_time_ms=1000,
             target_time_ms=1045,
             confidence=0.95,
             support_confidence=0.82,
-            message='Move the first shot forward by 45 ms.',
+            message="Move the first shot forward by 45 ms.",
         ),
         TimingChangeProposal(
-            id='move-beep-1',
-            proposal_type='move_beep',
+            id="move-beep-1",
+            proposal_type="move_beep",
             source_time_ms=400,
             target_time_ms=425,
             confidence=0.72,
-            message='Shift the beep forward by 25 ms.',
+            message="Shift the beep forward by 25 ms.",
         ),
     ]
 
@@ -981,40 +1222,47 @@ def test_shotml_section_toggles_persist_routes_and_proposal_actions_apply_or_dis
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
-                _open_tool(page, 'shotml')
+                _open_tool(page, "shotml")
 
-                sections = page.locator('[data-shotml-section]')
-                section_ids = sections.evaluate_all('elements => elements.map((element) => element.dataset.shotmlSection)')
+                sections = page.locator("[data-shotml-section]")
+                section_ids = sections.evaluate_all(
+                    "elements => elements.map((element) => element.dataset.shotmlSection)"
+                )
                 assert section_ids
 
                 for section_id in section_ids:
                     section = page.locator(f'[data-shotml-section="{section_id}"]')
                     if section.evaluate('element => element.classList.contains("collapsed")'):
-                        section.locator('button[data-section-toggle]').click()
+                        section.locator("button[data-section-toggle]").click()
                         page.wait_for_function(
                             '(selector) => !document.querySelector(selector)?.classList.contains("collapsed")',
                             arg=f'[data-shotml-section="{section_id}"]',
                         )
 
-                _open_tool(page, 'project')
-                _open_tool(page, 'shotml')
+                _open_tool(page, "project")
+                _open_tool(page, "shotml")
                 for section_id in section_ids:
-                    assert page.locator(f'[data-shotml-section="{section_id}"]').evaluate(
-                        'element => element.classList.contains("collapsed")'
-                    ) is False
+                    assert (
+                        page.locator(f'[data-shotml-section="{section_id}"]').evaluate(
+                            'element => element.classList.contains("collapsed")'
+                        )
+                        is False
+                    )
 
-                page.locator('#shotml-proposal-list').wait_for(state='visible')
-                proposal_rows = page.locator('.shotml-proposal-row')
+                page.locator("#shotml-proposal-list").wait_for(state="visible")
+                proposal_rows = page.locator(".shotml-proposal-row")
                 assert proposal_rows.count() == 2
 
-                proposal_rows.nth(0).get_by_role('button', name='Apply').click()
+                proposal_rows.nth(0).get_by_role("button", name="Apply").click()
                 page.wait_for_function(
                     "() => (state?.project?.analysis?.shots || []).find((item) => item.id === 'shot-1')?.time_ms === 1045"
                 )
                 page.wait_for_function(
                     "() => (state?.project?.analysis?.timing_change_proposals || []).find((item) => item.id === 'move-shot-1')?.status === 'applied'"
                 )
-                page.wait_for_function("() => document.querySelectorAll('.shotml-proposal-row').length === 1")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('.shotml-proposal-row').length === 1"
+                )
 
                 page.evaluate(
                     """() => {

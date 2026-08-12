@@ -1,5 +1,7 @@
 # Domain
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns the canonical SplitShot project schema, enums, nested dataclasses, and serialization helpers.
 
 ## Purpose

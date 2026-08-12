@@ -39,11 +39,17 @@ def main():
         with sync_playwright() as pw:
             browser = pw.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-gpu", "--disable-software-rasterizer",
-                      "--disable-dev-shm-usage"])
+                args=[
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-dev-shm-usage",
+                ],
+            )
             context = browser.new_context(
                 viewport={"width": 1280, "height": 900},
-                record_video_dir=str(video_file.parent) if video_file else None)
+                record_video_dir=str(video_file.parent) if video_file else None,
+            )
             page = context.new_page()
 
             page.goto(base_url, wait_until="domcontentloaded", timeout=45000)
@@ -60,13 +66,27 @@ def main():
                 time.sleep(0.5)
 
             page.locator("#primary-file-input").set_input_files(str(args.video))
-            page.wait_for_function("() => Boolean(state?.media?.primary_display_name)", timeout=60000)
-            page.wait_for_function("() => (state?.project?.analysis?.shots || []).length > 0", timeout=120000)
+            page.wait_for_function(
+                "() => Boolean(state?.media?.primary_display_name)", timeout=60000
+            )
+            page.wait_for_function(
+                "() => (state?.project?.analysis?.shots || []).length > 0", timeout=120000
+            )
             print("PW: video imported, shots detected", flush=True)
             time.sleep(0.5)
 
-            for t in ["project", "merge", "scoring", "timing", "markers",
-                      "overlay", "review", "export", "metrics", "settings"]:
+            for t in [
+                "project",
+                "merge",
+                "scoring",
+                "timing",
+                "markers",
+                "overlay",
+                "review",
+                "export",
+                "metrics",
+                "settings",
+            ]:
                 btn = page.locator(f'button[data-tool="{t}"]')
                 if btn.is_visible():
                     btn.click(force=True)
@@ -93,10 +113,13 @@ def main():
         return 1
 
     if video_file:
-        recorded = sorted(video_file.parent.glob("*.webm")) + sorted(video_file.parent.glob("*.mp4"))
+        recorded = sorted(video_file.parent.glob("*.webm")) + sorted(
+            video_file.parent.glob("*.mp4")
+        )
         if recorded:
             src = max(recorded, key=lambda p: p.stat().st_mtime)
             import shutil
+
             shutil.move(str(src), str(video_file))
             sz = os.path.getsize(video_file) / 1024
             print(f"PW: video saved ({sz:.1f} KB)", flush=True)

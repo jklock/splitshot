@@ -219,7 +219,7 @@ export function createMarkersPane({
       }
     }
     if (activateTool) setActiveTool("markers");
-    if (rerender) renderPopupEditors();
+    if (rerender) renderPopupEditors({ force: previousBubbleId !== bubble.id });
     if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
     if (reveal) windowObject.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
     return true;
@@ -1089,7 +1089,6 @@ export function createMarkersPane({
       setSelectedPopupPlacementMode("base");
     }
     renderPopupEditors();
-    renderLiveOverlay();
     const stage = $("video-stage");
     const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
     const currentPositionMs = overlayRenderPositionMs($("primary-video"));
@@ -1277,6 +1276,26 @@ export function createMarkersPane({
       return;
     }
     popupOverlay.hidden = false;
+    const activeDrag = popupBubbleDrag();
+    if (activeDrag) {
+      popupOverlay.style.left = `${frameRect.left}px`;
+      popupOverlay.style.top = `${frameRect.top}px`;
+      popupOverlay.style.width = `${frameRect.width}px`;
+      popupOverlay.style.height = `${frameRect.height}px`;
+      const bubble = popupBubbles().find((item) => item.id === activeDrag.bubbleId);
+      const badge = popupOverlay.querySelector(`[data-popup-id="${activeDrag.bubbleId}"]`);
+      if (bubble && badge instanceof HTMLElement) {
+        const point = activeDrag.kind === "keyframe" && activeDrag.motionOffsetMs > 0
+          ? popupKeyframePoint(bubble, activeDrag.motionOffsetMs)
+          : popupKeyframePoint(bubble, 0);
+        placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
+      }
+      return;
+    }
+    const reusableBadges = new Map(
+      [...popupOverlay.querySelectorAll(".popup-overlay-badge[data-popup-id]")]
+        .map((badge) => [badge.dataset.popupId || "", badge]),
+    );
     popupOverlay.innerHTML = "";
     popupOverlay.style.left = `${frameRect.left}px`;
     popupOverlay.style.top = `${frameRect.top}px`;
@@ -1310,7 +1329,8 @@ export function createMarkersPane({
       const scaledFontSize = selectorStyle
         ? selectorFontSize
         : scaledOverlayPixelValue(currentState().project?.overlay?.font_size || 14, overlayScale, 1);
-      const badge = documentObject.createElement("div");
+      const badge = reusableBadges.get(bubble.id) || documentObject.createElement("div");
+      badge.replaceChildren();
       badge.className = "overlay-badge popup-overlay-badge";
       badge.classList.toggle("popup-placement-selector", Boolean(selectorStyle));
       badge.style.minWidth = `${scaledWidth}px`;

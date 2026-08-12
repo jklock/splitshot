@@ -5,73 +5,180 @@ import inspect
 import json
 import re
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+
 import splitshot.browser.server as browser_server_module
 import splitshot.ui.controller as controller_module
-
-from splitshot.browser.activity import ActivityLogger
 from splitshot.analysis.detection import DetectionResult
+from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
     display_name_for_path,
+    find_free_port,
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import OverlayPosition, Project, ShotEvent, ShotSource, VideoAsset
+from splitshot.domain.models import (
+    OverlayPosition,
+    Project,
+    ProjectStage,
+    QueueStatus,
+    ShotEvent,
+    ShotSource,
+    VideoAsset,
+)
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 
 DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/details": ("test_browser_project_details_autosave_persists_after_reopen",),
-    "/api/project/practiscore": ("test_browser_autosave_persists_practiscore_routes_to_project_json",),
-    "/api/project/ui-state": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/threshold": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/shotml-settings": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/shotml/proposals": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/shotml/apply-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/shotml/discard-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/analysis/shotml/reset-defaults": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/settings/reset-defaults": ("test_browser_settings_reset_defaults_restores_project_state",),
-    "/api/beep": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/shots/add": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/shots/move": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/shots/restore": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/shots/delete": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/shots/select": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/scoring": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/scoring/profile": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/scoring/score": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/scoring/restore": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/scoring/position": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/events/add": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/events/delete": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/files/primary": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/files/secondary": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/files/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/files/practiscore": ("test_browser_autosave_persists_practiscore_routes_to_project_json",),
-    "/api/import/primary": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
-    "/api/import/secondary": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/import/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/overlay": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/popups": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/merge/reset-defaults": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/merge/remove": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/merge/source": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/sync": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/swap": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/export/settings": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/export/preset": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
-    "/api/export": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
+    "/api/project/practiscore": (
+        "test_browser_autosave_persists_practiscore_routes_to_project_json",
+    ),
+    "/api/project/ui-state": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/threshold": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/shotml-settings": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/shotml/proposals": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/shotml/apply-proposal": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/shotml/discard-proposal": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/analysis/shotml/reset-defaults": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/settings/reset-defaults": (
+        "test_browser_settings_reset_defaults_restores_project_state",
+    ),
+    "/api/beep": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/shots/add": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/shots/move": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/shots/restore": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/shots/delete": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/shots/select": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/scoring": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/scoring/profile": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/scoring/score": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/scoring/restore": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/scoring/position": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/events/add": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/events/delete": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/files/primary": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/files/secondary": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/files/merge": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/files/practiscore": (
+        "test_browser_autosave_persists_practiscore_routes_to_project_json",
+    ),
+    "/api/import/primary": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
+    "/api/import/practiscore": (
+        "test_browser_autosave_persists_practiscore_routes_to_project_json",
+    ),
+    "/api/import/secondary": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/import/merge": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/overlay": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/popups": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/merge": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/merge/reset-defaults": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/merge/remove": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/merge/source": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/sync": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/swap": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/export/settings": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/export/preset": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/export": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/primary/trim": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/in-out/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/queue/media": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/fades": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/intro-outro/overlay": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
 }
 
 PROJECT_LIFECYCLE_POST_ROUTES = {
@@ -84,7 +191,32 @@ PROJECT_LIFECYCLE_POST_ROUTES = {
 NON_PROJECT_JSON_POST_ROUTES = {
     "/api/activity",
     "/api/dialog/path",
+    "/api/merge/source/analyze",
+    "/api/merge/source/trim",
+    "/api/merge/source/trim-all",
+    "/api/output-profiles/list",
+    "/api/output-profiles/create",
+    "/api/output-profiles/update",
+    "/api/output-profiles/delete",
+    "/api/output-profiles/apply",
+    "/api/output-profiles/render",
     "/api/project/probe",
+    "/api/project/reveal",
+    "/api/project/output/reveal",
+    "/api/project/queue/settings",
+    "/api/project/select-stage",
+    "/api/project/stage/create",
+    "/api/project/stage/delete",
+    "/api/project/stage/update",
+    "/api/project/stage/import-primary",
+    "/api/project/stage/import-added",
+    "/api/project/stage/clear-primary",
+    "/api/project/stage/set-primary",
+    "/api/project/stage/remove-added",
+    "/api/project/queue/add",
+    "/api/project/queue/remove",
+    "/api/project/queue/apply-all",
+    "/api/project/queue/process",
     "/api/settings",
     "/api/practiscore/dashboard/open",
     "/api/practiscore/session/start",
@@ -107,10 +239,14 @@ def _post_json(url: str, payload: dict) -> dict:
 def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) -> dict:
     boundary = "----splitshot-test-boundary"
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
-        "Content-Type: video/mp4\r\n\r\n"
-    ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            "Content-Type: video/mp4\r\n\r\n"
+        ).encode()
+        + payload
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
     request = urllib.request.Request(
         url,
         data=body,
@@ -219,7 +355,9 @@ def test_browser_foreground_server_reports_bind_failure(monkeypatch, capsys) -> 
         raise OSError(errno.EADDRINUSE, "Address already in use")
 
     server = BrowserControlServer(port=0)
-    monkeypatch.setattr(server, "_build_httpd", failing_build_httpd.__get__(server, BrowserControlServer))
+    monkeypatch.setattr(
+        server, "_build_httpd", failing_build_httpd.__get__(server, BrowserControlServer)
+    )
 
     with pytest.raises(OSError):
         server.serve_forever(open_browser=False)
@@ -227,6 +365,129 @@ def test_browser_foreground_server_reports_bind_failure(monkeypatch, capsys) -> 
     output = capsys.readouterr().out
     assert "SplitShot could not bind to" in output
     assert "Use --port to select a different port" in output
+
+
+def test_active_stage_media_edits_mark_queued_stage_stale(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="phase13-queue-primary"))
+    secondary_path = Path(synthetic_video_factory(name="phase13-queue-secondary"))
+
+    controller = ProjectController()
+    stage = ProjectStage(label="Stage 1", order_index=1)
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller.project_path = tmp_path / "phase13-queue.ssproj"
+    controller.project_path.mkdir(parents=True, exist_ok=True)
+    controller._sync_active_stage_to_project()
+
+    controller.import_stage_primary(stage.id, str(primary_path))
+    assert Path(controller.project.primary_video.path).parent == controller.project_path / "Input"
+    assert Path(controller.project.active_stage.primary_media.path).parent == (
+        controller.project_path / "Input"
+    )
+    controller.add_stage_to_queue(stage.id)
+
+    assert controller.project.queue[0].status == QueueStatus.QUEUED
+    assert controller.project.active_stage is not None
+    assert controller.project.active_stage.queue_status == QueueStatus.QUEUED
+
+    controller.import_stage_added(stage.id, str(secondary_path))
+    assert Path(controller.project.merge_sources[0].asset.path).parent == (
+        controller.project_path / "Input"
+    )
+
+    assert controller.project.queue[0].status == QueueStatus.STALE
+    assert controller.project.active_stage is not None
+    assert controller.project.active_stage.queue_status == QueueStatus.STALE
+
+
+def test_stage_metadata_update_route_updates_active_stage_context() -> None:
+    controller = ProjectController()
+    stage = ProjectStage(label="Stage 1", order_index=1)
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(
+            f"{server.url}api/project/stage/update",
+            {
+                "stage_id": stage.id,
+                "label": "Bay 1",
+                "stage_number": 2,
+                "competitor_name": "Test Shooter",
+                "competitor_place": 4,
+            },
+        )
+    finally:
+        server.shutdown()
+
+    stage_payload = state["project"]["stages"][0]
+    assert stage_payload["label"] == "Bay 1"
+    assert stage_payload["scoring"]["stage_number"] == 2
+    assert stage_payload["scoring"]["competitor_name"] == "Test Shooter"
+    assert stage_payload["scoring"]["competitor_place"] == 4
+    assert state["project"]["scoring"]["stage_number"] == 2
+    assert state["project"]["scoring"]["competitor_name"] == "Test Shooter"
+
+
+def test_trim_all_route_forwards_selected_stage_ids(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def record_selected_trim(
+        self,
+        stage_ids,
+        *,
+        start_s=None,
+        end_s=None,
+        keep_before_beep_s=None,
+        keep_after_last_shot_s=None,
+        clear=False,
+        progress_callback=None,
+        log_callback=None,
+    ) -> None:
+        captured.update(
+            {
+                "stage_ids": list(stage_ids),
+                "start_s": start_s,
+                "end_s": end_s,
+                "keep_before_beep_s": keep_before_beep_s,
+                "keep_after_last_shot_s": keep_after_last_shot_s,
+                "clear": clear,
+                "has_progress_callback": callable(progress_callback),
+                "has_log_callback": callable(log_callback),
+            }
+        )
+
+    monkeypatch.setattr(ProjectController, "trim_selected_stages", record_selected_trim)
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(
+            f"{server.url}api/merge/source/trim-all",
+            {
+                "stage_ids": ["stage-2", "stage-4"],
+                "keep_before_beep_s": 1.5,
+                "keep_after_last_shot_s": 2.5,
+                "clear": False,
+            },
+        )
+    finally:
+        server.shutdown()
+
+    assert captured == {
+        "stage_ids": ["stage-2", "stage-4"],
+        "start_s": None,
+        "end_s": None,
+        "keep_before_beep_s": 1.5,
+        "keep_after_last_shot_s": 2.5,
+        "clear": False,
+        "has_progress_callback": True,
+        "has_log_callback": True,
+    }
 
 
 def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:
@@ -253,6 +514,28 @@ def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) 
         httpd.server_close()
 
 
+def test_find_free_port_reuses_recently_released_desktop_port(monkeypatch) -> None:
+    options: list[tuple[int, int, int]] = []
+
+    class ReusableSocket:
+        def setsockopt(self, level: int, option: int, value: int) -> None:
+            options.append((level, option, value))
+
+        def bind(self, address: tuple[str, int]) -> None:
+            assert options[-1] == (
+                browser_server_module.socket.SOL_SOCKET,
+                browser_server_module.socket.SO_REUSEADDR,
+                1,
+            )
+            assert address == ("127.0.0.1", 8765)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(browser_server_module.socket, "socket", lambda *_args: ReusableSocket())
+    assert find_free_port("127.0.0.1", 8765) == 8765
+
+
 def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
     assert is_expected_disconnect_error(BrokenPipeError())
     assert is_expected_disconnect_error(ConnectionResetError())
@@ -262,7 +545,10 @@ def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
 
 
 def test_display_name_fallback_strips_browser_session_prefix() -> None:
-    assert display_name_for_path("/tmp/1234567890abcdef1234567890abcdef_Stage1.MP4", "None") == "Stage1.MP4"
+    assert (
+        display_name_for_path("/tmp/1234567890abcdef1234567890abcdef_Stage1.MP4", "None")
+        == "Stage1.MP4"
+    )
     assert display_name_for_path("", "None") == "None"
 
 
@@ -295,7 +581,9 @@ def test_browser_server_primes_export_runtime_on_construction(monkeypatch) -> No
     def fake_prepare_export_runtime() -> None:
         calls.append(threading.current_thread().name)
 
-    monkeypatch.setattr(browser_server_module, "prepare_export_runtime", fake_prepare_export_runtime)
+    monkeypatch.setattr(
+        browser_server_module, "prepare_export_runtime", fake_prepare_export_runtime
+    )
     server = BrowserControlServer(port=0)
     try:
         assert calls == [threading.current_thread().name]
@@ -340,7 +628,9 @@ def test_browser_activity_poll_returns_recent_entries(tmp_path) -> None:
         events = [entry["event"] for entry in payload["entries"]]
         assert "api.export.progress" in events
         assert "api.export.log" in events
-        assert any(entry.get("line") == "Encoder command: ffmpeg ..." for entry in payload["entries"])
+        assert any(
+            entry.get("line") == "Encoder command: ffmpeg ..." for entry in payload["entries"]
+        )
     finally:
         server.shutdown()
 
@@ -515,7 +805,9 @@ def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) ->
             {"shot_id": first_shot_id, "letter": "C", "penalty_counts": {"procedural_errors": 1}},
         )
         assert state["project"]["analysis"]["shots"][0]["score"]["letter"] == "C"
-        assert state["project"]["analysis"]["shots"][0]["score"]["penalty_counts"] == {"procedural_errors": 1}
+        assert state["project"]["analysis"]["shots"][0]["score"]["penalty_counts"] == {
+            "procedural_errors": 1
+        }
 
         state = _get_json(f"{server.url}api/state")
         assert state["metrics"]["total_shots"] == 3
@@ -540,7 +832,9 @@ def test_browser_control_api_restores_original_split_and_score(synthetic_video_f
             f"{server.url}api/shots/move",
             {"shot_id": shot_id, "time_ms": original_time_ms + 250},
         )
-        moved_shot = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        moved_shot = next(
+            shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id
+        )
         assert moved_shot["source"] == "manual"
         assert moved_shot["confidence"] is None
 
@@ -548,16 +842,22 @@ def test_browser_control_api_restores_original_split_and_score(synthetic_video_f
             f"{server.url}api/scoring/score",
             {"shot_id": shot_id, "letter": "C", "penalty_counts": {"procedural_errors": 1}},
         )
-        scored_shot = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        scored_shot = next(
+            shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id
+        )
         assert scored_shot["score"]["letter"] == "C"
 
         state = _post_json(f"{server.url}api/shots/restore", {"shot_id": shot_id})
-        restored_timing = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        restored_timing = next(
+            shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id
+        )
         assert restored_timing["time_ms"] == original_time_ms
         assert restored_timing["source"] == original_source
 
         state = _post_json(f"{server.url}api/scoring/restore", {"shot_id": shot_id})
-        restored_score = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        restored_score = next(
+            shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id
+        )
         assert restored_score["score"]["letter"] == "A"
     finally:
         server.shutdown()
@@ -710,8 +1010,12 @@ def test_browser_manual_merge_sync_after_auto_analysis_remains_authoritative_for
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
-        primary_path = Path(synthetic_video_factory(name="merge-authoritative-primary", beep_ms=400))
-        merge_path = Path(synthetic_video_factory(name="merge-authoritative-secondary", beep_ms=650))
+        primary_path = Path(
+            synthetic_video_factory(name="merge-authoritative-primary", beep_ms=400)
+        )
+        merge_path = Path(
+            synthetic_video_factory(name="merge-authoritative-secondary", beep_ms=650)
+        )
 
         _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
         state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
@@ -886,6 +1190,10 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
         assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
         assert state["project"]["scoring"]["imported_stage"]["aggregate_points"] == 101.0
+        assert state["project"]["scoring"]["classification"] == "M"
+        assert state["project"]["scoring"]["division"] == "Limited"
+        assert state["project"]["scoring"]["imported_stage"]["classification"] == "M"
+        assert state["project"]["scoring"]["imported_stage"]["division"] == "Limited"
         assert state["practiscore_options"]["source_name"] == "report.txt"
         assert state["practiscore_options"]["detected_match_type"] == "uspsa"
         assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4, 5, 6]
@@ -901,7 +1209,10 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         )
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        assert state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 23.24\nPoints 101\nHF 4.3460"
+        assert (
+            state["scoring_summary"]["imported_overlay_text"]
+            == "Summary\nRaw 23.24\nPoints 101\nHF 4.3460"
+        )
         assert state["scoring_summary"]["hit_factor"] == pytest.approx(101.0 / 23.24)
         assert state["scoring_summary"]["display_value"] == "4.35"
     finally:
@@ -990,15 +1301,23 @@ def test_browser_control_reimports_practiscore_from_staged_file_when_context_cha
         assert state["project"]["scoring"]["stage_number"] == 2
         assert state["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
         assert state["project"]["scoring"]["competitor_place"] == 4
+        assert state["project"]["scoring"]["classification"] == "UN"
+        assert state["project"]["scoring"]["division"] == "CO"
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
         assert state["project"]["scoring"]["imported_stage"]["stage_number"] == 2
-        assert state["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        assert (
+            state["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        )
         assert state["project"]["scoring"]["imported_stage"]["competitor_place"] == 4
+        assert state["project"]["scoring"]["imported_stage"]["classification"] == "UN"
+        assert state["project"]["scoring"]["imported_stage"]["division"] == "CO"
     finally:
         server.shutdown()
 
 
-def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(tmp_path: Path) -> None:
+def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     examples_dir = EXAMPLES_DIR / "IDPA"
@@ -1037,7 +1356,11 @@ def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(tmp
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "thursday-night.csv"
         assert state["project"]["scoring"]["imported_stage"]["final_time"] == 30.57
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        imported_box = next(box for box in state["project"]["overlay"]["text_boxes"] if box["source"] == "imported_summary")
+        imported_box = next(
+            box
+            for box in state["project"]["overlay"]["text_boxes"]
+            if box["source"] == "imported_summary"
+        )
         assert imported_box["quadrant"] == "above_final"
         assert imported_box["x"] is None
         assert imported_box["y"] is None
@@ -1073,11 +1396,22 @@ def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None
             (examples_dir / "IDPA.csv").read_bytes(),
         )
 
-        assert imported["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        assert (
+            imported["project"]["scoring"]["imported_stage"]["competitor_name"]
+            == "John Klockenkemper"
+        )
         assert imported["project"]["scoring"]["imported_stage"]["stage_number"] == 2
 
         saved = _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
-        assert Path(saved["project"]["scoring"]["practiscore_source_path"]).parent == project_path / "CSV"
+        assert (
+            Path(saved["project"]["scoring"]["practiscore_source_path"]).parent
+            == project_path / "CSV"
+        )
+        assert Path(saved["project"]["practiscore_source_file"]).parent == project_path / "CSV"
+        assert all(
+            Path(stage["scoring"]["practiscore_source_path"]).parent == project_path / "CSV"
+            for stage in saved["project"]["stages"]
+        )
 
         _post_json(f"{server.url}api/project/new", {})
 
@@ -1090,13 +1424,18 @@ def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None
         assert reopened["project"]["scoring"]["competitor_place"] == 4
         assert reopened["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
         assert reopened["project"]["scoring"]["imported_stage"]["stage_number"] == 2
-        assert reopened["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        assert (
+            reopened["project"]["scoring"]["imported_stage"]["competitor_name"]
+            == "John Klockenkemper"
+        )
         assert reopened["project"]["scoring"]["imported_stage"]["final_time"] == 39.83
         assert reopened["practiscore_options"]["has_source"] is True
         assert reopened["practiscore_options"]["source_name"] == "IDPA.csv"
         assert reopened["practiscore_options"]["detected_match_type"] == "idpa"
         assert reopened["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
-        assert reopened["scoring_summary"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        assert (
+            reopened["scoring_summary"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        )
         assert reopened["scoring_summary"]["display_value"] == "39.83"
     finally:
         server.shutdown()
@@ -1124,7 +1463,9 @@ def test_browser_control_api_can_delete_timing_event() -> None:
         server.shutdown()
 
 
-def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_control_api_covers_remaining_browser_routes(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -1150,9 +1491,7 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
         assert len(state["project"]["analysis"]["shots"]) == shot_count + 1
         first_shot_id = state["project"]["analysis"]["shots"][0]["id"]
         added_shot_id = next(
-            shot["id"]
-            for shot in state["project"]["analysis"]["shots"]
-            if shot["time_ms"] == 1750
+            shot["id"] for shot in state["project"]["analysis"]["shots"] if shot["time_ms"] == 1750
         )
 
         state = _post_json(f"{server.url}api/shots/select", {"shot_id": first_shot_id})
@@ -1173,7 +1512,12 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
 
         state = _post_json(
             f"{server.url}api/export/settings",
-            {"quality": "medium", "target_width": 720, "target_height": 1280, "aspect_ratio": "9:16"},
+            {
+                "quality": "medium",
+                "target_width": 720,
+                "target_height": 1280,
+                "aspect_ratio": "9:16",
+            },
         )
         assert state["project"]["export"]["preset"] == "custom"
         assert state["project"]["export"]["quality"] == "medium"
@@ -1198,13 +1542,17 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
 
 def test_browser_threshold_rerun_preserves_manual_shots_and_timing_events(monkeypatch) -> None:
     controller = ProjectController()
-    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    controller.project.primary_video = VideoAsset(
+        path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
     first = ShotEvent(time_ms=250, source=ShotSource.AUTO, confidence=0.9)
     second = ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.9)
     third = ShotEvent(time_ms=900, source=ShotSource.AUTO, confidence=0.9)
     controller.project.analysis.beep_time_ms_primary = 100
     controller.project.analysis.shots = [first, second, third]
-    controller.add_timing_event("reload", after_shot_id=first.id, before_shot_id=second.id, note="Keep me")
+    controller.add_timing_event(
+        "reload", after_shot_id=first.id, before_shot_id=second.id, note="Keep me"
+    )
     controller.add_shot(1200)
 
     def fake_analyze(path: str, threshold: float) -> DetectionResult:
@@ -1237,7 +1585,9 @@ def test_browser_threshold_rerun_preserves_manual_shots_and_timing_events(monkey
         server.shutdown()
 
 
-def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_video_factory) -> None:
+def test_browser_file_picker_endpoint_imports_selected_primary_video(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -1286,7 +1636,9 @@ def test_browser_file_picker_import_preserves_trailing_bytes(monkeypatch) -> Non
         server.shutdown()
 
 
-def test_browser_file_picker_endpoint_preserves_secondary_display_name(synthetic_video_factory) -> None:
+def test_browser_file_picker_endpoint_preserves_secondary_display_name(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -1399,7 +1751,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": False,
-            "missing_required_dirs": ["Input", "CSV", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
 
         (project_path / "project.json").write_text("{}", encoding="utf-8")
@@ -1411,7 +1763,7 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
             "path": str(project_path),
             "normalized_path": str(project_path.resolve()),
             "has_project_file": True,
-            "missing_required_dirs": ["Input", "CSV", "Output"],
+            "missing_required_dirs": ["Input", "CSV", "Markers", "IntroOutro", "Output"],
         }
     finally:
         server.shutdown()
@@ -1442,7 +1794,9 @@ def test_choose_local_path_macos_prompts_for_project_folder(monkeypatch) -> None
     assert "Choose SplitShot project folder" in script
 
 
-def test_choose_local_path_macos_falls_back_to_existing_parent_for_missing_media_path(monkeypatch, tmp_path: Path) -> None:
+def test_choose_local_path_macos_falls_back_to_existing_parent_for_missing_media_path(
+    monkeypatch, tmp_path: Path
+) -> None:
     captured: dict[str, object] = {}
     missing_media_path = tmp_path / "Stage2.MP4"
 
@@ -1484,7 +1838,9 @@ def test_browser_control_api_layout_route_is_not_available(synthetic_video_facto
         server.shutdown()
 
 
-def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_project_open_replaces_stale_media_state(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -1492,11 +1848,10 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         video_path = Path(synthetic_video_factory())
         project_path = tmp_path / "saved.ssproj"
 
-        imported = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
-        assert imported["media"]["primary_available"] is True
-
         saved = _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
         assert saved["project"]["path"] == str(project_path)
+        imported = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        assert imported["media"]["primary_available"] is True
 
         cleared = _post_json(f"{server.url}api/project/new", {})
         assert cleared["media"]["primary_available"] is False
@@ -1511,7 +1866,9 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         server.shutdown()
 
 
-def test_browser_project_open_recovers_renamed_project_root_media(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_project_open_recovers_renamed_project_root_media(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -1593,6 +1950,7 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
             f"{server.url}api/export/settings",
             {"output_path": str(output_path)},
         )
+        assert export_state["project"]["output_root"] == str(output_path.parent)
         assert export_state["project"]["export"]["output_path"] == str(output_path)
         assert export_state["project"]["export"]["preset"] == original_preset
 
@@ -1620,12 +1978,15 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
         assert reopened["project"]["ui_state"]["waveform_height"] == 260
         assert reopened["project"]["ui_state"]["scoring_edit_shot_ids"] == [selected_shot_id]
         assert reopened["project"]["ui_state"]["scoring_shot_expansion"] == {selected_shot_id: True}
-        assert reopened["project"]["ui_state"]["waveform_shot_amplitudes"] == {selected_shot_id: 1.5}
+        assert reopened["project"]["ui_state"]["waveform_shot_amplitudes"] == {
+            selected_shot_id: 1.5
+        }
         assert reopened["project"]["ui_state"]["timing_edit_shot_ids"] == [selected_shot_id]
         assert reopened["project"]["ui_state"]["timing_column_widths"]["segment"] == 128
         assert reopened["project"]["ui_state"]["timing_column_widths"]["split"] == 224
         assert reopened["project"]["ui_state"]["timing_column_widths"]["action"] == 244
         assert reopened["project"]["ui_state"]["popup_authoring_collapsed"] is True
+        assert reopened["project"]["output_root"] == str(output_path.parent)
         assert reopened["project"]["export"]["output_path"] == str(output_path)
         assert reopened["project"]["export"]["preset"] == original_preset
     finally:
@@ -1694,8 +2055,12 @@ def test_browser_post_route_manifest_is_classified_and_disk_asserted() -> None:
             test_func = globals().get(test_name)
             assert callable(test_func), f"Missing persistence test function: {test_name}"
             test_source = inspect.getsource(test_func)
-            assert route in test_source or route.lstrip("/") in test_source, f"{test_name} does not exercise {route}"
-            assert "_read_project_json(" in test_source, f"{test_name} does not assert project.json writes"
+            assert route in test_source or route.lstrip("/") in test_source, (
+                f"{test_name} does not exercise {route}"
+            )
+            assert "_read_project_json(" in test_source, (
+                f"{test_name} does not assert project.json writes"
+            )
 
 
 def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json(
@@ -1714,7 +2079,10 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
         imported = _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
         saved = _read_project_json(project_path)
         assert saved["primary_video"]["path"].startswith("Input/")
-        assert saved["analysis"]["beep_time_ms_primary"] == imported["project"]["analysis"]["beep_time_ms_primary"]
+        assert (
+            saved["analysis"]["beep_time_ms_primary"]
+            == imported["project"]["analysis"]["beep_time_ms_primary"]
+        )
         assert len(saved["analysis"]["shots"]) == len(imported["project"]["analysis"]["shots"])
 
         threshold = _post_json(f"{server.url}api/analysis/threshold", {"threshold": 0.4})
@@ -1724,7 +2092,10 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
 
         _post_json(
             f"{server.url}api/analysis/shotml-settings",
-            {"settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230}, "rerun": False},
+            {
+                "settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230},
+                "rerun": False,
+            },
         )
         saved = _read_project_json(project_path)
         assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 130
@@ -1746,7 +2117,8 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
 
         added = _post_json(f"{server.url}api/shots/add", {"time_ms": 1750})
         added_shot = next(
-            shot for shot in added["project"]["analysis"]["shots"]
+            shot
+            for shot in added["project"]["analysis"]["shots"]
             if shot["time_ms"] == 1750 and shot["source"] == "manual"
         )
         added_shot_id = added_shot["id"]
@@ -1824,16 +2196,24 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
             if proposal["proposal_type"] == "restore_shot" and proposal["shot_id"] == first_shot_id
         )
         saved = _read_project_json(project_path)
-        assert any(proposal["id"] == restore_proposal["id"] for proposal in saved["analysis"]["timing_change_proposals"])
+        assert any(
+            proposal["id"] == restore_proposal["id"]
+            for proposal in saved["analysis"]["timing_change_proposals"]
+        )
 
         _post_json(
             f"{server.url}api/analysis/shotml/discard-proposal",
             {"proposal_id": restore_proposal["id"]},
         )
         saved = _read_project_json(project_path)
-        assert next(
-            proposal for proposal in saved["analysis"]["timing_change_proposals"] if proposal["id"] == restore_proposal["id"]
-        )["status"] == "discarded"
+        assert (
+            next(
+                proposal
+                for proposal in saved["analysis"]["timing_change_proposals"]
+                if proposal["id"] == restore_proposal["id"]
+            )["status"]
+            == "discarded"
+        )
 
         generated = _post_json(f"{server.url}api/analysis/shotml/proposals", {})
         apply_proposal = next(
@@ -1937,7 +2317,35 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         first_shot_id = uploaded_primary["project"]["analysis"]["shots"][0]["id"]
         saved = _read_project_json(project_path)
         assert saved["primary_video"]["path"].startswith("Input/")
-        assert len(saved["analysis"]["shots"]) == len(uploaded_primary["project"]["analysis"]["shots"])
+        assert len(saved["analysis"]["shots"]) == len(
+            uploaded_primary["project"]["analysis"]["shots"]
+        )
+
+        _post_json(
+            f"{server.url}api/project/in-out/media",
+            {"kind": "intro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/queue/media",
+            {"kind": "outro", "path": str(primary_path)},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/fades",
+            {"kind": "intro", "fade_in_s": 0.7, "fade_out_s": 0.9},
+        )
+        _post_json(
+            f"{server.url}api/project/intro-outro/overlay",
+            {"kind": "intro", "show_timer": True, "show_shots": False},
+        )
+        saved = _read_project_json(project_path)
+        assert Path(saved["queue_settings"]["intro_path"]).parent.name == "IntroOutro"
+        assert Path(saved["queue_settings"]["outro_path"]).parent.name == "IntroOutro"
+        assert saved["queue_settings"]["include_intro"] is True
+        assert saved["queue_settings"]["include_outro"] is True
+        assert saved["intro_clip"]["fade_in_s"] == pytest.approx(0.7)
+        assert saved["intro_clip"]["fade_out_s"] == pytest.approx(0.9)
+        assert saved["intro_clip"]["overlay"]["show_timer"] is True
+        assert saved["intro_clip"]["overlay"]["show_shots"] is False
 
         uploaded_secondary = _post_multipart(
             f"{server.url}api/files/secondary",
@@ -1968,8 +2376,22 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert len(saved["merge_sources"]) == 4
 
         _post_json(
+            f"{server.url}api/primary/trim",
+            {"start_s": 0.2, "end_s": 1.8, "apply": True},
+        )
+        saved = _read_project_json(project_path)
+        assert saved["primary_trim_derivative"]["derivative_path"]
+        assert saved["primary_trim_derivative"]["active_path_kind"] == "local_derivative"
+
+        _post_json(
             f"{server.url}api/merge",
-            {"enabled": True, "layout": "pip", "pip_size_percent": 44, "pip_x": 0.12, "pip_y": 0.76},
+            {
+                "enabled": True,
+                "layout": "pip",
+                "pip_size_percent": 44,
+                "pip_x": 0.12,
+                "pip_y": 0.76,
+            },
         )
         saved = _read_project_json(project_path)
         assert saved["merge"]["enabled"] is True
@@ -2001,7 +2423,9 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert first_source["sync_offset_ms"] == -25
         assert saved["analysis"]["sync_offset_ms"] == -25
 
-        _post_json(f"{server.url}api/merge/source", {"source_id": first_source_id, "sync_delta_ms": 5})
+        _post_json(
+            f"{server.url}api/merge/source", {"source_id": first_source_id, "sync_delta_ms": 5}
+        )
         saved = _read_project_json(project_path)
         first_source = _merge_source_from_project_json(saved, first_source_id)
         assert first_source["sync_offset_ms"] == -20
@@ -2149,6 +2573,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
             },
         )
         saved = _read_project_json(project_path)
+        assert saved["output_root"] == str(project_path / "Output")
         assert saved["export"]["output_path"] == "Output/autosave-output.mp4"
         assert saved["export"]["quality"] == "medium"
         assert saved["export"]["aspect_ratio"] == "9:16"
@@ -2161,12 +2586,14 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["export"]["preset"] == "youtube_long_1080p"
 
         before_swap = _read_project_json(project_path)
-        old_primary_path = before_swap["primary_video"]["path"]
         old_first_source_path = before_swap["merge_sources"][0]["asset"]["path"]
         _post_json(f"{server.url}api/swap", {})
         after_swap = _read_project_json(project_path)
         assert after_swap["primary_video"]["path"] == old_first_source_path
-        assert after_swap["secondary_video"]["path"] == old_primary_path
+        assert (
+            after_swap["secondary_video"]["path"]
+            == before_swap["primary_trim_derivative"]["derivative_path"]
+        )
 
         removable_source_id = after_swap["merge_sources"][-1]["id"]
         _post_json(f"{server.url}api/merge/remove", {"source_id": removable_source_id})
@@ -2218,7 +2645,8 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
             },
         )
         saved = _read_project_json(project_path)
-        assert saved["export"]["output_path"] == str(export_target)
+        assert saved["output_root"] == str(project_path / "Output")
+        assert saved["export"]["output_path"] == "Output/autosave-output.mp4"
         assert saved["overlay"]["custom_box_text"] == "Export Summary"
         assert saved["merge"]["layout"] == "pip"
         assert _merge_source_from_project_json(saved, first_source_id)["sync_offset_ms"] == 15
@@ -2232,7 +2660,9 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         server.shutdown()
 
 
-def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, monkeypatch) -> None:
+def test_browser_settings_reset_defaults_restores_project_state(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2250,7 +2680,10 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         _post_json(f"{server.url}api/export/settings", {"quality": "low"})
         _post_json(
             f"{server.url}api/analysis/shotml-settings",
-            {"settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230}, "rerun": False},
+            {
+                "settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230},
+                "rerun": False,
+            },
         )
 
         reset = _post_json(f"{server.url}api/settings/reset-defaults", {})
@@ -2290,7 +2723,9 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         server.shutdown()
 
 
-def test_browser_settings_reset_defaults_deletes_folder_settings_file(tmp_path: Path, monkeypatch) -> None:
+def test_browser_settings_reset_defaults_deletes_folder_settings_file(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2346,7 +2781,10 @@ def test_browser_project_open_ignores_invalid_folder_settings(tmp_path: Path, mo
 
         assert state["settings"]["default_tool"] == "metrics"
         assert state["settings_layers"]["folder"] == {}
-        assert "Folder defaults were ignored:" in state["settings_layers"]["project"]["folder_settings_error"]
+        assert (
+            "Folder defaults were ignored:"
+            in state["settings_layers"]["project"]["folder_settings_error"]
+        )
     finally:
         server.shutdown()
 
@@ -2394,7 +2832,9 @@ def test_browser_popup_image_assets_are_bundled_and_served(tmp_path: Path) -> No
         server.shutdown()
 
 
-def test_browser_state_exposes_settings_layers_and_folder_precedence(tmp_path: Path, monkeypatch) -> None:
+def test_browser_state_exposes_settings_layers_and_folder_precedence(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2507,7 +2947,9 @@ def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, m
         server.shutdown()
 
 
-def test_browser_settings_section_reset_only_clears_selected_section(tmp_path: Path, monkeypatch) -> None:
+def test_browser_settings_section_reset_only_clears_selected_section(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2547,7 +2989,9 @@ def test_browser_settings_section_reset_only_clears_selected_section(tmp_path: P
         server.shutdown()
 
 
-def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project(tmp_path: Path, monkeypatch) -> None:
+def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2592,7 +3036,9 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
         assert created["project"]["merge"]["layout"] == "pip"
         assert created["project"]["merge"]["pip_size"] == "50%"
         assert len(created["project"]["merge_sources"]) == 1
-        assert created["project"]["merge_sources"][0]["asset"]["path"] == str(tmp_path / "reference.png")
+        assert created["project"]["merge_sources"][0]["asset"]["path"] == str(
+            tmp_path / "reference.png"
+        )
         assert created["project"]["merge_sources"][0]["asset"]["is_still_image"] is True
         assert created["project"]["merge_sources"][0]["pip_size_percent"] == 42
         assert created["project"]["merge_sources"][0]["pip_x"] == 0.25
@@ -2626,6 +3072,10 @@ def test_browser_autosave_persists_practiscore_routes_to_project_json(tmp_path: 
         assert saved["scoring"]["competitor_name"] == "John Klockenkemper"
         assert saved["scoring"]["competitor_place"] == 4
 
+        _post_json(
+            f"{server.url}api/import/practiscore",
+            {"path": str(examples_dir / "IDPA.csv")},
+        )
         _post_multipart(
             f"{server.url}api/files/practiscore",
             "file",
@@ -2657,7 +3107,9 @@ def test_browser_project_open_recovers_practiscore_from_project_csv_folder(tmp_p
         saved = _read_project_json(project_path)
 
         assert reopened["project"]["path"] == str(project_path)
-        assert reopened["project"]["scoring"]["practiscore_source_path"] == str(staged_csv.resolve())
+        assert reopened["project"]["scoring"]["practiscore_source_path"] == str(
+            staged_csv.resolve()
+        )
         assert reopened["project"]["scoring"]["enabled"] is True
         assert reopened["project"]["scoring"]["ruleset"] == "idpa_time_plus"
         assert reopened["project"]["scoring"]["match_type"] == "idpa"
@@ -2674,7 +3126,10 @@ def test_browser_project_open_recovers_practiscore_from_project_csv_folder(tmp_p
         assert reopened["practiscore_options"]["detected_match_type"] == "idpa"
         assert reopened["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
         assert reopened["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        assert any(box["source"] == "imported_summary" for box in reopened["project"]["overlay"]["text_boxes"])
+        assert any(
+            box["source"] == "imported_summary"
+            for box in reopened["project"]["overlay"]["text_boxes"]
+        )
         assert saved["scoring"]["match_type"] == "idpa"
         assert saved["scoring"]["stage_number"] == 1
         assert saved["scoring"]["competitor_name"] == "Jeff Graff"
@@ -2687,7 +3142,9 @@ def test_browser_project_open_recovers_practiscore_from_project_csv_folder(tmp_p
         server.shutdown()
 
 
-def test_browser_project_save_bundles_imported_media_for_reopen(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_project_save_bundles_imported_media_for_reopen(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -2696,6 +3153,7 @@ def test_browser_project_save_bundles_imported_media_for_reopen(synthetic_video_
         secondary_path = Path(synthetic_video_factory(name="secondary-upload"))
         project_path = tmp_path / "uploaded-media.ssproj"
 
+        _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
         _post_multipart(
             f"{server.url}api/files/primary",
             "file",
@@ -2778,7 +3236,9 @@ def test_browser_state_marks_missing_project_media_unavailable(tmp_path: Path) -
     assert payload["media"]["primary_url"] is None
 
 
-def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, tmp_path: Path) -> None:
+def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(
+    monkeypatch, tmp_path: Path
+) -> None:
     controller = ProjectController()
     source_path = tmp_path / "Stage1.MP4"
     source_path.write_bytes(b"source-media")
@@ -2812,7 +3272,11 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, t
     monkeypatch.setattr(
         browser_server_module,
         "_validate_browser_preview_timeline",
-        lambda source_path, metadata, preview_path: (True, {"codec_name": "h264"}, {"codec_name": "h264"}),
+        lambda source_path, metadata, preview_path: (
+            True,
+            {"codec_name": "h264"},
+            {"codec_name": "h264"},
+        ),
     )
 
     server = BrowserControlServer(controller=controller, port=0)
@@ -2824,7 +3288,8 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, t
         assert state["status"] == "Primary analysis complete."
         assert len(ffprobe_calls) == 1
         assert len(ffmpeg_calls) == 1
-        assert ["-c:a", "aac"] == ffmpeg_calls[0][8:10]
+        assert "-an" in ffmpeg_calls[0]
+        assert "-c:a" not in ffmpeg_calls[0]
 
         with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
             assert response.read() == b"browser-preview"
@@ -2840,6 +3305,65 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, t
         server.shutdown()
 
 
+def test_browser_media_concurrent_requests_share_one_pcm_preview(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source_path = tmp_path / "Stage1.MP4"
+    source_path.write_bytes(b"source-media")
+    ffmpeg_calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        browser_server_module,
+        "run_ffprobe_json",
+        lambda _path: {
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "pcm_s16le"},
+            ],
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+        },
+    )
+
+    def fake_ffmpeg(command: list[str]) -> None:
+        ffmpeg_calls.append(command)
+        time.sleep(0.05)
+        Path(command[-1]).write_bytes(b"browser-preview")
+
+    monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
+    monkeypatch.setattr(
+        browser_server_module,
+        "_validate_browser_preview_timeline",
+        lambda source_path, metadata, preview_path: (
+            True,
+            {"codec_name": "h264"},
+            {"codec_name": "h264"},
+        ),
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    barrier = threading.Barrier(6)
+    results: list[tuple[Path, bool, str | None, str | None]] = []
+
+    def prepare() -> None:
+        barrier.wait()
+        results.append(server._prepare_browser_media(source_path))
+
+    threads = [threading.Thread(target=prepare) for _index in range(6)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert all(not thread.is_alive() for thread in threads)
+        assert len(results) == 6
+        assert len(ffmpeg_calls) == 1
+        assert len({str(result[0]) for result in results}) == 1
+        assert all(result[1] is True for result in results)
+    finally:
+        server.shutdown()
+
+
 def test_browser_media_endpoint_returns_404_when_preview_disappears(tmp_path: Path) -> None:
     controller = ProjectController()
     source_path = tmp_path / "Stage1.MP4"
@@ -2850,7 +3374,12 @@ def test_browser_media_endpoint_returns_404_when_preview_disappears(tmp_path: Pa
     controller.project.primary_video.duration_ms = 31_425
 
     server = BrowserControlServer(controller=controller, port=0)
-    server._prepare_browser_media = lambda path: (tmp_path / "missing-browser-preview.mp4", True, "test_missing_preview", "aac")
+    server._prepare_browser_media = lambda path: (
+        tmp_path / "missing-browser-preview.mp4",
+        True,
+        "test_missing_preview",
+        "aac",
+    )
     server.start_background(open_browser=False)
     try:
         with pytest.raises(urllib.error.HTTPError) as excinfo:
@@ -2864,7 +3393,39 @@ def test_browser_media_endpoint_returns_404_when_preview_disappears(tmp_path: Pa
         server.shutdown()
 
 
-def test_browser_preview_timeline_ignores_container_duration_drift_when_other_video_metadata_matches() -> None:
+def test_prewarm_active_media_prepares_paths_in_parallel(tmp_path: Path) -> None:
+    controller = ProjectController()
+    paths = (
+        tmp_path / "Stage1.MP4",
+        tmp_path / "Stage2.MP4",
+        tmp_path / "Stage3.MP4",
+    )
+    for path in paths:
+        path.write_bytes(b"video")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    started: dict[str, float] = {}
+    server._active_browser_media_paths = lambda: paths  # type: ignore[method-assign]
+
+    def fake_prepare(path: Path) -> tuple[Path, bool, None, None]:
+        started[path.name] = time.perf_counter()
+        time.sleep(0.2)
+        return path, False, None, None
+
+    server._prepare_browser_media = fake_prepare  # type: ignore[method-assign]
+
+    start = time.perf_counter()
+    server.prewarm_active_media()
+    elapsed = time.perf_counter() - start
+
+    assert set(started) == {path.name for path in paths}
+    assert elapsed < 0.45
+    assert max(started.values()) - min(started.values()) < 0.1
+
+
+def test_browser_preview_timeline_ignores_container_duration_drift_when_other_video_metadata_matches() -> (
+    None
+):
     source_timeline = {
         "codec_name": "h264",
         "width": "1920",
@@ -2882,7 +3443,12 @@ def test_browser_preview_timeline_ignores_container_duration_drift_when_other_vi
         "duration_ts": "1887000",
     }
 
-    assert browser_server_module._browser_preview_matches_source_timeline(source_timeline, preview_timeline) is True
+    assert (
+        browser_server_module._browser_preview_matches_source_timeline(
+            source_timeline, preview_timeline
+        )
+        is True
+    )
 
 
 def test_browser_preview_timeline_rejects_frame_count_mismatch() -> None:
@@ -2903,7 +3469,12 @@ def test_browser_preview_timeline_rejects_frame_count_mismatch() -> None:
         "nb_frames": "1901",
     }
 
-    assert browser_server_module._browser_preview_matches_source_timeline(source_timeline, preview_timeline) is False
+    assert (
+        browser_server_module._browser_preview_matches_source_timeline(
+            source_timeline, preview_timeline
+        )
+        is False
+    )
 
 
 def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_path: Path) -> None:
@@ -2916,13 +3487,85 @@ def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_p
         "streams": [
             {
                 "codec_type": "video",
-                "codec_name": "h264",
+                "codec_name": "hevc",
                 "width": 1920,
                 "height": 1080,
                 "start_pts": 0,
                 "start_time": "0.000000",
                 "time_base": "1/60000",
                 "duration_ts": 1885508,
+                "avg_frame_rate": "60/1",
+                "r_frame_rate": "60/1",
+                "nb_frames": 1902,
+            }
+        ]
+    }
+    preview_metadata = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 1920,
+                "height": 1080,
+                "start_pts": 0,
+                "start_time": "0.000000",
+                "time_base": "1/60000",
+                "duration_ts": 1887000,
+                "avg_frame_rate": "60/1",
+                "r_frame_rate": "60/1",
+                "nb_frames": 1902,
+            }
+        ]
+    }
+
+    monkeypatch.setattr(browser_server_module, "run_ffprobe_json", lambda path: preview_metadata)
+    packet_outputs = {
+        str(source_path): "0,0,1000,K_\n1000,1000,1000,_D_\n",
+        str(preview_path): "0,0,1000,K_\n1000,1000,1000,___\n",
+    }
+    monkeypatch.setattr(
+        browser_server_module, "_ffprobe_video_packet_csv", lambda path: packet_outputs[str(path)]
+    )
+
+    timeline_valid, _source_timeline, _preview_timeline = (
+        browser_server_module._validate_browser_preview_timeline(
+            source_path,
+            source_metadata,
+            preview_path,
+        )
+    )
+    assert timeline_valid is True
+
+    packet_outputs[str(preview_path)] = "0,0,1000,K_\n1001,1001,1000,__\n"
+
+    timeline_valid, _source_timeline, _preview_timeline = (
+        browser_server_module._validate_browser_preview_timeline(
+            source_path,
+            source_metadata,
+            preview_path,
+        )
+    )
+    assert timeline_valid is False
+
+
+def test_browser_preview_timeline_skips_packet_walk_for_copy_safe_video_codecs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source_path = tmp_path / "source.mp4"
+    preview_path = tmp_path / "preview.mp4"
+    source_path.write_bytes(b"source")
+    preview_path.write_bytes(b"preview")
+    source_metadata = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "start_pts": 0,
+                "start_time": "0.000000",
+                "time_base": "1/60000",
+                "duration_ts": 1887000,
                 "avg_frame_rate": "60/1",
                 "r_frame_rate": "60/1",
                 "nb_frames": 1902,
@@ -2948,27 +3591,20 @@ def test_browser_preview_timeline_requires_exact_packet_match(monkeypatch, tmp_p
     }
 
     monkeypatch.setattr(browser_server_module, "run_ffprobe_json", lambda path: preview_metadata)
-    packet_outputs = {
-        str(source_path): "0,0,1000,K_\n1000,1000,1000,_D_\n",
-        str(preview_path): "0,0,1000,K_\n1000,1000,1000,___\n",
-    }
-    monkeypatch.setattr(browser_server_module, "_ffprobe_video_packet_csv", lambda path: packet_outputs[str(path)])
+    monkeypatch.setattr(
+        browser_server_module,
+        "_ffprobe_video_packet_csv",
+        lambda path: pytest.fail("copy-safe validation should not walk packet timelines"),
+    )
 
-    timeline_valid, _source_timeline, _preview_timeline = browser_server_module._validate_browser_preview_timeline(
-        source_path,
-        source_metadata,
-        preview_path,
+    timeline_valid, _source_timeline, _preview_timeline = (
+        browser_server_module._validate_browser_preview_timeline(
+            source_path,
+            source_metadata,
+            preview_path,
+        )
     )
     assert timeline_valid is True
-
-    packet_outputs[str(preview_path)] = "0,0,1000,K_\n1001,1001,1000,__\n"
-
-    timeline_valid, _source_timeline, _preview_timeline = browser_server_module._validate_browser_preview_timeline(
-        source_path,
-        source_metadata,
-        preview_path,
-    )
-    assert timeline_valid is False
 
 
 def test_browser_media_endpoint_falls_back_to_source_when_preview_timeline_validation_fails(
@@ -3008,7 +3644,11 @@ def test_browser_media_endpoint_falls_back_to_source_when_preview_timeline_valid
     monkeypatch.setattr(
         browser_server_module,
         "_validate_browser_preview_timeline",
-        lambda source_path, metadata, preview_path: (False, {"codec_name": "h264"}, {"codec_name": "libx264"}),
+        lambda source_path, metadata, preview_path: (
+            False,
+            {"codec_name": "h264"},
+            {"codec_name": "libx264"},
+        ),
     )
 
     server = BrowserControlServer(controller=controller, port=0)
@@ -3086,7 +3726,9 @@ def test_browser_media_endpoint_serves_source_media_when_audio_is_browser_safe(
         server.shutdown()
 
 
-def test_browser_media_cache_token_changes_when_same_primary_path_is_reimported(synthetic_video_factory) -> None:
+def test_browser_media_cache_token_changes_when_same_primary_path_is_reimported(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -3104,7 +3746,9 @@ def test_browser_media_cache_token_changes_when_same_primary_path_is_reimported(
         server.shutdown()
 
 
-def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
+def test_browser_control_api_updates_overlay_styles_and_scoring_preset(
+    synthetic_video_factory,
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -3199,8 +3843,12 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
         assert state["project"]["scoring"]["point_map"]["C"] == 4
         assert "penalty_fields" in state["scoring_summary"]
-        assert any(item["key"] == "PE" for item in state["scoring_summary"]["scoring_color_options"])
-        assert not any("|" in item["key"] for item in state["scoring_summary"]["scoring_color_options"])
+        assert any(
+            item["key"] == "PE" for item in state["scoring_summary"]["scoring_color_options"]
+        )
+        assert not any(
+            "|" in item["key"] for item in state["scoring_summary"]["scoring_color_options"]
+        )
 
         state = _post_json(
             f"{server.url}api/scoring",
@@ -3210,7 +3858,9 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["scoring"]["penalties"] == 1.5
         assert state["scoring_summary"]["field_penalties"] == 20
 
-        state = _post_json(f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8})
+        state = _post_json(
+            f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8}
+        )
         assert state["project"]["analysis"]["shots"][0]["score"]["x_norm"] == 0.2
         assert state["project"]["analysis"]["shots"][0]["score"]["y_norm"] == 0.8
     finally:
@@ -3318,7 +3968,9 @@ def test_browser_control_api_updates_export_presets_and_variables() -> None:
         server.shutdown()
 
 
-def test_browser_control_api_exports_mp4_and_exposes_ffmpeg_log(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_control_api_exports_mp4_and_exposes_ffmpeg_log(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -3347,14 +3999,16 @@ def test_browser_control_api_exports_mp4_and_exposes_ffmpeg_log(synthetic_video_
 
         assert output_path.exists()
         assert output_path.stat().st_size > 0
-        assert state["project"]["export"]["output_path"] == str(output_path)
+        assert state["project"]["output_root"] == ""
         assert "Encoder command:" in state["project"]["export"]["last_log"]
         assert state["project"]["export"]["last_error"] is None
     finally:
         server.shutdown()
 
 
-def test_browser_control_api_export_uses_request_payload_overrides(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_control_api_export_uses_request_payload_overrides(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -3419,7 +4073,10 @@ def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_fac
         assert state["project"]["merge"]["enabled"] is True
         assert state["project"]["analysis"]["beep_time_ms_secondary"] is not None
 
-        state = _post_json(f"{server.url}api/merge", {"layout": "pip", "pip_size_percent": 50, "pip_x": 0.25, "pip_y": 0.75})
+        state = _post_json(
+            f"{server.url}api/merge",
+            {"layout": "pip", "pip_size_percent": 50, "pip_x": 0.25, "pip_y": 0.75},
+        )
         assert state["project"]["merge"]["layout"] == "pip"
         assert state["project"]["merge"]["pip_size_percent"] == 50
         assert state["project"]["merge"]["pip_x"] == 0.25

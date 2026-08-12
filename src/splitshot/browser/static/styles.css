@@ -3,3 +3,12 @@
 @import url("./styles/components.css");
 @import url("./styles/panes.css");
 @import url("./styles/widgets.css");
+#custom-overlay.has-badge [data-intro-outro-box-drag="true"] {
+  cursor: grab;
+  pointer-events: auto;
+  user-select: none;
+}
+
+#custom-overlay.dragging [data-intro-outro-box-drag="true"] {
+  cursor: grabbing;
+}

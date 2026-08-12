@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "manifest_id": "splitshot-exhaustive-packaged-release-v1",
+  "corpus_manifest": "tests/release_data/corpus-v1.json",
+  "required_platforms": ["macos", "windows", "linux"],
+  "required_status": "passed",
+  "proof_contract": [
+    "one_action",
+    "immediate_visible",
+    "dom_connection",
+    "api_request_count",
+    "model_mutation",
+    "disk_persistence",
+    "rerender",
+    "pane_navigation",
+    "stage_switch",
+    "project_reopen",
+    "app_restart",
+    "downstream_output"
+  ],
+  "required_artifact_families": [
+    "package_identity",
+    "corpus_preflight",
+    "runtime_inventory",
+    "inventory_case_map",
+    "action_ledger",
+    "request_ledger",
+    "persistence_ledger",
+    "viewport_and_accessibility",
+    "reopen_and_restart",
+    "individual_output",
+    "combined_output",
+    "rendered_output_analysis",
+    "application_logs",
+    "platform_summary"
+  ],
+  "forbidden_input_roots": ["tests/fixtures", "example_data", "tmp", "artifacts"],
+  "shards": [
+    {
+      "id": "shell",
+      "panes": [],
+      "cases": [
+        "shell.package-identity", "shell.launch-intent", "shell.project-argument",
+        "shell.recent-projects", "shell.rail-destinations", "shell.pane-state",
+        "shell.resize-scroll-lock", "shell.modal-color-picker", "shell.keyboard-focus-accessibility",
+        "shell.status-progress-errors", "shell.native-reveal-open", "shell.zoom-100",
+        "shell.zoom-125", "shell.zoom-150", "shell.zoom-200", "shell.restart-resets-zoom",
+        "shell.minimum-window-containment", "shell.desktop-window-containment"
+      ]
+    },
+    {
+      "id": "project-practiscore",
+      "panes": ["project"],
+      "cases": [
+        "project.create-select-open-save-reopen-delete", "project.managed-folders-output-root",
+        "project.practiscore-import-idpa", "project.practiscore-27-competitors",
+        "project.practiscore-four-stages", "project.practiscore-standings-penalties",
+        "project.practiscore-persistence", "project.dashboard-available",
+        "project.dashboard-unavailable", "project.dashboard-authentication", "project.dashboard-error"
+      ]
+    },
+    {
+      "id": "media",
+      "panes": ["media"],
+      "cases": [
+        "media.stage-add-name-save-select-delete", "media.primary-add-replace-clear",
+        "media.secondary-add-set-primary-remove-readd", "media.duplicate-rejection",
+        "media.inflight-lock", "media.disclosures", "media.stage-isolation",
+        "media.preview-continuity", "media.project-copy-relative-persistence"
+      ]
+    },
+    {
+      "id": "compose",
+      "panes": ["merge"],
+      "cases": [
+        "compose.enablement", "compose.defaults-layout-size-position-reset",
+        "compose.source-disclosures", "compose.source-layout-placement-size-opacity-position-sync",
+        "compose.live-final-geometry", "compose.rapid-paired-edits-ordering",
+        "compose.bounds", "compose.lifecycle-persistence"
+      ]
+    },
+    {
+      "id": "trim",
+      "panes": ["trim-sync"],
+      "cases": [
+        "trim.bulk-primary-added", "trim.aggregate-progress-logs", "trim.apply-clear-undo",
+        "trim.start-end-nudges-offsets", "trim.sync-analysis", "trim.transport-scrubber",
+        "trim.waveform-compare-zoom-amplitude-pan", "trim.retained-duration-naming",
+        "trim.repeat-apply", "trim.derivative-selection-reload-export"
+      ]
+    },
+    {
+      "id": "score",
+      "panes": ["scoring"],
+      "cases": [
+        "score.enablement", "score.every-preset", "score.generated-fields-actions",
+        "score.delete-restore", "score.authentic-import-reference",
+        "score.review-metrics-queue-output-propagation"
+      ]
+    },
+    {
+      "id": "splits-waveform",
+      "panes": ["timing"],
+      "cases": [
+        "splits.enablement-editor", "splits.timing-event-fields-actions",
+        "splits.row-edit-lock-delete-restore", "splits.shot-nudge-selection",
+        "splits.waveform-list-zoom-amplitude-pan", "splits.ordering-shotml-values",
+        "splits.persistence-metrics-rendered-badges"
+      ]
+    },
+    {
+      "id": "markers",
+      "panes": ["markers"],
+      "cases": [
+        "markers.every-type", "markers.text-assets-timing-style",
+        "markers.color-opacity-size-position-quadrant-lock", "markers.keyframes-handles-edit-delete",
+        "markers.frame-relative-bounds", "markers.lifecycle-persistence", "markers.encoded-appearance"
+      ]
+    },
+    {
+      "id": "overlay",
+      "panes": ["overlay"],
+      "cases": [
+        "overlay.visibility-toggles", "overlay.split-score-timer-draw-summary-options",
+        "overlay.typography-colors-sizes-positions-locks", "overlay.text-boxes-badges-export-badges",
+        "overlay.portrait-landscape-containment", "overlay.live-preview",
+        "overlay.encoded-real-data-parity"
+      ]
+    },
+    {
+      "id": "review",
+      "panes": ["review"],
+      "cases": [
+        "review.always-expanded-no-minimize", "review.summary-custom-boxes",
+        "review.visibility-source-styles-text", "review.typography-colors-positions-drag-defaults",
+        "review.authentic-match-text", "review.lifecycle-persistence", "review.encoded-output"
+      ]
+    },
+    {
+      "id": "export",
+      "panes": ["export"],
+      "cases": [
+        "export.profile-create-select-rename-update-apply-save-delete", "export.every-profile-kind",
+        "export.frame-aspect-preset-codec-quality-frame-rate-color", "export.audio-options-stage-setting",
+        "export.disabled-default-state", "export.output-root-persistence", "export.queue-handoff",
+        "export.settings-only"
+      ]
+    },
+    {
+      "id": "intro-outro",
+      "panes": ["intro-outro"],
+      "cases": [
+        "intro-outro.real-video-selection-removal-tabs", "intro-outro.independent-video-audio-fades",
+        "intro-outro.manual-match-summary-fields", "intro-outro.typography-styles-positions-drag-defaults",
+        "intro-outro.include-choices", "intro-outro.active-stage-video-restoration",
+        "intro-outro.combined-output-boundaries"
+      ]
+    },
+    {
+      "id": "queue",
+      "panes": ["queue"],
+      "cases": [
+        "queue.membership-requeue-stale-unqueue", "queue.intro-outro-fades",
+        "queue.output-reveal-log-statuses", "queue.individual-processing",
+        "queue.process-one-file", "queue.live-final-aggregate-progress",
+        "queue.logs-success-validation-errors", "queue.owns-execution"
+      ]
+    },
+    {
+      "id": "metrics",
+      "panes": ["metrics"],
+      "cases": [
+        "metrics.match-four-stages", "metrics.expand-collapse-scroll", "metrics.csv-text-export",
+        "metrics.real-27-cohort", "metrics.real-subset-8", "metrics.real-subset-11",
+        "metrics.responsive-columns-containment-timeline", "metrics.axes-selected-collisions-accessibility",
+        "metrics.propagation-reopen-restart"
+      ]
+    },
+    {
+      "id": "shotml",
+      "panes": ["shotml"],
+      "cases": [
+        "shotml.every-setting-disclosure-threshold", "shotml.apply-reset-rerun",
+        "shotml.proposals-apply-discard", "shotml.reset-defaults-confidence-validation",
+        "shotml.persistence-rerun-proposal-state", "shotml.downstream-splits-metrics-real-audio"
+      ]
+    },
+    {
+      "id": "settings",
+      "panes": ["settings"],
+      "cases": [
+        "settings.every-section-global-project-field", "settings.save-current-reset-default",
+        "settings.landing-reopen", "settings.all-product-defaults", "settings.click-snapshots-pending-edits",
+        "settings.new-project-seeding-scope", "settings.reopen-restart"
+      ]
+    },
+    {
+      "id": "rendered-output",
+      "panes": [],
+      "cases": [
+        "output.individual-real-video", "output.combined-real-video", "output.packaged-ffprobe-streams",
+        "output.codec-dimensions-fps-duration-audio", "output.deterministic-nonblack-frames",
+        "output.trim-sync-pip-layout", "output.markers-timer-splits-score-draw-summary-review",
+        "output.intro-outro-fades", "output.match-text-ocr", "output.portrait-landscape-containment",
+        "output.geometry-preview-parity"
+      ]
+    }
+  ],
+  "platform_cases": {
+    "macos": [
+      "macos.signed", "macos.notarized", "macos.stapled", "macos.dmg-mounted-installed",
+      "macos.gatekeeper", "macos.codesign"
+    ],
+    "windows": [
+      "windows.nsis-installed", "windows.installed-app-launched", "windows.packaged-runtime-tools",
+      "windows.ocr-font-proof"
+    ],
+    "linux": [
+      "linux.appimage-launched", "linux.packaged-runtime-tools", "linux.runtime-libraries"
+    ]
+  }
+}

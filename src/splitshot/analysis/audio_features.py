@@ -5,7 +5,9 @@ import math
 import numpy as np
 
 
-BAND_EDGES_HZ = np.asarray([0.0, 180.0, 400.0, 800.0, 1400.0, 2200.0, 3400.0, 5200.0, 8000.0, 11025.0])
+BAND_EDGES_HZ = np.asarray(
+    [0.0, 180.0, 400.0, 800.0, 1400.0, 2200.0, 3400.0, 5200.0, 8000.0, 11025.0]
+)
 FEATURE_NAMES = [
     "log_rms",
     "peak_abs",

@@ -31,7 +31,14 @@ def test_install_windows_artifact_rejects_empty_locator_output(monkeypatch, tmp_
     monkeypatch.setattr(MODULE, "_run", fake_run)
     monkeypatch.setattr(MODULE.sys, "platform", "win32")
 
-    with pytest.raises(FileNotFoundError, match="Installed SplitShot.exe not found after NSIS install"):
+    with pytest.raises(
+        FileNotFoundError, match="Installed SplitShot.exe not found after NSIS install"
+    ):
         MODULE._install_windows_artifact(artifact)
 
     assert len(calls) == 2
+
+
+def test_packaged_electron_main_disables_runtime_bytecode_writes() -> None:
+    main_js = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
+    assert "env.PYTHONDONTWRITEBYTECODE = '1';" in main_js

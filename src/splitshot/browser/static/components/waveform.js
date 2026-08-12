@@ -25,6 +25,7 @@ export function createWaveformComponent({
   releasePointer = () => {},
   withPreservedScrollState = (_targets, render) => render(),
   seconds = (value) => String(value),
+  formatTimelineTime = (timeMs) => `${(timeMs / 1000).toFixed(3)}s`,
   formatConfidenceValue = (value) => String(value),
   isLowConfidence = () => false,
   activity = () => {},
@@ -149,26 +150,42 @@ export function createWaveformComponent({
     ctx.restore();
   }
 
-  function drawMarker(ctx, timeMs, color, label, labelColor = "rgba(248, 250, 252, 0.96)", width = null, height = null) {
+  function drawMarker(
+    ctx,
+    timeMs,
+    color,
+    label,
+    labelColor = "rgba(248, 250, 252, 0.96)",
+    width = null,
+    height = null,
+    laneTop = 0,
+    laneHeight = null,
+  ) {
     if (!(waveformState?.isWaveformVisible?.(timeMs) ?? false)) return;
     const x = waveformState?.waveformX?.(timeMs, width ?? ctx.canvas.width) ?? 0;
+    const markerHeight = laneHeight ?? (height ?? ctx.canvas.height);
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = 3;
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height ?? ctx.canvas.height);
+    ctx.rect(0, laneTop, width ?? ctx.canvas.width, markerHeight);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(x, laneTop);
+    ctx.lineTo(x, laneTop + markerHeight);
     ctx.stroke();
     if (label) {
       drawOutlinedText(
         ctx,
         label,
         x + 5,
-        11,
+        laneTop + 11,
         labelColor,
         "800 12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
       );
     }
+    ctx.restore();
   }
 
   function drawWaveformScale(ctx, visible, width, height) {
@@ -186,7 +203,7 @@ export function createWaveformComponent({
       ctx.stroke();
       drawOutlinedText(
         ctx,
-        `${(timeMs / 1000).toFixed(3)}s`,
+        formatTimelineTime(timeMs),
         x + 4,
         height - 17,
         "rgba(226, 232, 240, 0.88)",
@@ -196,13 +213,88 @@ export function createWaveformComponent({
     }
   }
 
-  function drawSelectedRegion(ctx, width, height) {
+  function drawSelectedRegion(ctx, width, height, laneTop = 0, laneHeight = height) {
     const shot = selectedShot();
     if (!shot) return;
     if (!(waveformState?.isWaveformVisible?.(shot.time_ms) ?? false)) return;
     const x = waveformState?.waveformX?.(shot.time_ms, width) ?? 0;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, laneTop, width, laneHeight);
+    ctx.clip();
     ctx.fillStyle = "rgba(255, 123, 34, 0.18)";
-    ctx.fillRect(Math.max(0, x - 44), 0, 88, height);
+    ctx.fillRect(Math.max(0, x - 44), laneTop, 88, laneHeight);
+    ctx.restore();
+  }
+
+  function drawWaveformLane(ctx, waveform, {
+    width,
+    visible,
+    totalDuration,
+    laneTop,
+    laneHeight,
+    color,
+    baselineColor = color,
+    label = "",
+    timeOffsetMs = 0,
+    amplitudeForTime = () => 1,
+  }) {
+    if (!Array.isArray(waveform) || waveform.length === 0 || laneHeight <= 0) return;
+
+    const laneCenter = laneTop + (laneHeight / 2);
+    const laneAmplitude = laneHeight * 0.38;
+    const lastIndex = Math.max(1, waveform.length - 1);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, laneTop, width, laneHeight);
+    ctx.clip();
+
+    ctx.strokeStyle = baselineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, laneCenter);
+    ctx.lineTo(width, laneCenter);
+    ctx.stroke();
+
+    if (label) {
+      drawOutlinedText(
+        ctx,
+        label,
+        12,
+        laneTop + 6,
+        color,
+        "800 11px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
+        3,
+      );
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    for (let index = 0; index < waveform.length; index += 1) {
+      const value = Number(waveform[index] || 0);
+      const sampleTime = (index / lastIndex) * totalDuration;
+      const alignedTime = sampleTime - timeOffsetMs;
+      if (alignedTime < visible.start || alignedTime > visible.end) continue;
+      const x = waveformState?.waveformX?.(alignedTime, width) ?? 0;
+      const amp = value * amplitudeForTime(alignedTime);
+      const yTop = laneCenter - (amp * laneAmplitude);
+      const yBottom = laneCenter + (amp * laneAmplitude);
+      ctx.moveTo(x, yTop);
+      ctx.lineTo(x, yBottom);
+    }
+
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawLaneBackdrop(ctx, laneTop, laneHeight, fillStyle) {
+    ctx.save();
+    ctx.fillStyle = fillStyle;
+    ctx.fillRect(0, laneTop, ctx.canvas.width, laneHeight);
+    ctx.restore();
   }
 
   function renderWaveformShotList() {
@@ -273,8 +365,8 @@ export function createWaveformComponent({
     handle.classList.toggle("interactive", canPan);
     handle.style.width = `${metrics.handleWidth}px`;
     handle.style.transform = `translateX(${metrics.left}px)`;
-    const startLabel = `${(metrics.visible.start / 1000).toFixed(2)}s`;
-    const endLabel = `${(metrics.visible.end / 1000).toFixed(2)}s`;
+    const startLabel = formatTimelineTime(metrics.visible.start);
+    const endLabel = formatTimelineTime(metrics.visible.end);
     track.title = canPan
       ? `Drag to pan the zoomed waveform window (${startLabel} to ${endLabel}).`
       : `Zoom in to pan the waveform window (${startLabel} to ${endLabel}).`;
@@ -285,32 +377,98 @@ export function createWaveformComponent({
     const { width, height } = resizeCanvasToDisplay(canvas);
     const ctx = canvas.getContext("2d");
     const waveform = currentState()?.project?.analysis?.waveform_primary || [];
+    const totalMs = durationMs();
+    const totalLabel = $("waveform-total-time");
+    if (totalLabel) totalLabel.textContent = formatTimelineTime(totalMs);
+    const mergeSources = currentState()?.project?.merge_sources || [];
+    const secondaryLanePayloads = (currentState()?.project?.analysis?.secondary_sources || [])
+      .filter((entry) => entry && Array.isArray(entry.waveform) && entry.waveform.length > 0)
+      .map((entry) => {
+        const source = mergeSources.find((item) => item.id === entry.source_id) || null;
+        return {
+          sourceId: String(entry.source_id || ""),
+          label: source?.active_display_name
+            ? String(source.active_display_name)
+            : source?.asset?.path
+            ? String(source.asset.path).split(/[\\/]/).pop()
+            : `Added ${Math.max(1, mergeSources.findIndex((item) => item.id === entry.source_id) + 1)}`,
+          syncOffsetMs: Math.round(Number(entry.sync_offset_ms) || 0),
+          waveform: entry.waveform,
+        };
+      });
+    const hasSecondaryWaveform = secondaryLanePayloads.length > 0;
+    const secondarySourceId = String(currentState()?.project?.analysis?.analyzed_secondary_source_id || "");
     const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
     canvas.classList.toggle("waveform-pannable", expanded && getWaveformZoomX() > 1);
     canvas.classList.toggle("waveform-panning", Boolean(getWaveformPanDrag()));
+    canvas.dataset.secondaryWaveform = hasSecondaryWaveform ? "true" : "false";
+    canvas.dataset.waveformLaneLayout = hasSecondaryWaveform ? "multi" : "single";
+    canvas.dataset.secondarySourceId = hasSecondaryWaveform ? secondarySourceId : "";
+    canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform
+      ? String(secondaryLanePayloads.reduce((total, lane) => total + lane.waveform.length, 0))
+      : "0";
+    const scaleGutterHeight = 26;
+    canvas.dataset.waveformLaneCount = String(1 + secondaryLanePayloads.length);
+    canvas.dataset.waveformLaneClipping = "isolated";
+    canvas.dataset.waveformLaneBleed = "false";
+    canvas.dataset.waveformTimeScaleVisible = "true";
     const visible = waveformState?.waveformWindow?.() || { start: 0, end: durationMs(), duration: durationMs() };
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = "#102033";
     ctx.fillRect(0, 0, width, height);
     drawWaveformScale(ctx, visible, width, height);
-    drawSelectedRegion(ctx, width, height);
-    ctx.strokeStyle = "#3aa0ff";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
     const totalDuration = Math.max(1, durationMs());
-    const startIndex = Math.max(0, Math.floor((visible.start / totalDuration) * waveform.length));
-    const endIndex = Math.min(waveform.length - 1, Math.ceil((visible.end / totalDuration) * waveform.length));
-    for (let index = startIndex; index <= endIndex; index += 1) {
-      const value = waveform[index] || 0;
-      const sampleTime = (index / Math.max(1, waveform.length - 1)) * totalDuration;
-      const x = waveformState?.waveformX?.(sampleTime, width) ?? 0;
-      const amp = value * waveformAmplitudeForTime(sampleTime);
-      const yTop = (height / 2) - (amp * height * 0.42);
-      const yBottom = (height / 2) + (amp * height * 0.42);
-      ctx.moveTo(x, yTop);
-      ctx.lineTo(x, yBottom);
-    }
-    ctx.stroke();
+    const totalLaneCount = 1 + secondaryLanePayloads.length;
+    const drawableHeight = Math.max(48, height - scaleGutterHeight);
+    const laneGap = totalLaneCount > 1 ? Math.max(10, Math.round(height * 0.04)) : 0;
+    const laneHeight = totalLaneCount > 1
+      ? Math.max(38, Math.floor((drawableHeight - (laneGap * (totalLaneCount - 1))) / totalLaneCount))
+      : drawableHeight;
+    const laneColors = [
+      { color: "#39d06f", baseline: "rgba(57, 208, 111, 0.24)" },
+      { color: "#ff9f4a", baseline: "rgba(255, 159, 74, 0.24)" },
+      { color: "#5cc8ff", baseline: "rgba(92, 200, 255, 0.24)" },
+      { color: "#ff6b6b", baseline: "rgba(255, 107, 107, 0.24)" },
+    ];
+
+    drawLaneBackdrop(ctx, 0, laneHeight, "rgba(18, 34, 52, 0.96)");
+    drawSelectedRegion(ctx, width, drawableHeight, 0, laneHeight);
+
+    drawWaveformLane(ctx, waveform, {
+      width,
+      visible,
+      totalDuration,
+      laneTop: 0,
+      laneHeight,
+      color: "#3aa0ff",
+      baselineColor: "rgba(58, 160, 255, 0.18)",
+      label: "Primary",
+      amplitudeForTime: waveformAmplitudeForTime,
+    });
+
+    secondaryLanePayloads.forEach((lane, index) => {
+      const laneTop = (laneHeight + laneGap) * (index + 1);
+      drawLaneBackdrop(ctx, laneTop, laneHeight, index % 2 === 0 ? "rgba(14, 28, 43, 0.98)" : "rgba(12, 23, 36, 0.98)");
+      const separatorY = Math.max(0, laneTop - Math.max(4, Math.round(laneGap / 2)));
+      ctx.strokeStyle = "rgba(226, 232, 240, 0.28)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, separatorY);
+      ctx.lineTo(width, separatorY);
+      ctx.stroke();
+      const palette = laneColors[index % laneColors.length];
+      drawWaveformLane(ctx, lane.waveform, {
+        width,
+        visible,
+        totalDuration,
+        laneTop,
+        laneHeight,
+        color: palette.color,
+        baselineColor: palette.baseline,
+        label: `${lane.label} \u2022 ${lane.syncOffsetMs > 0 ? "+" : ""}${lane.syncOffsetMs} ms`,
+        timeOffsetMs: lane.syncOffsetMs,
+      });
+    });
 
     const beep = waveformBeepDragging
       ? (getPendingDragTimeMs() ?? currentState()?.project?.analysis?.beep_time_ms_primary)
@@ -318,7 +476,11 @@ export function createWaveformComponent({
     if (beep !== null && beep !== undefined) {
       const beepColor = waveformBeepDragging ? "#ff9f4a" : "#ff7b22";
       const beepLabel = waveformBeepDragging ? `BEEP ${seconds(beep)}` : "BEEP";
-      drawMarker(ctx, beep, beepColor, beepLabel, "rgba(226, 232, 240, 0.88)", width, height);
+      drawMarker(ctx, beep, beepColor, beepLabel, "rgba(226, 232, 240, 0.88)", width, height, 0, laneHeight);
+      secondaryLanePayloads.forEach((_, index) => {
+        const laneTop = (laneHeight + laneGap) * (index + 1);
+        drawMarker(ctx, beep, beepColor, "", "rgba(226, 232, 240, 0.88)", width, height, laneTop, laneHeight);
+      });
     }
     const shots = currentState()?.project?.analysis?.shots || [];
     const draggedShotId = getDraggingShotId();
@@ -340,7 +502,23 @@ export function createWaveformComponent({
         selected ? "rgba(248, 250, 252, 0.98)" : "rgba(226, 232, 240, 0.88)",
         width,
         height,
+        0,
+        laneHeight,
       );
+      secondaryLanePayloads.forEach((_, index) => {
+        const laneTop = (laneHeight + laneGap) * (index + 1);
+        drawMarker(
+          ctx,
+          timeMs,
+          selected ? "#ffffff" : "#39d06f",
+          "",
+          selected ? "rgba(248, 250, 252, 0.98)" : "rgba(226, 232, 240, 0.88)",
+          width,
+          height,
+          laneTop,
+          laneHeight,
+        );
+      });
     });
     renderWaveformShotList();
     renderWaveformNavigator();

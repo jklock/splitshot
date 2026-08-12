@@ -214,7 +214,9 @@ def _load_aligned_audio(video_path: str | Path) -> tuple[np.ndarray, int, int]:
         extract_audio_wav(path, wav_path)
         samples, sample_rate = read_wav_mono(wav_path)
     audio_start_ms, media_duration_ms = _media_timeline_metadata(path)
-    aligned = _align_samples_to_media_timeline(samples, sample_rate, audio_start_ms, media_duration_ms)
+    aligned = _align_samples_to_media_timeline(
+        samples, sample_rate, audio_start_ms, media_duration_ms
+    )
     duration_ms = media_duration_ms
     if duration_ms <= 0:
         duration_ms = int(round((aligned.size / float(sample_rate)) * 1000.0))
@@ -276,9 +278,13 @@ def summarize_beep_multipass(
     tone_beep_time_ms = None
     model_beep_time_ms = None
     if tone_candidate_ms is not None:
-        tone_beep_time_ms = _refine_beep_time(samples, sample_rate, tone_candidate_ms, first_shot_ms)
+        tone_beep_time_ms = _refine_beep_time(
+            samples, sample_rate, tone_candidate_ms, first_shot_ms
+        )
     if model_candidate_ms is not None:
-        model_beep_time_ms = _refine_beep_time(samples, sample_rate, model_candidate_ms, first_shot_ms)
+        model_beep_time_ms = _refine_beep_time(
+            samples, sample_rate, model_candidate_ms, first_shot_ms
+        )
 
     final_beep_time_ms = detection.beep_time_ms
     tone_model_gap_ms = None
@@ -322,7 +328,9 @@ def summarize_shot_multipass(
 ) -> ShotMultipassSummary:
     start_ms = 0 if detection.beep_time_ms is None else max(0, detection.beep_time_ms + 100)
     end_ms = int(round((samples.size / float(sample_rate)) * 1000.0))
-    centers_ms, envelope = _rms_series(samples, sample_rate, start_ms, end_ms, window_ms=6, hop_ms=2)
+    centers_ms, envelope = _rms_series(
+        samples, sample_rate, start_ms, end_ms, window_ms=6, hop_ms=2
+    )
     onset_shot_times_ms: list[int] = []
     if envelope.size > 2:
         previous = np.concatenate((envelope[:1], envelope[:-1]))
@@ -421,7 +429,9 @@ def duplicate_group_key(video_path: str | Path) -> str:
     return normalized
 
 
-def build_duplicate_group_summaries(analyses: list[CorpusVideoAnalysis]) -> list[DuplicateGroupSummary]:
+def build_duplicate_group_summaries(
+    analyses: list[CorpusVideoAnalysis],
+) -> list[DuplicateGroupSummary]:
     grouped: dict[str, list[CorpusVideoAnalysis]] = {}
     for analysis in analyses:
         key = duplicate_group_key(analysis.summary.path)
@@ -433,7 +443,9 @@ def build_duplicate_group_summaries(analyses: list[CorpusVideoAnalysis]) -> list
             continue
         ordered_members = sorted(members, key=lambda item: item.summary.path.lower())
         shot_counts = [member.summary.reference_shot_count for member in ordered_members]
-        beep_families = sorted({member.summary.fingerprint.beep_family for member in ordered_members})
+        beep_families = sorted(
+            {member.summary.fingerprint.beep_family for member in ordered_members}
+        )
         shot_count_span = max(shot_counts) - min(shot_counts)
         consistent_shot_count = shot_count_span == 0
         consistent_beep_family = len(beep_families) == 1
@@ -452,7 +464,9 @@ def build_duplicate_group_summaries(analyses: list[CorpusVideoAnalysis]) -> list
     return sorted(summaries, key=lambda item: item.group_key)
 
 
-def summarize_threshold_consistency(results: list[ThresholdDetectionResult]) -> ThresholdConsistencySummary:
+def summarize_threshold_consistency(
+    results: list[ThresholdDetectionResult],
+) -> ThresholdConsistencySummary:
     thresholds = [float(result.threshold) for result in results]
     shot_counts = [len(result.detection.shots) for result in results]
     beep_times_ms = [result.detection.beep_time_ms for result in results]
@@ -460,7 +474,9 @@ def summarize_threshold_consistency(results: list[ThresholdDetectionResult]) -> 
     beep_values = [beep for beep in beep_times_ms if beep is not None]
     beep_time_span_ms = None if len(beep_values) < 2 else max(beep_values) - min(beep_values)
     beep_presence = {beep is not None for beep in beep_times_ms}
-    stable_beep_time = len(beep_presence) <= 1 and (beep_time_span_ms is None or beep_time_span_ms <= 120)
+    stable_beep_time = len(beep_presence) <= 1 and (
+        beep_time_span_ms is None or beep_time_span_ms <= 120
+    )
     return ThresholdConsistencySummary(
         thresholds=thresholds,
         shot_counts=shot_counts,
@@ -472,8 +488,12 @@ def summarize_threshold_consistency(results: list[ThresholdDetectionResult]) -> 
     )
 
 
-def _confidence_summary(detection: DetectionResult) -> tuple[float | None, float | None, float | None]:
-    confidences = [float(shot.confidence) for shot in detection.shots if shot.confidence is not None]
+def _confidence_summary(
+    detection: DetectionResult,
+) -> tuple[float | None, float | None, float | None]:
+    confidences = [
+        float(shot.confidence) for shot in detection.shots if shot.confidence is not None
+    ]
     if not confidences:
         return None, None, None
     spread = 0.0
@@ -530,7 +550,9 @@ def _band_energy_ratio(
     spectrum = np.abs(np.fft.rfft(windowed)) ** 2
     freqs = np.fft.rfftfreq(segment.size, 1.0 / sample_rate)
     numerator = float(np.sum(spectrum[(freqs >= numerator_band[0]) & (freqs <= numerator_band[1])]))
-    denominator = float(np.sum(spectrum[(freqs >= denominator_band[0]) & (freqs <= denominator_band[1])]))
+    denominator = float(
+        np.sum(spectrum[(freqs >= denominator_band[0]) & (freqs <= denominator_band[1])])
+    )
     if denominator <= 0.0:
         return None
     return numerator / denominator
@@ -544,7 +566,9 @@ def summarize_acoustic_fingerprint(
     beep_peak_hz = None
     beep_centroid_hz = None
     if detection.beep_time_ms is not None:
-        beep_summary = _spectral_summary(samples, sample_rate, detection.beep_time_ms + 20, 80, band=(1200.0, 5200.0))
+        beep_summary = _spectral_summary(
+            samples, sample_rate, detection.beep_time_ms + 20, 80, band=(1200.0, 5200.0)
+        )
         if beep_summary is not None:
             beep_peak_hz, beep_centroid_hz = beep_summary
 
@@ -553,7 +577,9 @@ def summarize_acoustic_fingerprint(
     shot_clip_ratios: list[float] = []
     shot_high_frequency_ratios: list[float] = []
     for shot in detection.shots[:8]:
-        shot_summary = _spectral_summary(samples, sample_rate, shot.time_ms, 35, band=(80.0, 7000.0))
+        shot_summary = _spectral_summary(
+            samples, sample_rate, shot.time_ms, 35, band=(80.0, 7000.0)
+        )
         if shot_summary is not None:
             shot_peak_hz, shot_centroid_hz = shot_summary
             shot_peaks.append(shot_peak_hz)
@@ -577,7 +603,9 @@ def summarize_acoustic_fingerprint(
     median_shot_peak_hz = None if not shot_peaks else float(median(shot_peaks))
     median_shot_centroid_hz = None if not shot_centroids else float(median(shot_centroids))
     median_shot_clip_ratio = None if not shot_clip_ratios else float(median(shot_clip_ratios))
-    median_shot_high_frequency_ratio = None if not shot_high_frequency_ratios else float(median(shot_high_frequency_ratios))
+    median_shot_high_frequency_ratio = (
+        None if not shot_high_frequency_ratios else float(median(shot_high_frequency_ratios))
+    )
     overall_clip_ratio = 0.0 if samples.size == 0 else float(np.mean(np.abs(samples) >= 0.98))
     possible_lowpass = bool(
         median_shot_high_frequency_ratio is not None
@@ -647,11 +675,19 @@ def analyze_corpus_video(
         result for result in results if round(result.threshold, 4) == round(reference_threshold, 4)
     )
     consistency = summarize_threshold_consistency(results)
-    shot_median_confidence, shot_mean_confidence, shot_confidence_spread = _confidence_summary(selected.detection)
+    shot_median_confidence, shot_mean_confidence, shot_confidence_spread = _confidence_summary(
+        selected.detection
+    )
     fingerprint = summarize_acoustic_fingerprint(samples, sample_rate, selected.detection)
-    beep_multipass = summarize_beep_multipass(samples, sample_rate, predictions, selected.threshold, selected.detection)
-    shot_multipass = summarize_shot_multipass(samples, sample_rate, selected.threshold, selected.detection)
-    review_flags = build_review_flags(consistency, shot_median_confidence, fingerprint, beep_multipass, shot_multipass)
+    beep_multipass = summarize_beep_multipass(
+        samples, sample_rate, predictions, selected.threshold, selected.detection
+    )
+    shot_multipass = summarize_shot_multipass(
+        samples, sample_rate, selected.threshold, selected.detection
+    )
+    review_flags = build_review_flags(
+        consistency, shot_median_confidence, fingerprint, beep_multipass, shot_multipass
+    )
     return CorpusVideoAnalysis(
         summary=CorpusVideoSummary(
             path=str(Path(video_path).expanduser().resolve()),
@@ -679,7 +715,9 @@ def audit_corpus_video(
     thresholds: list[float] | tuple[float, ...] = DEFAULT_THRESHOLD_GRID,
     reference_threshold: float = 0.35,
 ) -> CorpusVideoSummary:
-    return analyze_corpus_video(video_path, thresholds=thresholds, reference_threshold=reference_threshold).summary
+    return analyze_corpus_video(
+        video_path, thresholds=thresholds, reference_threshold=reference_threshold
+    ).summary
 
 
 def analyze_corpus(
@@ -702,7 +740,9 @@ def analyze_corpus(
 
     updated: list[CorpusVideoAnalysis] = []
     for analysis in analyses:
-        group_key, group_review_required = group_state_by_path.get(analysis.summary.path, (None, False))
+        group_key, group_review_required = group_state_by_path.get(
+            analysis.summary.path, (None, False)
+        )
         flags = list(analysis.summary.review_flags)
         if group_review_required and "duplicate_stage_inconsistency" not in flags:
             flags.append("duplicate_stage_inconsistency")
@@ -712,7 +752,11 @@ def analyze_corpus(
             duplicate_group_review_required=group_review_required,
             review_flags=flags,
         )
-        updated.append(CorpusVideoAnalysis(summary=updated_summary, reference_detection=analysis.reference_detection))
+        updated.append(
+            CorpusVideoAnalysis(
+                summary=updated_summary, reference_detection=analysis.reference_detection
+            )
+        )
     return updated
 
 
@@ -723,7 +767,9 @@ def audit_corpus(
 ) -> list[CorpusVideoSummary]:
     return [
         analysis.summary
-        for analysis in analyze_corpus(input_path, thresholds=thresholds, reference_threshold=reference_threshold)
+        for analysis in analyze_corpus(
+            input_path, thresholds=thresholds, reference_threshold=reference_threshold
+        )
     ]
 
 
@@ -757,7 +803,9 @@ def build_label_manifest(
             relative_path = str(path.relative_to(root))
         else:
             relative_path = path.name
-        existing_labels = existing_labels_by_key.get(("path", str(path))) or existing_labels_by_key.get(("relative_path", relative_path))
+        existing_labels = existing_labels_by_key.get(
+            ("path", str(path))
+        ) or existing_labels_by_key.get(("relative_path", relative_path))
         label_state = LabelReviewState()
         if existing_labels is not None:
             label_state = LabelReviewState(
@@ -782,7 +830,9 @@ def build_label_manifest(
                 duration_seconds=analysis.summary.duration_seconds,
                 reference_threshold=analysis.summary.reference_threshold,
                 detector_beep_time_ms=analysis.reference_detection.beep_time_ms,
-                detector_shot_times_ms=[shot.time_ms for shot in analysis.reference_detection.shots],
+                detector_shot_times_ms=[
+                    shot.time_ms for shot in analysis.reference_detection.shots
+                ],
                 detector_shot_confidences=[
                     None if shot.confidence is None else float(shot.confidence)
                     for shot in analysis.reference_detection.shots

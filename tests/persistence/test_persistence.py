@@ -10,9 +10,9 @@ from splitshot.domain.models import (
     ExportPreset,
     ImportedStageScore,
     MergeLayout,
+    MergeSource,
     OverlayPosition,
     OverlayTextBox,
-    MergeSource,
     PopupBubble,
     PopupMotionPoint,
     Project,
@@ -28,7 +28,6 @@ from splitshot.domain.models import (
 )
 from splitshot.persistence.projects import load_project, save_project
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 
@@ -36,7 +35,9 @@ EXAMPLES_DIR = REPO_ROOT / "example_data"
 def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project = Project(name="Round Trip")
     project.description = "Project details and merge media should persist."
-    project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
     project.merge_sources = [
         MergeSource(
             asset=VideoAsset(
@@ -69,7 +70,12 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             time_ms=800,
             source=ShotSource.MANUAL,
             confidence=None,
-            score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
+            score=ScoreMark(
+                letter=ScoreLetter.C,
+                x_norm=0.2,
+                y_norm=0.8,
+                penalty_counts={"procedural_errors": 1},
+            ),
         )
     ]
     project.analysis.timing_change_proposals = [
@@ -107,6 +113,11 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
         aggregate_points=5.0,
         final_time=39.83,
         score_counts={"Points Down": 5.0},
+        match_final_time=83.01,
+        match_points_down=11.0,
+        match_penalties=2.0,
+        match_stage_count=4,
+        match_penalty_counts={"non_threats": 1.0, "procedural_errors": 1.0},
     )
     project.overlay.position = OverlayPosition.TOP
     project.overlay.style_type = "rounded"
@@ -199,7 +210,10 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.timing_column_widths = {"segment": 128, "split": 224, "action": 244}
     project.ui_state.popup_bubble_expansion = {popup.id: False}
     project.ui_state.popup_authoring_collapsed = True
-    project.ui_state.merge_source_expansion = {project.merge_sources[0].id: False, "pip-defaults": False}
+    project.ui_state.merge_source_expansion = {
+        project.merge_sources[0].id: False,
+        "pip-defaults": False,
+    }
     project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
     project.popup_template.motion_mode = "guided"
     project.popup_template.follow_motion = True
@@ -236,7 +250,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert len(loaded.analysis.timing_change_proposals) == 1
     assert loaded.analysis.timing_change_proposals[0].proposal_type == "move_shot"
     assert loaded.analysis.timing_change_proposals[0].target_time_ms == 812
-    assert loaded.analysis.timing_change_proposals[0].evidence == {"review_kind": "weak_onset_support"}
+    assert loaded.analysis.timing_change_proposals[0].evidence == {
+        "review_kind": "weak_onset_support"
+    }
     assert loaded.scoring.enabled is True
     assert loaded.scoring.match_type == "idpa"
     assert loaded.scoring.stage_number == 2
@@ -249,6 +265,14 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.scoring.imported_stage.stage_number == 2
     assert loaded.scoring.imported_stage.aggregate_points == 5.0
     assert loaded.scoring.imported_stage.final_time == 39.83
+    assert loaded.scoring.imported_stage.match_final_time == 83.01
+    assert loaded.scoring.imported_stage.match_points_down == 11.0
+    assert loaded.scoring.imported_stage.match_penalties == 2.0
+    assert loaded.scoring.imported_stage.match_stage_count == 4
+    assert loaded.scoring.imported_stage.match_penalty_counts == {
+        "non_threats": 1.0,
+        "procedural_errors": 1.0,
+    }
     assert loaded.overlay.position == OverlayPosition.TOP
     assert loaded.overlay.style_type == "rounded"
     assert loaded.overlay.spacing == 6
@@ -330,12 +354,18 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.popup_template.motion_mode == "guided"
     assert loaded.popup_template.follow_motion is True
     assert loaded.popup_template.use_shot_split_duration is True
-    assert "Markers/popup-image.png" in loaded.popups[0].image_path.replace("\\", "/")
+    assert loaded.popups[0].image_path == str(popup_image.resolve())
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
     assert loaded.ui_state.popup_authoring_collapsed is True
-    assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
-    assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}
+    assert loaded.ui_state.merge_source_expansion == {
+        project.merge_sources[0].id: False,
+        "pip-defaults": False,
+    }
+    assert loaded.ui_state.shotml_section_expansion == {
+        "threshold": False,
+        "advanced_runtime": False,
+    }
 
 
 def test_project_from_dict_backfills_legacy_popup_motion_mode() -> None:
@@ -386,7 +416,9 @@ def test_project_from_dict_defaults_browser_ui_state_contract_fields() -> None:
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:
     project = Project(name="Legacy Merge")
-    project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
 
     legacy = project_to_dict(project)
     legacy["secondary_video"] = {
@@ -452,7 +484,7 @@ def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None
     assert loaded.overlay.scoring_colors["PE"] == "#445566"
 
 
-def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_path: Path) -> None:
+def test_save_project_does_not_move_external_media(tmp_path: Path) -> None:
     session_dir = tmp_path / "splitshot-browser-session"
     session_dir.mkdir()
     primary_path = session_dir / "1234567890abcdef1234567890abcdef_primary.mp4"
@@ -461,29 +493,28 @@ def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_
     merge_path.write_bytes(b"merge-video")
 
     project = Project(name="Bundled Browser Media")
-    project.primary_video = VideoAsset(path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0)
-    merge_asset = VideoAsset(path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0)
+    project.primary_video = VideoAsset(
+        path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    merge_asset = VideoAsset(
+        path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0
+    )
     project.merge_sources = [MergeSource(asset=merge_asset)]
     project.secondary_video = merge_asset
 
     bundle = save_project(project, tmp_path / "bundled.ssproj")
     loaded = load_project(bundle)
 
-    assert Path(project.primary_video.path).parent == bundle / "Input"
-    assert Path(project.merge_sources[0].asset.path).parent == bundle / "Input"
-    assert loaded.primary_video.path != str(primary_path)
-    assert loaded.merge_sources[0].asset.path != str(merge_path)
-    assert Path(loaded.primary_video.path).parent == bundle / "Input"
-    assert Path(loaded.merge_sources[0].asset.path).parent == bundle / "Input"
-    assert Path(loaded.primary_video.path).name == "primary.mp4"
-    assert Path(loaded.merge_sources[0].asset.path).name == "merge.mp4"
-    assert Path(loaded.primary_video.path).read_bytes() == b"primary-video"
-    assert Path(loaded.merge_sources[0].asset.path).read_bytes() == b"merge-video"
+    assert project.primary_video.path == str(primary_path)
+    assert project.merge_sources[0].asset.path == str(merge_path)
+    assert loaded.primary_video.path == str(primary_path)
+    assert loaded.merge_sources[0].asset.path == str(merge_path)
+    assert not any((bundle / "Input").iterdir())
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.path == loaded.merge_sources[0].asset.path
 
 
-def test_save_project_copies_practiscore_text_reports_into_csv_folder(tmp_path: Path) -> None:
+def test_save_project_does_not_copy_external_practiscore_source(tmp_path: Path) -> None:
     project = Project(name="PractiScore Report")
     report_path = EXAMPLES_DIR / "USPSA" / "report.txt"
     project.scoring.practiscore_source_path = str(report_path)
@@ -492,7 +523,30 @@ def test_save_project_copies_practiscore_text_reports_into_csv_folder(tmp_path: 
     bundle = save_project(project, tmp_path / "practiscore-project")
     loaded = load_project(bundle)
 
-    assert Path(project.scoring.practiscore_source_path).parent == bundle / "CSV"
-    assert Path(project.scoring.practiscore_source_path).name == "report.txt"
-    assert Path(loaded.scoring.practiscore_source_path).parent == bundle / "CSV"
+    assert project.scoring.practiscore_source_path == str(report_path)
+    assert loaded.scoring.practiscore_source_path == str(report_path)
+    assert not any((bundle / "CSV").iterdir())
     assert Path(loaded.scoring.practiscore_source_path).read_text() == report_path.read_text()
+
+
+def test_interrupted_project_replace_keeps_previous_project_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = save_project(Project(name="Before"), tmp_path / "atomic-project")
+    metadata_path = bundle / "project.json"
+    original = metadata_path.read_text(encoding="utf-8")
+    real_replace = Path.replace
+
+    def interrupted_replace(source: Path, target: Path) -> Path:
+        if source.parent == bundle and source.name.startswith(".project.json."):
+            raise OSError("simulated shutdown during atomic replace")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", interrupted_replace)
+
+    with pytest.raises(OSError, match="simulated shutdown"):
+        save_project(Project(name="After"), bundle)
+
+    assert metadata_path.read_text(encoding="utf-8") == original
+    assert not list(bundle.glob(".project.json.*.part"))

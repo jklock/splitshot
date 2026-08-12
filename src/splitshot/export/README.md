@@ -1,6 +1,8 @@
 # Export
 
-This package owns final render planning, export presets, overlay composition, merge integration, and FFmpeg encoding.
+<!-- Documentation reviewed: 2026-08-11 -->
+
+This package owns final render planning, export presets, overlay composition, merge integration, and FFmpeg encoding. The browser Export pane configures those settings; the Queue pane owns job creation, execution, progress, cancellation, and output history.
 
 ## Purpose
 

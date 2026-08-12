@@ -1,3 +1,8 @@
+import {
+  buildFinalStandingsComparison,
+  competitionIdentityLabels,
+} from "../lib/competition-comparison.js";
+
 export function createReviewPane({
   $ = (id) => document.getElementById(id),
   windowObject = window,
@@ -42,6 +47,15 @@ export function createReviewPane({
   scheduleSecondaryPreviewSync = () => {},
   restoreVideoElementFrame = () => {},
 } = {}) {
+  const DEFAULT_SUMMARY_METRIC_IDS = Object.freeze([
+    "score_time",
+    "raw_time",
+    "points_down",
+    "penalties",
+    "division_placement",
+    "class_placement",
+    "overall_placement",
+  ]);
   function currentState() {
     return getState() || {};
   }
@@ -56,9 +70,111 @@ export function createReviewPane({
     return `textbox-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
   }
 
+  function normalizedSummaryMetricIds(value) {
+    if (!Array.isArray(value)) return [];
+    return [
+      ...new Set(value
+        .map((item) => String(item || "").trim())
+        .map((item) => item === "division_class_placement" ? "overall_placement" : item)
+        .filter(Boolean)),
+    ];
+  }
+
+  function reviewMetricDefinitions(summary = {}, imported = {}) {
+    const identity = competitionIdentityLabels({
+      scoring: currentState()?.project?.scoring || summary,
+      importedStage: imported || summary?.imported_stage || {},
+    });
+    return [
+      { id: "score_time", label: "Score / Time" },
+      { id: "raw_time", label: "Raw Time" },
+      { id: "points_down", label: "Points Down" },
+      { id: "penalties", label: "Penalties" },
+      {
+        id: "division_placement",
+        label: "Division",
+        outputLabel: identity.division || "Division",
+        separator: " - ",
+      },
+      {
+        id: "class_placement",
+        label: "Class",
+        outputLabel: identity.classification || "Class",
+        separator: " - ",
+      },
+      { id: "overall_placement", label: "Overall", separator: " - " },
+      { id: "overall_percent", label: "Overall Percent" },
+      { id: "division_percent", label: "Division Percent" },
+      { id: "class_percent", label: "Class Percent" },
+      { id: "overall_gap", label: "Overall Gap" },
+      { id: "division_gap", label: "Division Gap" },
+      { id: "class_gap", label: "Class Gap" },
+    ];
+  }
+
+  function reviewComparisonGroups(summary, imported) {
+    const comparisonData = Array.isArray(currentState()?.practiscore_options?.comparison_competitors)
+      ? currentState().practiscore_options.comparison_competitors
+      : [];
+    const comparison = buildFinalStandingsComparison({
+      scoring: currentState()?.project?.scoring || summary || {},
+      importedStage: imported || summary?.imported_stage || {},
+      competitors: comparisonData,
+    });
+    return {
+      overall: comparison.overall,
+      division: comparison.division,
+      class: comparison.classification,
+    };
+  }
+
+  function formatPlacement(place, totalCount) {
+    if (place === null || place === undefined) return "";
+    const numericPlace = Number(place);
+    if (!Number.isFinite(numericPlace) || numericPlace < 1) return "";
+    const numericTotal = Number(totalCount);
+    if (Number.isFinite(numericTotal) && numericTotal >= numericPlace && numericTotal > 0) {
+      return `${numericPlace}/${numericTotal}`;
+    }
+    return String(numericPlace);
+  }
+
+  function summaryMetricIdsForBox(box, summary, imported) {
+    const availableIds = reviewMetricDefinitions(summary, imported)
+      .filter((def) => reviewMetricAvailable(def.id, summary, imported))
+      .map((def) => def.id);
+    if (availableIds.length === 0) return [];
+    const requested = normalizedSummaryMetricIds(box?.summary_metric_ids);
+    const filtered = requested.filter((metricId) => availableIds.includes(metricId));
+    if (Array.isArray(box?.summary_metric_ids) && box.summary_metric_ids.length > 0) return filtered;
+    return DEFAULT_SUMMARY_METRIC_IDS.filter((metricId) => availableIds.includes(metricId));
+  }
+
+  function summaryTextForBox(box, summary, imported) {
+    if (box?.source !== "imported_summary") return String(box?.text || "").trim();
+    const selectedIds = summaryMetricIdsForBox(box, summary, imported);
+    if (selectedIds.length === 0) return "";
+    return reviewMetricDefinitions(summary, imported)
+      .filter((def) => selectedIds.includes(def.id))
+      .map((def) => {
+        const value = reviewMetricValue(def.id, summary, imported);
+        return value ? `${def.outputLabel || def.label}${def.separator || " "}${value}` : "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
   function overlayTextBoxDisplayText(box) {
     if (box.source === "imported_summary") {
-      return box.text || currentState()?.scoring_summary?.imported_overlay_text || "";
+      const summary = currentState()?.scoring_summary || {};
+      const imported = summary.imported_stage || {};
+      const configuredText = summaryTextForBox(box, summary, imported);
+      const legacyText = String(currentState()?.scoring_summary?.imported_overlay_text || "").trim();
+      const overrideText = String(box.text || "").trim();
+      return (overrideText && overrideText !== configuredText && overrideText !== legacyText
+        ? overrideText
+        : configuredText || legacyText);
     }
     return box.text || "";
   }
@@ -136,6 +252,7 @@ export function createReviewPane({
       opacity: clamp(Number(box.opacity ?? 0.9), 0, 1),
       width,
       height,
+      summary_metric_ids: normalizedSummaryMetricIds(box.summary_metric_ids),
       order: Number(box.order ?? index),
     };
   }
@@ -218,11 +335,12 @@ export function createReviewPane({
       opacity: 0.9,
       width: 0,
       height: 0,
+      summary_metric_ids: source === "imported_summary" ? [...DEFAULT_SUMMARY_METRIC_IDS] : [],
     });
   }
 
   function overlayTextBoxLabel(box, index) {
-    if (box.source === "imported_summary") return `Imported Summary ${index + 1}`;
+    if (box.source === "imported_summary") return `Summary ${index + 1}`;
     return `Custom Box ${index + 1}`;
   }
 
@@ -281,6 +399,10 @@ export function createReviewPane({
         box.text = String(rawValue || "");
         return box;
       }
+      if (field === "summary_metric_ids") {
+        box.summary_metric_ids = normalizedSummaryMetricIds(rawValue);
+        return box;
+      }
       if (field === "quadrant") {
         if (usesCustomQuadrant(rawValue)) {
           const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {
@@ -333,7 +455,24 @@ export function createReviewPane({
 
   function addOverlayTextBox(source = "manual") {
     const boxes = overlayTextBoxes();
+    if (source === "imported_summary") {
+      const existingIndex = boxes.findIndex((box) => box.source === "imported_summary" && !String(box.text || "").trim());
+      if (existingIndex >= 0) {
+        const nextBoxes = boxes.slice();
+        const nextBox = normalizeOverlayTextBox({
+          ...nextBoxes[existingIndex],
+          summary_metric_ids: summaryMetricIdsForBox(nextBoxes[existingIndex], currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {}),
+        }, existingIndex);
+        nextBox.text = summaryTextForBox(nextBox, currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {});
+        nextBoxes[existingIndex] = nextBox;
+        applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
+        return;
+      }
+    }
     const nextBox = buildOverlayTextBox(source);
+    if (source === "imported_summary") {
+      nextBox.text = summaryTextForBox(nextBox, currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {});
+    }
     boxes.push(nextBox);
     applyOverlayTextBoxUpdate(boxes, { commit: true, rerender: true });
   }
@@ -357,69 +496,73 @@ export function createReviewPane({
   }
 
   function overlayTextBoxHint(box) {
-    const importedReady = Boolean(currentState()?.scoring_summary?.imported_overlay_text);
-    if (box.quadrant === aboveFinalTextBoxValue) {
-      return box.source === "imported_summary"
-        ? "Keeps the imported summary centered above the final score badge once it appears. Edit the text to override the imported copy."
-        : "Keeps this box centered above the final score badge once it appears.";
-    }
-    if (box.lock_to_stack) {
-      return "Locked to the shot stack. Disable this to edit placement directly.";
-    }
-    if (box.source === "imported_summary") {
-      return importedReady
-        ? "Uses the imported PractiScore stage summary by default and appears after the final shot. Edit the text here to override it."
-        : "Import PractiScore results first. The summary box will populate after the final shot, and you can edit it here.";
-    }
-    return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
+    return "";
   }
 
   function isReviewTextBoxExpanded(boxId) {
-    if (!boxId) return false;
-    if (currentReviewTextBoxExpansion().has(boxId)) return Boolean(currentReviewTextBoxExpansion().get(boxId));
-    return false;
+    return Boolean(boxId);
   }
 
   function setReviewTextBoxExpanded(boxId, expanded) {
-    if (!boxId) return;
-    currentReviewTextBoxExpansion().set(boxId, Boolean(expanded));
-    syncLocalProjectUiState();
-    scheduleProjectUiStateApply();
+    // Compatibility no-op: saved expansion state remains readable, but Review
+    // text-box editors are intentionally always open.
+    void boxId;
+    void expanded;
   }
 
   function buildTextBoxCard(box, index) {
     const card = documentObject.createElement("section");
     card.className = "text-box-card";
     card.dataset.boxId = box.id;
-    const expanded = isReviewTextBoxExpanded(box.id);
-    card.classList.toggle("collapsed", !expanded);
     const boxLockedToStack = Boolean(box.lock_to_stack);
     const displayedCoordinates = boxLockedToStack && box.quadrant !== aboveFinalTextBoxValue
       ? resolveRenderedTextBoxCoordinates(box.id, box)
       : null;
     const displayedSize = resolvedOverlayTextBoxSize(box);
     const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
+    const summary = currentState()?.scoring_summary || {};
+    const imported = summary.imported_stage || {};
+    const selectedSummaryMetricIds = summaryMetricIdsForBox(box, summary, imported);
+    const contentEditor = box.source === "imported_summary"
+      ? `
+        <div class="summary-metric-editor">
+          <span class="style-card-label">Summary Metrics</span>
+          <div class="review-metrics-checklist text-box-summary-metrics">
+            ${reviewMetricDefinitions(summary, imported)
+              .filter((def) => reviewMetricAvailable(def.id, summary, imported))
+              .map((def) => `
+                <label class="check-row">
+                  <input type="checkbox" data-summary-metric="${def.id}" ${selectedSummaryMetricIds.includes(def.id) ? "checked" : ""} />
+                  ${def.label}
+                </label>
+              `)
+              .join("")}
+          </div>
+          <label>Override text (leave blank for auto)
+            <textarea data-text-box-field="text" rows="3" placeholder="Custom override for auto-generated summary"></textarea>
+          </label>
+          <label>Preview
+            <textarea data-text-box-preview rows="6" readonly></textarea>
+          </label>
+        </div>
+      `
+      : `
+        <label>Box text
+          <textarea data-text-box-field="text" rows="3"></textarea>
+        </label>
+      `;
     card.innerHTML = `
       <div class="text-box-card-header">
         <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
         <div class="text-box-card-actions">
-          <button type="button" class="scoring-shot-toggle" data-text-box-action="toggle" aria-label="${expanded ? "Hide" : "Show"} text box editor">${expanded ? "v" : ">"}</button>
           <button type="button" data-text-box-action="duplicate">Duplicate</button>
           <button type="button" data-text-box-action="remove">Remove</button>
         </div>
       </div>
-      <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
+      <div class="text-box-card-body">
         <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
         <p class="hint" data-text-box-hint="true"></p>
-        <label>Content source
-          <select data-text-box-field="source">
-            <option value="manual">Custom text</option>
-            <option value="imported_summary">Imported summary</option>
-          </select>
-        </label>
-        <label>Box text
-          <textarea data-text-box-field="text" rows="3"></textarea>
-        </label>
+        ${contentEditor}
         <div class="control-grid">
           <label>Box placement
             <select data-text-box-field="quadrant">
@@ -478,8 +621,6 @@ export function createReviewPane({
         </div>
       </div>
     `;
-    const body = card.querySelector(".text-box-card-body");
-    if (body) body.hidden = !expanded;
     syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
     syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
     syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
@@ -492,14 +633,20 @@ export function createReviewPane({
     syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
     syncOpacityPercentControl(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
     const textArea = card.querySelector('[data-text-box-field="text"]');
-    textArea.dataset.importedSummaryDefault = box.source === "imported_summary"
-      ? (currentState()?.scoring_summary?.imported_overlay_text || "")
-      : "";
-    textArea.value = box.text || overlayTextBoxDisplayText(box);
-    textArea.disabled = false;
-    textArea.placeholder = box.source === "imported_summary"
-      ? "Leave blank to use the imported PractiScore stage summary after the final shot"
-      : "Text to show over the video";
+    if (textArea) {
+      textArea.dataset.importedSummaryDefault = box.source === "imported_summary"
+        ? summaryTextForBox(
+          box,
+          currentState()?.scoring_summary || {},
+          currentState()?.scoring_summary?.imported_stage || {},
+        )
+        : "";
+      textArea.value = box.text || overlayTextBoxDisplayText(box);
+      textArea.disabled = false;
+      textArea.placeholder = "Text to show over the video";
+    }
+    const previewArea = card.querySelector("[data-text-box-preview]");
+    if (previewArea) previewArea.value = overlayTextBoxDisplayText(box);
     const hint = card.querySelector('[data-text-box-hint="true"]');
     if (hint) hint.textContent = overlayTextBoxHint(box);
     const quadrantInput = card.querySelector('[data-text-box-field="quadrant"]');
@@ -543,17 +690,13 @@ export function createReviewPane({
       control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
       control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
     });
-    card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      preserveElementViewportAnchor(
-        () => documentObject.querySelector(`.text-box-card[data-box-id="${box.id}"]`),
-        () => {
-          setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
-          renderTextBoxEditors();
-        },
-      );
+    card.querySelectorAll("input[data-summary-metric]").forEach((control) => {
+      control.addEventListener("change", () => {
+        const metricIds = [...card.querySelectorAll("input[data-summary-metric]:checked")]
+          .map((input) => input.dataset.summaryMetric || "")
+          .filter(Boolean);
+        setOverlayTextBoxField(box.id, "summary_metric_ids", metricIds, { commit: true, rerender: true });
+      });
     });
     card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -582,10 +725,6 @@ export function createReviewPane({
       withPreservedScrollState([container], () => {
         container.innerHTML = "";
         if (boxes.length === 0) {
-          const empty = documentObject.createElement("div");
-          empty.className = "hint";
-          empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
-          container.appendChild(empty);
           return;
         }
         boxes.forEach((box, index) => {
@@ -593,6 +732,82 @@ export function createReviewPane({
         });
       });
     });
+  }
+
+  function reviewMetricValue(metricId, summary, imported) {
+    const groups = reviewComparisonGroups(summary, imported);
+    const pointsDown = imported.match_type === "idpa"
+      ? imported.score_counts?.["Points Down"] ?? imported.aggregate_points
+      : null;
+    switch (metricId) {
+      case "score_time": {
+        const computed = String(summary.display_value || "").trim();
+        if (computed && computed !== "--") return computed;
+        return imported.final_time !== null && imported.final_time !== undefined
+          ? Number(imported.final_time).toFixed(2)
+          : "";
+      }
+      case "raw_time": {
+        const rawSeconds = summary.raw_seconds ?? imported.raw_seconds;
+        return rawSeconds !== null && rawSeconds !== undefined
+          ? `${Number(rawSeconds).toFixed(2)}s`
+          : "";
+      }
+      case "points_down":
+        return pointsDown !== null && pointsDown !== undefined ? String(pointsDown) : "";
+      case "penalties": {
+        const penalties = summary.total_penalties ?? imported.shot_penalties;
+        return penalties !== null && penalties !== undefined ? String(penalties) : "";
+      }
+      case "overall_placement":
+        return formatPlacement(groups.overall.place, groups.overall.items.length);
+      case "division_placement":
+        return formatPlacement(groups.division.place, groups.division.items.length);
+      case "class_placement":
+        return formatPlacement(groups.class.place, groups.class.items.length);
+      case "overall_percent": return "";
+      case "division_percent": return "";
+      case "class_percent": return "";
+      case "overall_gap": return "";
+      case "division_gap": return "";
+      case "class_gap": return "";
+      default: return "";
+    }
+  }
+
+  function reviewMetricAvailable(metricId, summary, imported) {
+    const hasImported = imported && Object.keys(imported).length > 0;
+    if (!hasImported) return false;
+    const groups = reviewComparisonGroups(summary, imported);
+    switch (metricId) {
+      case "score_time": return (
+        (Boolean(summary.display_value) && summary.display_value !== "--")
+        || (imported.final_time !== null && imported.final_time !== undefined)
+      );
+      case "raw_time": return (
+        (summary.raw_seconds !== null && summary.raw_seconds !== undefined)
+        || (imported.raw_seconds !== null && imported.raw_seconds !== undefined)
+      );
+      case "points_down": return imported.match_type === "idpa"
+        ? imported.score_counts?.["Points Down"] !== null && imported.score_counts?.["Points Down"] !== undefined
+        : summary.shot_penalties !== null && summary.shot_penalties !== undefined;
+      case "penalties": return (
+        (summary.total_penalties !== null && summary.total_penalties !== undefined)
+        || (imported.shot_penalties !== null && imported.shot_penalties !== undefined)
+      );
+      case "overall_placement": return groups.overall.place !== null;
+      case "division_placement": return groups.division.place !== null;
+      case "class_placement": return groups.class.place !== null;
+      case "overall_percent": case "division_percent": case "class_percent":
+      case "overall_gap": case "division_gap": case "class_gap":
+        return false;
+      default: return false;
+    }
+  }
+
+  function renderReviewImportedMetrics() {
+    const section = $("review-imported-metrics");
+    if (section) section.hidden = true;
   }
 
   function refreshReviewMediaFrame() {
@@ -654,6 +869,7 @@ export function createReviewPane({
     setReviewTextBoxExpanded,
     buildTextBoxCard,
     renderTextBoxEditors,
+    renderReviewImportedMetrics,
     refreshReviewMediaFrame,
     restoreReviewStage,
     scheduleReviewStageRestore,

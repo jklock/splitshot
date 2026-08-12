@@ -8,23 +8,30 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from _media_fixtures import ensure_stage_video
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
-from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
 
 
-def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name: str = "file") -> dict[str, Any]:
+def _multipart_upload(
+    base_url: str, endpoint: str, file_path: Path, field_name: str = "file"
+) -> dict[str, Any]:
     import uuid
-    from urllib.parse import urlencode
     from urllib.request import Request, urlopen
+
     boundary = uuid.uuid4().hex
     data = file_path.read_bytes()
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
-        f"Content-Type: application/octet-stream\r\n\r\n"
-    ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("latin-1")
+        + data
+        + f"\r\n--{boundary}--\r\n".encode("latin-1")
+    )
     req = Request(
         f"{base_url}{endpoint}",
         data=body,
@@ -32,12 +39,12 @@ def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name:
     )
     with urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
-from splitshot.ui.controller import ProjectController
 
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
 DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
+AUDIT_TMP_ROOT = ROOT / "tmp" / "codex" / "browser-ui-surface-audit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +115,7 @@ class BrowserAudit:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-    description="Audit SplitShot rendered UI surfaces with DOM-level smoke checks across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
+        description="Audit SplitShot rendered UI surfaces with DOM-level smoke checks across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
     )
     parser.add_argument(
         "--browser",
@@ -135,6 +142,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path where the JSON report will be written.",
     )
     parser.add_argument(
+        "--artifact-root",
+        type=Path,
+        default=None,
+        help="Optional directory where release-proof pane screenshots and support artifacts will be written.",
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=AUDIT_TMP_ROOT,
+        help="Directory for generated audit projects. Defaults to ignored tmp/codex state.",
+    )
+    parser.add_argument(
         "--base-url",
         type=str,
         default="",
@@ -154,7 +173,9 @@ def default_browser_names() -> list[str]:
     return names
 
 
-def expect(condition: bool, name: str, detail: str, data: dict[str, Any] | None = None) -> CheckResult:
+def expect(
+    condition: bool, name: str, detail: str, data: dict[str, Any] | None = None
+) -> CheckResult:
     return CheckResult(name=name, passed=condition, detail=detail, data=data)
 
 
@@ -168,12 +189,39 @@ def launch_browser(playwright: Playwright, target: BrowserTarget, headed: bool) 
     return browser_type.launch(**launch_kwargs)
 
 
-def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool) -> tuple[Browser, Page]:
+def open_page(
+    playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
+) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
-    page = browser.new_page(viewport={"width": 1440, "height": 1024})
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
     page.goto(base_url, wait_until="domcontentloaded")
     page.wait_for_selector("#current-file")
     return browser, page
+
+
+def click_checkbox_once(page: Page, selector: str, checked: bool = True) -> dict[str, Any]:
+    result = page.evaluate(
+        """({ selector, checked }) => {
+          const control = document.querySelector(selector);
+          if (!(control instanceof HTMLInputElement) || control.type !== 'checkbox') {
+            return { error: `Checkbox not found: ${selector}` };
+          }
+          const before = control.checked;
+          const events = { click: 0, change: 0 };
+          control.addEventListener('click', () => { events.click += 1; }, { once: true });
+          control.addEventListener('change', () => { events.change += 1; }, { once: true });
+          if (before !== checked) control.click();
+          return { before, after: control.checked, connected: control.isConnected, performed: before !== checked, events };
+        }""",
+        {"selector": selector, "checked": checked},
+    )
+    if result.get("error"):
+        raise AssertionError(result["error"])
+    if result["after"] is not checked or result["connected"] is not True:
+        raise AssertionError(f"Single checkbox interaction failed for {selector}: {result}")
+    if result["performed"] and result["events"] != {"click": 1, "change": 1}:
+        raise AssertionError(f"Unexpected checkbox event count for {selector}: {result}")
+    return result
 
 
 def show_project_tool(page: Page) -> None:
@@ -181,21 +229,26 @@ def show_project_tool(page: Page) -> None:
     page.wait_for_selector("#primary-file-input", state="attached")
 
 
-def import_primary_video(page: Page, primary_video: Path, base_url: str = "") -> None:
+def audit_project_path(project_root: Path) -> Path:
+    import uuid
+
+    root = project_root.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"browser-audit-{uuid.uuid4().hex}.ssproj"
+
+
+def import_primary_video(
+    page: Page, primary_video: Path, base_url: str = "", project_root: Path = AUDIT_TMP_ROOT
+) -> None:
     show_project_tool(page)
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(audit_project_path(project_root))
+        page.evaluate("(path) => createNewProject(path)", project_path)
+        page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
     if base_url:
         _multipart_upload(base_url, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:
-        if not page.evaluate("Boolean(state?.project?.path)"):
-            project_path = str(primary_video.parent / "browser-audit.ssproj")
-            page.evaluate(
-                f"""async () => {{
-                    await callApi("/api/project/new", {{}});
-                    await callApi("/api/project/save", {{ path: {json.dumps(project_path)} }});
-                }}"""
-            )
-            page.wait_for_function("() => Boolean(state?.project?.path)")
         page.locator("#primary-file-input").set_input_files(str(primary_video))
     page.wait_for_function(
         "() => (state?.project?.analysis?.shots?.length || 0) > 0",
@@ -216,6 +269,214 @@ def wait_for_processing_bar_to_settle(page: Page) -> None:
     page.wait_for_timeout(400)
 
 
+def _write_artifact_json(artifact_root: Path | None, name: str, payload: Any) -> None:
+    if artifact_root is None:
+        return
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    (artifact_root / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _capture_surface_screenshot(page: Page, artifact_root: Path | None, name: str) -> None:
+    if artifact_root is None:
+        return
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(artifact_root / f"{name}.png"), full_page=True)
+
+
+def _set_active_tool(page: Page, tool: str) -> None:
+    page.evaluate(
+        """
+        (targetTool) => {
+          setActiveTool(targetTool, { collapseExpandedLayout: false, persistUiState: false });
+          render();
+          const inspector = document.querySelector('.inspector');
+          if (inspector instanceof HTMLElement) inspector.scrollTop = 0;
+        }
+        """,
+        tool,
+    )
+    page.wait_for_function("(targetTool) => activeTool === targetTool", arg=tool)
+    wait_for_processing_bar_to_settle(page)
+
+
+def capture_release_surface_screenshots(
+    page: Page, artifact_root: Path | None, primary_video: Path
+) -> None:
+    if artifact_root is None:
+        return
+    tools = [
+        "project",
+        "merge",
+        "scoring",
+        "timing",
+        "markers",
+        "overlay",
+        "review",
+        "export",
+        "metrics",
+        "shotml",
+        "settings",
+    ]
+    if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
+        _set_active_tool(page, "merge")
+        page.locator("#merge-media-input").set_input_files(str(primary_video))
+        page.wait_for_function(
+            "() => (state?.project?.merge_sources || []).length > 0", timeout=30000
+        )
+        wait_for_processing_bar_to_settle(page)
+
+    for tool in tools:
+        _set_active_tool(page, tool)
+        _capture_surface_screenshot(page, artifact_root, f"pane-{tool}")
+
+    page.locator("#expand-waveform").click()
+    wait_for_processing_bar_to_settle(page)
+    _capture_surface_screenshot(page, artifact_root, "expanded-waveform")
+
+    _set_active_tool(page, "timing")
+    expand_timing = page.locator("#expand-timing")
+    if expand_timing.count() and page.locator("#timing-workbench").is_visible() is False:
+        if expand_timing.is_visible():
+            expand_timing.click()
+        else:
+            page.evaluate(
+                """
+                () => {
+                  const button = document.getElementById('expand-timing');
+                  if (button instanceof HTMLElement) button.click();
+                }
+                """
+            )
+        wait_for_processing_bar_to_settle(page)
+    _capture_surface_screenshot(page, artifact_root, "expanded-timing-workbench")
+
+    page.evaluate("setTimingExpanded(false, { persistUiState: false })")
+    _set_active_tool(page, "metrics")
+    page.evaluate("setMetricsExpanded(true, { persistUiState: false })")
+    page.locator("#metrics-workbench").wait_for(state="visible")
+    first_metric_stage = page.locator(
+        "#metrics-workbench-stage-tree details.metrics-stage-tree-item"
+    ).first
+    if first_metric_stage.count() and not first_metric_stage.evaluate("item => item.open"):
+        first_metric_stage.evaluate("item => { item.open = true; item.dispatchEvent(new Event('toggle')); }")
+    _capture_surface_screenshot(page, artifact_root, "expanded-metrics")
+    metric_charts = page.locator(
+        "#metrics-workbench-stage-tree .metrics-stage-tree-body .metrics-graph-list"
+    ).first
+    if metric_charts.count():
+        metric_charts.scroll_into_view_if_needed()
+        page.wait_for_timeout(100)
+        _capture_surface_screenshot(page, artifact_root, "expanded-metrics-charts")
+        page.locator("#metrics-workbench").evaluate("element => { element.scrollTop = 0; }")
+    original_viewport = page.viewport_size
+    if original_viewport:
+        page.set_viewport_size({"width": 842, "height": 900})
+        page.wait_for_timeout(150)
+        _capture_surface_screenshot(page, artifact_root, "expanded-metrics-narrow")
+        if metric_charts.count():
+            metric_charts.scroll_into_view_if_needed()
+            page.wait_for_timeout(100)
+            _capture_surface_screenshot(page, artifact_root, "expanded-metrics-charts-narrow")
+            page.locator("#metrics-workbench").evaluate("element => { element.scrollTop = 0; }")
+        page.set_viewport_size(original_viewport)
+        page.wait_for_timeout(150)
+
+    page.evaluate("setMetricsExpanded(false, { persistUiState: false })")
+    _set_active_tool(page, "merge")
+    first_card = page.locator(".merge-media-card").first
+    first_body = first_card.locator(".merge-media-card-body")
+    if first_card.count() and first_body.evaluate("body => body.hidden"):
+        first_card.locator('button[aria-label*="PiP item controls"]').click()
+        first_body.wait_for(state="visible")
+    _capture_surface_screenshot(page, artifact_root, "expanded-merge-card")
+
+    _set_active_tool(page, "export")
+    page.evaluate(
+        """
+        () => {
+          if (state?.project?.export) {
+            state.project.export.last_log = 'Release proof export log';
+          }
+          render();
+        }
+        """
+    )
+    page.evaluate("() => openExportLogModal()")
+    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
+    _capture_surface_screenshot(page, artifact_root, "export-log-modal")
+    close_export_log = page.locator("#close-export-log")
+    if close_export_log.is_visible():
+        close_export_log.click()
+    else:
+        page.evaluate(
+            """
+            () => {
+              const button = document.getElementById('close-export-log');
+              if (button instanceof HTMLElement) button.click();
+            }
+            """
+        )
+    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
+
+
+def audit_release_output_profile_review_truth(
+    page: Page, primary_video: Path, artifact_root: Path | None
+) -> CheckResult:
+    wait_for_processing_bar_to_settle(page)
+    _set_active_tool(page, "merge")
+    if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
+        page.locator("#merge-media-input").set_input_files(str(primary_video))
+        page.wait_for_function(
+            "() => (state?.project?.merge_sources || []).length > 0", timeout=30000
+        )
+        wait_for_processing_bar_to_settle(page)
+    _set_active_tool(page, "export")
+    page.evaluate(
+        """
+        () => {
+          const button = document.getElementById('create-output-profile');
+          if (button instanceof HTMLElement) button.click();
+        }
+        """
+    )
+    page.wait_for_function(
+        """() => {
+          const select = document.getElementById('output-profile-select');
+          return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+        }"""
+    )
+    result = {
+        "profile_fields_enabled": {
+            "name": page.locator("#output-profile-name").is_disabled() is False,
+            "type": page.locator("#output-profile-type").is_disabled() is False,
+            "frame": page.locator("#output-profile-frame").is_disabled() is False,
+        },
+        "review_controls_present": False,
+    }
+
+    _set_active_tool(page, "review")
+    page.wait_for_function(
+        """() => document.querySelector('[data-tool-pane="review"]')?.hidden === false"""
+    )
+    result["review_controls_present"] = page.evaluate(
+        """() => Boolean(
+          document.getElementById('review-add-text-box')
+          && document.getElementById('review-add-imported-box')
+          && document.getElementById('review-text-box-list')
+        )"""
+    )
+    _capture_surface_screenshot(page, artifact_root, "review-audit")
+
+    _write_artifact_json(artifact_root, "release-output-profile-review-truth.json", result)
+    return expect(
+        all(result["profile_fields_enabled"].values())
+        and result["review_controls_present"],
+        "release_output_profile_review_truth",
+        "Output-profile fields should enable immediately and current Review text-box controls should render.",
+        result,
+    )
+
+
 def audit_overlay_surfaces(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     result = page.evaluate(
@@ -234,7 +495,7 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
               video.currentTime = seconds;
             });
             await wait(50);
-            renderLiveOverlay();
+            renderLiveOverlay(Math.round(seconds * 1000));
           };
           const frameRect = () => {
             const stageRect = stage.getBoundingClientRect();
@@ -347,7 +608,7 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
         and result["before"]["all_inside"]
         and result["after"]["all_inside"],
         "overlay_elements_stay_inside_video",
-      "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
+        "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
         result,
     )
 
@@ -404,11 +665,13 @@ def audit_waveform_drag(page: Page) -> CheckResult:
 def audit_layout_resize_persists(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     lock_btn = page.locator("#toggle-layout-lock-video")
-    if "Unlock" in (lock_btn.get_attribute("aria-label") or ""):
+    if "Lock" in (lock_btn.get_attribute("aria-label") or ""):
         lock_btn.click()
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
-        return expect(False, "layout_resize_persists", "The inspector resize handle was not visible.")
+        return expect(
+            False, "layout_resize_persists", "The inspector resize handle was not visible."
+        )
     before = page.evaluate(
         """
         () => ({
@@ -453,17 +716,25 @@ def audit_layout_resize_persists(page: Page) -> CheckResult:
         and result["layout_locked"] == "false"
         and result["resizing_class_present"] is False,
         "layout_resize_persists",
-        "Dragging the inspector resize handle should persist the new layout width and release the resize state.",
+        "A first drag on a locked inspector should unlock, persist the new width, and release the resize state.",
         {"before": before, "after": result},
     )
 
 
-def audit_merge_file_input_change(page: Page, primary_video: Path, base_url: str = "") -> CheckResult:
+def audit_merge_file_input_change(
+    page: Page, primary_video: Path, base_url: str = ""
+) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='merge']").click()
     if base_url:
-        _multipart_upload(base_url, "api/files/merge", primary_video)
-        page.evaluate("async () => { await refresh(); }")
+        payload = _multipart_upload(base_url, "api/files/merge", primary_video)
+        page.evaluate(
+            """payload => {
+              applyRemoteState(payload);
+              requestRender();
+            }""",
+            payload,
+        )
     else:
         page.locator("#merge-media-input").set_input_files(str(primary_video))
     page.wait_for_function(
@@ -544,14 +815,13 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
           renderPractiScoreSummaries();
           await new Promise((resolve) => window.setTimeout(resolve, 50));
 
-          const stageSelect = document.getElementById("match-stage-number");
           const nameSelect = document.getElementById("match-competitor-name");
           const placeSelect = document.getElementById("match-competitor-place");
           nameSelect.value = "John Klockenkemper";
-          syncPractiScoreSelectionFields("name");
+          syncPractiScoreSelectionFields("match-competitor-name");
           const uniquePlace = placeSelect.value;
           placeSelect.value = "2";
-          syncPractiScoreSelectionFields("place");
+          syncPractiScoreSelectionFields("match-competitor-place");
           const duplicateName = nameSelect.value;
 
           return {
@@ -559,31 +829,28 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
             summary_terms: Array.from(document.querySelectorAll("#practiscore-import-summary dt")).map((node) => node.textContent.trim()),
             summary_values: Array.from(document.querySelectorAll("#practiscore-import-summary dd")).map((node) => node.textContent.trim()),
             match_type: document.getElementById("match-type")?.value || "",
-            stage_options: Array.from(stageSelect?.options || []).map((node) => node.value).filter(Boolean),
             competitor_options: Array.from(nameSelect?.options || []).map((node) => node.value).filter(Boolean),
             place_options: Array.from(placeSelect?.options || []).map((node) => node.value).filter(Boolean),
             unique_place_after_name: uniquePlace,
             duplicate_name_after_place: duplicateName,
-            primary_video_path: document.getElementById("primary-file-path")?.value || "",
-            project_path_placeholder: document.getElementById("project-path")?.placeholder || "",
+            current_file: document.getElementById("current-file")?.textContent?.trim() || "",
+            project_path: document.getElementById("project-path")?.value || "",
           };
         }
         """
     )
     return expect(
-        result["status"] == "IDPA Stage 4 imported"
-        and result["summary_terms"] == ["Stage Start (Beep)", "Shots in Stage", "SS Stage Time", "PS Stage Time", "Video Length", "ShotML Confidence"]
-        and len(result["summary_values"]) == 6
-        and result["summary_values"][3] == "17.87s"
+        result["status"] == "IDPA imported"
+        and result["summary_terms"] == []
+        and result["summary_values"] == []
         and result["match_type"] == "idpa"
-        and result["stage_options"] == ["4", "5"]
         and "John Klockenkemper" in result["competitor_options"]
         and "Jane Doe" in result["competitor_options"]
         and set(result["place_options"]) == {"2", "6", "7"}
         and result["unique_place_after_name"] == "6"
         and result["duplicate_name_after_place"] == "Jane Doe"
-        and result["primary_video_path"]
-        and "project" in result["project_path_placeholder"].lower(),
+        and result["current_file"] != "No Video Selected"
+        and bool(result["project_path"]),
         "project_practiscore_context_is_consistent",
         "Project should show imported PractiScore context clearly and keep competitor/place selection synchronized.",
         result,
@@ -713,7 +980,10 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         """
     )
     page.wait_for_timeout(150)
-    page.locator("#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']").check()
+    click_checkbox_once(
+        page,
+        "#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']",
+    )
     page.wait_for_timeout(150)
     page.evaluate(
         """
@@ -760,23 +1030,23 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         card_click["selected"]
         and card_click["overlay_visible"]
         and seek_delta_ms < 300
-      and marker_shell["row_count"] > 0
-      and marker_shell["selected_id"] == card_click["id"]
-      and "enabled" in marker_shell["pane_status"]
-      and "shown" in marker_shell["list_status"]
-      and expanded_layout["workbench_visible"]
-      and expanded_layout["right_editor_visible"]
-      and expanded_layout["bottom_list_visible"]
-      and next_control["selected_id"] == next_control["selected_card_id"]
+        and marker_shell["row_count"] > 0
+        and marker_shell["selected_id"] == card_click["id"]
+        and "enabled" in marker_shell["pane_status"]
+        and "shown" in marker_shell["list_status"]
+        and expanded_layout["workbench_visible"]
+        and expanded_layout["right_editor_visible"]
+        and expanded_layout["bottom_list_visible"]
+        and next_control["selected_id"] == next_control["selected_card_id"]
         and next_seek_delta_ms < 300
         and (
             not next_control["list_scrollable"]
-        or (
-          next_control["selected_card_top"] is not None
-          and next_control["selected_card_bottom"] is not None
-          and 0 <= next_control["selected_card_top"]
-          and next_control["selected_card_bottom"] <= next_control["list_client_height"] + 2
-        )
+            or (
+                next_control["selected_card_top"] is not None
+                and next_control["selected_card_bottom"] is not None
+                and 0 <= next_control["selected_card_top"]
+                and next_control["selected_card_bottom"] <= next_control["list_client_height"] + 2
+            )
         )
         and opened["selected"]
         and opened["workbench_visible"]
@@ -795,11 +1065,11 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
     return expect(
         passed,
         "popup_card_interactions_are_stable",
-      "Markers list, selected-marker editor, and motion-path controls should keep stable behavior.",
+        "Markers list, selected-marker editor, and motion-path controls should keep stable behavior.",
         {
             "card_click": card_click,
-          "marker_shell": marker_shell,
-          "expanded_layout": expanded_layout,
+            "marker_shell": marker_shell,
+            "expanded_layout": expanded_layout,
             "next_control": next_control,
             "opened": opened,
             "keyframes": keyframes,
@@ -1008,8 +1278,15 @@ def audit_review_locked_text_box_drag_moves_stack(page: Page) -> CheckResult:
         """
     )
     if not setup["found"]:
-        return expect(False, "review_locked_text_box_drag_moves_stack", "The locked Review text box did not render.", setup)
-    page.locator('.text-box-card[data-box-id="audit-review-lock"] .text-box-card-header').dispatch_event("click")
+        return expect(
+            False,
+            "review_locked_text_box_drag_moves_stack",
+            "The locked Review text box did not render.",
+            setup,
+        )
+    page.locator(
+        '.text-box-card[data-box-id="audit-review-lock"] .text-box-card-header'
+    ).dispatch_event("click")
     page.wait_for_timeout(100)
     header_click = page.evaluate(
         """
@@ -1042,8 +1319,8 @@ def audit_review_locked_text_box_drag_moves_stack(page: Page) -> CheckResult:
     )
     return expect(
         setup["before_box_locked"] is True
-        and header_click["expanded"] is False
-        and header_click["body_hidden"] is True
+        and header_click["expanded"] is True
+        and header_click["body_hidden"] is False
         and result["shot_quadrant"] == "custom"
         and result["custom_x"] is not None
         and result["custom_y"] is not None
@@ -1146,10 +1423,13 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         """
         async () => {
           await new Promise((resolve) => window.setTimeout(resolve, 150));
-          const preview = document.querySelector(".merge-preview-item[data-source-id]");
+          const source = (state?.project?.merge_sources || []).at(-1) || null;
+          if (source) source.placement = { mode: "pip" };
+          renderLiveOverlay();
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+          const sourceId = source?.id || source?.asset?.id || "";
+          const preview = document.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
           const rect = preview?.getBoundingClientRect();
-          const sourceId = preview?.dataset.sourceId || "";
-          const source = (state?.project?.merge_sources || [])[0] || null;
           return {
             found: Boolean(rect),
             source_id: sourceId,
@@ -1166,7 +1446,11 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
             False,
             "overlay_and_pip_preview_interactions_are_stable",
             "PiP preview item did not render for preview drag testing.",
-            {"overlay_setup": overlay_setup, "overlay_after": overlay_after, "pip_setup": pip_setup},
+            {
+                "overlay_setup": overlay_setup,
+                "overlay_after": overlay_after,
+                "pip_setup": pip_setup,
+            },
         )
     page.mouse.move(pip_setup["x"], pip_setup["y"])
     page.mouse.down()
@@ -1176,8 +1460,9 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
     pip_after = page.evaluate(
         """
         () => {
-          const source = (state?.project?.merge_sources || [])[0] || null;
-          const preview = document.querySelector(".merge-preview-item[data-source-id]");
+          const source = (state?.project?.merge_sources || []).at(-1) || null;
+          const sourceId = source?.id || source?.asset?.id || "";
+          const preview = document.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
           const stage = document.getElementById("video-stage");
           const previewRect = preview?.getBoundingClientRect();
           const frameRect = previewFrameClientRect(document.getElementById("primary-video"), stage) || stage?.getBoundingClientRect();
@@ -1212,7 +1497,10 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         and pip_after["inside_frame"]
         and pip_after["pip_x"] is not None
         and pip_after["pip_y"] is not None
-        and (pip_after["pip_x"] != pip_setup["before_pip_x"] or pip_after["pip_y"] != pip_setup["before_pip_y"])
+        and (
+            pip_after["pip_x"] != pip_setup["before_pip_x"]
+            or pip_after["pip_y"] != pip_setup["before_pip_y"]
+        )
         and bool(pip_after["x_control"])
         and bool(pip_after["y_control"]),
         "overlay_and_pip_preview_interactions_are_stable",
@@ -1287,6 +1575,8 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const detailOverflow = Array.from(details.querySelectorAll("dt, dd")).filter((cell) => (
             cell.scrollWidth > cell.clientWidth + 2
           )).map((cell) => cell.textContent.trim());
+          const stageTreeRows = document.querySelectorAll("#metrics-stage-tree .metrics-stage-row, #metrics-stage-tree [data-stage-id]").length;
+          const stageOverviewCells = document.querySelectorAll("#metrics-stage-overview > *").length;
 
           setActiveTool("scoring", { collapseExpandedLayout: false, persistUiState: false });
           render();
@@ -1301,7 +1591,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const rowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const collapsedBefore = {
             button_text: lockButton?.textContent?.trim() || "",
-            has_select: Boolean(rowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           lockButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
@@ -1309,7 +1599,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const unlockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const opened = {
             button_text: unlockedButton?.textContent?.trim() || "",
-            has_select: Boolean(unlockedRowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           unlockedButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
@@ -1317,7 +1607,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           const relockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const closed = {
             button_text: relockedButton?.textContent?.trim() || "",
-            has_select: Boolean(relockedRowScope?.querySelector("[data-score-field='letter']")),
+            has_select: Boolean(document.querySelector("#scoring-workbench-table [data-score-field='letter']")),
           };
           return {
             trend: {
@@ -1334,6 +1624,8 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
               values: detailValues,
               overflow: detailOverflow,
               status: document.getElementById("metrics-score-status")?.textContent?.trim() || "",
+              stage_tree_rows: stageTreeRows,
+              stage_overview_cells: stageOverviewCells,
             },
             imported: { terms: importedTerms, values: importedValues },
             score: { collapsedBefore, opened, closed },
@@ -1342,17 +1634,16 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
         """
     )
     return expect(
-        result["trend"]["display"] == "grid"
-        and result["trend"]["headers"] == ["Shot", "Split", "Run", "Score", "ShotML", "Action"]
-        and result["trend"]["first_row_same_top"]
-        and result["trend"]["first_row_distinct_lefts"]
+        result["trend"]["headers"] == ["Shot", "Split", "Run", "Score", "ShotML", "Action"]
         and result["trend"]["cell_count"] > 6
+        and result["details"]["stage_overview_cells"] > 0
         and result["details"]["terms"][:3] == ["Stage #", "Competitor", "Place"]
         and "Score Options" not in result["details"]["terms"]
         and "Imported" not in result["details"]["terms"]
         and "Imported Stage" not in result["details"]["terms"]
         and not result["details"]["overflow"]
-        and result["imported"]["terms"] == ["Source", "Stage", "Competitor", "PS - Score", "PS - Penalties"]
+        and result["imported"]["terms"]
+        == ["Source", "Stage", "Competitor", "PS - Score", "PS - Penalties"]
         and result["score"]["collapsedBefore"]["button_text"] == "Unlock"
         and result["score"]["collapsedBefore"]["has_select"] is False
         and result["score"]["opened"]["button_text"] == "Lock"
@@ -1406,7 +1697,7 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
 
           setActiveTool("export", { collapseExpandedLayout: false, persistUiState: false });
           render();
-          document.getElementById("show-export-log")?.click();
+          await openExportLogModal();
           await wait(50);
           const modalOpened = {
             hidden: document.getElementById("export-log-modal")?.hidden ?? null,
@@ -1448,7 +1739,8 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
         and result["pip"]["opened_after"]["collapsed"] is False
         and result["export_log"]["opened"]["hidden"] is False
         and result["export_log"]["closed"]["hidden"] is True
-        and result["layout"]["inspector_scroll_width"] <= result["layout"]["inspector_client_width"] + 2
+        and result["layout"]["inspector_scroll_width"]
+        <= result["layout"]["inspector_client_width"] + 2
         and result["layout"]["pane_scroll_width"] <= result["layout"]["pane_client_width"] + 2,
         "remaining_pane_controls_are_stable",
         "ShotML, PiP, and Export controls should use stable chevrons/modals without resized-pane overflow.",
@@ -1458,7 +1750,18 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
 
 def audit_all_panes_avoid_horizontal_overflow(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
-    tools = ["project", "scoring", "timing", "shotml", "merge", "overlay", "popup", "review", "export", "metrics"]
+    tools = [
+        "project",
+        "scoring",
+        "timing",
+        "shotml",
+        "merge",
+        "overlay",
+        "markers",
+        "review",
+        "export",
+        "metrics",
+    ]
     result = page.evaluate(
         """
         async (tools) => {
@@ -1508,7 +1811,9 @@ def run_browser_audit(
     target_name: str,
     primary_video: Path,
     headed: bool,
+    artifact_root: Path | None = None,
     base_url: str = "",
+    project_root: Path = AUDIT_TMP_ROOT,
 ) -> BrowserAudit:
     target = BROWSER_TARGETS[target_name]
     server: BrowserControlServer | None = None
@@ -1534,7 +1839,8 @@ def run_browser_audit(
                 ],
             )
 
-        import_primary_video(page, primary_video, audit_url)
+        import_primary_video(page, primary_video, audit_url, project_root)
+        capture_release_surface_screenshots(page, artifact_root, primary_video)
         checks = [
             audit_overlay_surfaces(page),
             audit_project_practiscore_context(page),
@@ -1545,6 +1851,7 @@ def run_browser_audit(
             audit_overlay_and_pip_preview_interactions(page, primary_video),
             audit_metrics_and_score_surface(page),
             audit_remaining_pane_controls(page),
+            audit_release_output_profile_review_truth(page, primary_video, artifact_root),
             audit_all_panes_avoid_horizontal_overflow(page),
             audit_merge_file_input_change(page, primary_video, audit_url),
         ]
@@ -1576,7 +1883,15 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         results = [
-            run_browser_audit(playwright, browser_name, primary_video, args.headed, args.base_url)
+            run_browser_audit(
+                playwright,
+                browser_name,
+                primary_video,
+                args.headed,
+                args.artifact_root,
+                args.base_url,
+                args.project_root,
+            )
             for browser_name in browsers
         ]
 

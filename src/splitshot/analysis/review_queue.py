@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
-import json
 from pathlib import Path
+
+from splitshot.analysis.auto_labeling import load_manifest as load_review_manifest
 
 
 STATUS_BASE_SCORES = {
@@ -92,12 +93,6 @@ class ReviewQueueSummary:
         }
 
 
-def load_review_manifest(manifest_path: str | Path) -> dict[str, object]:
-    path = Path(manifest_path).expanduser().resolve()
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Manifest must contain a JSON object: {path}")
-    return payload
 
 
 def _safe_int(value: object, default: int = 0) -> int:
@@ -282,9 +277,14 @@ def build_review_queue(
             candidate["recommended_action"] = ACTION_ALREADY_VERIFIED
         elif flags & CRITICAL_REVIEW_FLAGS:
             candidate["recommended_action"] = ACTION_BLOCKED
-        elif bool(candidate["duplicate_group_review_required"]) and bool(candidate["duplicate_representative"]):
+        elif bool(candidate["duplicate_group_review_required"]) and bool(
+            candidate["duplicate_representative"]
+        ):
             candidate["recommended_action"] = ACTION_REVIEW_DUPLICATE_REPRESENTATIVE
-        elif bool(candidate["duplicate_group_review_required"]) and candidate["duplicate_group_key"] is not None:
+        elif (
+            bool(candidate["duplicate_group_review_required"])
+            and candidate["duplicate_group_key"] is not None
+        ):
             candidate["recommended_action"] = ACTION_DEFER_DUPLICATE
         else:
             candidate["recommended_action"] = ACTION_REVIEW_NOW
@@ -307,7 +307,9 @@ def build_review_queue(
             status=str(candidate["status"]),
             priority_score=round(float(candidate["priority_score"]), 2),
             recommended_action=str(candidate["recommended_action"]),
-            priority_reasons=list(dict.fromkeys(str(reason) for reason in candidate["priority_reasons"])),
+            priority_reasons=list(
+                dict.fromkeys(str(reason) for reason in candidate["priority_reasons"])
+            ),
             duration_seconds=float(candidate["duration_seconds"]),
             beep_family=str(candidate["beep_family"]),
             detector_shot_count=int(candidate["detector_shot_count"]),

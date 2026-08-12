@@ -75,7 +75,7 @@ export function createLayoutRuntime({
     const reviewWidth = Math.max(720, viewportWidth - railWidth - (2 * 4));
     const reviewHeight = Math.max(360, viewportHeight - 38);
     const previewAspect = currentPreviewAspectRatio();
-    const inspectorMinimum = 320;
+    const inspectorMinimum = 280;
     const inspectorMaximum = Math.max(inspectorMinimum, Math.min(520, reviewWidth * 0.42));
     const targetWaveformHeight = clamp(Math.round(reviewHeight * 0.24), 144, Math.max(160, reviewHeight * 0.34));
     const preferredStageHeight = Math.max(260, reviewHeight - targetWaveformHeight - 4);
@@ -170,21 +170,21 @@ export function createLayoutRuntime({
   function applyLayoutState() {
     const viewportHeight = layoutViewportHeight();
     setCssPixels("--app-height", viewportHeight);
-    runtime.layoutSizes = {
+    const renderedLayoutSizes = {
       railWidth: clamp(runtime.layoutSizes.railWidth, 84, 104),
-      inspectorWidth: clamp(runtime.layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
+      inspectorWidth: clamp(runtime.layoutSizes.inspectorWidth, 280, Math.max(280, window.innerWidth * 0.48)),
       waveformHeight: clamp(runtime.layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
     };
-    setCssPixels("--rail-width", runtime.railCollapsed ? 48 : runtime.layoutSizes.railWidth);
-    setCssPixels("--inspector-width", runtime.layoutSizes.inspectorWidth);
-    setCssPixels("--waveform-height", runtime.layoutSizes.waveformHeight);
+    setCssPixels("--rail-width", runtime.railCollapsed ? 48 : renderedLayoutSizes.railWidth);
+    setCssPixels("--inspector-width", renderedLayoutSizes.inspectorWidth);
+    setCssPixels("--waveform-height", renderedLayoutSizes.waveformHeight);
     setCssPixels("--markers-workbench-height", popupWorkbenchTargetHeight(viewportHeight));
     const shell = document.querySelector(".cockpit-shell");
     if (shell) {
       shell.classList.toggle("layout-locked", runtime.layoutLocked);
       shell.classList.toggle("layout-unlocked", !runtime.layoutLocked);
       shell.classList.toggle("resizing-layout", runtime.activeResize !== null);
-      shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
+      shell.classList.toggle("inspector-compact", renderedLayoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
       shell.classList.toggle("rail-collapsed", runtime.railCollapsed);
     }
     const railToggle = $("toggle-rail");
@@ -275,9 +275,24 @@ export function createLayoutRuntime({
       emitBackbone(backbone, "layout.unlock.request", { kind });
       activity("layout.unlock.request", { kind });
       toggleLayoutLock();
-      return;
     }
-    runtime.activeResize = { kind, pointerId: event.pointerId, target: event.currentTarget };
+    const startSize = kind === "waveformHeight" && markersWorkbenchShown()
+      ? popupWorkbenchTargetHeight()
+      : runtime.layoutSizes[kind];
+    if (!(kind === "waveformHeight" && markersWorkbenchShown())) {
+      runtime.layoutSizePinned = {
+        ...runtime.layoutSizePinned,
+        [kind]: true,
+      };
+    }
+    runtime.activeResize = {
+      kind,
+      pointerId: event.pointerId,
+      target: event.currentTarget,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startSize,
+    };
     capturePointer(runtime.activeResize.target, event.pointerId);
     document.body.classList.add("resizing-layout");
     emitBackbone(backbone, "layout.resize.start", { kind });
@@ -290,25 +305,29 @@ export function createLayoutRuntime({
     if (!runtime.activeResize) return;
     if (event.pointerId !== undefined && runtime.activeResize.pointerId !== undefined && event.pointerId !== runtime.activeResize.pointerId) return;
     const kind = runtime.activeResize.kind;
+    const deltaX = event.clientX - runtime.activeResize.startClientX;
+    const deltaY = event.clientY - runtime.activeResize.startClientY;
     if (kind === "railWidth") {
-      previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));
+      previewLayoutSize("railWidth", clamp(runtime.activeResize.startSize + deltaX, 84, 104));
     } else if (kind === "inspectorWidth") {
-      const grid = document.querySelector(".review-grid");
-      const right = grid?.getBoundingClientRect().right || window.innerWidth;
-      previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 320, Math.max(320, window.innerWidth * 0.48)));
+      previewLayoutSize(
+        "inspectorWidth",
+        clamp(runtime.activeResize.startSize - deltaX, 280, Math.max(280, window.innerWidth * 0.48)),
+      );
     } else if (kind === "waveformHeight") {
-      const stack = document.querySelector(".review-stack");
-      const rect = stack?.getBoundingClientRect();
-      if (rect) {
-        const nextHeight = clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48));
-        if (markersWorkbenchShown()) {
-          runtime.popupWorkbenchHeight = nextHeight;
-          applyLayoutState();
-          scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
-          syncLayoutBackbone();
-        } else {
-          previewLayoutSize("waveformHeight", nextHeight);
-        }
+      const viewportHeight = layoutViewportHeight();
+      const nextHeight = clamp(
+        runtime.activeResize.startSize - deltaY,
+        112,
+        Math.max(112, viewportHeight * 0.42),
+      );
+      if (markersWorkbenchShown()) {
+        runtime.popupWorkbenchHeight = nextHeight;
+        applyLayoutState();
+        scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
+        syncLayoutBackbone();
+      } else {
+        previewLayoutSize("waveformHeight", nextHeight);
       }
     }
   }

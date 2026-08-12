@@ -64,12 +64,14 @@ jobs:
           node-version: '22'
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
-      - name: Install system dependencies without ffmpeg
-        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
+      - name: Install system dependencies
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Build Electron app
         run: cd electron && npm run build:linux
@@ -104,11 +106,11 @@ jobs:
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system dependencies
-        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Install Playwright browsers
         run: |
@@ -125,13 +127,25 @@ jobs:
           artifact=$(ls electron/build/*.AppImage | head -n 1)
           xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with AppImage package
-        env:
-          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
         run: |
           export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
           artifact=$(ls electron/build/*.AppImage | head -n 1)
-          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
-        timeout-minutes: 30
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py \
+            --artifact "$artifact" \
+            --script scripts/testing/test_packaged_app_e2e.py \
+            --script-arg=--scope \
+            --script-arg=release-proof \
+            --script-arg=--artifact-root \
+            --script-arg=artifacts/v107-release-proof/github-review/linux \
+            --script-arg=--primary-video \
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
+        timeout-minutes: 180
+      - name: Enforce exhaustive Linux evidence
+        run: uv run python scripts/testing/build_packaged_release_summary.py --platform linux --artifact-root artifacts/v107-release-proof/github-review/linux
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

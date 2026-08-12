@@ -1,5 +1,7 @@
 # Limitations
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This page records the current constraints that are visible in the source tree and runtime behavior.
 
 ## Media Toolchain
@@ -21,7 +23,7 @@ This page records the current constraints that are visible in the source tree an
 ## Browser Surface
 
 - The browser server binds to `127.0.0.1` by default.
-- Native file picker support is platform dependent; the app falls back to platform-specific dialogs when it can.
+- Native file pickers are supported on macOS, Windows, and Linux. After a project is selected, each picker starts in its owned project subfolder, but the operating-system dialog can still navigate elsewhere; external selections are copied into the project before use. Availability still depends on the host desktop session and its native-dialog dependencies.
 - Browser file imports are handled locally and are not cloud-backed.
 - Browser-uploaded media larger than 8 GiB are rejected; use the direct path import workflow for larger local files.
 - The browser review page shows the primary video, an optional secondary angle, and merge media, but the authoritative state still lives in the shared controller.
@@ -35,7 +37,9 @@ This page records the current constraints that are visible in the source tree an
 ## Persistence
 
 - Project saves are bundle directories with a `.ssproj` suffix, not single flat files.
-- Saved bundles copy browser-session media when the source path points into a temporary browser session directory.
+- A project contains `project.json`, `Input/`, `CSV/`, `Markers/`, and `Output/`.
+- Import operations copy external selections into the project before use. Saving and autosaving write metadata only and do not repair manually introduced external paths.
+- Project-local paths are portable across macOS, Windows, and Linux; paths deliberately introduced outside the project remain machine-specific.
 
 ## Electron Desktop App
 

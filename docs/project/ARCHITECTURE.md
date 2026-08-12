@@ -1,5 +1,7 @@
 # Architecture
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 SplitShot is a local-first video analysis and export system with one shared `Project` model, one controller layer, and one browser-first UI shell.
 
 ## Start Here
@@ -34,7 +36,7 @@ Read these files first if you need to understand how the app hangs together:
 5. Analysis extracts audio, detects the start beep and shots, and stores results on `project.analysis`.
 6. Timeline, scoring, and presentation helpers derive split tables, metrics, and review data from the shared project state.
 7. Browser requests mutate state through POST routes handled by the server and controller.
-8. Export builds a render plan, paints overlays, composes merge layouts, and encodes the final file with FFmpeg.
+8. Export settings build the stage-local render plan. Queue executes one or more outputs, paints overlays, composes layouts, and encodes the final files with FFmpeg.
 
 ## Ownership Boundaries
 
@@ -45,6 +47,10 @@ Read these files first if you need to understand how the app hangs together:
 - Analysis, scoring, timeline, and export helpers should remain usable outside the browser shell so scripts and tests can call them directly.
 
 ## Browser Surface
+
+The v1.0.7 rail is, in order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`. `Export` owns FFmpeg/output settings, `In / Out` owns optional boundary media and its overlays, and `Queue` owns render execution, queue membership, batch output, and combined output.
+
+The cockpit is bounded to the visible window. The active inspector or expanded workbench owns scrolling, while the page shell remains fixed. Video and overlay authoring use the rendered, aspect-correct video frame as their coordinate space so resizing or browser zoom does not change saved overlay geometry.
 
 The browser server exposes:
 
@@ -70,20 +76,17 @@ Use [../../src/splitshot/browser/static/README.md](../../src/splitshot/browser/s
 - analysis state and timing events
 - scoring state
 - overlay and review text-box state
-- merge and PiP state
+- composition and added-media state
 - export state
 - UI state
 
-Persistence writes `project.json` plus copied browser-session media when needed to keep bundle reopen behavior stable.
+Selecting a project directory creates `Input/`, `CSV/`, `Markers/`, and `Output/` beside `project.json`. Later pickers start in their owned subfolder on macOS, Windows, and Linux. Selections outside the project are copied into the owned subfolder before they are attached to state. Persistence writes metadata only, stores project-local paths relative to the bundle for every stage (including inactive stages), and resolves those paths when the project opens.
 
 ## Tests And Scripts
 
 - Validation map: [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
 - Script inventory: [../../scripts/README.md](../../scripts/README.md)
-- Browser QA docs:
-  [browser-control-qa-matrix.md](browser-control-qa-matrix.md),
-  [browser-control-coverage-plan.md](browser-control-coverage-plan.md),
-  [browser-full-e2e-qa-plan.md](browser-full-e2e-qa-plan.md)
+- Browser QA ownership: [browser-control-qa-matrix.md](browser-control-qa-matrix.md)
 
 ## Read This Next
 

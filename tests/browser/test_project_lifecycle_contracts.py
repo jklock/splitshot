@@ -4,11 +4,9 @@ import json
 import urllib.request
 from pathlib import Path
 
-
 import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
@@ -31,10 +29,14 @@ def _post_json(url: str, payload: dict) -> dict:
 def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) -> dict:
     boundary = "----splitshot-project-contract-boundary"
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
-        "Content-Type: application/octet-stream\r\n\r\n"
-    ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode()
+        + payload
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
     request = urllib.request.Request(
         url,
         data=body,
@@ -73,51 +75,78 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert 'import { createShellRuntime } from "./lib/shell-runtime.js";' in js
     assert "projectPane = createProjectPane({" in js
     assert "shellRuntime = createShellRuntime({" in js
-    assert "let projectDetailsDraft = { name: null, description: null };" in js
+    assert "let projectDetailsDraft = { name: null, description: null, output_root: null };" in js
     assert "function mergeProjectDetailsDraft(project) {" in js
     assert "let projectFolderProbeRequestId = 0;" in js
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in js
     assert '$("primary-file-input").addEventListener("change", async (event) => {' not in js
+    assert '$("browse-primary-path").addEventListener("click"' not in js
+    assert '$("primary-file-path").addEventListener("keydown"' not in js
 
     assert "export function createProjectPane({" in project_pane_js
-    assert "function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = \"\") {" in project_pane_js
+    assert (
+        'function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = "") {'
+        in project_pane_js
+    )
     assert "function renderPractiScoreImportSummary() {" in project_pane_js
     assert "function formatShotMlConfidenceSummary(shots = []) {" in project_pane_js
-    assert "function renderOwnedSummaryList(id, rows = [], className = \"\") {" in project_pane_js
+    assert 'function renderOwnedSummaryList(id, rows = [], className = "") {' in project_pane_js
     assert "function ssStageTimeSeconds(state) {" in project_pane_js
     assert "function sameProjectFolderPath(left, right) {" in project_pane_js
     assert "function hasActiveProject() {" in project_pane_js
-    assert 'if (requestId !== getProjectFolderProbeRequestId()) {' in project_pane_js
-    assert 'await flushPendingProjectDrafts();' in project_pane_js
-    assert 'const currentPath = normalizeProjectFolderInput(currentState()?.project?.path || "");' in project_pane_js
-    assert 'const result = await callApi("/api/project/open", { path: projectPath });' in project_pane_js
-    assert 'const result = await callApi("/api/project/save", { path: projectPath });' in project_pane_js
-    assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in project_pane_js
-    assert 'setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });' in project_pane_js
-    assert 'windowObject.alert(folderMessage);' in project_pane_js
+    assert "if (requestId !== getProjectFolderProbeRequestId()) {" in project_pane_js
+    assert "await flushPendingProjectDrafts();" in project_pane_js
+    assert (
+        'const currentPath = normalizeProjectFolderInput(currentState()?.project?.path || "");'
+        in project_pane_js
+    )
+    assert (
+        'const result = await callApi("/api/project/open", { path: projectPath });'
+        in project_pane_js
+    )
+    assert (
+        'const result = await callApi("/api/project/save", { path: projectPath });'
+        in project_pane_js
+    )
+    assert (
+        'const savedResult = await callApi("/api/project/save", { path: projectPath });'
+        in project_pane_js
+    )
+    assert (
+        "setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });"
+        in project_pane_js
+    )
+    assert "windowObject.alert(folderMessage);" in project_pane_js
     assert 'if (apiPath === "/api/import/primary") {' in project_pane_js
-    assert 'await flushPendingProjectDrafts({ primaryImport: true });' in project_pane_js
-    assert 'const ssStageSeconds = ssStageTimeSeconds(state);' in project_pane_js
-    assert 'const ssStageSeconds = state.scoring_summary?.raw_seconds;' not in project_pane_js
+    assert "await flushPendingProjectDrafts({ primaryImport: true });" in project_pane_js
+    assert "function ssStageTimeSeconds(state) {" in project_pane_js
+    assert "const ssStageSeconds = state.scoring_summary?.raw_seconds;" not in project_pane_js
 
-    assert "async function createNewProject(path = \"\") {" in project_pane_js
-    assert "async function useProjectFolder(path = \"\") {" in project_pane_js
+    assert 'async function createNewProject(path = "") {' in project_pane_js
+    assert 'async function useProjectFolder(path = "") {' in project_pane_js
     assert (
         "async function flushPendingProjectDrafts() {" in project_pane_js
         or "async function flushPendingProjectDrafts(options = {}) {" in project_pane_js
     )
 
-    assert '$("primary-file-input").addEventListener("change", async (event) => {' in shell_runtime_js
-    assert 'if (!hasActiveProject()) {' in shell_runtime_js
-    assert 'setStatus(gatedProjectActionMessage());' in shell_runtime_js
-    assert 'const selectedFile = event.target.files?.[0] || null;' in shell_runtime_js
-    assert 'await flushPendingProjectDrafts({ primaryImport: true });' in shell_runtime_js
+    assert (
+        '$("primary-file-input").addEventListener("change", async (event) => {' in shell_runtime_js
+    )
+    assert '$("browse-primary-path").addEventListener("click"' not in shell_runtime_js
+    assert '$("primary-file-path").addEventListener("keydown"' not in shell_runtime_js
+    assert "if (!hasActiveProject()) {" in shell_runtime_js
+    assert "setStatus(gatedProjectActionMessage());" in shell_runtime_js
+    assert "const selectedFile = event.target.files?.[0] || null;" in shell_runtime_js
+    assert "await flushPendingProjectDrafts({ primaryImport: true });" in shell_runtime_js
     assert 'const result = await postFile("/api/files/primary", selectedFile);' in shell_runtime_js
+    assert 'if (result) setActiveTool("media");' in shell_runtime_js
 
 
 def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> None:
     opened_urls: list[str] = []
-    monkeypatch.setattr(browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True)
+    monkeypatch.setattr(
+        browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True
+    )
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
@@ -129,6 +158,49 @@ def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> No
     assert payload["status"] == "Opened PractiScore dashboard in your browser."
     assert payload["url"] == "https://practiscore.com/dashboard/home"
     assert opened_urls == ["https://practiscore.com/dashboard/home"]
+
+
+def test_project_reveal_route_opens_active_project_folder(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "reveal.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path))
+    )
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/project/reveal", {})
+    finally:
+        server.shutdown()
+
+    assert opened == [project_path]
+    assert payload["status"] == f"Opened project folder {project_path}."
+
+
+def test_output_reveal_route_opens_configured_output_folder(monkeypatch, tmp_path: Path) -> None:
+    project_path = tmp_path / "reveal-output.ssproj"
+    output_path = tmp_path / "custom-output"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    controller.project.output_root = str(output_path)
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        browser_server_module, "reveal_local_folder", lambda path: opened.append(Path(path))
+    )
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/project/output/reveal", {})
+    finally:
+        server.shutdown()
+
+    assert opened == [output_path]
+    assert output_path.is_dir()
+    assert payload["status"] == f"Opened output folder {output_path}."
 
 
 def test_project_details_save_open_and_refresh_contract(tmp_path: Path) -> None:
@@ -155,7 +227,9 @@ def test_project_details_save_open_and_refresh_contract(tmp_path: Path) -> None:
 
         _post_json(f"{server.url}api/project/new", {})
         reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
-        refreshed = json.loads(urllib.request.urlopen(f"{server.url}api/state", timeout=30).read().decode("utf-8"))
+        refreshed = json.loads(
+            urllib.request.urlopen(f"{server.url}api/state", timeout=30).read().decode("utf-8")
+        )
 
         assert reopened["project"]["name"] == "Classifier Practice"
         assert reopened["project"]["description"] == "Morning classifier run"
@@ -211,10 +285,19 @@ def test_practiscore_reimport_is_deterministic_for_staged_source_and_context() -
         first = _post_json(f"{server.url}api/project/practiscore", payload)
         second = _post_json(f"{server.url}api/project/practiscore", payload)
 
-        assert second["project"]["scoring"]["imported_stage"] == first["project"]["scoring"]["imported_stage"]
-        assert second["project"]["scoring"]["penalty_counts"] == first["project"]["scoring"]["penalty_counts"]
+        assert (
+            second["project"]["scoring"]["imported_stage"]
+            == first["project"]["scoring"]["imported_stage"]
+        )
+        assert (
+            second["project"]["scoring"]["penalty_counts"]
+            == first["project"]["scoring"]["penalty_counts"]
+        )
         assert second["practiscore_options"] == first["practiscore_options"]
-        assert second["scoring_summary"]["imported_overlay_text"] == first["scoring_summary"]["imported_overlay_text"]
+        assert (
+            second["scoring_summary"]["imported_overlay_text"]
+            == first["scoring_summary"]["imported_overlay_text"]
+        )
         assert any(
             box["source"] == "imported_summary" and box["enabled"]
             for box in second["project"]["overlay"]["text_boxes"]
@@ -253,7 +336,10 @@ def test_practiscore_reimport_preserves_name_fallback_when_place_changes(tmp_pat
 
         assert changed_file["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
         assert changed_file["project"]["scoring"]["competitor_place"] == 6
-        assert changed_file["project"]["scoring"]["imported_stage"]["source_name"] == "thursday-night.csv"
+        assert (
+            changed_file["project"]["scoring"]["imported_stage"]["source_name"]
+            == "thursday-night.csv"
+        )
         assert changed_file["project"]["scoring"]["imported_stage"]["final_time"] == 30.57
         assert changed_file["project"]["overlay"]["custom_box_mode"] == "imported_summary"
     finally:
@@ -350,7 +436,9 @@ def test_lifecycle_new_open_save_delete_restore_order(tmp_path: Path) -> None:
         server.shutdown()
 
 
-def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder(tmp_path: Path) -> None:
+def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder(
+    tmp_path: Path,
+) -> None:
     project_path = tmp_path / "partial.ssproj"
     project_path.mkdir(parents=True, exist_ok=True)
     (project_path / "Input").mkdir()
@@ -365,4 +453,4 @@ def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder
     assert probed["path"] == str(project_path)
     assert probed["normalized_path"] == str(project_path.resolve())
     assert probed["has_project_file"] is False
-    assert probed["missing_required_dirs"] == ["CSV", "Output"]
+    assert probed["missing_required_dirs"] == ["CSV", "Markers", "IntroOutro", "Output"]

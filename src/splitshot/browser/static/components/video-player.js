@@ -2,6 +2,8 @@ export function createVideoPlayerComponent({
   $ = (id) => document.getElementById(id),
   getState = () => null,
   getSelectedShotId = () => null,
+  getActiveTool = () => "project",
+  getIntroOutroKind = () => "intro",
   maybeApplyRecommendedLayout = () => {},
   buildMediaUrl = (url) => url,
   resetMediaElement = () => {},
@@ -16,8 +18,57 @@ export function createVideoPlayerComponent({
   renderMergePreviewLayer = () => {},
   scheduleSecondaryPreviewSync = () => {},
 } = {}) {
+  function scheduleVideoFramePrime(video, sourceKey) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    if (!sourceKey) return;
+    if (video.dataset.primeSourceKey === sourceKey && Number(video.readyState || 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return;
+    }
+    video.dataset.primeSourceKey = sourceKey;
+    window.setTimeout(async () => {
+      if (!video.isConnected) return;
+      if (video.dataset.primeSourceKey !== sourceKey) return;
+      if (Number(video.readyState || 0) >= HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      const previousMuted = video.muted;
+      const previousVolume = Number.isFinite(video.volume) ? video.volume : 1;
+      const previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      try {
+        video.muted = true;
+        const playAttempt = video.play();
+        if (playAttempt && typeof playAttempt.then === "function") {
+          await Promise.race([
+            playAttempt.catch(() => {}),
+            new Promise((resolve) => window.setTimeout(resolve, 600)),
+          ]);
+        } else {
+          await new Promise((resolve) => window.setTimeout(resolve, 150));
+        }
+      } catch {
+        // Ignore autoplay/decode failures; the browser will continue loading normally.
+      } finally {
+        try {
+          video.pause();
+        } catch {}
+        try {
+          if (previousTime > 0 && Number.isFinite(video.duration) && previousTime <= video.duration) {
+            video.currentTime = previousTime;
+          }
+        } catch {}
+        video.muted = previousMuted;
+        video.volume = previousVolume;
+      }
+    }, 0);
+  }
+
   function currentState() {
     return getState() || {};
+  }
+
+  function effectivePreviewMode(merge, mergeSources) {
+    const firstSource = mergeSources?.[0] || null;
+    const sourceMode = String(firstSource?.placement?.mode || "auto");
+    if (mergeSources?.length === 1 && sourceMode && sourceMode !== "auto") return sourceMode;
+    return String(merge?.layout || "side_by_side");
   }
 
   function renderVideo() {
@@ -28,22 +79,27 @@ export function createVideoPlayerComponent({
     const secondaryImage = $("secondary-image");
     const mergePreviewLayer = $("merge-preview-layer");
     const stage = $("video-stage");
-    const merge = state.project.merge;
-    const mergeSources = state?.project?.merge_sources || [];
-    const path = state.project.primary_video.path || "";
-    const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);
-    if (state.media.primary_available && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
+    const boundaryKind = getActiveTool() === "intro-outro" ? getIntroOutroKind() : "";
+    const boundaryPath = boundaryKind ? state.project?.[`${boundaryKind}_clip`]?.asset?.path || "" : "";
+    const merge = boundaryKind ? { enabled: false } : state.project.merge;
+    const mergeSources = boundaryKind ? [] : (state?.project?.merge_sources || []);
+    const path = boundaryPath || state.media.primary_active_path || state.project.primary_video.effective_media_path || state.project.primary_video.path || "";
+    const primaryAvailable = boundaryKind ? Boolean(boundaryPath) : state.media.primary_available;
+    const primaryMediaPath = buildMediaUrl(boundaryKind ? `/media/${boundaryKind}` : (state.media.primary_url || "/media/primary"), path);
+    if (primaryAvailable && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
       video.dataset.sourcePath = path;
       video.dataset.mediaUrl = primaryMediaPath;
       video.src = primaryMediaPath;
       video.load();
+      scheduleVideoFramePrime(video, primaryMediaPath);
       logPrimaryVideoState("source.attach");
     }
-    if (!state.media.primary_available) {
+    if (!primaryAvailable) {
       resetMediaElement(video);
     }
 
-    const secondaryPath = state.project.secondary_video?.path || "";
+    let secondaryPath = state.media.secondary_active_path || state.project.secondary_video?.path || "";
+    const firstMergeSource = state.project.merge_sources?.[0];
     const imageSecondary = isImagePath(secondaryPath);
     const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);
     if (state.media.secondary_available && imageSecondary) {
@@ -60,6 +116,7 @@ export function createVideoPlayerComponent({
         secondary.src = secondaryMediaPath;
         ensurePrimaryVideoAudio(secondary);
         secondary.load();
+        scheduleVideoFramePrime(secondary, secondaryMediaPath);
       }
       secondaryImage.removeAttribute("src");
     } else {
@@ -69,14 +126,15 @@ export function createVideoPlayerComponent({
     }
 
     const mergePreview = Boolean(merge.enabled && mergeSources.length > 0);
+    const previewMode = effectivePreviewMode(merge, mergeSources);
     if (mergePreviewLayer) {
       mergePreviewLayer.hidden = true;
-      if (merge.layout !== "pip") mergePreviewLayer.innerHTML = "";
+      if (previewMode !== "pip") mergePreviewLayer.innerHTML = "";
     }
     stage.classList.toggle("merge-preview", mergePreview);
-    stage.classList.toggle("merge-side-by-side", mergePreview && merge.layout === "side_by_side");
-    stage.classList.toggle("merge-above-below", mergePreview && merge.layout === "above_below");
-    stage.classList.toggle("merge-pip", mergePreview && merge.layout === "pip");
+    stage.classList.toggle("merge-side-by-side", mergePreview && previewMode === "side_by_side");
+    stage.classList.toggle("merge-above-below", mergePreview && previewMode === "above_below");
+    stage.classList.toggle("merge-pip", mergePreview && previewMode === "pip");
 
     const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
     const pipSizeValue = currentPipSizePercent();
@@ -123,7 +181,7 @@ export function createVideoPlayerComponent({
       element.style.opacity = "";
     });
 
-    if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
+    if (mergePreview && previewMode === "pip" && mergeSources.length > 0) {
       renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
       secondary.hidden = true;
       secondary.style.display = "none";
@@ -153,7 +211,7 @@ export function createVideoPlayerComponent({
             ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
             : (secondary.videoHeight || state.project.secondary_video?.height || 1),
         );
-        if (merge.layout === "pip" && frameRect) {
+        if (previewMode === "pip" && frameRect) {
           const activeSource = mergeSources[0] || null;
           const rect = activeSource
             ? mergeSourcePipRect(activeSource, frameRect, pipSizeValue)

@@ -30,10 +30,10 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Validating PKCS#12 password..."
-openssl pkcs12 -in "${cert_file}" -info -noout -passin "pass:${cert_password}" >/dev/null
+openssl pkcs12 -legacy -in "${cert_file}" -info -noout -passin "pass:${cert_password}" >/dev/null
 
 echo "Certificate:"
-openssl pkcs12 -in "${cert_file}" -clcerts -nokeys -passin "pass:${cert_password}" 2>/dev/null | \
+openssl pkcs12 -legacy -in "${cert_file}" -clcerts -nokeys -passin "pass:${cert_password}" 2>/dev/null | \
   openssl x509 -noout -subject -issuer -serial -dates
 
 echo "Importing into a temporary keychain..."

@@ -1,5 +1,7 @@
 # Splits Pane
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 The Splits pane is the manual timing workbench. It shows the selected shot, nudge controls, timing rows, the waveform, and expanded editing modes for detailed split review.
 
 <img src="../../screenshots/SplitsPane.png" alt="Splits pane with selected-shot nudge controls, timing table, and waveform controls" width="960">
@@ -37,7 +39,7 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 
 <img src="../../screenshots/SplitsExpanded.png" alt="Expanded Splits workbench with event controls and dense timing table columns" width="840">
 
-<img src="../../screenshots/WaveFormExpanded.png" alt="Expanded waveform editor with larger waveform review area and shot-card selection" width="840">
+<img src="../../screenshots/WaveformExpanded.png" alt="Expanded waveform editor with larger waveform review area and shot-card selection" width="840">
 
 ## Expanded Timing Controls
 
@@ -83,6 +85,5 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 
 ## Related Guides
 
-Previous: [shotml.md](shotml.md)
-Next: [score.md](score.md)
-
+Previous: [score.md](score.md)
+Next: [markers.md](markers.md)

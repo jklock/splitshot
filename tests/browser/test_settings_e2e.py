@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
+import splitshot.config as splitshot_config
 from splitshot.browser.server import BrowserControlServer
-
+from splitshot.ui.controller import ProjectController
 
 SETTINGS_SECTION_IDS = [
     "global-template",
@@ -24,7 +28,7 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _open_settings(page) -> None:
-    page.locator('#settings-rail-button').click(force=True)
+    page.locator("#settings-rail-button").click(force=True)
     page.wait_for_timeout(100)
     assert page.evaluate("activeTool") == "settings"
     page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
@@ -39,7 +43,7 @@ def _expand_settings_section(page, section_id: str) -> None:
     section = page.locator(selector)
     if section.evaluate("element => element.classList.contains('collapsed')") is False:
         return
-    section.locator('button[data-section-toggle]').click()
+    section.locator("button[data-section-toggle]").click()
     page.wait_for_function(
         "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
         arg=selector,
@@ -83,13 +87,16 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 for section_id in SETTINGS_SECTION_IDS:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    toggle = section.locator('button[data-section-toggle]')
+                    toggle = section.locator("button[data-section-toggle]")
                     toggle.wait_for(state="visible")
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is True
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is True
+                    )
                     toggle.click()
                 page.wait_for_function(
-                        "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
-                        arg=selector,
+                    "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
+                    arg=selector,
                 )
 
                 page.locator('button[data-tool="project"]').click(force=True)
@@ -99,11 +106,14 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 for section_id in SETTINGS_SECTION_IDS:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is False
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is False
+                    )
 
                 overlay_selector = _settings_section_selector("overlay")
                 overlay_section = page.locator(overlay_selector)
-                overlay_section.locator('button[data-section-toggle]').click()
+                overlay_section.locator("button[data-section-toggle]").click()
                 page.wait_for_function(
                     "(sectionSelector) => document.querySelector(sectionSelector)?.classList.contains('collapsed') === true",
                     arg=overlay_selector,
@@ -113,11 +123,19 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 page.wait_for_function("() => activeTool === 'timing'")
 
                 _open_settings(page)
-                assert overlay_section.evaluate("element => element.classList.contains('collapsed')") is True
-                for section_id in [section for section in SETTINGS_SECTION_IDS if section != "overlay"]:
+                assert (
+                    overlay_section.evaluate("element => element.classList.contains('collapsed')")
+                    is True
+                )
+                for section_id in [
+                    section for section in SETTINGS_SECTION_IDS if section != "overlay"
+                ]:
                     selector = _settings_section_selector(section_id)
                     section = page.locator(selector)
-                    assert section.evaluate("element => element.classList.contains('collapsed')") is False
+                    assert (
+                        section.evaluate("element => element.classList.contains('collapsed')")
+                        is False
+                    )
             finally:
                 browser.close()
     finally:
@@ -160,8 +178,10 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 )
                 assert page.locator("#settings-merge-layout").input_value() == "side_by_side"
                 assert page.locator("#settings-export-quality").input_value() == "high"
-                assert page.evaluate("state.project.merge.layout") == "side_by_side"
-                assert page.evaluate("state.project.export.quality") == "high"
+                project_layout = page.evaluate("state.project.merge.layout")
+                project_quality = page.evaluate("state.project.export.quality")
+                assert project_layout == "side_by_side", f"unexpected layout: {project_layout}"
+                assert project_quality == "high", f"unexpected quality: {project_quality}"
             finally:
                 browser.close()
     finally:
@@ -216,13 +236,19 @@ def test_settings_default_controls_commit_to_settings_state_and_reset() -> None:
                 _expand_settings_section(page, "export")
 
                 page.locator("#settings-default-match-type").select_option("idpa")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.default_match_type === 'idpa'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.default_match_type === 'idpa'"
+                )
                 page.locator("#settings-pip-size").select_option("50%")
                 _apply_settings_defaults_and_wait(page, "() => state?.settings?.pip_size === '50%'")
                 page.locator("#settings-export-quality").select_option("low")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_quality === 'low'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_quality === 'low'"
+                )
                 page.locator("#settings-export-two-pass").check()
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_two_pass === true")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_two_pass === true"
+                )
 
                 assert page.locator("#settings-default-match-type").input_value() == "idpa"
                 assert page.locator("#settings-pip-size").input_value() == "50%"
@@ -231,7 +257,7 @@ def test_settings_default_controls_commit_to_settings_state_and_reset() -> None:
 
                 page.locator("#settings-reset-defaults").click()
                 page.wait_for_function(
-                                        """() => document.querySelector('#settings-default-match-type')?.value === 'uspsa'
+                    """() => document.querySelector('#settings-default-match-type')?.value === 'uspsa'
                                             && document.querySelector('#settings-pip-size')?.value === '35%'
                                             && document.querySelector('#settings-export-quality')?.value === 'high'
                                             && document.querySelector('#settings-export-two-pass')?.checked === false"""
@@ -263,7 +289,10 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                     "select => [...select.options].map((option) => option.value).filter(Boolean)"
                 )
                 assert export_preset_values
-                next_export_preset = next((value for value in export_preset_values if value != "source"), export_preset_values[0])
+                next_export_preset = next(
+                    (value for value in export_preset_values if value != "source"),
+                    export_preset_values[0],
+                )
 
                 page.locator("#settings-merge-layout").select_option("pip")
                 page.locator("#settings-pip-size").select_option("50%")
@@ -284,7 +313,9 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                 _set_settings_control(page, "settings-shot-badge-background-color", "#1d4ed8")
                 _set_settings_control(page, "settings-shot-badge-text-color", "#eef2ff")
                 _set_settings_control(page, "settings-shot-badge-opacity", "0.8")
-                _set_settings_control(page, "settings-current-shot-badge-background-color", "#dc2626")
+                _set_settings_control(
+                    page, "settings-current-shot-badge-background-color", "#dc2626"
+                )
                 _set_settings_control(page, "settings-current-shot-badge-text-color", "#ffffff")
                 _set_settings_control(page, "settings-current-shot-badge-opacity", "0.75")
                 _set_settings_control(page, "settings-hit-factor-badge-background-color", "#047857")
@@ -319,7 +350,17 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
         server.shutdown()
 
 
-def test_settings_layout_section_captures_current_layout_and_resets() -> None:
+def _assert_saved_layout(controller: ProjectController) -> None:
+    assert controller.project.ui_state.layout_locked is False
+    assert controller.project.ui_state.rail_width == 96
+    assert controller.project.ui_state.inspector_width == 620
+    assert controller.project.ui_state.waveform_height == 240
+
+
+def test_settings_layout_section_captures_current_layout_and_resets(tmp_path: Path) -> None:
+    assert tmp_path in splitshot_config.SETTINGS_PATH.parents
+    first_project = tmp_path / "saved-layout-first"
+    second_project = tmp_path / "saved-layout-second"
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -337,14 +378,88 @@ def test_settings_layout_section_captures_current_layout_and_resets() -> None:
                     }"""
                 )
 
-                page.locator("#settings-use-current-layout").click()
+                page.evaluate(
+                    """() => {
+                        const button = document.getElementById("settings-use-current-layout");
+                        window.__layoutSaveProof = {
+                            button,
+                            clicks: 0,
+                            settingsRequests: [],
+                        };
+                        button.addEventListener("click", () => {
+                            window.__layoutSaveProof.clicks += 1;
+                        }, { capture: true });
+                        const originalFetch = window.fetch.bind(window);
+                        window.fetch = (input, init = {}) => {
+                            const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
+                            if (url.pathname === "/api/settings" && init.method === "POST") {
+                                window.__layoutSaveProof.settingsRequests.push(JSON.parse(init.body || "{}"));
+                            }
+                            return originalFetch(input, init);
+                        };
+                        button.click();
+                    }"""
+                )
+                assert page.evaluate("() => window.__layoutSaveProof.clicks") == 1
+                assert page.evaluate("() => window.__layoutSaveProof.button.isConnected") is True
                 page.wait_for_function(
                     """() => state?.settings?.layout_locked === false
                       && state?.settings?.layout_rail_width === 96
                       && state?.settings?.layout_inspector_width === 620
                       && state?.settings?.layout_waveform_height === 240"""
                 )
+                page.wait_for_function("() => window.__layoutSaveProof.settingsRequests.length === 1")
+                request_payload = page.evaluate(
+                    "() => window.__layoutSaveProof.settingsRequests[0]"
+                )
+                assert request_payload == {
+                    "scope": "app",
+                    "section": "layout",
+                    "project_defaults": True,
+                    "settings": {
+                        "layout_locked": False,
+                        "layout_rail_width": 96,
+                        "layout_inspector_width": 620,
+                        "layout_waveform_height": 240,
+                    },
+                }
+                assert page.evaluate("() => window.__layoutSaveProof.button.isConnected") is True
+                assert page.evaluate("() => layoutSizes.inspectorWidth") == 620
+                assert page.evaluate(
+                    "() => getComputedStyle(document.documentElement).getPropertyValue('--inspector-width').trim()"
+                ) == "614px"
 
+                disk_settings = json.loads(splitshot_config.SETTINGS_PATH.read_text())
+                assert disk_settings["layout_locked"] is False
+                assert disk_settings["layout_rail_width"] == 96
+                assert disk_settings["layout_inspector_width"] == 620
+                assert disk_settings["layout_waveform_height"] == 240
+
+                page.evaluate("(path) => createNewProject(path)", str(first_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(first_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                page.evaluate("(path) => createNewProject(path)", str(second_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(second_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                page.evaluate("(path) => useProjectFolder(path)", str(first_project))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(first_project)
+                )
+                _assert_saved_layout(server.controller)
+
+                restarted = ProjectController()
+                _assert_saved_layout(restarted)
+                restarted.open_project(str(first_project))
+                _assert_saved_layout(restarted)
+
+                _open_settings(page)
+                _expand_settings_section(page, "layout")
                 page.locator("#settings-release-layout").click()
                 page.wait_for_function(
                     """() => state?.settings?.layout_locked === null
@@ -372,7 +487,9 @@ def test_settings_section_reset_preserves_other_sections() -> None:
                 page.locator("#settings-pip-size").select_option("50%")
                 _apply_settings_defaults_and_wait(page, "() => state?.settings?.pip_size === '50%'")
                 page.locator("#settings-export-quality").select_option("low")
-                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_quality === 'low'")
+                _apply_settings_defaults_and_wait(
+                    page, "() => state?.settings?.export_quality === 'low'"
+                )
 
                 page.locator("#settings-reset-section-export").click()
                 page.wait_for_function(

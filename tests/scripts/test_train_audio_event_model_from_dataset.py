@@ -78,7 +78,9 @@ def test_train_audio_event_model_from_dataset_writes_bundle_and_summary(tmp_path
     )
     features = np.vstack([features, augmented_features]).astype(np.float32)
     labels = np.concatenate([labels, np.asarray(([1] * 8) + ([2] * 8), dtype=np.int64)])
-    source_paths = np.concatenate([source_paths, np.asarray((["source-a"] * 8) + (["source-b"] * 8))])
+    source_paths = np.concatenate(
+        [source_paths, np.asarray((["source-a"] * 8) + (["source-b"] * 8))]
+    )
     label_sources = np.concatenate([label_sources, np.asarray(["verified"] * 16)])
     is_augmented = np.concatenate([is_augmented, np.ones(16, dtype=bool)])
     dataset_path = tmp_path / "training-dataset.npz"

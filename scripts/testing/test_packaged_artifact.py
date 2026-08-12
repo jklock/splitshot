@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import plistlib
 import shutil
 import stat
 import subprocess
@@ -12,13 +13,23 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_VALIDATION_SCRIPT = REPO / "scripts" / "testing" / "test_electron_app.py"
 
 
+def _repo_temp_dir(prefix: str) -> Path:
+    temp_root = REPO / "tmp" / "codex"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_root))
+
+
 class InstalledArtifact:
-    def __init__(self, executable: Path, cleanup_paths: list[Path] | None = None, env: dict[str, str] | None = None):
+    def __init__(
+        self,
+        executable: Path,
+        cleanup_paths: list[Path] | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self.executable = executable
         self.cleanup_paths = cleanup_paths or []
         self.env = env or {}
@@ -37,31 +48,30 @@ class InstalledArtifact:
 def _prepend_path(env: dict[str, str], *entries: str) -> dict[str, str]:
     merged = dict(env)
     current = merged.get("PATH", "")
-    merged["PATH"] = os.pathsep.join([*(entry for entry in entries if entry), current] if current else [*(entry for entry in entries if entry)])
+    merged["PATH"] = os.pathsep.join(
+        [*(entry for entry in entries if entry), current]
+        if current
+        else [*(entry for entry in entries if entry)]
+    )
     return merged
 
 
 def _media_tool_free_path(preferred_dir: Path) -> str:
-    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    ffprobe_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
-    filtered: list[str] = []
     seen: set[str] = set()
+    entries: list[str] = []
     for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
         entry = raw_entry.strip()
-        if not entry:
-            continue
-        candidate = Path(entry)
-        if candidate.resolve() == preferred_dir.resolve():
-            continue
-        if (candidate / ffmpeg_name).exists() or (candidate / ffprobe_name).exists():
-            continue
-        if entry not in seen:
-            filtered.append(entry)
+        if entry and entry not in seen:
+            entries.append(entry)
             seen.add(entry)
-    return os.pathsep.join([str(preferred_dir), *filtered])
+    if str(preferred_dir) not in seen:
+        entries.insert(0, str(preferred_dir))
+    return os.pathsep.join(entries)
 
 
-def _run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=cwd or REPO,
@@ -108,7 +118,8 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
         "if ($match) { Write-Output $match; exit 0 }; "
         "Write-Output 'LOCATOR_PATHS=' + ($paths -join ';'); "
         "$near = Get-ChildItem -Path $paths -File -Recurse -ErrorAction SilentlyContinue | "
-        "Where-Object { $_.Name -like '*SplitShot*.exe' -or $_.DirectoryName -like '*SplitShot*' } | "
+        "Where-Object { $_.Name -like '*SplitShot*.exe' -or "
+        "$_.DirectoryName -like '*SplitShot*' } | "
         "Select-Object -First 20 -ExpandProperty FullName; "
         "if ($near) { Write-Output ('LOCATOR_NEAR=' + ($near -join ';')) }; "
         "exit 0"
@@ -118,11 +129,22 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     executable_line = next((line for line in lines if not line.startswith("LOCATOR_")), "")
     if not executable_line:
         diagnostic = "\n".join(lines) or "no locator output"
-        raise FileNotFoundError(f"Installed SplitShot.exe not found after NSIS install\n{diagnostic}")
+        raise FileNotFoundError(
+            f"Installed SplitShot.exe not found after NSIS install\n{diagnostic}"
+        )
     executable = Path(executable_line)
     if not executable.exists():
         raise FileNotFoundError("Installed SplitShot.exe not found after NSIS install")
-    ffmpeg_dir = executable.parent / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "windows"
+    ffmpeg_dir = (
+        executable.parent
+        / "resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "windows"
+    )
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg.exe")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe.exe")
@@ -130,19 +152,29 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
 
 
 def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
-    mount_dir = Path(tempfile.mkdtemp(prefix="splitshot-dmg-mount-"))
-    app_copy_root = Path(tempfile.mkdtemp(prefix="splitshot-dmg-app-"))
-    _run(
+    app_copy_root = _repo_temp_dir("splitshot-dmg-app-")
+    attached = subprocess.run(
         [
             "hdiutil",
             "attach",
             str(artifact),
             "-nobrowse",
             "-readonly",
-            "-mountpoint",
-            str(mount_dir),
-        ]
+            "-plist",
+        ],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
     )
+    attach_payload = plistlib.loads(attached.stdout)
+    mount_points = [
+        Path(str(entity["mount-point"]))
+        for entity in attach_payload.get("system-entities", [])
+        if entity.get("mount-point")
+    ]
+    if not mount_points:
+        raise FileNotFoundError("Mounted DMG did not report a mount point")
+    mount_dir = mount_points[0]
     try:
         apps = sorted(mount_dir.glob("*.app"))
         if not apps:
@@ -160,26 +192,47 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     executable = copied_app / "Contents" / "MacOS" / "SplitShot"
     if not executable.exists():
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")
-    ffmpeg_dir = copied_app / "Contents" / "Resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "macos"
+    ffmpeg_dir = (
+        copied_app
+        / "Contents"
+        / "Resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "macos"
+    )
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
-    return InstalledArtifact(executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env)
+    return InstalledArtifact(executable=executable, cleanup_paths=[app_copy_root], env=env)
 
 
 def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
-    copied_artifact = Path(tempfile.mkdtemp(prefix="splitshot-appimage-")) / artifact.name
+    copied_artifact = _repo_temp_dir("splitshot-appimage-") / artifact.name
     shutil.copy2(artifact, copied_artifact)
     copied_artifact.chmod(copied_artifact.stat().st_mode | stat.S_IXUSR)
-    extracted_root = Path(tempfile.mkdtemp(prefix="splitshot-appimage-extract-"))
+    extracted_root = _repo_temp_dir("splitshot-appimage-extract-")
     _run([str(copied_artifact), "--appimage-extract"], cwd=extracted_root)
     squashfs_root = extracted_root / "squashfs-root"
-    ffmpeg_dir = squashfs_root / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "linux"
+    ffmpeg_dir = (
+        squashfs_root
+        / "resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "linux"
+    )
     env = {"APPIMAGE_EXTRACT_AND_RUN": "1"}
     env["PATH"] = _media_tool_free_path(ffmpeg_dir)
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
-    return InstalledArtifact(executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env)
+    return InstalledArtifact(
+        executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env
+    )
 
 
 def _install_artifact(artifact: Path) -> InstalledArtifact:
@@ -205,6 +258,14 @@ def main() -> int:
         default=DEFAULT_VALIDATION_SCRIPT,
         help="Validation script that accepts --app <installed executable>",
     )
+    parser.add_argument(
+        "--script-arg",
+        action="append",
+        default=[],
+        help=(
+            "Extra argument forwarded to the validation script. Repeat to pass multiple arguments."
+        ),
+    )
     args = parser.parse_args()
 
     artifact = (args.artifact or _default_artifact()).resolve()
@@ -220,7 +281,18 @@ def main() -> int:
     try:
         installed = _install_artifact(artifact)
         env = {**os.environ, **installed.env}
-        command = [sys.executable, str(validation_script), "--app", str(installed.executable)]
+        env["SPLITSHOT_PACKAGED_ARTIFACT"] = str(artifact)
+        env["SPLITSHOT_SOURCE_COMMIT"] = _run(["git", "rev-parse", "HEAD"], cwd=REPO).stdout.strip()
+        env["SPLITSHOT_SOURCE_TREE_CLEAN"] = (
+            "1" if not _run(["git", "status", "--porcelain"], cwd=REPO).stdout.strip() else "0"
+        )
+        command = [
+            sys.executable,
+            str(validation_script),
+            "--app",
+            str(installed.executable),
+            *args.script_arg,
+        ]
         result = subprocess.run(command, cwd=REPO, env=env, check=False)
         return int(result.returncode)
     finally:

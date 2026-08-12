@@ -51,7 +51,9 @@ def test_current_shot_tracks_playback_position() -> None:
 
 def test_current_shot_waits_for_first_source_frame_after_shot_time() -> None:
     project = Project()
-    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0
+    )
     project.analysis.shots = [
         ShotEvent(time_ms=150),
         ShotEvent(time_ms=350),
@@ -199,7 +201,7 @@ def test_imported_stage_summary_uses_official_aggregate_values() -> None:
     assert summary["total_penalties"] == 12.0
     assert summary["hit_factor"] == 101.0 / 23.24
     assert summary["imported_stage"]["stage_place"] == 1
-    assert summary["imported_overlay_text"] == "Imported\nRaw 23.24\nPoints 101\nHF 4.3460"
+    assert summary["imported_overlay_text"] == "Summary\nRaw 23.24\nPoints 101\nHF 4.3460"
 
 
 def test_imported_stage_hit_factor_uses_official_total_points_and_raw_time() -> None:
@@ -238,7 +240,7 @@ def test_imported_stage_overlay_text_uses_idpa_official_fields() -> None:
     apply_scoring_preset(project, "idpa_time_plus")
     summary = calculate_scoring_summary(project)
 
-    assert summary["imported_overlay_text"] == "Imported\nRaw 29.83\nPD 5\nFinal 34.83"
+    assert summary["imported_overlay_text"] == "Summary\nRaw 29.83\nPD 5\nFinal 34.83"
 
 
 def test_imported_time_plus_overlay_reconciles_to_video_raw_time() -> None:
@@ -265,7 +267,7 @@ def test_imported_time_plus_overlay_reconciles_to_video_raw_time() -> None:
     assert round(float(summary["raw_delta_seconds"]), 2) == 0.17
     assert summary["final_time"] == 35.0
     assert summary["display_value"] == "35.00"
-    assert summary["imported_overlay_text"] == "Imported\nRaw 30.00\nPD 5\nFinal 35.00"
+    assert summary["imported_overlay_text"] == "Summary\nRaw 30.00\nPD 5\nFinal 35.00"
 
 
 def test_steel_and_gpa_time_plus_presets_are_explicit() -> None:
@@ -299,7 +301,14 @@ def test_browser_api_hides_gpa_preset() -> None:
     preset_ids = {preset["id"] for preset in scoring_presets_for_api()}
 
     assert "gpa_time_plus" not in preset_ids
-    assert {"uspsa_minor", "uspsa_major", "ipsc_minor", "ipsc_major", "idpa_time_plus", "steel_challenge"}.issubset(preset_ids)
+    assert {
+        "uspsa_minor",
+        "uspsa_major",
+        "ipsc_minor",
+        "ipsc_major",
+        "idpa_time_plus",
+        "steel_challenge",
+    }.issubset(preset_ids)
 
 
 def test_merge_canvas_covers_layouts() -> None:

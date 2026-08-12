@@ -1,6 +1,47 @@
 # Changelog
 
+<!-- Documentation reviewed: 2026-08-12 -->
+
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
+
+## v1.0.7
+
+SplitShot 1.0.7 completes the current editing and release workflow. This release is feature-frozen: further work on the 1.0.7 line is limited to validation, documentation, packaging, and defect fixes.
+
+### What Changed
+
+- **Completed the multi-stage workflow.** Project and Media now separate project/competitor setup from stage creation and media intake. Compose, Trim, scoring, review, Export settings, and Queue processing all follow the active stage.
+- **Made project files predictable.** Selecting or creating a project initializes its managed folders. Project content pickers start at the active project, and selected media, PractiScore data, and marker assets are copied into their matching project folders with portable project-relative paths.
+- **Aligned the 14-pane rail with the shipped workflow.** The current rail is Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, Queue, Metrics, ShotML, and Settings. Pane layout, labels, controls, preview behavior, and exported output were cleaned up for closer WYSIWYG parity.
+- **Corrected competition standings.** Imported PractiScore results now display independent sport-specific division and class cohorts plus Overall: `<division acronym> - <place>/<division total>`, `<class acronym> - <place>/<class total>`, and `Overall - <place>/<total competitors>`. There is no combined division-and-class standing.
+- **Made packaged release proof fail closed.** Release validation uses the checksum-locked real `primary.MP4`, `secondary.MP4`, and authentic 27-competitor/four-stage PractiScore corpus. A versioned 17-shard manifest owns every required feature scenario, installed packages emit runtime inventory/action/request/restart evidence, and per-OS summaries reject failures, skips, gaps, missing artifacts, or commit/corpus/manifest drift.
+- **Repaired clean-runner package validation.** The packaged release proof targets the current Trim source-card and Queue output/log contracts on every platform, copies the Queue result to the canonical cross-platform proof filename, allows realistic shared-runner latency for profile persistence, and keeps mandatory notarization in Build macOS and the publishing Release workflow while Test macOS validates a signed non-notarized DMG.
+- **Cleaned developer and release tooling.** Obsolete release-specific scripts, generated audit projects, logs, duplicate test data, and stale documentation were removed or redirected to ignored artifact locations.
+
+### Release Proof
+
+Release readiness requires source gates plus zero-gap installed-package summaries from Test macOS, Test Windows, and Test Linux for the exact release commit and corpus revision. The Release workflow is the sole publisher and aggregates all three summaries before release creation. Until every explicit case and discovered runtime identity passes, publication remains blocked.
+
+## v1.0.6
+
+SplitShot 1.0.6 is a Stage-only backport release. It ships trim video derivatives, camera role seeding, output profiles, review source controls, overlay export badges, and full compatibility with the Stage PiP rail — all without Match, Performance Library, Landing, workspace persistence, or shared-shell routing.
+
+### What Changed
+
+- **Trim video derivatives (Phase 03).** Added `trim_video()` in ffmpeg.py for fast non-re-encoding trims via `-c copy`, `trim_merge_source()` in the controller, a `/api/merge/source/trim` route with clear flag, and a Trim UI in merge-pane.js with Start/End number inputs and Apply/Clear buttons.
+- **Camera role seeding and sync (Phase 04).** Added role-seeding helpers in pipeline.py — `_normalized_merge_source_angle_role`, `_camera_role_priority`, `_merge_source_role_sort_key`, `_project_merge_seed_mode`, `_resolved_merge_source_mode`, `_resolved_merge_source_slot`, `ResolvedMergeSourcePlacement`, and `_resolved_merge_source_placements`. `_build_multi_pip_merge_plan` and `_build_grid_merge_plan` sort sources by role priority. Added preview reseek throttling (200ms via `secondaryPreviewLastSeekAt` WeakMap) and `syncCorrectionMode` tracking.
+- **Shell and waveform (Phase 05).** Waveform multi-track controls (`waveform-mode-single`/`multi`), track list, and segment legend in index.html, app.js, and shell-runtime.js.
+- **Output profiles (Phase 06).** `FrameProfile`, `OutputProfileKind`, and `OutputProfile` dataclasses with full serialization. Controller CRUD (`list/create/update/delete/render_output_profiles`) with persistence as `profiles.json`. Five server routes at `/api/output-profiles/{list,create,update,delete,render}`. Output Profiles UI with selector, Create/Delete buttons, and name/type/frame-profile inputs. Pipeline `_frame_profile_to_aspect_ratio` and `compute_crop_box` integration.
+- **Review source controls (Phase 07).** Replaced "Show PiP" with "Show added media". Added Review Source selector, Set Source button, and retained/live status text. Review source is stored per output profile via `review_source_id` field and refreshed through `/api/output-profiles/render`.
+- **Overlay Export Badges (Phase 07).** Added Export Badges button that saves the current overlay badge state (styles, scoring colors, visibility toggles, locks, typography) to the active output profile's `metric_caption_preset` field.
+
+### Why This Release Exists
+
+The v1.0.6 Stage packet delivers the core editing and export workflow improvements planned for the Stage rail — trim, camera role, output profiles, and review/overlay integration — in a minimal Stage-only backport. No Match, Library, Landing, or workspace features are included.
+
+### Release Proof
+
+This release is backed by passing export tests (46/46), browser control tests (72/72 with 3 pre-existing flaky deselected), and runtime checks on macOS. The canonical test suite passes with all phases verified in dependency order.
 
 ## v1.0.5
 

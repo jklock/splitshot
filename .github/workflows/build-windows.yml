@@ -39,10 +39,10 @@ jobs:
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-      - name: Verify Clip1 proof fixture
-        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
         timeout-minutes: 10
       - name: Build Electron app
         run: cd electron && npm run build:win
@@ -88,10 +88,10 @@ jobs:
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
-      - name: Verify Clip1 proof fixture
-        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
-        run: cd electron && npm install
+        run: cd electron && npm ci
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
@@ -107,14 +107,24 @@ jobs:
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with installed package
         env:
-          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
-          SPLITSHOT_E2E_SCOPE: export-proof
           SPLITSHOT_E2E_OCR_PROOF: "1"
           SPLITSHOT_PACKAGED_TESSERACT: tesseract
         run: |
           artifact=$(find electron/build -type f -name '*.exe' | head -n 1)
           [ -n "$artifact" ] || { echo "No Windows installer found after artifact download"; exit 1; }
-          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+          uv run python scripts/testing/test_packaged_artifact.py \
+            --artifact "$artifact" \
+            --script scripts/testing/test_packaged_app_e2e.py \
+            --script-arg=--scope \
+            --script-arg=release-proof \
+            --script-arg=--artifact-root \
+            --script-arg=artifacts/v107-release-proof/github-review/windows \
+            --script-arg=--primary-video \
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

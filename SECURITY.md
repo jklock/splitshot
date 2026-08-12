@@ -1,5 +1,7 @@
 # Security Policy
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 If you believe you have found a security issue, report it privately instead of opening a public issue.
 
 ## How To Report

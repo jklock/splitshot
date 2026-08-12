@@ -149,25 +149,48 @@ def test_cli_alias_entrypoints_preserve_parser_behavior(monkeypatch, tmp_path: P
     calls: list[tuple[str, object]] = []
     project_path = tmp_path / "alias.ssproj"
 
-    def fake_browser(host: str, port: int, open_browser: bool, project_path: Path | None, log_level: str) -> int:
-        calls.append(("web", {
-            "host": host,
-            "port": port,
-            "open_browser": open_browser,
-            "project_path": project_path,
-            "log_level": log_level,
-        }))
+    def fake_browser(
+        host: str, port: int, open_browser: bool, project_path: Path | None, log_level: str
+    ) -> int:
+        calls.append(
+            (
+                "web",
+                {
+                    "host": host,
+                    "port": port,
+                    "open_browser": open_browser,
+                    "project_path": project_path,
+                    "log_level": log_level,
+                },
+            )
+        )
         return 0
 
     monkeypatch.setattr(cli, "run_browser", fake_browser)
 
-    assert cli.web_main(["--no-open", "--port", "9000", "--project", str(project_path), "--log-level", "warning"]) == 0
+    assert (
+        cli.web_main(
+            [
+                "--no-open",
+                "--port",
+                "9000",
+                "--project",
+                str(project_path),
+                "--log-level",
+                "warning",
+            ]
+        )
+        == 0
+    )
     assert calls == [
-        ("web", {
-            "host": "127.0.0.1",
-            "port": 9000,
-            "open_browser": False,
-            "project_path": project_path,
-            "log_level": "warning",
-        }),
+        (
+            "web",
+            {
+                "host": "127.0.0.1",
+                "port": 9000,
+                "open_browser": False,
+                "project_path": project_path,
+                "log_level": "warning",
+            },
+        ),
     ]

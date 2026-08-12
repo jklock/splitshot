@@ -14,9 +14,9 @@
   border-radius: 0;
   color: var(--text);
   display: inline-flex;
-  font-size: 0.68rem;
-  font-weight: 950;
-  gap: 0.25rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  gap: var(--space-1);
   justify-content: center;
   line-height: 1;
   min-height: 24px;
@@ -48,8 +48,11 @@
   background: #000;
   display: block;
   height: 100%;
+  max-height: 100%;
+  max-width: 100%;
   min-height: 0;
   object-fit: contain;
+  object-position: center center;
   width: 100%;
 }
 
@@ -127,7 +130,7 @@
 .pip-size-control {
   align-items: center;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -187,9 +190,9 @@
 
 .text-box-group {
   display: flex;
-  gap: 0.45rem;
+  gap: var(--space-2);
   inset: 0;
-  padding: 0.5rem;
+  padding: var(--space-3);
   pointer-events: none;
   position: absolute;
 }
@@ -334,10 +337,10 @@
   border-radius: 0;
   display: inline-flex;
   flex: 0 0 auto;
-  font-weight: 950;
+  font-weight: var(--weight-bold);
   height: auto;
   line-height: 1;
-  padding: 0.42rem 0.58rem;
+  padding: var(--space-2) 0.58rem;
   white-space: nowrap;
   max-width: 100%;
   width: auto;
@@ -417,15 +420,15 @@ button:disabled {
 
 .waveform-panel .waveform-footer {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-1);
   flex-wrap: nowrap;
   align-items: center;
   background: rgba(16, 26, 42, 0.96);
   border: 1px solid #2c4059;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
   grid-row: 4;
-  margin: 0 0.65rem 0.35rem;
-  padding: 0.35rem 0.45rem;
+  margin: 0 var(--space-3) var(--space-1);
+  padding: var(--space-1) var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -497,6 +500,17 @@ button:disabled {
   white-space: nowrap;
 }
 
+.waveform-total-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  min-width: 78px;
+  padding: 0.22rem 0.45rem;
+  white-space: nowrap;
+}
+
 .waveform-panel canvas {
   background: #102033;
   border: 0;
@@ -554,14 +568,14 @@ button:disabled {
 
 .timing-event-editor {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-1);
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0 0.48rem;
+  margin: 0 var(--space-4);
 }
 
 .timing-event-editor label {
   display: grid;
-  gap: 0.24rem;
+  gap: var(--space-1);
 }
 
 .timing-event-editor button {
@@ -570,16 +584,16 @@ button:disabled {
 
 .timing-event-list {
   display: none;
-  gap: 0.35rem;
-  margin: 0 0.48rem 0.48rem;
+  gap: var(--space-1);
+  margin: 0 var(--space-4) var(--space-4);
 }
 
 .timing-event-row {
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-1);
   grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto;
-  padding: 0.4rem 0.48rem;
+  padding: var(--space-3) var(--space-4);
 }
 
 .timing-event-row strong,
@@ -598,7 +612,7 @@ button:disabled {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 0.8rem;
+  gap: var(--space-3);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -606,15 +620,15 @@ button:disabled {
 
 .inspector-status-copy {
   display: grid;
-  gap: 0.12rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .inspector-status-copy strong {
   color: var(--text);
   display: block;
-  font-size: 0.84rem;
-  font-weight: 950;
+  font-size: var(--text-md);
+  font-weight: var(--weight-black);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -624,7 +638,7 @@ button:disabled {
 .inspector-status-copy span {
   color: var(--muted);
   display: block;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -667,10 +681,10 @@ button:disabled {
   background: rgba(12, 23, 37, 0.92);
   border: 0;
   display: grid;
-  gap: 0.18rem;
+  gap: var(--space-1);
   min-height: 58px;
   min-width: 0;
-  padding: 0.55rem 0.65rem;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
 }
 
@@ -681,13 +695,13 @@ button:disabled {
 .waveform-shot-card-header {
   align-items: baseline;
   display: grid;
-  gap: 0.45rem;
+  gap: var(--space-2);
   grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
 }
 
 .waveform-shot-list button strong {
-  font-size: 0.79rem;
+  font-size: var(--text-base);
   line-height: 1.12;
   min-width: 0;
   overflow: hidden;
@@ -697,23 +711,23 @@ button:disabled {
 
 .waveform-shot-card-value {
   color: var(--accent);
-  font-size: 0.76rem;
-  font-weight: 900;
+  font-size: var(--text-base);
+  font-weight: var(--weight-black);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .waveform-shot-card-subtitle {
   color: var(--quiet);
-  font-size: 0.63rem;
-  font-weight: 850;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   line-height: 1.1;
   text-transform: uppercase;
 }
 
 .waveform-shot-list button small {
-  font-size: 0.63rem;
+  font-size: var(--text-xs);
   line-height: 1.25;
   opacity: 0.78;
   overflow: hidden;
@@ -788,10 +802,30 @@ button:disabled {
 .tool-pane {
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.42rem;
+  gap: var(--pane-control-gap);
   overflow-anchor: none;
   overflow-x: hidden;
-  padding: 0.48rem;
+  padding: var(--pane-padding);
+}
+
+.inspector :is(.tool-pane, .settings-section, .control-grid, .button-grid, label, dl, article, section, div) > * {
+  min-width: 0;
+}
+
+.inspector :is(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+.inspector label {
+  font-size: var(--pane-label-size);
+}
+
+.inspector :is(.hint, small) {
+  font-size: var(--pane-helper-size);
+}
+
+.tool-pane > .section-header h3 {
+  font-size: var(--pane-title-size);
 }
 
 .inspector :is(
@@ -823,11 +857,11 @@ button:disabled {
 .inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
   align-content: stretch;
   display: grid;
-  gap: 0.42rem;
+  gap: var(--space-1);
   grid-template-rows: max-content max-content auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: 0.48rem;
+  padding-bottom: var(--space-4);
 }
 
 .tool-pane > .section-header {
@@ -835,13 +869,13 @@ button:disabled {
 }
 
 .tool-pane > .section-header > :is(span, small, strong) {
-  font-size: 0.72rem;
+  font-size: var(--text-sm);
   line-height: 1.1;
 }
 
 .tool-pane > .section-header strong {
   color: var(--text);
-  font-weight: 950;
+  font-weight: var(--weight-black);
 }
 
 .tool-pane > .section-header button {
@@ -852,17 +886,17 @@ button:disabled {
 .selected-shot-controls {
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.36rem;
+  gap: var(--space-1);
 }
 
 .selected-shot-controls > p,
 .selected-shot-controls > .button-grid,
 .selected-shot-controls > button {
-  margin: 0 0.42rem;
+  margin: 0 var(--space-2);
 }
 
 .selected-shot-controls > button {
-  margin-bottom: 0.42rem;
+  margin-bottom: var(--space-2);
 }
 
 .details {
@@ -878,27 +912,27 @@ button:disabled {
   margin: 0;
   min-width: 0;
   overflow: hidden;
-  padding: 0.42rem 0;
+  padding: var(--space-2) 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .details dt {
   color: var(--text);
-  font-weight: 900;
+  font-weight: var(--weight-black);
 }
 
 .practiscore-actions {
   background: #0e1012;
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.35rem;
-  margin-bottom: 0.48rem;
-  padding: 0.55rem;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
 }
 
 .practiscore-action-grid {
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .button-grid {
@@ -916,18 +950,18 @@ button:disabled {
 }
 
 .text-box-manager > .button-grid {
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .threshold-control {
   display: grid;
-  gap: 0.28rem;
+  gap: var(--space-1);
 }
 
 .threshold-control-row {
   align-items: center;
   display: grid;
-  gap: 0.45rem;
+  gap: var(--space-2);
   grid-template-columns: minmax(0, 1fr) auto;
 }
 

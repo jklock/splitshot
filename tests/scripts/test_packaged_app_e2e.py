@@ -17,6 +17,10 @@ SPEC.loader.exec_module(MODULE)
 def test_ocr_text_is_readable_accepts_expected_overlay_words() -> None:
     assert MODULE._ocr_text_is_readable("Shot 1 Draw 3.02s")
     assert MODULE._ocr_text_is_readable("Hit Factor 3.78")
+    assert MODULE._ocr_text_is_readable("Packaged custom review box")
+    assert MODULE._ocr_text_is_readable(
+        "Final 72.51 Points Down 8 Penalties 0 Division PCC Class MA Overall 1/27"
+    )
 
 
 def test_ocr_text_is_readable_rejects_tofu_like_output() -> None:
@@ -27,10 +31,23 @@ def test_ocr_text_is_readable_rejects_tofu_like_output() -> None:
 
 def test_playwright_export_file_matches_browser_proof_location() -> None:
     artifacts_dir = ROOT / "artifacts"
-    assert MODULE._playwright_export_file(artifacts_dir) == artifacts_dir / "e2e-exports" / "e2e-export-test.mp4"
+    assert (
+        MODULE._playwright_export_file(artifacts_dir)
+        == artifacts_dir / "exports" / "e2e-export-test.mp4"
+    )
 
 
-def test_resolve_tool_uses_windows_fallback_when_path_lookup_misses(monkeypatch, tmp_path: Path) -> None:
+def test_default_packaged_artifact_root_uses_phase_12_tree(monkeypatch) -> None:
+    monkeypatch.setattr(MODULE.sys, "platform", "darwin")
+    assert (
+        MODULE._default_packaged_artifact_root()
+        == ROOT / "artifacts" / "v107-release-proof" / "packaged-local-mac"
+    )
+
+
+def test_resolve_tool_uses_windows_fallback_when_path_lookup_misses(
+    monkeypatch, tmp_path: Path
+) -> None:
     fallback_dir = tmp_path / "Program Files" / "Tesseract-OCR"
     fallback_dir.mkdir(parents=True)
     executable = fallback_dir / "tesseract.exe"

@@ -10,7 +10,6 @@ export function createSettingsPane({
   normalizePopupTemplate = (template = {}) => template,
   renderExportPresetOptions = () => {},
   ensureSectionToggle = () => {},
-  settingsLayerFields = [],
 } = {}) {
   let settingsDraft = null;
 
@@ -33,14 +32,14 @@ export function createSettingsPane({
   function syncSettingsBadgeStyle(prefix, style = {}) {
     syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
     syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
-    syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
+    syncControlValue($(`${prefix}-opacity`), Math.round(Number(style.opacity ?? 0.9) * 100));
   }
 
   function readSettingsBadgeStyle(prefix) {
     return {
       background_color: $(`${prefix}-background-color`)?.value || "#000000",
       text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
-      opacity: readNumberSetting(`${prefix}-opacity`, 0.9),
+      opacity: Math.max(0, Math.min(1, readNumberSetting(`${prefix}-opacity`, 90) / 100)),
     };
   }
 
@@ -54,9 +53,10 @@ export function createSettingsPane({
     syncControlValue($("settings-marker-height"), template.height ?? 0);
     syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
     syncControlValue($("settings-marker-motion-mode"), Boolean(template.follow_motion ?? false) ? "guided" : "fixed");
+    syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
     syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
     syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
-    syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
+    syncControlValue($("settings-marker-opacity"), Math.round(Number(template.opacity ?? 0.9) * 100));
   }
 
   function settingsValueAtPath(value, path) {
@@ -79,51 +79,6 @@ export function createSettingsPane({
 
   function sameSettingsValue(left, right) {
     return JSON.stringify(left) === JSON.stringify(right);
-  }
-
-  function settingsSourceLabel(source) {
-    return {
-      project: "Project",
-      folder: "Folder",
-      app: "App",
-      effective: "Effective",
-    }[source] || "Effective";
-  }
-
-  function formatSettingsValue(value) {
-    if (value === null || value === undefined) return "-";
-    if (typeof value === "boolean") return value ? "true" : "false";
-    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
-    return String(value);
-  }
-
-  function settingFieldCurrentValue(field, settings, markerTemplate) {
-    if (!field.usesProjectTemplate) return settingsValueAtPath(settings, field.path);
-    const markerKey = field.path[field.path.length - 1];
-    return markerTemplate?.[markerKey];
-  }
-
-  function settingFieldSource(field, currentValue, layers) {
-    const effectivePath = ["effective", ...field.path];
-    const appPath = ["app", ...field.path];
-    const folderPath = ["folder", ...field.path];
-    const effectiveValue = settingsValueAtPath(layers, effectivePath);
-    const appValue = settingsValueAtPath(layers, appPath);
-    if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
-      const projectValue = settingsValueAtPath(layers, field.projectPath);
-      if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
-        return "project";
-      }
-    }
-    if (settingsHasPath(layers, folderPath)) {
-      const folderValue = settingsValueAtPath(layers, folderPath);
-      if (sameSettingsValue(folderValue, appValue)) return "app";
-      if (sameSettingsValue(folderValue, currentValue)) return "folder";
-    }
-    if (settingsHasPath(layers, appPath)) {
-      if (sameSettingsValue(appValue, currentValue)) return "app";
-    }
-    return "effective";
   }
 
   function sanitizeMergeSourceDefaults(mergeSources = []) {
@@ -167,7 +122,7 @@ export function createSettingsPane({
         motion_mode: $("settings-marker-motion-mode")?.value || projectPopupTemplate.motion_mode,
         background_color: $("settings-marker-background-color")?.value || "#000000",
         text_color: $("settings-marker-text-color")?.value || "#ffffff",
-        opacity: readNumberSetting("settings-marker-opacity", 0.9),
+        opacity: Math.max(0, Math.min(1, readNumberSetting("settings-marker-opacity", 90) / 100)),
       });
     const payloads = {
       "global-template": {
@@ -195,7 +150,7 @@ export function createSettingsPane({
         badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
         overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
         overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
-        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : Math.max(0, Math.min(1, readNumberSetting("settings-overlay-custom-opacity", 90) / 100)),
         timer_badge: timerBadge,
         shot_badge: shotBadge,
         current_shot_badge: currentShotBadge,
@@ -221,31 +176,6 @@ export function createSettingsPane({
       },
     };
     return Object.fromEntries(Object.entries(payloads[section] || {}).filter(([, value]) => value !== undefined));
-  }
-
-  function renderSettingsLayerSummary(settings, markerTemplate, layers) {
-    const container = $("settings-layer-summary");
-    if (!container) return;
-    const table = documentObject.createElement("table");
-    table.className = "data-table";
-    table.setAttribute("aria-label", "Settings layer summary");
-    table.innerHTML = "<thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>";
-    const body = documentObject.createElement("tbody");
-    settingsLayerFields.forEach((field) => {
-      const currentValue = settingFieldCurrentValue(field, settings, markerTemplate);
-      const source = settingFieldSource(field, currentValue, layers);
-      const row = documentObject.createElement("tr");
-      const labelCell = documentObject.createElement("td");
-      labelCell.textContent = field.label;
-      const valueCell = documentObject.createElement("td");
-      valueCell.textContent = formatSettingsValue(currentValue);
-      const sourceCell = documentObject.createElement("td");
-      sourceCell.textContent = settingsSourceLabel(source);
-      row.append(labelCell, valueCell, sourceCell);
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    container.replaceChildren(table);
   }
 
   function isSettingsSectionExpanded(sectionId) {
@@ -295,14 +225,9 @@ export function createSettingsPane({
       ? (Object.keys(layers.folder || {}).length > 0 ? (layers.folder || {}) : (layers.app || {}))
       : (layers.app || {});
     if (scopeStatus) {
-      const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
       scopeStatus.textContent = folderSettingsError
         ? folderSettingsError
-        : !hasProjectPath
-          ? "No project folder is open. App defaults are the global template."
-          : (hasFolderLayer
-            ? "Folder defaults are active for this project and override the global template here."
-            : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
+        : "";
     }
 
     const shotmlDefaults = persistedSettings.shotml_defaults || {};
@@ -314,7 +239,7 @@ export function createSettingsPane({
     syncControlValue($("settings-badge-size"), persistedSettings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
     syncControlValue($("settings-overlay-custom-background-color"), persistedSettings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
     syncControlValue($("settings-overlay-custom-text-color"), persistedSettings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
-    syncControlValue($("settings-overlay-custom-opacity"), persistedSettings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+    syncControlValue($("settings-overlay-custom-opacity"), Math.round(Number(persistedSettings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9) * 100));
     syncSettingsBadgeStyle("settings-timer-badge", persistedSettings.timer_badge || projectOverlay.timer_badge || {});
     syncSettingsBadgeStyle("settings-shot-badge", persistedSettings.shot_badge || projectOverlay.shot_badge || {});
     syncSettingsBadgeStyle("settings-current-shot-badge", persistedSettings.current_shot_badge || projectOverlay.current_shot_badge || {});
@@ -349,28 +274,17 @@ export function createSettingsPane({
     }
     const layoutStatus = $("settings-layout-status");
     if (layoutStatus) {
-      const persistedParts = [
-        persistedSettings.layout_locked === null || persistedSettings.layout_locked === undefined ? null : `Lock ${persistedSettings.layout_locked ? "on" : "off"}`,
-        persistedSettings.layout_rail_width ? `Rail ${persistedSettings.layout_rail_width}` : null,
-        persistedSettings.layout_inspector_width ? `Inspector ${persistedSettings.layout_inspector_width}` : null,
-        persistedSettings.layout_waveform_height ? `Waveform ${persistedSettings.layout_waveform_height}` : null,
-      ].filter(Boolean);
-      layoutStatus.textContent = persistedParts.length ? persistedParts.join(" • ") : "No saved layout defaults.";
+      layoutStatus.textContent = "";
     }
     const layoutSummary = $("settings-layout-summary");
     if (layoutSummary) {
-      const currentLayout = readProjectUiStatePayload() || state?.project?.ui_state || {};
-      layoutSummary.textContent = `Current layout: rail ${currentLayout.rail_width ?? 84}, inspector ${currentLayout.inspector_width ?? 440}, waveform ${currentLayout.waveform_height ?? 206}.`;
+      layoutSummary.textContent = "";
     }
     const pipSummary = $("settings-pip-summary");
     if (pipSummary) {
-      const sourceCount = Array.isArray(persistedSettings.merge_source_defaults) ? persistedSettings.merge_source_defaults.length : 0;
-      pipSummary.textContent = sourceCount > 0
-        ? `${sourceCount} saved PiP source${sourceCount === 1 ? "" : "s"} in defaults.`
-        : "No saved PiP media defaults.";
+      pipSummary.textContent = "";
     }
     renderSettingsSections();
-    renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);
 
     const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
     if (!settingsPaneIsActive()) {
@@ -399,6 +313,7 @@ export function createSettingsPane({
     return {
       scope: $("settings-scope")?.value || "app",
       section: sectionName || undefined,
+      project_defaults: Boolean(projectDefaults),
       settings,
     };
   }
@@ -410,11 +325,6 @@ export function createSettingsPane({
     settingsValueAtPath,
     settingsHasPath,
     sameSettingsValue,
-    settingsSourceLabel,
-    formatSettingsValue,
-    settingFieldCurrentValue,
-    settingFieldSource,
-    renderSettingsLayerSummary,
     renderSettingsPane,
     isSettingsSectionExpanded,
     setSettingsSectionExpanded,

@@ -29,7 +29,9 @@ def format_beep_compare(beep_multipass: dict[str, object]) -> str:
 
 
 def format_shot_compare(shot_multipass: dict[str, object]) -> str:
-    unmatched_total = int(shot_multipass["unmatched_final_count"]) + int(shot_multipass["unmatched_onset_count"])
+    unmatched_total = int(shot_multipass["unmatched_final_count"]) + int(
+        shot_multipass["unmatched_onset_count"]
+    )
     echo_like = int(shot_multipass.get("echo_like_onset_count", 0))
     if unmatched_total == 0 and shot_multipass["max_match_gap_ms"] is None:
         return "--"
@@ -91,7 +93,12 @@ def parse_threshold_grid(value: str) -> list[float]:
     return thresholds
 
 
-def render_table(input_path: Path, threshold_grid: list[float], reference_threshold: float, payloads: list[dict[str, object]]) -> str:
+def render_table(
+    input_path: Path,
+    threshold_grid: list[float],
+    reference_threshold: float,
+    payloads: list[dict[str, object]],
+) -> str:
     lines = [
         f"Training Corpus Audit: {input_path}",
         f"Videos: {len(payloads)}",
@@ -122,7 +129,9 @@ def render_table(input_path: Path, threshold_grid: list[float], reference_thresh
                     beep_compare.rjust(8),
                     shot_compare.rjust(8),
                     str(fingerprint["beep_family"]).rjust(6),
-                    ("--" if median_conf is None else f"{float(median_conf) * 100.0:5.1f}%").rjust(11),
+                    ("--" if median_conf is None else f"{float(median_conf) * 100.0:5.1f}%").rjust(
+                        11
+                    ),
                     ("--" if shot_hf_ratio is None else f"{float(shot_hf_ratio):0.3f}").rjust(7),
                     ",".join(flags) if flags else "--",
                 ]
@@ -198,7 +207,9 @@ def main() -> int:
         table_payloads = [dict(video) for video in payload["videos"]]
         if table_payloads:
             table_payloads[0]["__duplicate_groups__"] = duplicate_groups
-        rendered = render_table(input_path, threshold_grid, args.reference_threshold, table_payloads)
+        rendered = render_table(
+            input_path, threshold_grid, args.reference_threshold, table_payloads
+        )
     print(rendered)
 
     if args.json_output is not None:

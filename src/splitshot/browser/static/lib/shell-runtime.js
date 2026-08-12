@@ -62,6 +62,17 @@ export function createShellRuntime({
   renderSettingsPane = () => {},
   renderMetricsPanel = () => {},
   renderMergeMediaList = () => {},
+  renderTrimSyncList = () => {},
+  renderOutputProfiles = () => {},
+  renderReviewSourceControls = () => {},
+  renderReviewImportedMetrics = () => {},
+  createOutputProfile = () => {},
+  saveOutputProfile = () => {},
+  deleteOutputProfile = () => {},
+  selectOutputProfile = () => {},
+  setReviewSource = () => {},
+  exportBadges = () => {},
+  scheduleOutputProfileFieldCommit = () => {},
   badgeControls = [],
   badgeDisplayLabels = {},
   scoringColorOptions = () => [],
@@ -95,6 +106,7 @@ export function createShellRuntime({
   stopOverlayLoop = () => {},
   renderWaveformPlayhead = () => {},
   setWaveformMode = () => {},
+  setWaveformTrackMode = () => {},
   setWaveformExpanded = () => {},
   setWaveformZoom = () => {},
   setWaveformAmplitude = () => {},
@@ -143,6 +155,7 @@ export function createShellRuntime({
   popupBubbles = () => [],
   readPopupTemplatePayload = () => ({}),
   scheduleSettingsDefaultsApply = () => {},
+  readSettingsDefaultsPayload = () => ({}),
   applySettingsDefaults = () => {},
   toggleLayoutLock = () => {},
   resetLayout = () => {},
@@ -177,8 +190,31 @@ export function createShellRuntime({
   activity = () => {},
   DEFAULT_PROJECT_UI_STATE = {},
 } = {}) {
+  let settingsMutationQueue = Promise.resolve();
+
+  function enqueueSettingsMutation(action) {
+    const pending = settingsMutationQueue.then(action, action);
+    settingsMutationQueue = pending.catch(() => {});
+    return pending;
+  }
+
   function currentState() {
     return getState() || {};
+  }
+
+  async function saveCurrentSettings(section = null) {
+    return enqueueSettingsMutation(async () => {
+      const options = {
+        projectDefaults: true,
+        ...(section ? { section } : {}),
+      };
+      // Capture layout and other client-owned values before flushing project drafts.
+      // Each flush response refreshes remote state and may legitimately synchronize
+      // the project snapshot, but it must not replace the values from this click.
+      const payload = readSettingsDefaultsPayload(options);
+      await flushPendingProjectDrafts();
+      await applySettingsDefaults({ ...options, payload });
+    });
   }
 
   function renderStyleControls() {
@@ -297,12 +333,16 @@ export function createShellRuntime({
         : "Per-source sync";
     syncControlValue($("project-name"), projectDetailValue("name"));
     syncControlValue($("project-description"), projectDetailValue("description"));
-    syncControlValue($("match-type"), project.scoring.match_type || "");
-    renderPractiScoreOptionLists({
-      stage_number: project.scoring.stage_number ?? "",
-      competitor_name: project.scoring.competitor_name || "",
-      competitor_place: project.scoring.competitor_place ?? "",
-    });
+    syncControlValue($("project-output-root"), project.output_root || "");
+    const matchTypeControl = $("match-type");
+    syncControlValue(matchTypeControl, project.scoring.match_type || "");
+    if (matchTypeControl) {
+      const detectedMatchType = Boolean(state?.practiscore_options?.source_name);
+      matchTypeControl.disabled = detectedMatchType;
+      matchTypeControl.title = detectedMatchType
+        ? "Match type is detected from the imported PractiScore results."
+        : "Select the scoring sport.";
+    }
     syncControlChecked($("merge-enabled"), project.merge.enabled);
     syncControlValue($("merge-layout"), project.merge.layout);
     const pipValue = Number(
@@ -352,6 +392,7 @@ export function createShellRuntime({
     syncControlChecked($("show-timer"), project.overlay.show_timer);
     syncControlChecked($("show-draw"), project.overlay.show_draw);
     syncControlChecked($("show-shots"), project.overlay.show_shots);
+    syncControlChecked($("show-shot-scores"), project.overlay.show_shot_scores ?? true);
     syncControlChecked($("show-score"), project.overlay.show_score);
     syncOverlayCoordinateControlState();
     syncOverlayBubbleLockControlState();
@@ -381,6 +422,8 @@ export function createShellRuntime({
     renderMetricsPanel();
     renderStyleControls();
     renderMergeMediaList();
+    renderTrimSyncList();
+    renderReviewImportedMetrics();
   }
 
   function render() {
@@ -395,6 +438,8 @@ export function createShellRuntime({
       renderTimingTables();
       renderControls();
       renderLiveOverlay();
+      renderOutputProfiles();
+      renderReviewSourceControls();
       setActiveTool(getActiveTool(), { collapseExpandedLayout: false, persistUiState: false });
     });
     flushPendingInspectorScrollRestore();
@@ -422,48 +467,21 @@ export function createShellRuntime({
     $("new-project").addEventListener("click", async () => {
       await createNewProject();
     });
-    $("primary-file-path").addEventListener("keydown", async (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
-      if (result) setActiveTool("project");
-    });
     $("browse-project-path").addEventListener("click", browseProjectPath);
-    $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
-      scheduleExportSettingsApply();
-    }));
-    $("export-path").addEventListener("input", () => {
-      setExportPathDraft($("export-path").value);
-      scheduleExportSettingsApply();
-    });
-    $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      await flushPendingProjectDrafts({ primaryImport: true });
-      const result = await callApi("/api/import/primary", { path });
-      if (result) setActiveTool("project");
-    }));
+    $("open-project").addEventListener("click", browseProjectPath);
+    $("browse-project-output-root").addEventListener("click", () => pickPath(
+      "project_folder",
+      "project-output-root",
+      async () => scheduleProjectDetailsApply(),
+      currentState()?.project?.path
+        ? `${String(currentState().project.path).replace(/[\\/]+$/, "")}/Output`
+        : "",
+    ));
     $("toggle-rail")?.addEventListener("click", () => {
       const nextRailCollapsed = !getRailCollapsed();
       setRailCollapsed(nextRailCollapsed);
       windowObject.localStorage.setItem("splitshot.railCollapsed", String(nextRailCollapsed));
       requestRender();
-    });
-    documentObject.querySelectorAll("[data-open-primary]").forEach((item) => {
-      item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-        await flushPendingProjectDrafts({ primaryImport: true });
-        const result = await callApi("/api/import/primary", { path });
-        if (result) setActiveTool("project");
-      }));
-    });
-    documentObject.querySelectorAll("[data-open-merge-media]").forEach((item) => {
-      item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
     });
     $("primary-file-input").addEventListener("change", async (event) => {
       if (!hasActiveProject()) {
@@ -478,22 +496,36 @@ export function createShellRuntime({
       }
       await flushPendingProjectDrafts({ primaryImport: true });
       const result = await postFile("/api/files/primary", selectedFile);
-      if (result) setActiveTool("project");
+      if (result) setActiveTool("media");
       event.target.value = "";
     });
     $("merge-media-input").addEventListener("change", async (event) => {
       const files = Array.from(event.target.files || []);
       const result = await postFiles("/api/files/merge", files);
-      if (result) setActiveTool("merge");
+      if (result) setActiveTool("media");
       event.target.value = "";
     });
-    $("import-practiscore").addEventListener("click", () => {
+    $("media-add-more-input").addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      const result = await postFiles("/api/files/merge", files);
+      if (result) setActiveTool("media");
+      event.target.value = "";
+    });
+    $("import-practiscore").addEventListener("click", async () => {
       if (!hasActiveProject()) {
         setStatus(gatedProjectActionMessage());
         return;
       }
       setStatus("Select a PractiScore results file (.csv or .txt).");
-      openHiddenFileInput("practiscore-file-input");
+      const projectRoot = String(currentState()?.project?.path || "").trim().replace(/[\\/]+$/, "");
+      const selectedPath = await pickPath(
+        "practiscore",
+        null,
+        null,
+        projectRoot ? `${projectRoot}/CSV` : "",
+      );
+      if (!selectedPath) return;
+      await callApi("/api/import/practiscore", { path: selectedPath });
     });
     $("open-practiscore-dashboard")?.addEventListener("click", async () => {
       if (!hasActiveProject()) {
@@ -513,16 +545,6 @@ export function createShellRuntime({
         event.target.value = "";
         return;
       }
-      const payload = validatePractiScoreSelection();
-      if (!payload) {
-        event.target.value = "";
-        return;
-      }
-      const context = await callApi("/api/project/practiscore", payload);
-      if (!context) {
-        event.target.value = "";
-        return;
-      }
       await postFile("/api/files/practiscore", selectedFile);
       event.target.value = "";
     });
@@ -534,20 +556,20 @@ export function createShellRuntime({
       await flushPendingProjectDrafts();
       await callApi("/api/project/delete", {});
     });
-    ["project-name", "project-description"].forEach((id) => {
+    ["project-name", "project-description", "project-output-root"].forEach((id) => {
       $(id).addEventListener("input", scheduleProjectDetailsApply);
     });
-    ["match-type", "match-stage-number"].forEach((id) => {
-      $(id).addEventListener("change", schedulePractiScoreContextApply);
-    });
-    $("match-competitor-name").addEventListener("change", () => {
-      syncPractiScoreSelectionFields("name");
+    $("match-type")?.addEventListener("change", schedulePractiScoreContextApply);
+    $("match-competitor-name")?.addEventListener("change", (event) => {
+      syncPractiScoreSelectionFields("match-competitor-name");
       schedulePractiScoreContextApply();
     });
-    $("match-competitor-place").addEventListener("change", () => {
-      syncPractiScoreSelectionFields("place");
+    $("match-competitor-place")?.addEventListener("change", (event) => {
+      syncPractiScoreSelectionFields("match-competitor-place");
       schedulePractiScoreContextApply();
     });
+    $("match-class")?.addEventListener("change", schedulePractiScoreContextApply);
+    $("match-division")?.addEventListener("change", schedulePractiScoreContextApply);
     documentObject.addEventListener("fullscreenchange", handleStageFullscreenChange);
     documentObject.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {
@@ -603,6 +625,8 @@ export function createShellRuntime({
     $("amp-waveform-out").addEventListener("click", () => setWaveformAmplitude(0.5));
     $("amp-waveform-in").addEventListener("click", () => setWaveformAmplitude(2));
     $("reset-waveform-view").addEventListener("click", resetWaveformView);
+    $("waveform-mode-single")?.addEventListener("click", () => setWaveformTrackMode("single"));
+    $("waveform-mode-multi")?.addEventListener("click", () => setWaveformTrackMode("multi"));
     $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
     $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
     $("expand-markers")?.addEventListener("click", () => {
@@ -659,10 +683,25 @@ export function createShellRuntime({
     });
     $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
     $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
-    $("restore-merge-defaults")?.addEventListener("click", () => {
+    $("restore-merge-defaults")?.addEventListener("click", async () => {
       resetMergeDraft();
       cancelMergeAutoApply();
-      callApi("/api/merge/reset-defaults", {});
+      const merge = getState()?.project?.merge;
+      if (merge) {
+        merge.enabled = false;
+        merge.layout = "side_by_side";
+        merge.pip_size_percent = 35;
+        merge.pip_x = 1;
+        merge.pip_y = 1;
+      }
+      if ($("merge-enabled")) $("merge-enabled").checked = false;
+      if ($("merge-layout")) $("merge-layout").value = "side_by_side";
+      if ($("pip-size")) $("pip-size").value = "35";
+      if ($("pip-size-label")) $("pip-size-label").textContent = "35%";
+      if ($("pip-x")) $("pip-x").value = "1";
+      if ($("pip-y")) $("pip-y").value = "1";
+      await callApi("/api/merge/reset-defaults", {});
+      scheduleInteractionPreviewRender({ video: true });
     });
     ["merge-enabled", "merge-layout"].forEach((id) => {
       $(id).addEventListener("change", () => {
@@ -695,6 +734,7 @@ export function createShellRuntime({
     documentObject.addEventListener("pointerdown", beginTextBoxDrag, true);
     documentObject.addEventListener("mousedown", beginTextBoxDrag, true);
     $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
+    $("merge-preview-layer").addEventListener("mousedown", beginMergePreviewDrag);
     $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
     $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
     $("popup-overlay")?.addEventListener("mousedown", beginPopupBubbleDrag);
@@ -748,6 +788,7 @@ export function createShellRuntime({
       "show-timer",
       "show-draw",
       "show-shots",
+      "show-shot-scores",
       "show-score",
     ].forEach((id) => {
       const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
@@ -819,7 +860,9 @@ export function createShellRuntime({
       $(id)?.addEventListener("blur", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
     });
 
-    $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
+    $("settings-import-current")?.addEventListener("click", async () => {
+      await saveCurrentSettings();
+    });
     $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
     [
       "settings-default-tool",
@@ -886,30 +929,50 @@ export function createShellRuntime({
       scheduleSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
-      await callApi("/api/settings/reset-defaults", {});
+      await enqueueSettingsMutation(async () => {
+        documentObject.activeElement?.blur?.();
+        resetMergeDraft();
+        resetExportDraft();
+        cancelPendingExportDrafts();
+        await flushPendingSettingsDefaults();
+        await callApi("/api/settings/reset-defaults", {});
+      });
     });
-    $("settings-use-current-layout")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true, section: "layout" }));
+    $("settings-use-current-layout")?.addEventListener("click", async () => {
+      await saveCurrentSettings("layout");
+    });
     $("settings-release-layout")?.addEventListener("click", async () => {
-      await callApi("/api/settings/reset-defaults", {
-        scope: $("settings-scope")?.value || "app",
-        section: "layout",
+      await enqueueSettingsMutation(async () => {
+        documentObject.activeElement?.blur?.();
+        await flushPendingSettingsDefaults();
+        await callApi("/api/settings/reset-defaults", {
+          scope: $("settings-scope")?.value || "app",
+          section: "layout",
+        });
       });
     });
     documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const section = button.getAttribute("data-settings-save-section") || "";
-        applySettingsDefaults({ projectDefaults: true, section });
+        await saveCurrentSettings(section);
       });
     });
     documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const section = button.getAttribute("data-settings-reset-section") || "";
-        await callApi("/api/settings/reset-defaults", {
-          scope: $("settings-scope")?.value || "app",
-          section,
+        await enqueueSettingsMutation(async () => {
+          documentObject.activeElement?.blur?.();
+          const section = button.getAttribute("data-settings-reset-section") || "";
+          await flushPendingSettingsDefaults();
+          await callApi("/api/settings/reset-defaults", {
+            scope: $("settings-scope")?.value || "app",
+            section,
+          });
         });
       });
     });
+    $("review-set-source")?.addEventListener("click", setReviewSource);
+    $("review-source-select")?.addEventListener("change", renderReviewSourceControls);
+    $("export-badges")?.addEventListener("click", exportBadges);
     $("badge-style-grid").addEventListener("input", (event) => {
       const target = event.target;
       if (isColorInput(target)) return;
@@ -951,6 +1014,8 @@ export function createShellRuntime({
     documentObject.addEventListener("pointerup", endMergePreviewDrag);
     documentObject.addEventListener("pointercancel", endMergePreviewDrag);
     documentObject.addEventListener("lostpointercapture", endMergePreviewDrag);
+    documentObject.addEventListener("mousemove", moveMergePreviewDrag);
+    documentObject.addEventListener("mouseup", endMergePreviewDrag);
     documentObject.addEventListener("pointermove", moveTextBoxDrag);
     documentObject.addEventListener("pointerup", endTextBoxDrag);
     documentObject.addEventListener("pointercancel", endTextBoxDrag);
@@ -987,6 +1052,17 @@ export function createShellRuntime({
     ["quality", "aspect-ratio"].forEach((id) => {
       $(id).addEventListener("change", scheduleExportLayoutApply);
     });
+    $("create-output-profile")?.addEventListener("click", createOutputProfile);
+    $("save-output-profile")?.addEventListener("click", saveOutputProfile);
+    $("delete-output-profile")?.addEventListener("click", deleteOutputProfile);
+    $("output-profile-select")?.addEventListener("change", () => {
+      selectOutputProfile();
+      renderReviewSourceControls();
+    });
+    ["output-profile-name", "output-profile-type", "output-profile-frame"].forEach((id) => {
+      $(id)?.addEventListener("change", scheduleOutputProfileFieldCommit);
+      $(id)?.addEventListener("input", scheduleOutputProfileFieldCommit);
+    });
     $("export-preset").addEventListener("change", () => {
       resetExportDraft();
       activity("auto_apply.export_preset", { preset: $("export-preset").value });
@@ -1011,16 +1087,6 @@ export function createShellRuntime({
     ].forEach((id) => {
       $(id).addEventListener("change", scheduleExportSettingsApply);
     });
-    $("export-video").addEventListener("click", async () => {
-      const path = requireValue("export-path", "Output video path");
-      setExportPathDraft(path);
-      const payload = buildExportPayload(path);
-      applyExportDraft(payload);
-      cancelPendingExportDrafts();
-      await flushPendingMergeSourceCommits();
-      await callApi("/api/export", payload);
-    });
-    $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);
     $("close-export-log")?.addEventListener("click", closeExportLogModal);
     $("close-color-picker")?.addEventListener("click", () => closeColorPicker({ commit: true }));

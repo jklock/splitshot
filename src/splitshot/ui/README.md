@@ -1,5 +1,7 @@
 # UI
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This package owns the shared controller layer that mutates the canonical project state.
 
 ## Purpose

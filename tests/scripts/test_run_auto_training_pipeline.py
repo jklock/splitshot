@@ -23,7 +23,9 @@ def run_script(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_run_auto_training_pipeline_builds_candidate_from_clean_corpus(tmp_path: Path, synthetic_video_factory) -> None:
+def test_run_auto_training_pipeline_builds_candidate_from_clean_corpus(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     corpus_dir = tmp_path / "corpus"
     corpus_dir.mkdir()
     video_a = synthetic_video_factory(name="pipeline-a")

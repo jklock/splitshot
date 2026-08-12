@@ -17,7 +17,13 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-TIMEOUT = 60
+TIMEOUT = 120
+
+
+def _repo_temp_dir(prefix: str) -> Path:
+    temp_root = REPO / "tmp" / "codex"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_root))
 
 
 def _find_free_port() -> int:
@@ -27,7 +33,7 @@ def _find_free_port() -> int:
 
 
 def _create_project_bundle(name: str) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="splitshot-packaged-smoke-"))
+    root = _repo_temp_dir("splitshot-packaged-smoke-")
     project_path = root / f"{name}.ssproj"
     script = (
         "from pathlib import Path; "
@@ -39,6 +45,7 @@ def _create_project_bundle(name: str) -> Path:
     result = subprocess.run(
         [sys.executable, "-c", script, str(project_path), name],
         cwd=REPO,
+        check=False,
         capture_output=True,
         text=True,
         timeout=60,
@@ -50,7 +57,9 @@ def _create_project_bundle(name: str) -> Path:
 
 def _default_executable() -> Path:
     if sys.platform == "darwin":
-        candidates = sorted((REPO / "electron" / "build").glob("mac*/SplitShot.app/Contents/MacOS/SplitShot"))
+        candidates = sorted(
+            (REPO / "electron" / "build").glob("mac*/SplitShot.app/Contents/MacOS/SplitShot")
+        )
     elif sys.platform == "win32":
         candidates = sorted((REPO / "electron" / "build").glob("win-unpacked/SplitShot.exe"))
     else:
@@ -67,6 +76,7 @@ def _spawn_app(
     port: int,
     stdout_path: Path,
     stderr_path: Path,
+    app_data_root: Path,
 ) -> subprocess.Popen[str]:
     env = {
         **os.environ,
@@ -74,13 +84,18 @@ def _spawn_app(
         "SPLITSHOT_ELECTRON_TEST": "1",
         "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
         "SPLITSHOT_TEST_PORT": str(port),
+        "SPLITSHOT_APP_DIR": str(app_data_root / "app-data"),
+        "SPLITSHOT_ELECTRON_USER_DATA_DIR": str(app_data_root / "electron-user-data"),
     }
     command = [str(executable)]
     if sys.platform.startswith("linux"):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
         command.append("--no-sandbox")
     command.append(str(project_path))
-    with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
+    with (
+        stdout_path.open("w", encoding="utf-8") as stdout_handle,
+        stderr_path.open("w", encoding="utf-8") as stderr_handle,
+    ):
         return subprocess.Popen(
             command,
             cwd=executable.parent,
@@ -91,17 +106,26 @@ def _spawn_app(
         )
 
 
-def _wait_for_ready_file(proc: subprocess.Popen[str], ready_file: Path, timeout: int = TIMEOUT) -> list[dict]:
+def _wait_for_ready_file(
+    proc: subprocess.Popen[str], ready_file: Path, timeout: int = TIMEOUT
+) -> list[dict]:
     deadline = time.time() + timeout
     events: list[dict] = []
     while time.time() < deadline:
         if proc.poll() is not None:
             raise RuntimeError("Packaged app exited before reporting ready")
         if ready_file.exists():
-            lines = [line for line in ready_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            lines = [
+                line for line in ready_file.read_text(encoding="utf-8").splitlines() if line.strip()
+            ]
             events = [json.loads(line) for line in lines]
             event_names = {event.get("event") for event in events}
-            if {"backend-ready", "window-loaded", "window-ready-to-show", "app-ready"} <= event_names:
+            if {
+                "backend-ready",
+                "window-loaded",
+                "window-ready-to-show",
+                "app-ready",
+            } <= event_names:
                 return events
         time.sleep(0.25)
     raise TimeoutError(f"Ready file {ready_file} never reported app-ready")
@@ -117,7 +141,12 @@ def _wait_for_state(port: int, expected_project_path: Path, timeout: int = TIMEO
             project_path = state.get("project", {}).get("path") or ""
             if project_path and Path(project_path).resolve() == wanted:
                 return state
-        except (urllib.error.URLError, ConnectionResetError, json.JSONDecodeError, FileNotFoundError):
+        except (
+            urllib.error.URLError,
+            ConnectionResetError,
+            json.JSONDecodeError,
+            FileNotFoundError,
+        ):
             pass
         time.sleep(0.25)
     raise TimeoutError(f"Packaged app never loaded project {expected_project_path}")
@@ -152,8 +181,8 @@ def main() -> int:
         return 1
 
     project_path = _create_project_bundle("packaged-launch")
-    ready_file = Path(tempfile.mkdtemp(prefix="splitshot-ready-file-")) / "events.jsonl"
-    log_dir = Path(tempfile.mkdtemp(prefix="splitshot-packaged-logs-"))
+    ready_file = _repo_temp_dir("splitshot-ready-file-") / "events.jsonl"
+    log_dir = _repo_temp_dir("splitshot-packaged-logs-")
     stdout_path = log_dir / "stdout.log"
     stderr_path = log_dir / "stderr.log"
     port = _find_free_port()
@@ -163,7 +192,15 @@ def main() -> int:
     print(f"PACKAGED_SMOKE stdout_log={stdout_path}")
     print(f"PACKAGED_SMOKE stderr_log={stderr_path}")
     print(f"PACKAGED_SMOKE port={port}")
-    proc = _spawn_app(executable, project_path, ready_file, port, stdout_path, stderr_path)
+    proc = _spawn_app(
+        executable,
+        project_path,
+        ready_file,
+        port,
+        stdout_path,
+        stderr_path,
+        log_dir,
+    )
 
     try:
         _wait_for_ready_file(proc, ready_file)

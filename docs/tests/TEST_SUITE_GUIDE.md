@@ -1,5 +1,7 @@
 # SplitShot Test Suite Guide
 
+<!-- Documentation reviewed: 2026-08-11 -->
+
 This is the maintainer guide for SplitShot validation. Use it to decide which test to run, why it exists, and which subsystem owns the behavior you changed.
 
 ## Start Here
@@ -30,6 +32,8 @@ uv run python scripts/testing/run_test_suite.py --suite browser --mode all-toget
 uv run python -m pytest tests/browser/test_browser_static_ui.py
 uv run python -m pytest tests/analysis/test_analysis.py
 ```
+
+The supported test baseline is Python 3.12 with `uv`, FFmpeg/FFprobe on `PATH`, and Node.js 22 plus `npm ci` in `electron/`. Browser and Python suites are platform-neutral; packaged smoke coverage runs against the macOS DMG, Windows NSIS installer, and Linux AppImage in their owning CI jobs.
 
 ## Suite Map
 
@@ -67,8 +71,23 @@ uv run python -m pytest tests/analysis/test_analysis.py
 ### Overlay, review, and export
 
 - [../../tests/browser/test_overlay_review_contracts.py](../../tests/browser/test_overlay_review_contracts.py)
+- [../../tests/browser/test_browser_rail_layout.py](../../tests/browser/test_browser_rail_layout.py) for effective-zoom viewport containment, aspect-correct video framing, and overlay-coordinate geometry
 - [../../tests/export/test_export.py](../../tests/export/test_export.py)
 - [../../tests/export/test_merge_export_contracts.py](../../tests/export/test_merge_export_contracts.py)
+
+### Metrics layout and accessibility
+
+- [../../tests/browser/test_metrics_e2e.py](../../tests/browser/test_metrics_e2e.py) owns expanded-workspace containment, responsive columns, dense 8/11/27-competitor axes, selected-shooter identification, and full-name/value accessibility labels.
+- [../../tests/browser/test_browser_rail_layout.py](../../tests/browser/test_browser_rail_layout.py) owns minimum-window and scaled-effective-viewport geometry.
+
+### Project files and queue execution
+
+- [../../tests/browser/test_project_lifecycle_contracts.py](../../tests/browser/test_project_lifecycle_contracts.py)
+- [../../tests/persistence/test_project_lifecycle_contracts.py](../../tests/persistence/test_project_lifecycle_contracts.py)
+- [../../tests/persistence/test_persistence.py](../../tests/persistence/test_persistence.py)
+- [../../tests/browser/test_browser_remaining_controls_e2e.py](../../tests/browser/test_browser_remaining_controls_e2e.py)
+
+These tests own required project-folder creation, immediate import into `Input/`, `CSV/`, or `Markers/`, relative all-stage persistence, metadata-only save/autosave, and the separation between Export settings and Queue execution.
 
 ### Test-doc contract audits
 
@@ -111,5 +130,3 @@ If browser-visible controls change, update the owning tests and the QA docs in `
 
 - [../../scripts/README.md](../../scripts/README.md)
 - [../project/browser-control-qa-matrix.md](../project/browser-control-qa-matrix.md)
-- [../project/browser-control-coverage-plan.md](../project/browser-control-coverage-plan.md)
-- [../project/browser-full-e2e-qa-plan.md](../project/browser-full-e2e-qa-plan.md)
