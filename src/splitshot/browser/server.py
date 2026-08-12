@@ -616,6 +616,7 @@ class BrowserControlServer:
         self._display_names: dict[str, str] = {}
         self._browser_media_cache: dict[str, BrowserMediaCacheEntry] = {}
         self._browser_media_lock = threading.Lock()
+        self._browser_media_prepare_lock = threading.Lock()
         self._media_url_token = uuid4().hex
         self.practiscore_session = PractiScoreSessionManager()
         prepare_export_runtime()
@@ -706,6 +707,15 @@ class BrowserControlServer:
         self._media_url_token = uuid4().hex
 
     def _prepare_browser_media(self, path: Path) -> tuple[Path, bool, str | None, str | None]:
+        # Multiple video elements can request the same uncached PCM source at once.
+        # Serialize first-time preparation so they share one validated preview instead
+        # of launching duplicate FFmpeg jobs that contend with ordinary API saves.
+        with self._browser_media_prepare_lock:
+            return self._prepare_browser_media_serialized(path)
+
+    def _prepare_browser_media_serialized(
+        self, path: Path
+    ) -> tuple[Path, bool, str | None, str | None]:
         if not path.exists() or not path.is_file():
             return path, False, None, None
         guessed_type = mimetypes.guess_type(path.name)[0] or ""
@@ -784,7 +794,7 @@ class BrowserControlServer:
         return preview_path, True, proxy_reason, audio_codec
 
     def _clear_browser_media_cache(self) -> None:
-        with self._browser_media_lock:
+        with self._browser_media_prepare_lock, self._browser_media_lock:
             cached_paths = [
                 entry.preview_path
                 for entry in self._browser_media_cache.values()

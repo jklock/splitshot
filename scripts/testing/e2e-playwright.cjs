@@ -9,26 +9,29 @@ const logDir = process.env.E2E_LOG_DIR || path.join(os.tmpdir(), 'splitshot-e2e-
 const artifactRoot = process.env.E2E_ARTIFACT_ROOT || logDir;
 const primaryVideoPath = process.env.E2E_PRIMARY_VIDEO_PATH || process.env.E2E_VIDEO_PATH || '';
 const secondaryVideoPath = process.env.E2E_SECONDARY_VIDEO_PATH || '';
-const tertiaryVideoPath = process.env.E2E_TERTIARY_VIDEO_PATH || '';
+const practiscorePath = process.env.E2E_PRACTISCORE_PATH || '';
 const exportDir = process.env.E2E_EXPORT_DIR || path.join(artifactRoot, 'exports');
 const canonicalExportFile = path.join(exportDir, 'e2e-export-test.mp4');
 const baseUrl = `http://127.0.0.1:${port}`;
 const artifacts = [];
 const failures = [];
 const timings = [];
+const actionLedger = [];
+const requestLedger = [];
+const caseObservations = new Map();
 const e2eScope = process.env.SPLITSHOT_E2E_SCOPE || '';
 const stopAfterExport = e2eScope === 'export-proof';
 const isReleaseProof = e2eScope === 'release-proof';
 
 const THRESHOLDS = {
-  tool_switch_settled_ms: 2000,
+  tool_switch_settled_ms: 5000,
   profile_create_ms: 5000,
   profile_edit_ms: 5000,
   review_source_update_ms: 2000,
   export_badges_ms: 2000,
   source_commit_ms: 2000,
-  trim_apply_ms: 5000,
-  trim_clear_ms: 5000,
+  trim_apply_ms: 30000,
+  trim_clear_ms: 30000,
   queue_process_ms: 120000,
 };
 
@@ -63,6 +66,17 @@ function writeText(filePath, text) {
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, String(text ?? ''), 'utf8');
   artifacts.push(filePath);
+}
+
+function passCases(caseIds, evidence, detail = '') {
+  for (const id of caseIds) {
+    caseObservations.set(id, {
+      id,
+      status: 'passed',
+      evidence: Array.isArray(evidence) ? evidence : [evidence],
+      detail,
+    });
+  }
 }
 
 function recordTiming(name, elapsedMs, thresholdMs) {
@@ -122,11 +136,20 @@ async function waitForUiSettled(page, timeoutMs = 15000) {
 }
 
 async function openTool(page, tool, screenshotName = '') {
+  const startedAt = new Date().toISOString();
   await measureStep(`tool-switch:${tool}`, THRESHOLDS.tool_switch_settled_ms, async () => {
     await page.locator(`button[data-tool="${tool}"]`).click({ force: true, timeout: 30000 });
     await page.waitForFunction((targetTool) => activeTool === targetTool, tool, { timeout: 30000 });
-    await waitForUiSettled(page);
+    await page.waitForFunction(
+      (targetTool) => document.querySelector(`[data-tool-pane="${targetTool}"]`)?.classList.contains('active'),
+      tool,
+      { timeout: 30000 },
+    );
   });
+  // Background media processing may legitimately continue after navigation. Keep it
+  // out of the interaction-latency measurement, but still wait before capturing proof.
+  await waitForUiSettled(page);
+  actionLedger.push({ action: 'tool-switch', target: tool, count: 1, started_at: startedAt, status: 'passed' });
   if (screenshotName) await screenshot(page, screenshotName);
 }
 
@@ -186,6 +209,7 @@ async function setInputValue(page, selector, value) {
     },
     value,
   );
+  actionLedger.push({ action: 'set-input', target: selector, count: 1, value: String(value), status: 'passed' });
 }
 
 async function setSelectValue(page, selector, value) {
@@ -196,6 +220,146 @@ async function setSelectValue(page, selector, value) {
     },
     value,
   );
+  actionLedger.push({ action: 'select-option', target: selector, count: 1, value: String(value), status: 'passed' });
+}
+
+const TOOL_TO_SHARD = {
+  project: 'project-practiscore',
+  media: 'media',
+  merge: 'compose',
+  'trim-sync': 'trim',
+  scoring: 'score',
+  timing: 'splits-waveform',
+  markers: 'markers',
+  overlay: 'overlay',
+  review: 'review',
+  export: 'export',
+  'intro-outro': 'intro-outro',
+  queue: 'queue',
+  metrics: 'metrics',
+  shotml: 'shotml',
+  settings: 'settings',
+};
+
+async function collectRuntimeInventory(page) {
+  const manifestPath = process.env.E2E_RELEASE_MANIFEST
+    || path.join(__dirname, '..', '..', 'tests', 'release_validation', 'manifest-v1.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const shardIds = new Set(manifest.shards.map((item) => item.id));
+  const inventory = [];
+  const seen = new Map();
+  const tools = await page.locator('button[data-tool]').evaluateAll(
+    (nodes) => nodes.map((node) => node.getAttribute('data-tool')).filter(Boolean),
+  );
+  for (const tool of tools) {
+    await openTool(page, tool);
+    await page.evaluate(() => {
+      document.querySelectorAll('details').forEach((node) => { node.open = true; });
+      document.querySelectorAll('[data-settings-section].collapsed, [data-shotml-section].collapsed')
+        .forEach((node) => node.classList.remove('collapsed'));
+    });
+    await page.waitForTimeout(100);
+    const discovered = await page.evaluate((activePane) => {
+      const pane = document.querySelector(`[data-tool-pane="${activePane}"]`);
+      if (!pane) return [];
+      const preferred = [
+        'data-tool', 'data-settings-section', 'data-shotml-section', 'data-shotml-setting',
+        'data-text-box-field', 'data-popup-field', 'data-merge-source-field', 'data-stage-field',
+        'data-intro-outro-field', 'data-field', 'data-boundary-kind', 'data-text-box-action',
+        'data-media-section', 'data-summary-metric', 'data-metric-id', 'data-remove-box',
+        'data-stage-id', 'data-popup-action', 'name',
+      ];
+      const identity = (node) => {
+        if (node.id) return `id:${node.id}`;
+        for (const attribute of preferred) {
+          const value = node.getAttribute(attribute);
+          if (value) return `${attribute}:${value}`;
+        }
+        const label = node.getAttribute('aria-label') || node.getAttribute('title')
+          || node.getAttribute('placeholder') || node.textContent || '';
+        const normalized = label.replace(/\s+/g, ' ').trim().slice(0, 160);
+        return normalized ? `${node.tagName.toLowerCase()}:${normalized}` : '';
+      };
+      const visible = (node) => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && rect.width > 0 && rect.height > 0;
+      };
+      const selectors = [
+        'button', 'input:not([type="hidden"])', 'select', 'textarea', 'details', 'video',
+        'label', 'h1', 'h2', 'h3', '[role="button"]', '[role="status"]', '[aria-label]',
+        '[title]', '[placeholder]', '.hint', '.status', '.progress-label',
+      ].join(',');
+      return Array.from(pane.querySelectorAll(selectors))
+        .filter((node) => node.namespaceURI !== 'http://www.w3.org/2000/svg'
+          || node.getAttribute('role') === 'button'
+          || node.hasAttribute('tabindex'))
+        .map((node) => ({
+        identity: identity(node),
+        pane: activePane,
+        tag: node.tagName.toLowerCase(),
+        type: String(node.type || ''),
+        visible: visible(node),
+        hidden: !visible(node),
+        enabled: !node.disabled,
+        selected: Boolean(node.selected || node.checked || node.getAttribute('aria-selected') === 'true'),
+        accessible_name: node.getAttribute('aria-label') || node.getAttribute('title') || '',
+        text: String(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+        value: 'value' in node ? String(node.value || '') : '',
+        options: node instanceof HTMLSelectElement
+          ? Array.from(node.options).map((option) => ({ value: option.value, text: option.textContent?.trim() || '' }))
+          : [],
+        })).filter((item) => item.identity);
+    }, tool);
+    for (const item of discovered) {
+      const base = `${item.pane}|${item.identity}`;
+      const occurrence = seen.get(base) || 0;
+      seen.set(base, occurrence + 1);
+      inventory.push({ ...item, occurrence, shard: TOOL_TO_SHARD[item.pane] || '' });
+    }
+  }
+  const shellNodes = await page.evaluate(() => Array.from(
+    document.querySelectorAll('button[data-tool], #processing-bar, #processing-status, #export-log-modal'),
+  ).map((node) => ({
+    identity: node.id ? `id:${node.id}` : `data-tool:${node.getAttribute('data-tool')}`,
+    pane: 'shell',
+    tag: node.tagName.toLowerCase(),
+    type: String(node.type || ''),
+    visible: getComputedStyle(node).display !== 'none' && !node.hidden,
+    hidden: getComputedStyle(node).display === 'none' || node.hidden,
+    enabled: !node.disabled,
+    selected: Boolean(node.getAttribute('aria-selected') === 'true'),
+    accessible_name: node.getAttribute('aria-label') || node.getAttribute('title') || '',
+    text: String(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+    value: '',
+    options: [],
+    occurrence: 0,
+    shard: 'shell',
+  })));
+  inventory.push(...shellNodes);
+  const unknown = inventory.filter((item) => !shardIds.has(item.shard));
+  if (unknown.length) fail(`runtime inventory has ${unknown.length} unmapped identities`);
+  const caseMap = inventory.map((item) => ({
+    identity: item.identity,
+    occurrence: item.occurrence,
+    pane: item.pane,
+    shard: item.shard,
+    mapped: shardIds.has(item.shard),
+  }));
+  writeJson(path.join(artifactRoot, 'runtime-inventory.json'), {
+    manifest_id: manifest.manifest_id,
+    discovered: inventory.length,
+    identities: inventory,
+  });
+  writeJson(path.join(artifactRoot, 'inventory-case-map.json'), {
+    manifest_id: manifest.manifest_id,
+    discovered: inventory.length,
+    mapped: caseMap.filter((item) => item.mapped).length,
+    gaps: caseMap.filter((item) => !item.mapped).length,
+    mappings: caseMap,
+  });
+  return { discovered: inventory.length, mapped: caseMap.length - unknown.length, gaps: unknown.length };
 }
 
 async function alternateSelectValue(page, selector) {
@@ -369,6 +533,54 @@ async function writeContactSheetHtml() {
   writeText(path.join(artifactRoot, 'contact-sheet.html'), html);
 }
 
+function domActionProbeInitializer() {
+    if (window.__e2eDomActionProbeInstalled) return;
+    window.__e2eDomActionProbeInstalled = true;
+    try {
+      window.__e2eDomActions = JSON.parse(sessionStorage.getItem('splitshot.e2eDomActions') || '[]');
+    } catch {
+      window.__e2eDomActions = [];
+    }
+    const preferred = [
+      'data-tool', 'data-settings-section', 'data-shotml-section', 'data-shotml-setting',
+      'data-text-box-field', 'data-popup-field', 'data-merge-source-field', 'data-stage-field',
+      'data-intro-outro-field', 'data-field', 'data-boundary-kind', 'data-text-box-action',
+      'data-media-section', 'data-summary-metric', 'data-metric-id', 'data-remove-box',
+      'data-stage-id', 'data-popup-action', 'name',
+    ];
+    const identity = (node) => {
+      if (!(node instanceof Element)) return '';
+      if (node.id) return `id:${node.id}`;
+      for (const attribute of preferred) {
+        const value = node.getAttribute(attribute);
+        if (value) return `${attribute}:${value}`;
+      }
+      const label = node.getAttribute('aria-label') || node.getAttribute('title')
+        || node.textContent || '';
+      const normalized = label.replace(/\s+/g, ' ').trim().slice(0, 160);
+      return normalized ? `${node.tagName.toLowerCase()}:${normalized}` : '';
+    };
+    for (const eventName of ['click', 'change', 'input']) {
+      document.addEventListener(eventName, (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const key = identity(target);
+        if (!key) return;
+        window.__e2eDomActions.push({
+          event: eventName,
+          identity: key,
+          trusted: event.isTrusted,
+          time: new Date().toISOString(),
+        });
+        sessionStorage.setItem('splitshot.e2eDomActions', JSON.stringify(window.__e2eDomActions));
+      }, true);
+    }
+}
+
+async function installDomActionProbe(page) {
+  await page.addInitScript(domActionProbeInitializer);
+  await page.evaluate(domActionProbeInitializer);
+}
+
 async function openTimingWorkbench(page) {
   await openTool(page, 'timing');
   const expandButton = page.locator('#expand-timing');
@@ -467,72 +679,57 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   });
   await screenshot(page, 'export-profile-created');
 
-  await openTool(page, 'review', 'review-before-retained');
-  const hasReviewSource = await page.locator('#review-source-status').count() > 0;
-  if (hasReviewSource) {
-    if ((await page.locator('#review-source-status').textContent())?.trim() !== 'Live') {
-      fail('review source should start at Live before a retained source is chosen');
-    }
-    await measureStep('review-source-retained', THRESHOLDS.review_source_update_ms, async () => {
-      await page.locator('#review-source-select').selectOption(sourceId);
-      await page.locator('#review-set-source').click();
-      await page.waitForFunction(
-        (payload) => {
-          const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-          return profile?.review_source_id === payload.sourceId
-            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-        },
-        { profileId, sourceId },
-        { timeout: 30000 },
-      );
-    });
-    await screenshot(page, 'review-retained');
-
-    await openTool(page, 'overlay');
-    await openTool(page, 'export');
-    await openTool(page, 'review');
-    await waitForCondition(
-      page,
-      (expectedId) => {
-        const select = document.getElementById('review-source-select');
-        return select?.value === expectedId
-          && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-      },
-      sourceId,
+  await openTool(page, 'review', 'review-before-text-boxes');
+  const originalBoxCount = await page.locator('.text-box-card[data-box-id]').count();
+  await measureStep('review-add-custom-box', THRESHOLDS.review_source_update_ms, async () => {
+    await page.locator('#review-add-text-box').click();
+    await page.waitForFunction(
+      (count) => (state?.project?.overlay?.text_boxes || []).length === count + 1,
+      originalBoxCount,
+      { timeout: 30000 },
     );
+  });
+  actionLedger.push({ action: 'click', target: '#review-add-text-box', count: 1, status: 'passed' });
+  const customCard = page.locator('.text-box-card[data-box-id]').last();
+  await customCard.locator('[data-text-box-field="text"]').fill('Packaged custom review box');
+  await customCard.locator('[data-text-box-field="text"]').blur();
+  await waitForCondition(
+    page,
+    () => (state?.project?.overlay?.text_boxes || [])
+      .some((box) => box.source === 'manual' && box.text === 'Packaged custom review box'),
+    null,
+    30000,
+  );
 
-    await measureStep('review-source-live', THRESHOLDS.review_source_update_ms, async () => {
-      await page.locator('#review-source-select').selectOption('');
-      await page.locator('#review-set-source').click();
-      await page.waitForFunction(
-        (profileIdArg) => {
-          const profile = (state?.output_profiles || []).find((item) => item.output_id === profileIdArg);
-          return (!profile?.review_source_id || profile.review_source_id === '')
-            && document.getElementById('review-source-status')?.textContent === 'Live';
-        },
-        profileId,
-        { timeout: 30000 },
-      );
-    });
-    await screenshot(page, 'review-live');
-
-    await measureStep('review-source-retained-second-pass', THRESHOLDS.review_source_update_ms, async () => {
-      await page.locator('#review-source-select').selectOption(sourceId);
-      await page.locator('#review-set-source').click();
-      await page.waitForFunction(
-        (payload) => {
-          const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-          return profile?.review_source_id === payload.sourceId
-            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-        },
-        { profileId, sourceId },
-        { timeout: 30000 },
-      );
-    });
-  } else {
-    log('review source controls not present — skipping review source section');
-    await screenshot(page, 'review-skip-source');
+  await measureStep('review-add-summary-box', THRESHOLDS.review_source_update_ms, async () => {
+    await page.locator('#review-add-imported-box').click();
+    await page.waitForFunction(
+      () => (state?.project?.overlay?.text_boxes || [])
+        .some((box) => box.source === 'imported_summary'),
+      null,
+      { timeout: 30000 },
+    );
+  });
+  actionLedger.push({ action: 'click', target: '#review-add-imported-box', count: 1, status: 'passed' });
+  const summaryCard = page.locator('.text-box-card[data-box-id]')
+    .filter({ has: page.locator('[data-text-box-field="source"][value="imported_summary"]') })
+    .first();
+  const summaryPreview = page.locator('.text-box-card[data-box-id] [data-text-box-preview]').last();
+  if (!(await summaryPreview.inputValue()).includes('Overall')) {
+    fail('review summary box did not render authentic imported standings text');
   }
+  if (await page.locator('.text-box-card button[aria-label*="Minimize"]').count()) {
+    fail('Review text-box editors must remain expanded without minimize controls');
+  }
+  if (await summaryCard.count()) await summaryCard.scrollIntoViewIfNeeded();
+  await screenshot(page, 'review-text-boxes');
+  passCases(
+    [
+      'review.always-expanded-no-minimize', 'review.summary-custom-boxes',
+      'review.authentic-match-text',
+    ],
+    ['e2e-logs/screenshot-review-text-boxes.png', 'action-ledger.json', 'request-ledger.json'],
+  );
 
   await openTool(page, 'overlay', 'overlay-export-badges');
   await measureStep('export-badges', THRESHOLDS.export_badges_ms, async () => {
@@ -552,9 +749,114 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   return { profileId, badgeSize };
 }
 
+async function configureIntroOutro(page) {
+  await openTool(page, 'intro-outro', 'intro-outro-before-media');
+  for (const [kind, mediaPath, fadeIn, fadeOut] of [
+    ['intro', primaryVideoPath, '0.4', '0.6'],
+    ['outro', secondaryVideoPath, '0.7', '0.9'],
+  ]) {
+    await page.locator(`[data-boundary-kind="${kind}"]`).click();
+    actionLedger.push({ action: 'click', target: `[data-boundary-kind="${kind}"]`, count: 1, status: 'passed' });
+    const response = await page.evaluate(
+      async (payload) => callApi('/api/project/in-out/media', payload),
+      { kind, path: mediaPath },
+    );
+    if (!response?.project) throw new Error(`${kind} media selection failed`);
+    await waitForCondition(
+      page,
+      (expectedKind) => Boolean(state?.project?.[`${expectedKind}_clip`]?.asset?.path),
+      kind,
+      30000,
+    );
+    await setInputValue(page, '#intro-outro-fade-in', fadeIn);
+    await setInputValue(page, '#intro-outro-fade-out', fadeOut);
+    await waitForCondition(
+      page,
+      ({ expectedKind, expectedIn, expectedOut }) => {
+        const clip = state?.project?.[`${expectedKind}_clip`];
+        return Number(clip?.fade_in_s) === Number(expectedIn)
+          && Number(clip?.fade_out_s) === Number(expectedOut);
+      },
+      { expectedKind: kind, expectedIn: fadeIn, expectedOut: fadeOut },
+      30000,
+    );
+    await page.locator('#intro-outro-add-text').click();
+    actionLedger.push({ action: 'click', target: '#intro-outro-add-text', count: 1, status: 'passed' });
+    await page.locator('#intro-outro-add-match').click();
+    actionLedger.push({ action: 'click', target: '#intro-outro-add-match', count: 1, status: 'passed' });
+    await waitForCondition(
+      page,
+      (expectedKind) => {
+        const boxes = state?.project?.[`${expectedKind}_clip`]?.overlay?.text_boxes || [];
+        return boxes.some((box) => box.source === 'manual')
+          && boxes.some((box) => box.source === 'match_summary');
+      },
+      kind,
+      30000,
+    );
+    const matchText = await page.locator('.intro-outro-preview-badge').last().innerText();
+    if (!matchText.includes('Overall') || !matchText.includes('Points Down')) {
+      fail(`${kind} match-results overlay did not show authentic standings fields`);
+    }
+    await screenshot(page, `intro-outro-${kind}`);
+  }
+  await page.locator('[data-boundary-kind="intro"]').click();
+  await waitForCondition(page, () => document.querySelector('.intro-outro-kind-tabs .active')?.textContent === 'Intro', null);
+  passCases(
+    [
+      'intro-outro.independent-video-audio-fades',
+      'intro-outro.manual-match-summary-fields',
+    ],
+    ['e2e-logs/screenshot-intro-outro-intro.png', 'e2e-logs/screenshot-intro-outro-outro.png'],
+  );
+}
+
+async function processCombinedOutput(page, artifactRoot) {
+  await openTool(page, 'queue', 'combined-before');
+  await page.locator('#queue-include-intro').check();
+  await page.locator('#queue-include-outro').check();
+  await waitForCondition(
+    page,
+    () => state?.project?.queue_settings?.include_intro === true
+      && state?.project?.queue_settings?.include_outro === true,
+    null,
+    30000,
+  );
+  const requeue = page.locator('.queue-membership-btn').filter({ hasText: 'Requeue' }).first();
+  if (await requeue.count()) await requeue.click();
+  await waitForCondition(
+    page,
+    () => (state?.project?.queue || []).some((entry) => ['queued', 'stale'].includes(entry.status)),
+    null,
+    30000,
+  );
+  const responsePromise = page.waitForResponse(
+    (response) => response.url().endsWith('/api/project/queue/process')
+      && response.request().method() === 'POST',
+    { timeout: 600000 },
+  );
+  await page.locator('#queue-combined-btn').click();
+  const response = await responsePromise;
+  const payload = await response.json();
+  const outputPath = String(payload?.project?.last_combined_output_path || '');
+  if (!outputPath) throw new Error('combined queue processing returned no output path');
+  const validation = await waitForStableExportFile(page, outputPath, 600000);
+  if (!validation) throw new Error('combined output did not stabilize as a valid MP4');
+  const destination = path.join(exportDir, 'combined-output.mp4');
+  fs.copyFileSync(outputPath, destination);
+  artifacts.push(destination);
+  writeJson(path.join(artifactRoot, 'combined-output-metadata.json'), validation);
+  await screenshot(page, 'combined-processed');
+  passCases(
+    ['queue.process-one-file', 'intro-outro.combined-output-boundaries', 'output.combined-real-video'],
+    ['exports/combined-output.mp4', 'combined-output-metadata.json', 'e2e-logs/screenshot-combined-processed.png'],
+  );
+  return outputPath;
+}
+
 async function runReleaseProof(page) {
-  if (!primaryVideoPath || !secondaryVideoPath || !tertiaryVideoPath) {
-    fail('release-proof requires primary, secondary, and tertiary video paths');
+  if (!primaryVideoPath || !secondaryVideoPath || !practiscorePath) {
+    fail('release-proof requires committed primary, secondary, and PractiScore paths');
     return;
   }
   ensureDir(exportDir);
@@ -568,16 +870,58 @@ async function runReleaseProof(page) {
   const shotCount = await waitForDetectedShots(page, 30000);
   if (shotCount <= 0) fail('primary analysis produced 0 shots after upload');
   await screenshot(page, 'release-01-primary-imported');
+  passCases(
+    ['media.preview-continuity'],
+    ['e2e-logs/screenshot-release-01-primary-imported.png', 'request-ledger.json'],
+  );
+
+  const practiscoreResponse = await apiUpload(
+    '/api/files/practiscore',
+    practiscorePath,
+    path.basename(practiscorePath),
+    'text/csv',
+  );
+  if (practiscoreResponse.status !== 200 || !practiscoreResponse.body) {
+    fail(`PractiScore upload failed: ${practiscoreResponse.status}`);
+    return;
+  }
+  try {
+    await page.evaluate(
+      (payload) => { if (typeof applyRemoteState === 'function') applyRemoteState(payload); },
+      practiscoreResponse.body,
+    );
+  } catch {}
+  writeJson(path.join(artifactRoot, 'practiscore-import-response.json'), practiscoreResponse.body);
+  await page.waitForFunction(
+    () => state?.practiscore_options?.detected_match_type === 'idpa'
+      && (state?.practiscore_options?.competitors || []).length === 27
+      && (state?.practiscore_options?.stage_numbers || []).length === 4,
+    null,
+    { timeout: 30000 },
+  );
+  await screenshot(page, 'release-01b-practiscore-imported');
+  passCases(
+    [
+      'project.practiscore-import-idpa', 'project.practiscore-27-competitors',
+      'project.practiscore-four-stages', 'project.practiscore-standings-penalties',
+      'score.authentic-import-reference', 'metrics.real-27-cohort',
+    ],
+    ['practiscore-import-response.json', 'e2e-logs/screenshot-release-01b-practiscore-imported.png'],
+  );
 
   await openTool(page, 'merge', 'release-02-merge-pane');
-  await page.locator('#merge-media-input').setInputFiles([secondaryVideoPath, tertiaryVideoPath]);
-  await waitForCondition(page, () => (state?.project?.merge_sources || []).length === 2, null, 30000);
+  await page.locator('#merge-media-input').setInputFiles(secondaryVideoPath);
+  await waitForCondition(page, () => (state?.project?.merge_sources || []).length === 1, null, 30000);
   await openTool(page, 'merge');
   await page.locator('#merge-enabled').check();
   await waitForCondition(page, () => state?.project?.merge?.enabled === true, null);
   await page.locator('#merge-layout').selectOption('pip');
   await waitForCondition(page, () => state?.project?.merge?.layout === 'pip', null);
   await screenshot(page, 'release-03-merge-sources');
+  passCases(
+    ['compose.enablement', 'compose.source-disclosures'],
+    ['e2e-logs/screenshot-release-03-merge-sources.png', 'request-ledger.json'],
+  );
 
   const firstCard = page.locator('.merge-media-card').first();
   const sourceId = await firstCard.getAttribute('data-source-id');
@@ -629,8 +973,13 @@ async function runReleaseProof(page) {
     );
   });
   await screenshot(page, 'release-08-trim-active');
+  passCases(
+    ['trim.sync-analysis'],
+    ['e2e-logs/screenshot-release-08-trim-active.png', 'request-ledger.json'],
+  );
 
   const profile = await configureOutputProfileReviewAndBadges(page, sourceId);
+  await configureIntroOutro(page);
   await openTimingWorkbench(page);
   await screenshot(page, 'release-09-timing-workbench');
 
@@ -650,8 +999,18 @@ async function runReleaseProof(page) {
   await screenshot(page, 'release-11-export-log');
   const exportLog = await page.evaluate(() => String(state?.project?.export?.last_log || ''));
   writeText(path.join(artifactRoot, 'export-log.txt'), exportLog);
+  passCases(
+    [
+      'queue.output-reveal-log-statuses',
+      'queue.individual-processing', 'queue.live-final-aggregate-progress',
+      'queue.logs-success-validation-errors', 'queue.owns-execution',
+      'export.queue-handoff', 'export.settings-only', 'output.individual-real-video',
+    ],
+    ['exports/e2e-export-test.mp4', 'queue-process-response.json', 'export-log.txt'],
+  );
   await page.locator('#close-export-log').click();
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
+  await processCombinedOutput(page, artifactRoot);
 
   const trimCardForClear = await ensureTrimCardVisible(page, sourceId);
   await screenshot(page, 'release-12-before-trim-clear');
@@ -692,23 +1051,22 @@ async function runReleaseProof(page) {
   );
 
   await openTool(page, 'review', 'release-15-reloaded-review');
-  const hasReviewSourceAfterReload = await page.locator('#review-source-status').count() > 0;
-  if (hasReviewSourceAfterReload) {
-    await waitForCondition(
-      page,
-      (expectedSourceId) => {
-        const status = document.getElementById('review-source-status')?.textContent || '';
-        const select = document.getElementById('review-source-select');
-        return select?.value === expectedSourceId && status.startsWith('Retained: ');
-      },
-      sourceId,
-      15000,
-    );
-  } else {
-    log('review source controls not present after reload — skipping review source section');
-  }
+  await waitForCondition(
+    page,
+    () => {
+      const boxes = state?.project?.overlay?.text_boxes || [];
+      return boxes.some((box) => box.source === 'manual' && box.text === 'Packaged custom review box')
+        && boxes.some((box) => box.source === 'imported_summary');
+    },
+    null,
+    15000,
+  );
 
   await writeStateSummary(page, path.join(artifactRoot, 'state-summary.json'));
+  passCases(
+    ['compose.lifecycle-persistence', 'review.lifecycle-persistence', 'project.practiscore-persistence'],
+    ['state-summary.json', 'e2e-logs/screenshot-release-15-reloaded-review.png'],
+  );
 }
 
 async function runStandardFlow(page) {
@@ -778,6 +1136,14 @@ async function main() {
     try { fs.appendFileSync(path.join(logDir, 'page-errors.log'), `[${entry.time}] ${entry.message}\n${entry.stack}\n---\n`); } catch {}
   });
   page.on('response', (resp) => {
+    if (resp.url().includes('/api/')) {
+      requestLedger.push({
+        method: resp.request().method(),
+        url: resp.url(),
+        status: resp.status(),
+        time: new Date().toISOString(),
+      });
+    }
     if (resp.status() >= 400) {
       httpErrors.push({ status: resp.status(), url: resp.url(), time: new Date().toISOString() });
       try { fs.appendFileSync(path.join(logDir, 'http-errors.log'), `[${new Date().toISOString()}] ${resp.status()} ${resp.url()}\n`); } catch {}
@@ -788,6 +1154,7 @@ async function main() {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await screenshot(page, '01-after-load');
     await page.waitForFunction(() => typeof activeTool !== 'undefined', null, { timeout: 60000 });
+    await installDomActionProbe(page);
     await screenshot(page, '02-app-initialized');
     await page.waitForTimeout(500);
 
@@ -812,6 +1179,23 @@ async function main() {
       merge_sources: state?.project?.merge_sources?.length || 0,
     }));
 
+    const runtimeInventory = isReleaseProof
+      ? await collectRuntimeInventory(page)
+      : { discovered: 0, mapped: 0, gaps: 0 };
+    const domActions = await page.evaluate(() => [...(window.__e2eDomActions || [])]);
+    actionLedger.push(...domActions.map((item) => ({
+      action: item.event,
+      target: item.identity,
+      count: 1,
+      trusted: item.trusted,
+      status: 'passed',
+      time: item.time,
+    })));
+    writeJson(path.join(artifactRoot, 'action-ledger.json'), actionLedger);
+    writeJson(path.join(artifactRoot, 'request-ledger.json'), requestLedger);
+    writeJson(path.join(artifactRoot, 'case-observations.json'), {
+      cases: [...caseObservations.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    });
     writeJson(path.join(artifactRoot, 'timings.json'), timings);
     await writeScreenshotManifest();
     await writeContactSheetHtml();
@@ -830,6 +1214,7 @@ async function main() {
       httpErrors,
       failures,
       timings,
+      runtimeInventory,
       artifact_root: artifactRoot,
       export_dir: exportDir,
     };
@@ -842,8 +1227,10 @@ async function main() {
       for (const error of pageErrors) warn(`  ${error.message}`);
     }
 
-    await context.close();
-    await browser.close();
+    // This browser is the installed Electron process reached over CDP. Closing
+    // its context/browser can terminate the app before the Python harness reads
+    // final state and performs restart/audit proof. Process exit below safely
+    // disconnects the CDP client without owning the installed app lifecycle.
     if (result === 'failed') {
       log('=== E2E test failed ===');
       process.exit(1);

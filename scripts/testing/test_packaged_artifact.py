@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import plistlib
 import shutil
 import stat
 import subprocess
@@ -12,9 +13,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_VALIDATION_SCRIPT = REPO / "scripts" / "testing" / "test_electron_app.py"
+
+
+def _repo_temp_dir(prefix: str) -> Path:
+    temp_root = REPO / "tmp" / "codex"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=temp_root))
 
 
 class InstalledArtifact:
@@ -112,7 +118,8 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
         "if ($match) { Write-Output $match; exit 0 }; "
         "Write-Output 'LOCATOR_PATHS=' + ($paths -join ';'); "
         "$near = Get-ChildItem -Path $paths -File -Recurse -ErrorAction SilentlyContinue | "
-        "Where-Object { $_.Name -like '*SplitShot*.exe' -or $_.DirectoryName -like '*SplitShot*' } | "
+        "Where-Object { $_.Name -like '*SplitShot*.exe' -or "
+        "$_.DirectoryName -like '*SplitShot*' } | "
         "Select-Object -First 20 -ExpandProperty FullName; "
         "if ($near) { Write-Output ('LOCATOR_NEAR=' + ($near -join ';')) }; "
         "exit 0"
@@ -145,19 +152,29 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
 
 
 def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
-    mount_dir = Path(tempfile.mkdtemp(prefix="splitshot-dmg-mount-"))
-    app_copy_root = Path(tempfile.mkdtemp(prefix="splitshot-dmg-app-"))
-    _run(
+    app_copy_root = _repo_temp_dir("splitshot-dmg-app-")
+    attached = subprocess.run(
         [
             "hdiutil",
             "attach",
             str(artifact),
             "-nobrowse",
             "-readonly",
-            "-mountpoint",
-            str(mount_dir),
-        ]
+            "-plist",
+        ],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
     )
+    attach_payload = plistlib.loads(attached.stdout)
+    mount_points = [
+        Path(str(entity["mount-point"]))
+        for entity in attach_payload.get("system-entities", [])
+        if entity.get("mount-point")
+    ]
+    if not mount_points:
+        raise FileNotFoundError("Mounted DMG did not report a mount point")
+    mount_dir = mount_points[0]
     try:
         apps = sorted(mount_dir.glob("*.app"))
         if not apps:
@@ -189,16 +206,14 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
-    return InstalledArtifact(
-        executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env
-    )
+    return InstalledArtifact(executable=executable, cleanup_paths=[app_copy_root], env=env)
 
 
 def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
-    copied_artifact = Path(tempfile.mkdtemp(prefix="splitshot-appimage-")) / artifact.name
+    copied_artifact = _repo_temp_dir("splitshot-appimage-") / artifact.name
     shutil.copy2(artifact, copied_artifact)
     copied_artifact.chmod(copied_artifact.stat().st_mode | stat.S_IXUSR)
-    extracted_root = Path(tempfile.mkdtemp(prefix="splitshot-appimage-extract-"))
+    extracted_root = _repo_temp_dir("splitshot-appimage-extract-")
     _run([str(copied_artifact), "--appimage-extract"], cwd=extracted_root)
     squashfs_root = extracted_root / "squashfs-root"
     ffmpeg_dir = (
@@ -247,7 +262,9 @@ def main() -> int:
         "--script-arg",
         action="append",
         default=[],
-        help="Extra argument forwarded to the validation script. Repeat to pass multiple arguments.",
+        help=(
+            "Extra argument forwarded to the validation script. Repeat to pass multiple arguments."
+        ),
     )
     args = parser.parse_args()
 
@@ -264,6 +281,11 @@ def main() -> int:
     try:
         installed = _install_artifact(artifact)
         env = {**os.environ, **installed.env}
+        env["SPLITSHOT_PACKAGED_ARTIFACT"] = str(artifact)
+        env["SPLITSHOT_SOURCE_COMMIT"] = _run(["git", "rev-parse", "HEAD"], cwd=REPO).stdout.strip()
+        env["SPLITSHOT_SOURCE_TREE_CLEAN"] = (
+            "1" if not _run(["git", "status", "--porcelain"], cwd=REPO).stdout.strip() else "0"
+        )
         command = [
             sys.executable,
             str(validation_script),

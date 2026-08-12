@@ -32,14 +32,14 @@ export function createSettingsPane({
   function syncSettingsBadgeStyle(prefix, style = {}) {
     syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
     syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
-    syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
+    syncControlValue($(`${prefix}-opacity`), Math.round(Number(style.opacity ?? 0.9) * 100));
   }
 
   function readSettingsBadgeStyle(prefix) {
     return {
       background_color: $(`${prefix}-background-color`)?.value || "#000000",
       text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
-      opacity: readNumberSetting(`${prefix}-opacity`, 0.9),
+      opacity: Math.max(0, Math.min(1, readNumberSetting(`${prefix}-opacity`, 90) / 100)),
     };
   }
 
@@ -56,7 +56,7 @@ export function createSettingsPane({
     syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
     syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
     syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
-    syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
+    syncControlValue($("settings-marker-opacity"), Math.round(Number(template.opacity ?? 0.9) * 100));
   }
 
   function settingsValueAtPath(value, path) {
@@ -122,7 +122,7 @@ export function createSettingsPane({
         motion_mode: $("settings-marker-motion-mode")?.value || projectPopupTemplate.motion_mode,
         background_color: $("settings-marker-background-color")?.value || "#000000",
         text_color: $("settings-marker-text-color")?.value || "#ffffff",
-        opacity: readNumberSetting("settings-marker-opacity", 0.9),
+        opacity: Math.max(0, Math.min(1, readNumberSetting("settings-marker-opacity", 90) / 100)),
       });
     const payloads = {
       "global-template": {
@@ -150,7 +150,7 @@ export function createSettingsPane({
         badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
         overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
         overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
-        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : Math.max(0, Math.min(1, readNumberSetting("settings-overlay-custom-opacity", 90) / 100)),
         timer_badge: timerBadge,
         shot_badge: shotBadge,
         current_shot_badge: currentShotBadge,
@@ -239,7 +239,7 @@ export function createSettingsPane({
     syncControlValue($("settings-badge-size"), persistedSettings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
     syncControlValue($("settings-overlay-custom-background-color"), persistedSettings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
     syncControlValue($("settings-overlay-custom-text-color"), persistedSettings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
-    syncControlValue($("settings-overlay-custom-opacity"), persistedSettings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+    syncControlValue($("settings-overlay-custom-opacity"), Math.round(Number(persistedSettings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9) * 100));
     syncSettingsBadgeStyle("settings-timer-badge", persistedSettings.timer_badge || projectOverlay.timer_badge || {});
     syncSettingsBadgeStyle("settings-shot-badge", persistedSettings.shot_badge || projectOverlay.shot_badge || {});
     syncSettingsBadgeStyle("settings-current-shot-badge", persistedSettings.current_shot_badge || projectOverlay.current_shot_badge || {});

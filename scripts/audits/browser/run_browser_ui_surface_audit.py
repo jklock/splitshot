@@ -727,8 +727,14 @@ def audit_merge_file_input_change(
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='merge']").click()
     if base_url:
-        _multipart_upload(base_url, "api/files/merge", primary_video)
-        page.evaluate("async () => { await refresh(); }")
+        payload = _multipart_upload(base_url, "api/files/merge", primary_video)
+        page.evaluate(
+            """payload => {
+              applyRemoteState(payload);
+              requestRender();
+            }""",
+            payload,
+        )
     else:
         page.locator("#merge-media-input").set_input_files(str(primary_video))
     page.wait_for_function(

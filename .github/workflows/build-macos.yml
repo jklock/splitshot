@@ -176,7 +176,11 @@ jobs:
             --script-arg=--artifact-root \
             --script-arg=artifacts/v107-release-proof/github-review/macos \
             --script-arg=--primary-video \
-            --script-arg=tests/fixtures/media/e2e-stage.mp4
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "corpus_revision": "splitshot-release-corpus-v1",
+  "files": {
+    "primary.MP4": {
+      "bytes": 85871371,
+      "sha256": "46b0afcfbec6f4a555f8abfe7c200cb13d3759d5b245e81d2338a86731825c23",
+      "video": {
+        "codec": "h264",
+        "width": 1920,
+        "height": 1080,
+        "frame_rate": "60/1",
+        "duration_seconds": 21.607467
+      },
+      "audio": {
+        "codec": "pcm_s16le",
+        "channels": 2
+      }
+    },
+    "secondary.MP4": {
+      "bytes": 44662992,
+      "sha256": "a3738264c73537619745a3f13703ac635553c407350d16301cec0acf83a4c0be",
+      "video": {
+        "codec": "h264",
+        "width": 1920,
+        "height": 1080,
+        "frame_rate": "60/1",
+        "duration_seconds": 11.294183
+      },
+      "audio": {
+        "codec": "pcm_s16le",
+        "channels": 2
+      }
+    },
+    "practiscore.csv": {
+      "bytes": 3876,
+      "sha256": "aec8ea680b07631f79d5a3615bf68e3ac79656ee5a19e2cdb16d1f6ea4256d52",
+      "csv": {
+        "match_type": "idpa",
+        "columns": 50,
+        "competitors": 27,
+        "stages": [1, 2, 3, 4]
+      }
+    }
+  }
+}

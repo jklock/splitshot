@@ -17,6 +17,10 @@ SPEC.loader.exec_module(MODULE)
 def test_ocr_text_is_readable_accepts_expected_overlay_words() -> None:
     assert MODULE._ocr_text_is_readable("Shot 1 Draw 3.02s")
     assert MODULE._ocr_text_is_readable("Hit Factor 3.78")
+    assert MODULE._ocr_text_is_readable("Packaged custom review box")
+    assert MODULE._ocr_text_is_readable(
+        "Final 72.51 Points Down 8 Penalties 0 Division PCC Class MA Overall 1/27"
+    )
 
 
 def test_ocr_text_is_readable_rejects_tofu_like_output() -> None:

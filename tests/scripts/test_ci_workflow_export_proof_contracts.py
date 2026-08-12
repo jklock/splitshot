@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 E2E_SCRIPT = ROOT / "scripts" / "testing" / "e2e-playwright.cjs"
 TEST_WORKFLOWS = [
@@ -45,55 +44,49 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     ).read_text(encoding="utf-8")
 
 
-def test_ci_test_workflows_use_compact_fixture_for_packaged_e2e_validation() -> None:
+def _assert_real_corpus_contract(source: str, workflow_name: str) -> None:
+    assert "tests/release_data/primary.MP4" in source, workflow_name
+    assert "tests/release_data/secondary.MP4" in source, workflow_name
+    assert "tests/release_data/practiscore.csv" in source, workflow_name
+    assert "--script-arg=--scope" in source, workflow_name
+    assert "--script-arg=release-proof" in source, workflow_name
+    assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow_name
+    assert "tests/fixtures/media/e2e-stage.mp4" not in source, workflow_name
+
+
+def test_ci_test_workflows_use_real_corpus_for_packaged_e2e_validation() -> None:
     for workflow in TEST_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        has_fixture_env = "SPLITSHOT_E2E_VIDEO: tests/fixtures/media/e2e-stage.mp4" in source
-        has_fixture_arg = "--script-arg=tests/fixtures/media/e2e-stage.mp4" in source
-        assert has_fixture_env or has_fixture_arg, f"{workflow.name}: missing E2E fixture"
-        assert "--script-arg=--scope" in source, workflow.name
-        assert "--script-arg=release-proof" in source, workflow.name
+        _assert_real_corpus_contract(source, workflow.name)
+        assert "scripts/testing/build_packaged_release_summary.py" in source, workflow.name
         assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         if workflow.name == "test-windows.yml":
-            assert (
-                "scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5"
-                in source
-            ), workflow.name
+            assert "scripts/testing/validate_release_data.py" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
             assert source.count("Install Tesseract") >= 2, workflow.name
             assert 'SPLITSHOT_E2E_OCR_PROOF: "1"' in source, workflow.name
-        assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow.name
 
 
-def test_packaged_build_and_release_workflows_use_compact_e2e_fixture() -> None:
+def test_packaged_build_and_release_workflows_use_real_corpus() -> None:
     for workflow in PACKAGED_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
-        has_fixture_env = "SPLITSHOT_E2E_VIDEO: tests/fixtures/media/e2e-stage.mp4" in source
-        has_fixture_arg = "--script-arg=tests/fixtures/media/e2e-stage.mp4" in source
-        assert has_fixture_env or has_fixture_arg, workflow.name
-        assert "--script-arg=--scope" in source, workflow.name
-        assert "--script-arg=release-proof" in source, workflow.name
+        _assert_real_corpus_contract(source, workflow.name)
         assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         if workflow.name == "build-windows.yml":
-            assert (
-                "scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5"
-                in source
-            ), workflow.name
+            assert "scripts/testing/validate_release_data.py" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
             assert source.count("Install Tesseract") >= 2, workflow.name
             assert 'SPLITSHOT_E2E_OCR_PROOF: "1"' in source, workflow.name
         if workflow.name == "release.yml":
             assert 'SPLITSHOT_E2E_OCR_PROOF: "1"' in source, workflow.name
-        assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow.name
+            assert "scripts/testing/build_packaged_release_summary.py" in source, workflow.name
+            assert "validate_packaged_release_evidence.py aggregate" in source, workflow.name
+            assert "--expected-commit" in source, workflow.name
 
 
 def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
-    test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(
-        encoding="utf-8"
-    )
-    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
+    test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(encoding="utf-8")
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow
     assert "Prepare macOS signing certificate" in test_workflow

@@ -66,6 +66,7 @@ def _read_app_shell_source() -> str:
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    shell_runtime = _read_shell_runtime_source()
     markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
     css = _read_split_css()
 
@@ -135,6 +136,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="project-output-root"' in html
     assert 'id="browse-project-output-root"' in html
     assert 'id="match-type"' in html
+    assert "matchTypeControl.disabled = detectedMatchType" in shell_runtime
+    assert "Match type is detected from the imported PractiScore results." in shell_runtime
     assert 'id="match-stage-number"' not in html
     assert 'id="match-competitor-name"' in html
     assert 'id="match-class"' in html
@@ -2070,6 +2073,7 @@ def test_browser_overlay_color_inputs_preview_on_input_and_commit_on_change() ->
 
 def test_browser_client_validates_remote_state_shape_and_restores_server_selection() -> None:
     api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
+    app_js = (STATIC_ROOT / "app.js").read_text()
 
     assert "function hasCompleteProjectState(nextState)" in api_js
     assert "nextState?.project?.overlay" in api_js
@@ -2089,6 +2093,9 @@ def test_browser_client_validates_remote_state_shape_and_restores_server_selecti
         "runtime.selectedShotId = stateHasShot(runtime.state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;"
         in api_js
     )
+    assert 'normalizedPath !== "/api/popups"' in api_js
+    assert 'normalizedPath !== "/api/overlay"' in api_js
+    assert "scheduledGeneration: window.settingsDefaultsApplyGeneration" in app_js
 
 
 def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:

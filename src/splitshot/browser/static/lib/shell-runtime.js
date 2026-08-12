@@ -334,7 +334,15 @@ export function createShellRuntime({
     syncControlValue($("project-name"), projectDetailValue("name"));
     syncControlValue($("project-description"), projectDetailValue("description"));
     syncControlValue($("project-output-root"), project.output_root || "");
-    syncControlValue($("match-type"), project.scoring.match_type || "");
+    const matchTypeControl = $("match-type");
+    syncControlValue(matchTypeControl, project.scoring.match_type || "");
+    if (matchTypeControl) {
+      const detectedMatchType = Boolean(state?.practiscore_options?.source_name);
+      matchTypeControl.disabled = detectedMatchType;
+      matchTypeControl.title = detectedMatchType
+        ? "Match type is detected from the imported PractiScore results."
+        : "Select the scoring sport.";
+    }
     syncControlChecked($("merge-enabled"), project.merge.enabled);
     syncControlValue($("merge-layout"), project.merge.layout);
     const pipValue = Number(

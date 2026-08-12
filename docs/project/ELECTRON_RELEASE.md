@@ -1,10 +1,10 @@
 # Electron Release Runbook
 
-<!-- Documentation reviewed: 2026-08-11 -->
+<!-- Documentation reviewed: 2026-08-12 -->
 
 This is the durable packaging and publishing runbook for SplitShot v1.0.7. The release is feature-frozen; complete validation and defect fixes only, then publish the same release-ready commit on all three platforms.
 
-The approved implementation contract for complete installed-package validation is [Exhaustive Packaged Release Validation Plan](EXHAUSTIVE_PACKAGED_RELEASE_VALIDATION_PLAN.md). Until that plan's zero-gap gates are implemented and passing, the compact proof below describes the current release coverage and must not be represented as exhaustive feature validation.
+The approved implementation contract for complete installed-package validation is [Exhaustive Packaged Release Validation Plan](EXHAUSTIVE_PACKAGED_RELEASE_VALIDATION_PLAN.md). The workflows now fail closed on the versioned real corpus, exhaustive scenario manifest, runtime identity inventory, and per-OS zero-gap summary. Until every explicit case and discovered identity passes on all three installed packages, the release is blocked and must not be represented as exhaustively validated.
 
 ## Toolchain
 
@@ -42,16 +42,18 @@ uv run python scripts/testing/run_electron_preflight.py
 
 The preflight checks the runtime, creates and verifies the Python bundle, runs Electron launch and backend checks, audits source/package parity, launches the source app, builds the current platform's unpacked application, and verifies that application launches.
 
-Create the v1.0.7 source proof bundle with the compact tracked fixture:
+Validate the immutable real release corpus and scenario manifest before package proof:
 
 ```bash
-uv run python scripts/testing/verify_e2e_fixture.py \
-  tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
+uv run python scripts/testing/validate_release_data.py \
+  --report-json artifacts/v107-release-proof/source/corpus-preflight.json
+uv run python scripts/testing/validate_packaged_release_evidence.py manifest \
+  --output artifacts/v107-release-proof/source/manifest-validation.json
 uv run python scripts/testing/run_source_release_proof.py \
   --artifact-root artifacts/v107-release-proof/source
 ```
 
-Proof output belongs under the ignored `artifacts/v107-release-proof/` tree. The tracked `tests/fixtures/media/e2e-stage.mp4` is the canonical media input for source export, packaged E2E, shot detection, FFprobe, and OCR gates.
+Proof output belongs under the ignored `artifacts/v107-release-proof/` tree. Packaged release acceptance uses only `tests/release_data/primary.MP4`, `tests/release_data/secondary.MP4`, and `tests/release_data/practiscore.csv`. `tests/release_data/corpus-v1.json` owns their checksums and semantic expectations; `tests/release_validation/manifest-v1.json` owns the 17 shards, common scenarios, platform cases, proof contract, and required artifact families.
 
 ## Platform Packages
 
@@ -118,7 +120,7 @@ Use these GitHub Actions workflows on the intended release commit:
 
 The Test macOS workflow signs its validation DMG but explicitly disables notarization. This keeps ordinary clean-runner package proof independent of Apple agreement availability. The Build macOS and Release workflows retain mandatory notarization; publication is still blocked when Apple credentials or agreements are invalid.
 
-Run each with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Copy the validation bundles into:
+Run each with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. A package build or compact E2E pass is not a platform pass. `build_packaged_release_summary.py` requires explicit installed-package case results and per-identity disposition and reports every absent result as a gap. Copy the validation bundles into:
 
 ```text
 artifacts/v107-release-proof/github-review/macos/
@@ -126,7 +128,7 @@ artifacts/v107-release-proof/github-review/windows/
 artifacts/v107-release-proof/github-review/linux/
 ```
 
-The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not release proof: the corresponding clean-runner Test workflow must launch the packaged artifact, import the tracked fixture, analyze it, and export successfully.
+The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not release proof: the corresponding clean-runner Test workflow must install or mount the package, use the committed real corpus, collect the live identity inventory, execute every manifest case, prove reopen/restart and rendered outputs, and produce a zero-gap platform summary.
 
 For local package-native proof, pass the built artifact and canonical fixture to the packaged harness. On macOS, for example:
 
@@ -139,10 +141,17 @@ uv run python scripts/testing/test_packaged_artifact.py \
   --script-arg=--artifact-root \
   --script-arg=artifacts/v107-release-proof/packaged-local-mac \
   --script-arg=--primary-video \
-  --script-arg=tests/fixtures/media/e2e-stage.mp4
+  --script-arg=tests/release_data/primary.MP4 \
+  --script-arg=--secondary-video \
+  --script-arg=tests/release_data/secondary.MP4 \
+  --script-arg=--practiscore \
+  --script-arg=tests/release_data/practiscore.csv
+uv run python scripts/testing/build_packaged_release_summary.py \
+  --platform macos \
+  --artifact-root artifacts/v107-release-proof/packaged-local-mac
 ```
 
-Use the artifact filename produced for the host architecture. Package-native proof must be rerun from a clean output location; stale artifacts do not count.
+Use the artifact filename produced for the host architecture. Package-native proof must be rerun from a clean output location; stale artifacts do not count. The summary builder is intentionally fail-closed: missing case records, missing proof-contract layers, unexercised runtime identities, empty artifacts, skips, and gaps all return nonzero.
 
 ## Publish v1.0.7
 
@@ -162,7 +171,7 @@ git tag -a v1.0.7 -m "SplitShot v1.0.7"
 git push origin v1.0.7
 ```
 
-`.github/workflows/release.yml` is the only publisher. A `v1.0.7` tag builds and validates the macOS DMG, Windows NSIS installer, and Linux AppImage, extracts the matching changelog section, and publishes those artifacts together. The manual **Release** dispatch may build an exact `release_ref` with `release_tag=v1.0.7`; do not use a moving tag or a different commit per platform.
+`.github/workflows/release.yml` is the only publisher. A `v1.0.7` tag builds and validates the macOS DMG, Windows NSIS installer, and Linux AppImage. Before release creation, it aggregates the three platform summaries and rejects missing platforms, commit/corpus/manifest mismatches, failures, skips, gaps, or unreadable evidence. The manual **Release** dispatch may build an exact `release_ref` with `release_tag=v1.0.7`; do not use a moving tag or a different commit per platform.
 
 If an existing release body is stale after the validated release commit is published:
 
@@ -177,7 +186,7 @@ gh release edit v1.0.7 \
 
 - Inspect the exact failing GitHub Actions job and its uploaded proof before changing code or workflows.
 - Fix and rerun that lane before retagging.
-- Treat missing packaged FFmpeg/FFprobe, use of local-only fixtures, stale outputs, or child calls to bare `uv`/`python` as release blockers.
+- Treat missing packaged FFmpeg/FFprobe, non-corpus inputs, stale outputs, absent case/identity evidence, or child calls to bare `uv`/`python` as release blockers.
 - Do not publish when only package creation passed; package-native validation must also pass on macOS, Windows, and Linux.
 - Do not create temporary or moving release tags for smoke testing.
 

@@ -1,6 +1,6 @@
 # Browser Control QA Matrix
 
-<!-- Documentation reviewed: 2026-08-11 -->
+<!-- Documentation reviewed: 2026-08-12 -->
 
 Audited against the v1.0.7 `src/splitshot/browser/static/index.html` rail, current browser routes, and current browser suites.
 
@@ -9,6 +9,8 @@ This matrix names the current browser surfaces, the control families each surfac
 Use `scripts/audits/browser/pane_function_audit.py` as the code-first companion audit. It inventories pane-owned functions from `src/splitshot/browser/static/panes/`, traces browser routes into `server.py` and `controller.py`, and classifies proof strength per function.
 
 The executable identifier inventory lives in `tests/browser/test_browser_control_inventory_audit.py`; it covers static HTML controls, JavaScript-rendered literal controls, and programmatic `createElement` control families. The inventory-driven one-action ledgers live in `scripts/audits/browser/run_value_control_interaction_audit.py` and `tests/browser/test_action_control_single_interaction_audit.py`; unexercised rows are reported as gaps, never passes. This matrix is the retained human-readable ownership map.
+
+Installed-package release ownership is separate and stricter. `tests/release_validation/manifest-v1.json` maps all 15 panes plus shell and rendered-output work into versioned shards. Packaged E2E writes `runtime-inventory.json` and `inventory-case-map.json`; `build_packaged_release_summary.py` refuses release unless every discovered runtime identity has an explicit passing interaction result and every manifest case has all required lifecycle evidence. Source inventory or browser-only proof cannot satisfy that gate.
 
 | Surface | Control families | Primary suites | Current explicit ownership |
 | --- | --- | --- | --- |

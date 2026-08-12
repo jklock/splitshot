@@ -93,7 +93,8 @@ export function createApiRuntime({
     // optimistically. Rendering their responses again replaces active marker
     // and drag nodes during an ordinary save.
     return normalizedPath !== "/api/project/ui-state"
-      && normalizedPath !== "/api/popups";
+      && normalizedPath !== "/api/popups"
+      && normalizedPath !== "/api/overlay";
   }
 
   async function parseJsonResponse(response, path) {

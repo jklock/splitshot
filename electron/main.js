@@ -21,6 +21,11 @@ const launchIntentRouter = createLaunchIntentRouter(dispatchLaunchIntent);
 const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
 let appReadyRecorded = false;
+let testInOutPathIndex = 0;
+
+if (process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR));
+}
 
 // In packaged apps launched from Finder (not a terminal), stdout/stderr may be
 // pipes that throw EPIPE when written to. Wrap console calls that run inside
@@ -403,6 +408,15 @@ ipcMain.handle('open-file', async () => {
 });
 
 ipcMain.handle('open-in-out-video-dialog', async () => {
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS) {
+    const paths = JSON.parse(process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS);
+    if (!Array.isArray(paths) || paths.some((item) => typeof item !== 'string')) {
+      throw new Error('SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS must be a JSON array of paths');
+    }
+    const selected = paths[testInOutPathIndex] || null;
+    testInOutPathIndex += 1;
+    return selected;
+  }
   if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH) {
     return process.env.SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH;
   }

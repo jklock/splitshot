@@ -4458,7 +4458,11 @@ function buildPopupMarkerRow(bubble, index) {
     selectMarkerRow();
   });
   row.querySelector('[data-popup-field="enabled"]')?.addEventListener("change", (event) => {
-    setPopupBubbleField(bubble.id, "enabled", event.target.checked, { commit: true, rerender: true });
+    const enabled = event.target.checked;
+    setPopupBubbleField(bubble.id, "enabled", enabled, { commit: true, rerender: false });
+    document.querySelectorAll(`[data-popup-id="${CSS.escape(bubble.id)}"] [data-popup-field="enabled"]`).forEach((control) => {
+      if (control !== event.target) syncControlChecked(control, enabled);
+    });
   });
   return row;
 }
@@ -9219,7 +9223,11 @@ function scheduleScoringApply() {
 
 const scheduleSettingsDefaultsApply = debounce((options = {}) => {
   activity("auto_apply.settings_defaults", {});
-  applySettingsDefaults({ ...options, scheduled: true });
+  applySettingsDefaults({
+    ...options,
+    scheduled: true,
+    scheduledGeneration: window.settingsDefaultsApplyGeneration,
+  });
 }, 300);
 
 const handleViewportLayoutChange = debounce(() => {

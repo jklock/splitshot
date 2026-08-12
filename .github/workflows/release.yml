@@ -163,6 +163,8 @@ jobs:
         run: |
           uv run python -m playwright install --with-deps chromium
           cd electron && npx playwright install chromium
+      - name: Install OCR proof tool
+        run: command -v tesseract >/dev/null 2>&1 || brew install tesseract
       - uses: actions/download-artifact@v5
         with:
           name: splitshot-macos
@@ -182,8 +184,14 @@ jobs:
             --script-arg=--artifact-root \
             --script-arg=artifacts/v107-release-proof/github-review/macos \
             --script-arg=--primary-video \
-            --script-arg=tests/fixtures/media/e2e-stage.mp4
-        timeout-minutes: 30
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
+        timeout-minutes: 180
+      - name: Enforce exhaustive macOS evidence
+        run: uv run python scripts/testing/build_packaged_release_summary.py --platform macos --artifact-root artifacts/v107-release-proof/github-review/macos
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -292,8 +300,14 @@ jobs:
             --script-arg=--artifact-root \
             --script-arg=artifacts/v107-release-proof/github-review/linux \
             --script-arg=--primary-video \
-            --script-arg=tests/fixtures/media/e2e-stage.mp4
-        timeout-minutes: 30
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
+        timeout-minutes: 180
+      - name: Enforce exhaustive Linux evidence
+        run: uv run python scripts/testing/build_packaged_release_summary.py --platform linux --artifact-root artifacts/v107-release-proof/github-review/linux
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -401,8 +415,14 @@ jobs:
             --script-arg=--artifact-root \
             --script-arg=artifacts/v107-release-proof/github-review/windows \
             --script-arg=--primary-video \
-            --script-arg=tests/fixtures/media/e2e-stage.mp4
-        timeout-minutes: 30
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
+        timeout-minutes: 180
+      - name: Enforce exhaustive Windows evidence
+        run: uv run python scripts/testing/build_packaged_release_summary.py --platform windows --artifact-root artifacts/v107-release-proof/github-review/windows
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -424,6 +444,14 @@ jobs:
         with:
           python-version: "3.12"
       - uses: actions/download-artifact@v5
+      - name: Enforce matching zero-gap platform summaries
+        run: |
+          python3 scripts/testing/validate_packaged_release_evidence.py aggregate \
+            e2e-artifacts-macos/v107-release-proof/github-review/macos/platform-summary.json \
+            e2e-artifacts-windows/v107-release-proof/github-review/windows/platform-summary.json \
+            e2e-artifacts-linux/v107-release-proof/github-review/linux/platform-summary.json \
+            --expected-commit "$(git rev-parse HEAD)" \
+            --output artifacts/exhaustive-release-summary.json
       - name: Extract release notes
         run: |
           python3 scripts/release/extract_release_notes.py "${RELEASE_TAG}" --output artifacts/release-notes.md

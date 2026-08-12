@@ -39,8 +39,8 @@ jobs:
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-      - name: Verify E2E proof fixture
-        run: uv run python scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
         run: cd electron && npm ci
         timeout-minutes: 10
@@ -88,8 +88,8 @@ jobs:
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
-      - name: Verify E2E proof fixture
-        run: uv run python scripts/testing/verify_e2e_fixture.py tests/fixtures/media/e2e-stage.mp4 --min-shots 1 --min-duration 5
+      - name: Verify committed release corpus
+        run: uv run python scripts/testing/validate_release_data.py
       - name: Install Node dependencies
         run: cd electron && npm ci
       - name: Install Playwright browsers
@@ -120,7 +120,11 @@ jobs:
             --script-arg=--artifact-root \
             --script-arg=artifacts/v107-release-proof/github-review/windows \
             --script-arg=--primary-video \
-            --script-arg=tests/fixtures/media/e2e-stage.mp4
+            --script-arg=tests/release_data/primary.MP4 \
+            --script-arg=--secondary-video \
+            --script-arg=tests/release_data/secondary.MP4 \
+            --script-arg=--practiscore \
+            --script-arg=tests/release_data/practiscore.csv
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

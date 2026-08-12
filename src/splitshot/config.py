@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from copy import deepcopy
 from dataclasses import dataclass, field, fields
@@ -24,7 +25,7 @@ from splitshot.domain.models import (
     _popup_template_from_dict,
 )
 
-APP_DIR = Path.home() / ".splitshot"
+APP_DIR = Path(os.environ.get("SPLITSHOT_APP_DIR", Path.home() / ".splitshot")).expanduser()
 SETTINGS_PATH = APP_DIR / "settings.json"
 FOLDER_SETTINGS_FILENAME = "splitshot.conf"
 _POPUP_MOTION_MODES = {"fixed", "guided", "manual", "auto"}

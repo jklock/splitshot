@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from platform import machine
 
@@ -34,11 +36,13 @@ def has_complete_notary_env(env: dict[str, str]) -> bool:
     fallback_any = any(fallback)
     if api_any and not all(api):
         raise SystemExit(
-            "Incomplete Apple API key notarization env; set all of APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER."
+            "Incomplete Apple API key notarization env; set all of APPLE_API_KEY, "
+            "APPLE_API_KEY_ID, APPLE_API_ISSUER."
         )
     if fallback_any and not all(fallback):
         raise SystemExit(
-            "Incomplete Apple ID notarization env; set all of APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID."
+            "Incomplete Apple ID notarization env; set all of APPLE_ID, "
+            "APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID."
         )
     return all(api) or all(fallback)
 
@@ -169,19 +173,44 @@ def install_latest_dmg() -> None:
     if not artifacts:
         raise SystemExit("No DMG found under electron/build after local macOS build.")
     dmg = artifacts[0]
-    mount_point = Path(tempfile.mkdtemp(prefix="splitshot-local-dmg-"))
+    attached = subprocess.run(
+        ["hdiutil", "attach", str(dmg), "-nobrowse", "-readonly", "-plist"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+    )
+    attach_payload = plistlib.loads(attached.stdout)
+    mount_points = [
+        Path(str(entity["mount-point"]))
+        for entity in attach_payload.get("system-entities", [])
+        if entity.get("mount-point")
+    ]
+    if not mount_points:
+        raise SystemExit(f"Mounted DMG did not report a mount point: {dmg}")
+    mount_point = mount_points[0]
     try:
-        run(["hdiutil", "attach", str(dmg), "-mountpoint", str(mount_point), "-nobrowse", "-quiet"])
         app = mount_point / "SplitShot.app"
         if not app.exists():
             raise SystemExit(f"Mounted DMG did not contain SplitShot.app: {dmg}")
         destination = Path("/Applications/SplitShot.app")
+        backup: Path | None = None
         if destination.exists():
-            shutil.rmtree(destination)
-        run(["/usr/bin/ditto", str(app), str(destination)])
+            trash = Path.home() / ".Trash"
+            trash.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            backup = trash / f"SplitShot-before-local-build-{timestamp}.app"
+            if backup.exists():
+                raise SystemExit(f"Refusing to overwrite existing backup: {backup}")
+            shutil.move(str(destination), str(backup))
+            print(f"[local-macos-build] preserved previous app at {backup}", flush=True)
+        try:
+            run(["/usr/bin/ditto", str(app), str(destination)])
+        except Exception:
+            if backup is not None and backup.exists() and not destination.exists():
+                shutil.move(str(backup), str(destination))
+            raise
     finally:
         subprocess.run(["hdiutil", "detach", str(mount_point), "-quiet"], cwd=REPO, check=False)
-        shutil.rmtree(mount_point, ignore_errors=True)
 
 
 def main() -> int:

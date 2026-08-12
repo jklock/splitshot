@@ -3305,6 +3305,65 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(
         server.shutdown()
 
 
+def test_browser_media_concurrent_requests_share_one_pcm_preview(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source_path = tmp_path / "Stage1.MP4"
+    source_path.write_bytes(b"source-media")
+    ffmpeg_calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        browser_server_module,
+        "run_ffprobe_json",
+        lambda _path: {
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "pcm_s16le"},
+            ],
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+        },
+    )
+
+    def fake_ffmpeg(command: list[str]) -> None:
+        ffmpeg_calls.append(command)
+        time.sleep(0.05)
+        Path(command[-1]).write_bytes(b"browser-preview")
+
+    monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
+    monkeypatch.setattr(
+        browser_server_module,
+        "_validate_browser_preview_timeline",
+        lambda source_path, metadata, preview_path: (
+            True,
+            {"codec_name": "h264"},
+            {"codec_name": "h264"},
+        ),
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    barrier = threading.Barrier(6)
+    results: list[tuple[Path, bool, str | None, str | None]] = []
+
+    def prepare() -> None:
+        barrier.wait()
+        results.append(server._prepare_browser_media(source_path))
+
+    threads = [threading.Thread(target=prepare) for _index in range(6)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert all(not thread.is_alive() for thread in threads)
+        assert len(results) == 6
+        assert len(ffmpeg_calls) == 1
+        assert len({str(result[0]) for result in results}) == 1
+        assert all(result[1] is True for result in results)
+    finally:
+        server.shutdown()
+
+
 def test_browser_media_endpoint_returns_404_when_preview_disappears(tmp_path: Path) -> None:
     controller = ProjectController()
     source_path = tmp_path / "Stage1.MP4"

@@ -569,6 +569,11 @@ def test_project_pane_hides_import_summary_line_without_stage_selectors(tmp_path
                 )
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
                 page.wait_for_timeout(250)
+                assert page.locator("#match-type").is_disabled() is True
+                assert (
+                    page.locator("#match-type").get_attribute("title")
+                    == "Match type is detected from the imported PractiScore results."
+                )
                 assert page.locator("#practiscore-import-summary").is_hidden() is True
             finally:
                 browser.close()
