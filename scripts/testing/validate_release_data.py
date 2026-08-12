@@ -120,7 +120,7 @@ def _tracked_files(root: Path, paths: list[Path]) -> set[str]:
             str(root),
             "ls-files",
             "--",
-            *[str(path.relative_to(root)) for path in paths],
+            *[path.relative_to(root).as_posix() for path in paths],
         ]
     )
     return {line.strip() for line in result.stdout.decode().splitlines() if line.strip()}
@@ -149,7 +149,7 @@ def validate(
 
     tracked = _tracked_files(root, paths)
     for path in paths:
-        relative = str(path.relative_to(root))
+        relative = path.relative_to(root).as_posix()
         checks.append(Check(f"tracked:{path.name}", relative in tracked, relative))
 
     actual_files = {path.name for path in corpus_root.iterdir() if path.is_file()}
