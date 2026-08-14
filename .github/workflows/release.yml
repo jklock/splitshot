@@ -14,6 +14,11 @@ on:
         description: Release tag to publish
         required: true
         default: v1.0.7
+      skip_publish:
+        description: Build and validate without creating or updating a GitHub release
+        required: false
+        default: "false"
+        type: boolean
 
 env:
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref_name }}
@@ -411,6 +416,7 @@ jobs:
           path: artifacts/
 
   publish:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_publish) }}
     needs: [macos, macos-validate, linux, linux-validate, windows, windows-validate]
     runs-on: ubuntu-latest
     permissions:
