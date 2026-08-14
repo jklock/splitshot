@@ -380,6 +380,8 @@ jobs:
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps
         run: cd electron && npm ci
+      - name: Install Tesseract
+        run: choco install tesseract -y
       - name: Install Playwright browsers
         run: |
           uv run python -m playwright install --with-deps chromium
