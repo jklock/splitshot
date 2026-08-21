@@ -4,30 +4,31 @@ import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 from uuid import uuid4
 
 
 class ActivityLogger:
     """Per-run JSONL activity logger for browser control sessions."""
 
-    _LEVEL_ORDER = {
+    _LEVEL_ORDER: ClassVar[dict[str, int]] = {
         "debug": 10,
         "info": 20,
         "warning": 30,
         "error": 40,
         "off": 100,
     }
-    _DEBUG_EVENTS = {
+    _DEBUG_EVENTS: ClassVar[set[str]] = {
         "api.export.log",
         "api.export.progress",
         "browser.activity",
         "http.get",
         "http.post",
+        "media.client_disconnect",
         "media.complete",
         "static.sent",
     }
-    _WARNING_EVENTS = {
-        "media.client_disconnect",
+    _WARNING_EVENTS: ClassVar[set[str]] = {
         "media.missing",
         "media.range_invalid",
         "static.missing",

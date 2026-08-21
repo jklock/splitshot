@@ -46,6 +46,8 @@ export function createReviewPane({
   renderLiveOverlay = () => {},
   scheduleSecondaryPreviewSync = () => {},
   restoreVideoElementFrame = () => {},
+  callApi = async () => null,
+  setStatus = () => {},
 } = {}) {
   const DEFAULT_SUMMARY_METRIC_IDS = Object.freeze([
     "score_time",
@@ -845,6 +847,19 @@ export function createReviewPane({
     }));
   }
 
+  async function queueAllFiles() {
+    const button = $("review-queue-all-btn");
+    if (button) button.disabled = true;
+    try {
+      const result = await callApi("/api/project/queue/add-all", {});
+      if (result) setStatus(result.status || "Queued all files.");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  $("review-queue-all-btn")?.addEventListener("click", () => void queueAllFiles());
+
   return Object.freeze({
     createOverlayTextBoxId,
     overlayTextBoxAutoSize,
@@ -873,5 +888,6 @@ export function createReviewPane({
     refreshReviewMediaFrame,
     restoreReviewStage,
     scheduleReviewStageRestore,
+    queueAllFiles,
   });
 }

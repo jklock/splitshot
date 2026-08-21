@@ -231,7 +231,13 @@ export function createIntroOutroPane({
     if (!pane?.classList.contains("active")) return;
     const video = $("primary-video");
     const path = clip()?.asset?.path || "";
-    if (video && path) {
+    if (video && !path) {
+      video.pause();
+      video.removeAttribute("src");
+      delete video.dataset.sourcePath;
+      delete video.dataset.mediaUrl;
+      video.load();
+    } else if (video) {
       const mediaUrl = `/media/${selectedKind}?v=${encodeURIComponent(state().media?.cache_token || "")}`;
       if (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== mediaUrl) {
         video.dataset.sourcePath = path;
@@ -317,7 +323,7 @@ export function createIntroOutroPane({
       <div class="control-grid"><label>Width (auto 0)<input data-box-field="width" type="number" min="0" value="${Number(box.width || 0)}" /></label><label>Height (auto 0)<input data-box-field="height" type="number" min="0" value="${Number(box.height || 0)}" /></label></div>
       <div class="control-grid"><label>Font<input data-box-field="font_family" type="text" value="${escapeHtml(box.font_family || "Arial")}" /></label><label>Font size<input data-box-field="font_size" type="number" min="8" max="72" value="${Number(box.font_size || 28)}" /></label></div>
       <div class="control-grid"><label>Background<input data-box-field="background_color" type="color" value="${escapeHtml(box.background_color || "#000000")}" /></label><label>Text color<input data-box-field="text_color" type="color" value="${escapeHtml(box.text_color || "#ffffff")}" /></label></div>
-      <div class="control-grid"><label>Opacity %<input data-box-field="opacity" type="number" min="0" max="100" value="${Math.round(Number(box.opacity ?? 0.9) * 100)}" /></label><div><label class="check-row"><input data-box-field="font_bold" type="checkbox" ${box.font_bold ? "checked" : ""} /> Bold</label><label class="check-row"><input data-box-field="font_italic" type="checkbox" ${box.font_italic ? "checked" : ""} /> Italic</label></div></div>
+      <div class="control-grid"><label>Opacity %<input class="opacity-percent-input" data-box-field="opacity" type="number" min="0" max="100" value="${Math.round(Number(box.opacity ?? 0.9) * 100)}" /></label><div><label class="check-row"><input data-box-field="font_bold" type="checkbox" ${box.font_bold ? "checked" : ""} /> Bold</label><label class="check-row"><input data-box-field="font_italic" type="checkbox" ${box.font_italic ? "checked" : ""} /> Italic</label></div></div>
     </article>`;
   }
 

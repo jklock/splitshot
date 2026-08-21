@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 
 from splitshot.domain.models import (
@@ -319,3 +320,22 @@ def test_combined_queue_includes_only_enabled_boundary_media(
     assert concatenated[0] == "intro-prepared.mp4"
     assert concatenated[1].endswith("1-stage-1.mp4")
     assert fade_args == [(0.0, None)]
+
+
+def test_combined_output_uses_dated_name_in_output_directory(tmp_path: Path, monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.name = "08/16/2026 IDPA @ WSRC"
+    output_date = datetime.now().strftime("%Y-%m-%d")
+
+    def fake_concat(_results, _output_dir, output_path: Path) -> Path:
+        assert output_path.parent == tmp_path
+        output_path.touch()
+        return output_path
+
+    monkeypatch.setattr(controller, "_plain_concat", fake_concat)
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+
+    combined_path = controller._concat_outputs([tmp_path / "stage.mp4"], tmp_path)
+
+    assert combined_path == tmp_path / f"Combined-{output_date}.mp4"
+    assert combined_path.is_file()

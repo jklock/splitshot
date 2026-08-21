@@ -162,18 +162,18 @@ def compute_crop_box(
     current_ratio = width / height
     if current_ratio > target_ratio:
         crop_height = _ensure_even(height)
-        crop_width = _ensure_even(int(round(crop_height * target_ratio)))
+        crop_width = _ensure_even(round(crop_height * target_ratio))
     else:
         crop_width = _ensure_even(width)
-        crop_height = _ensure_even(int(round(crop_width / target_ratio)))
+        crop_height = _ensure_even(round(crop_width / target_ratio))
 
     crop_width = max(2, min(width, crop_width))
     crop_height = max(2, min(height, crop_height))
 
     center_px = center_x * width
     center_py = center_y * height
-    left = int(round(center_px - (crop_width / 2)))
-    top = int(round(center_py - (crop_height / 2)))
+    left = round(center_px - (crop_width / 2))
+    top = round(center_py - (crop_height / 2))
     left = max(0, min(width - crop_width, left))
     top = max(0, min(height - crop_height, top))
     return left, top, crop_width, crop_height
@@ -764,6 +764,8 @@ def _encoder_command(
         _codec_name(project.export.video_codec),
         "-preset",
         project.export.ffmpeg_preset,
+        "-threads",
+        "4",
         "-b:v",
         video_bitrate,
         "-pix_fmt",
@@ -833,7 +835,7 @@ def _input_has_audio(path: str | Path) -> bool:
     return any(stream.get("codec_type") == "audio" for stream in info.get("streams", []))
 
 
-def _read_exact(pipe: Any, n: int) -> bytes:  # noqa: ANN401
+def _read_exact(pipe: Any, n: int) -> bytes:
     chunks: list[bytes] = []
     while n > 0:
         chunk = pipe.read(n)
@@ -868,11 +870,14 @@ def _render_pass(
         stdin=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    decoder_log_thread = _start_log_reader(decoder.stderr, "decoder", log_lines, log_callback)
+    # Decoder stderr is buffered until process outcomes are known. A downstream
+    # encoder exit otherwise surfaces expected pipe-shutdown noise as live errors.
+    decoder_log_thread = _start_log_reader(decoder.stderr, "decoder", log_lines, None)
     encoder_log_thread = _start_log_reader(encoder.stderr, "encoder", log_lines, log_callback)
     renderer = OverlayRenderer()
     bytes_per_frame = plan.width * plan.height * 4
-    total_frames = max(1, int(math.ceil((plan.duration_ms / 1000.0) * plan.fps)))
+    total_frames = max(1, math.ceil((plan.duration_ms / 1000.0) * plan.fps))
+    encoder_pipe_broken = False
     try:
         for frame_index in range(total_frames):
             raw = _read_exact(decoder.stdout, bytes_per_frame)
@@ -901,7 +906,7 @@ def _render_pass(
             renderer.paint(
                 painter,
                 project,
-                int(round((frame_index / plan.fps) * 1000)),
+                round((frame_index / plan.fps) * 1000),
                 output_width,
                 output_height,
             )
@@ -910,15 +915,21 @@ def _render_pass(
             try:
                 encoder.stdin.write(_image_to_rgba_bytes(image))
             except BrokenPipeError:
+                encoder_pipe_broken = True
                 break
             if progress_callback is not None:
                 frame_progress = min((frame_index + 1) / total_frames, 1.0)
                 progress_callback(min(progress_start + (frame_progress * progress_span), 1.0))
     finally:
+        if encoder_pipe_broken and decoder.poll() is None:
+            decoder.terminate()
         if decoder.stdout is not None:
             decoder.stdout.close()
         if encoder.stdin is not None:
-            encoder.stdin.close()
+            try:
+                encoder.stdin.close()
+            except BrokenPipeError:
+                encoder_pipe_broken = True
 
     decoder_return = decoder.wait()
     encoder_return = encoder.wait()
@@ -935,10 +946,17 @@ def _render_pass(
     ):
         log_callback(log_lines[-1])
 
-    if decoder_return != 0 and not expected_decoder_shutdown:
-        raise RuntimeError("Base video render failed")
+    if decoder_return != 0 and not expected_decoder_shutdown and encoder_return == 0:
+        raise RuntimeError(f"Base video render failed (decoder exit code {decoder_return})")
     if encoder_return != 0:
-        raise RuntimeError("MP4 encode failed")
+        reason = (
+            f"signal {-encoder_return}" if encoder_return < 0 else f"exit code {encoder_return}"
+        )
+        message = f"MP4 encode failed ({reason})"
+        log_lines.append(f"encoder: {message}")
+        if log_callback is not None:
+            log_callback(log_lines[-1])
+        raise RuntimeError(message)
 
 
 def _is_expected_decoder_pipe_shutdown(
@@ -983,7 +1001,7 @@ def _validate_export_output(output_target: Path) -> None:
             check=True,
         )
         info = json.loads(result.stdout)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(f"Export output is invalid: {output_target} ({exc})") from exc
     streams = info.get("streams", [])
     if not any(stream.get("codec_type") == "video" for stream in streams):

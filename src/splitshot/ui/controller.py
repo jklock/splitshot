@@ -1267,12 +1267,34 @@ class ProjectController(QObject):
             if scoring.division != next_division:
                 scoring.division = next_division
                 changed = True
+        explicit_overrides: dict[str, object] = {}
+        if match_type is not None:
+            explicit_overrides["match_type"] = clean_match_type
+        if stage_number is not None:
+            explicit_overrides["stage_number"] = next_stage_number
+        if competitor_name is not None:
+            explicit_overrides["competitor_name"] = next_competitor_name
+        if competitor_place is not None:
+            explicit_overrides["competitor_place"] = next_competitor_place
+        if classification is not None:
+            explicit_overrides["classification"] = next_classification
+        if division is not None:
+            explicit_overrides["division"] = next_division
         if changed:
             if self._can_reimport_practiscore_source():
                 self._import_practiscore_source_for_all_stages(
                     str(self._practiscore_source_path),
                     self._practiscore_source_name,
                 )
+                if explicit_overrides:
+                    for key, value in explicit_overrides.items():
+                        if value not in (None, ""):
+                            setattr(scoring, key, value)
+                    self._sync_project_to_active_stage()
+                    self.update_hit_factor()
+                self._set_status("Updated PractiScore import settings.")
+                self.project.touch()
+                self.project_changed.emit()
                 return
             scoring.imported_stage = None
             scoring.penalties = 0.0
@@ -1329,6 +1351,10 @@ class ProjectController(QObject):
             for stage in self.project.stages
             if stage.imported_stage_number is not None
         }
+        manual_stages = sorted(
+            (stage for stage in self.project.stages if stage.imported_stage_number is None),
+            key=lambda stage: stage.order_index,
+        )
         new_stages: list[ProjectStage] = []
         for order_index, stage_number in enumerate(stage_numbers, start=1):
             stage_name = f"Stage {stage_number}"
@@ -1367,8 +1393,12 @@ class ProjectController(QObject):
                     stage.label = stage.imported_stage_name or stage_name
             new_stages.append(stage)
 
+        new_stages.extend(manual_stages)
+        for order_index, stage in enumerate(new_stages, start=1):
+            stage.order_index = order_index
         stage_ids = {stage.id for stage in new_stages}
         self.project.stages = new_stages
+        self._normalize_stage_order()
         self.project.queue = [entry for entry in self.project.queue if entry.stage_id in stage_ids]
         self.project.practiscore_source_file = path
 
@@ -2090,7 +2120,9 @@ class ProjectController(QObject):
         if summary_metrics_changed:
             self._sync_active_stage_to_project()
             changed = True
-        expected_stage_numbers = set(options.stage_numbers or [])
+        expected_stage_numbers = set(options.stage_numbers or []).difference(
+            self.project.excluded_imported_stage_numbers
+        )
         actual_stage_numbers = {
             stage.imported_stage_number
             for stage in self.project.stages
@@ -2351,9 +2383,7 @@ class ProjectController(QObject):
     def _set_practiscore_comparison_competitors(
         self, competitors: Iterable[PractiScoreCompetitorOption]
     ) -> None:
-        self._practiscore_comparison_competitors = self._comparison_competitor_payloads(
-            competitors
-        )
+        self._practiscore_comparison_competitors = self._comparison_competitor_payloads(competitors)
         self.project.scoring.comparison_competitors = deepcopy(
             self._practiscore_comparison_competitors
         )
@@ -2553,7 +2583,7 @@ class ProjectController(QObject):
             )
             self._sync_project_to_active_stage()
 
-        if any(stage.id == target_active_stage_id for stage in imported_stages):
+        if any(stage.id == target_active_stage_id for stage in self.project.stages):
             self.project.active_stage_id = target_active_stage_id
         else:
             self.project.active_stage_id = imported_stages[0].id
@@ -2648,12 +2678,20 @@ class ProjectController(QObject):
         if not seed_from_project:
             self._sync_project_to_active_stage()
         next_order = max((stage.order_index for stage in self.project.stages), default=0) + 1
-        stage_label = str(label or "").strip() or f"Stage {next_order}"
-        if any(
-            stage.label.strip().casefold() == stage_label.casefold()
-            for stage in self.project.stages
-        ):
-            raise ValueError(f'A stage named "{stage_label}" already exists.')
+        stage_label = str(label or "").strip()
+        if stage_label:
+            if any(
+                stage.label.strip().casefold() == stage_label.casefold()
+                for stage in self.project.stages
+            ):
+                raise ValueError(f'A stage named "{stage_label}" already exists.')
+        else:
+            existing_labels = {stage.label.strip().casefold() for stage in self.project.stages}
+            stage_label = f"Stage {next_order}"
+            candidate = next_order
+            while stage_label.casefold() in existing_labels:
+                candidate += 1
+                stage_label = f"Stage {candidate}"
         stage = ProjectStage(
             label=stage_label,
             order_index=next_order,
@@ -2692,6 +2730,7 @@ class ProjectController(QObject):
                 stage.export.last_log = ""
                 stage.export.last_error = None
         self.project.stages.append(stage)
+        self._normalize_stage_order()
         self.project.active_stage_id = stage.id
         self._sync_active_stage_to_project()
         self.project.touch()
@@ -2712,11 +2751,15 @@ class ProjectController(QObject):
                     stage.imported_stage_number,
                 }
             )
+        deleted_order_index = stage.order_index
+        was_active = self.project.active_stage_id == stage_id
         self.project.stages = [item for item in self.project.stages if item.id != stage_id]
         self.project.queue = [entry for entry in self.project.queue if entry.stage_id != stage_id]
         for index, item in enumerate(self.project.stages, start=1):
             item.order_index = index
-        self.project.active_stage_id = self.project.stages[0].id
+        if was_active:
+            neighbor_index = min(len(self.project.stages) - 1, deleted_order_index - 1)
+            self.project.active_stage_id = self.project.stages[neighbor_index].id
         self._sync_active_stage_to_project()
         self.project.touch()
         self.project_changed.emit()
@@ -2783,6 +2826,33 @@ class ProjectController(QObject):
     def _stage_by_id(self, stage_id: str) -> ProjectStage | None:
         return next((stage for stage in self.project.stages if stage.id == stage_id), None)
 
+    @staticmethod
+    def _stage_number_from_label(label: str) -> int | None:
+        match = re.match(r"^\s*stage\s*#?\s*(\d+)\b", str(label), flags=re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    def _normalize_stage_order(self) -> bool:
+        """Keep every stage consumer on the natural stage-number order."""
+        before = [(stage.id, stage.order_index) for stage in self.project.stages]
+
+        def sort_key(stage: ProjectStage) -> tuple[int, int, str, str]:
+            label_number = self._stage_number_from_label(stage.label)
+            stage_number = (
+                label_number
+                if label_number is not None
+                else stage.imported_stage_number
+                if stage.imported_stage_number is not None
+                else stage.scoring.stage_number
+                if stage.scoring.stage_number is not None
+                else stage.order_index
+            )
+            return (int(stage_number), stage.order_index, stage.label.casefold(), stage.id)
+
+        self.project.stages.sort(key=sort_key)
+        for order_index, stage in enumerate(self.project.stages, start=1):
+            stage.order_index = order_index
+        return before != [(stage.id, stage.order_index) for stage in self.project.stages]
+
     def _mark_stage_queue_stale(self, stage_id: str | None) -> None:
         if not stage_id:
             return
@@ -2839,6 +2909,7 @@ class ProjectController(QObject):
         if not changed:
             self._set_status(f"Stage {stage.label} details unchanged.")
             return
+        self._normalize_stage_order()
         if stage_id == self.project.active_stage_id:
             self._sync_active_stage_to_project()
         self._mark_stage_queue_stale(stage_id)
@@ -2912,7 +2983,7 @@ class ProjectController(QObject):
             raise ValueError(f"Stage {stage_id} not found")
         if not stage.primary_media.path:
             raise ValueError("Add primary media before adding secondary media")
-        self._set_status(f"Importing added media for stage {stage.label}...")
+        self._set_status(f"Importing secondary media for stage {stage.label}...")
         project_path = self._stage_project_input_path(path)
         if stage_id == self.project.active_stage_id:
             self.add_merge_source(project_path)
@@ -2930,7 +3001,7 @@ class ProjectController(QObject):
         self._mark_stage_queue_stale(stage_id)
         self.project.touch()
         self.project_changed.emit()
-        self._set_status(f"Imported added media for stage {stage.label}.")
+        self._set_status(f"Imported secondary media for stage {stage.label}.")
 
     def set_stage_primary_from_existing(self, stage_id: str, source_id: str) -> None:
         stage = self._stage_by_id(stage_id)
@@ -3053,7 +3124,7 @@ class ProjectController(QObject):
             if not stage.added_media:
                 stage.merge.enabled = False
         self._mark_stage_queue_stale(stage_id)
-        self._set_status(f"Removed added media from stage {stage.label}.")
+        self._set_status(f"Removed secondary media from stage {stage.label}.")
         self.project.touch()
         self.project_changed.emit()
 
@@ -3139,6 +3210,38 @@ class ProjectController(QObject):
         self._set_status(f"Added stage {stage.label} to queue.")
         self.project.touch()
         self.project_changed.emit()
+
+    def add_all_stages_to_queue(self) -> int:
+        """Queue every stage that currently has primary media in canonical order."""
+        self._sync_project_to_active_stage()
+        queueable = [stage for stage in self.project.stages if stage.primary_media.path]
+        if not queueable:
+            raise ValueError("No stages with primary media are available to queue.")
+        existing_by_stage = {entry.stage_id: entry for entry in self.project.queue}
+        now = datetime.now(UTC)
+        for stage in queueable:
+            stage.queue_status = QueueStatus.QUEUED
+            snapshot = deepcopy(stage_to_dict(stage))
+            existing = existing_by_stage.get(stage.id)
+            if existing is not None:
+                existing.status = QueueStatus.QUEUED
+                existing.snapshot = snapshot
+                existing.created_at = now
+            else:
+                entry = QueueEntry(
+                    stage_id=stage.id,
+                    status=QueueStatus.QUEUED,
+                    snapshot=snapshot,
+                    created_at=now,
+                )
+                self.project.queue.append(entry)
+                existing_by_stage[stage.id] = entry
+        self.project.queue.sort(key=lambda entry: self._stage_order(entry.stage_id))
+        count = len(queueable)
+        self._set_status(f"Queued all {count} stages with primary media.")
+        self.project.touch()
+        self.project_changed.emit()
+        return count
 
     def remove_stage_from_queue(self, stage_id: str) -> None:
         before = len(self.project.queue)
@@ -3231,8 +3334,10 @@ class ProjectController(QObject):
         for label, path in boundary_media:
             if not path.is_file():
                 raise ValueError(f"Queue {label.lower()} file is missing: {path}")
-        total_units = len(queued) + (len(boundary_media) if mode == "combined" else 0) + (
-            1 if mode == "combined" else 0
+        total_units = (
+            len(queued)
+            + (len(boundary_media) if mode == "combined" else 0)
+            + (1 if mode == "combined" else 0)
         )
 
         def report_progress(
@@ -3368,20 +3473,22 @@ class ProjectController(QObject):
                                 progress_callback=(
                                     None
                                     if progress_callback is None
-                                    else lambda value, boundary_index=boundary_index, label=label: progress_callback(
-                                        {
-                                            "progress": min(
-                                                0.999,
-                                                (len(queued) + boundary_index + value)
-                                                / total_units,
-                                            ),
-                                            "stage_progress": value,
-                                            "stage_index": len(queued),
-                                            "stage_count": len(queued),
-                                            "stage_label": label,
-                                            "mode": mode,
-                                            "phase": "boundary",
-                                        }
+                                    else lambda value, boundary_index=boundary_index, label=label: (
+                                        progress_callback(
+                                            {
+                                                "progress": min(
+                                                    0.999,
+                                                    (len(queued) + boundary_index + value)
+                                                    / total_units,
+                                                ),
+                                                "stage_progress": value,
+                                                "stage_index": len(queued),
+                                                "stage_count": len(queued),
+                                                "stage_label": label,
+                                                "mode": mode,
+                                                "phase": "boundary",
+                                            }
+                                        )
                                     )
                                 ),
                                 log_callback=log_callback,
@@ -3510,7 +3617,8 @@ class ProjectController(QObject):
         return output_dir / f"{target_stage.order_index}-{self._stage_slug(target_stage)}.mp4"
 
     def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
-        combined_path = output_dir / f"{self.project.name}-combined.mp4"
+        output_date = datetime.now().strftime("%Y-%m-%d")
+        combined_path = output_dir / f"Combined-{output_date}.mp4"
         temp_combined_path = self._temporary_output_path(combined_path)
         ces = self.project.combined_export_settings
 
@@ -3534,9 +3642,7 @@ class ProjectController(QObject):
         fade_out_s: float | None = None,
         log_callback: Callable[[str], None] | None = None,
     ) -> None:
-        fade_in_s = (
-            self.project.queue_settings.fade_in_s if fade_in_s is None else float(fade_in_s)
-        )
+        fade_in_s = self.project.queue_settings.fade_in_s if fade_in_s is None else float(fade_in_s)
         fade_out_s = (
             self.project.queue_settings.fade_out_s if fade_out_s is None else float(fade_out_s)
         )
@@ -3626,7 +3732,9 @@ class ProjectController(QObject):
             "classification": "class_placement",
             "overall_place": "overall_placement",
         }
-        requested = list(dict.fromkeys(aliases.get(metric_id, metric_id) for metric_id in metric_ids))
+        requested = list(
+            dict.fromkeys(aliases.get(metric_id, metric_id) for metric_id in metric_ids)
+        )
         values = {
             "score_time": str(metrics.get("display_value") or ""),
             "raw_time": (
@@ -5308,9 +5416,7 @@ class ProjectController(QObject):
         clip = getattr(self.project, f"{normalized_kind}_clip")
         self._set_overlay_display_options(payload, clip.overlay, cascade=False)
 
-    def set_intro_outro_fades(
-        self, kind: str, *, fade_in_s: float, fade_out_s: float
-    ) -> None:
+    def set_intro_outro_fades(self, kind: str, *, fade_in_s: float, fade_out_s: float) -> None:
         normalized_kind = str(kind or "").strip().lower()
         if normalized_kind not in {"intro", "outro"}:
             raise ValueError("Intro / Outro fade kind must be intro or outro.")
@@ -5867,6 +5973,8 @@ class ProjectController(QObject):
 
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
+        self._normalize_stage_order()
+        self._sync_active_stage_to_project()
         self.project_path = ensure_project_suffix(path)
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path()
@@ -6368,8 +6476,6 @@ class ProjectController(QObject):
         try:
             self._autosave_in_progress = True
             save_project(self.project, self.project_path)
-            if self.project.scoring.practiscore_source_path:
-                self._restore_practiscore_source_from_project()
             self._saved_snapshot = project_to_dict(self.project)
             self._remember_project(self.project_path)
         except Exception as exc:  # noqa: BLE001

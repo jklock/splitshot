@@ -166,6 +166,42 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
         server.shutdown()
 
 
+@pytest.mark.parametrize("height", [900, 700, 560])
+def test_primary_rail_scales_every_tool_to_available_height_without_scrolling(
+    height: int,
+) -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": height})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                geometry = page.locator(".tool-nav").evaluate(
+                    """(nav) => ({
+                      clientHeight: nav.clientHeight,
+                      scrollHeight: nav.scrollHeight,
+                      overflowY: getComputedStyle(nav).overflowY,
+                      navRect: nav.getBoundingClientRect().toJSON(),
+                      items: [...nav.querySelectorAll(':scope > .tool-item')].map((item) => (
+                        item.getBoundingClientRect().toJSON()
+                      )),
+                    })"""
+                )
+
+                assert len(geometry["items"]) == 14
+                assert geometry["overflowY"] == "hidden"
+                assert geometry["scrollHeight"] <= geometry["clientHeight"]
+                assert all(item["height"] > 0 for item in geometry["items"])
+                assert geometry["items"][0]["top"] >= geometry["navRect"]["top"]
+                assert geometry["items"][-1]["bottom"] <= geometry["navRect"]["bottom"] + 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 @pytest.mark.parametrize("resolution", [(640, 360), (360, 640)])
 def test_review_video_frame_stays_contained_at_scaled_effective_viewports(
     synthetic_video_factory,

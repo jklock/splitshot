@@ -1695,16 +1695,16 @@
 
 .text-box-card-actions {
   align-items: center;
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
-  grid-template-columns: 1.7rem repeat(2, minmax(5.75rem, 1fr));
-  justify-content: end;
+  justify-content: flex-end;
   min-width: 0;
 }
 
 .text-box-card-actions > button:not(.scoring-shot-toggle):not(.pane-toggle) {
-  min-width: 0;
-  width: 100%;
+  min-width: 5.75rem;
+  flex: 1 1 auto;
 }
 
 .text-box-card-actions > .scoring-shot-toggle,
@@ -2048,12 +2048,14 @@
     width: 100%;
   }
 
-  .text-box-card-actions {
-    grid-template-columns: 1.7rem repeat(2, minmax(0, 1fr));
+  .text-box-card-actions > button:not(.scoring-shot-toggle):not(.pane-toggle) {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
-  .popup-bubble-card .text-box-card-actions {
-    grid-template-columns: minmax(0, 1fr) 1.7rem repeat(2, minmax(0, 1fr));
+  .popup-bubble-card .text-box-card-actions > button:not(.scoring-shot-toggle):not(.pane-toggle) {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   .merge-media-card-actions {
@@ -2858,9 +2860,18 @@
 }
 
 .opacity-percent-input {
+  -webkit-appearance: none;
+  appearance: textfield;
   min-width: 4.35rem;
   text-align: right;
   width: 4.35rem;
+  -moz-appearance: textfield;
+}
+
+.opacity-percent-input::-webkit-outer-spin-button,
+.opacity-percent-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .opacity-percent-suffix {
@@ -3128,7 +3139,7 @@
   font-size: var(--text-base);
   min-height: 30px;
   min-width: 0;
-  padding: var(--space-1) 2.75rem var(--space-1) 0.75rem;
+  padding: var(--space-1) 0.75rem;
   text-align: left;
   width: 100%;
 }

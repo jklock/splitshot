@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
 from splitshot.domain.models import OverlayTextBox
+from splitshot.media.probe import probe_video
 from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.video_test_helpers import create_project
 
@@ -44,7 +45,14 @@ IN_OUT_SINGLE_INTERACTION_CASES = [
     ("height", '[data-box-field="height"]', "97", 97, "number", "overlay"),
     ("font_family", '[data-box-field="font_family"]', "Georgia", "Georgia", "text", "overlay"),
     ("font_size", '[data-box-field="font_size"]', "35", 35, "number", "overlay"),
-    ("background_color", '[data-box-field="background_color"]', "#123456", "#123456", "color", "overlay"),
+    (
+        "background_color",
+        '[data-box-field="background_color"]',
+        "#123456",
+        "#123456",
+        "color",
+        "overlay",
+    ),
     ("text_color", '[data-box-field="text_color"]', "#abcdef", "#abcdef", "color", "overlay"),
     ("opacity", '[data-box-field="opacity"]', "61", 0.61, "number", "overlay"),
     ("font_bold", '[data-box-field="font_bold"]', None, False, "checkbox", "overlay"),
@@ -129,7 +137,9 @@ def test_queue_uses_flat_og_controls_without_apply_settings_ui(synthetic_video_f
                 assert page.get_by_text("Match Stages", exact=True).is_visible()
                 assert page.get_by_text("Process", exact=True).is_visible()
                 assert page.get_by_role("button", name="Process Queue", exact=True).is_visible()
-                assert page.get_by_role("button", name="Process as One File", exact=True).is_visible()
+                assert page.get_by_role(
+                    "button", name="Process as One File", exact=True
+                ).is_visible()
                 assert page.locator(".queue-status-pill").count() == 0
                 assert page.locator(".queue-status-text").count() == 1
                 assert page.locator(".queue-stage-list").is_visible()
@@ -138,9 +148,12 @@ def test_queue_uses_flat_og_controls_without_apply_settings_ui(synthetic_video_f
                 assert page.get_by_role("button", name="Show Log").is_visible()
                 assert page.locator("#queue-include-intro").is_disabled()
                 assert page.locator("#queue-include-outro").is_disabled()
-                assert page.locator("#queue-combined-btn").evaluate(
-                    "button => getComputedStyle(button).backgroundColor"
-                ) == "rgb(57, 208, 111)"
+                assert (
+                    page.locator("#queue-combined-btn").evaluate(
+                        "button => getComputedStyle(button).backgroundColor"
+                    )
+                    == "rgb(57, 208, 111)"
+                )
                 assert page.locator("#queue-fade-in").input_value() == "0.5"
                 assert page.locator("#queue-fade-out").input_value() == "0.5"
             finally:
@@ -248,7 +261,9 @@ def test_in_out_control_inventory_uses_one_interaction_and_preserves_node(
                     """({ field, expected }) =>
                       Number(state?.project?.intro_clip?.[field]) === Number(expected)""",
                     arg={
-                        "field": "fade_out_s" if second_selector.endswith("fade-out") else "fade_in_s",
+                        "field": "fade_out_s"
+                        if second_selector.endswith("fade-out")
+                        else "fade_in_s",
                         "expected": second_value,
                     },
                 )
@@ -264,14 +279,17 @@ def test_in_out_control_inventory_uses_one_interaction_and_preserves_node(
                     else "/api/project/intro-outro/overlay"
                 )
                 expected_route_mutations = 2 if route_kind == "fades" else 1
-                assert len(
-                    [
-                        entry
-                        for entry in entries
-                        if entry.get("event") == "api.success"
-                        and entry.get("path") == expected_route
-                    ]
-                ) == expected_route_mutations
+                assert (
+                    len(
+                        [
+                            entry
+                            for entry in entries
+                            if entry.get("event") == "api.success"
+                            and entry.get("path") == expected_route
+                        ]
+                    )
+                    == expected_route_mutations
+                )
 
                 stored = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
                 if route_kind == "fades":
@@ -308,9 +326,7 @@ def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> No
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.project.intro_clip.overlay.text_boxes = [
-        OverlayTextBox(source="match_summary")
-    ]
+    controller.project.intro_clip.overlay.text_boxes = [OverlayTextBox(source="match_summary")]
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
@@ -386,7 +402,9 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 intro_nav = page.locator("button[data-tool='intro-outro']")
                 queue_nav = page.locator("button[data-tool='queue']")
                 assert intro_nav.inner_text() == "In / Out"
-                assert intro_nav.evaluate("node => node.compareDocumentPosition(document.querySelector(\"button[data-tool='queue']\")) & Node.DOCUMENT_POSITION_FOLLOWING")
+                assert intro_nav.evaluate(
+                    "node => node.compareDocumentPosition(document.querySelector(\"button[data-tool='queue']\")) & Node.DOCUMENT_POSITION_FOLLOWING"
+                )
                 intro_nav.click(force=True)
                 assert page.get_by_role("heading", name="Intro / Outro", exact=True).is_visible()
                 assert page.get_by_role("button", name="Intro", exact=True).is_visible()
@@ -400,6 +418,9 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 page.locator("#intro-outro-fade-out").dispatch_event("change")
                 page.wait_for_function("() => state.project.intro_clip.fade_out_s === 0.9")
                 page.get_by_role("button", name="Outro", exact=True).click()
+                assert page.locator("#primary-video").is_hidden()
+                assert page.locator("#primary-video").get_attribute("src") in {None, ""}
+                assert page.locator("#primary-video").get_attribute("data-source-path") is None
                 assert page.locator("#intro-outro-fade-in").input_value() == "0.5"
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.5"
                 page.locator("#intro-outro-fade-in").fill("1.1")
@@ -411,14 +432,19 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 page.get_by_role("button", name="Intro", exact=True).click()
                 assert page.locator("#intro-outro-fade-in").input_value() == "0.7"
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.9"
-                page.wait_for_function("() => document.querySelector('#primary-video').src.includes('/media/intro')")
+                page.wait_for_function(
+                    "() => document.querySelector('#primary-video').src.includes('/media/intro')"
+                )
                 assert page.locator("#primary-video").evaluate(
                     "node => node.dataset.sourcePath === state.project.intro_clip.asset.path"
                 )
                 assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
-                assert page.locator(".intro-outro-preview-badge").get_attribute(
-                    "data-intro-outro-box-drag"
-                ) == "true"
+                assert (
+                    page.locator(".intro-outro-preview-badge").get_attribute(
+                        "data-intro-outro-box-drag"
+                    )
+                    == "true"
+                )
                 assert page.get_by_role("button", name="Add Text Box").is_visible()
                 assert page.get_by_role("button", name="Add Match Results").is_visible()
 
@@ -527,14 +553,66 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
         server.shutdown()
 
 
+def test_review_queue_all_files_queues_every_stage_in_one_action(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    project_path = tmp_path / "review-queue-all.ssproj"
+    controller.save_project(project_path)
+    created_stages = []
+    for index in range(1, 4):
+        stage = controller.create_stage(f"Stage {index}")
+        created_stages.append(stage)
+    for index, stage in enumerate(created_stages, start=1):
+        stage.primary_media = probe_video(
+            Path(synthetic_video_factory(name=f"review-queue-all-{index}"))
+        )
+    controller.project.active_stage_id = controller.project.stages[0].id
+    controller._sync_active_stage_to_project()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_page(playwright, server)
+            try:
+                page.locator("button[data-tool='review']").click(force=True)
+                button = page.get_by_role("button", name="Queue All Files", exact=True)
+                assert button.is_visible()
+                button.click()
+                page.wait_for_function(
+                    """() => state?.project?.queue?.length === 3
+                        && state.project.queue.every((entry) => entry.status === 'queued')"""
+                )
+                assert [entry.stage_id for entry in controller.project.queue] == [
+                    stage.id for stage in controller.project.stages
+                ]
+                assert all(entry.snapshot for entry in controller.project.queue)
+                saved = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+                assert [entry["stage_id"] for entry in saved["queue"]] == [
+                    stage.id for stage in controller.project.stages
+                ]
+                activity = server.activity.snapshot(after_seq=0, limit=1000)["entries"]
+                assert (
+                    sum(
+                        entry.get("event") == "api.start"
+                        and entry.get("path") == "/api/project/queue/add-all"
+                        for entry in activity
+                    )
+                    == 1
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_in_out_video_picker_updates_preview_and_queue_state(
     synthetic_video_factory,
 ) -> None:
     intro = Path(synthetic_video_factory(name="in-out-picker", beep_ms=250))
 
-    def choose_video(
-        kind: str, current: str | None, default_root: str | None = None
-    ) -> str:
+    def choose_video(kind: str, current: str | None, default_root: str | None = None) -> str:
         assert kind == "in_out_media"
         return str(intro)
 
@@ -547,9 +625,7 @@ def test_in_out_video_picker_updates_preview_and_queue_state(
                 create_project(page, str(intro.parent / "in-out-picker.ssproj"))
                 page.locator("button[data-tool='intro-outro']").click(force=True)
                 page.get_by_role("button", name="Select Video", exact=True).click()
-                page.wait_for_function(
-                    "() => Boolean(state?.project?.intro_clip?.asset?.path)"
-                )
+                page.wait_for_function("() => Boolean(state?.project?.intro_clip?.asset?.path)")
                 assert page.locator(".intro-outro-file").inner_text() == intro.name
                 assert "/media/intro" in page.locator("#primary-video").get_attribute("src")
                 page.locator("button[data-tool='queue']").click(force=True)
@@ -586,9 +662,7 @@ def test_in_out_video_picker_uses_packaged_native_bridge(
                 create_project(page, str(intro.parent / "in-out-native-picker.ssproj"))
                 page.locator("button[data-tool='intro-outro']").click(force=True)
                 page.get_by_role("button", name="Select Video", exact=True).click()
-                page.wait_for_function(
-                    "() => Boolean(state?.project?.intro_clip?.asset?.path)"
-                )
+                page.wait_for_function("() => Boolean(state?.project?.intro_clip?.asset?.path)")
                 assert page.locator(".intro-outro-file").inner_text() == intro.name
                 assert "/media/intro" in page.locator("#primary-video").get_attribute("src")
             finally:

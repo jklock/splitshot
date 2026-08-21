@@ -4149,10 +4149,10 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
                 <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
               </span>
             </label>
-            <label class="opacity-field"><span class="style-card-label">Background alpha</span>
+            <label class="opacity-field"><span class="style-card-label">Background opacity</span>
               <span class="opacity-control-pair">
                 <span class="opacity-percent-field">
-                  <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup background alpha percent" />
+                  <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup background opacity percent" />
                   <span class="opacity-percent-suffix">%</span>
                 </span>
               </span>
@@ -5579,6 +5579,14 @@ function syncSettingsMarkerTemplate(template = {}) {
 
 function renderSettingsPane() {
   return settingsPane?.renderSettingsPane();
+}
+
+function captureSettingsDraft() {
+  return settingsPane?.captureSettingsDraft() || null;
+}
+
+function clearSettingsDraft() {
+  settingsPane?.clearSettingsDraft();
 }
 
 function mergeSourcePipRect(...args) {
@@ -9939,9 +9947,6 @@ mediaPane = createMediaPane({
   documentObject: document,
   windowObject: window,
   getState: () => state,
-  setActiveStageId: (stageId) => {
-    if (state?.project) state.project.active_stage_id = stageId;
-  },
   setActiveTool,
   activity,
   callApi,
@@ -10025,6 +10030,8 @@ reviewPane = createReviewPane({
   renderLiveOverlay,
   scheduleSecondaryPreviewSync,
   restoreVideoElementFrame,
+  callApi,
+  setStatus,
 });
 
 timingPane = createTimingPane({
@@ -10324,6 +10331,8 @@ shellRuntime = createShellRuntime({
   readPopupTemplatePayload,
   scheduleSettingsDefaultsApply,
   readSettingsDefaultsPayload,
+  captureSettingsDraft,
+  clearSettingsDraft,
   applySettingsDefaults,
   toggleLayoutLock,
   resetLayout,

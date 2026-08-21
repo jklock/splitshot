@@ -979,6 +979,63 @@ def test_stage_names_must_be_unique() -> None:
         controller.update_stage_metadata(second.id, label=first.label)
 
 
+def test_add_stage_after_delete_picks_non_colliding_default_label() -> None:
+    controller = ProjectController()
+    for number in range(1, 7):
+        stage = controller.create_stage(f"Stage {number}")
+        stage.imported_stage_number = number
+        stage.order_index = number
+    controller.delete_stage(controller.project.stages[1].id)
+
+    added = controller.create_stage()
+
+    assert added.label == "Stage 7"
+    assert added.order_index == 6
+    assert [stage.order_index for stage in controller.project.stages] == [1, 2, 3, 4, 5, 6]
+
+
+def test_delete_stage_keeps_active_stage_context() -> None:
+    controller = ProjectController()
+    first = controller.create_stage("Stage 1")
+    second = controller.create_stage("Stage 2")
+    controller.select_stage(second.id)
+
+    controller.delete_stage(first.id)
+
+    assert controller.project.active_stage_id == second.id
+
+
+def test_delete_active_stage_falls_back_to_neighbor() -> None:
+    controller = ProjectController()
+    first = controller.create_stage("Stage 1")
+    second = controller.create_stage("Stage 2")
+    third = controller.create_stage("Stage 3")
+    controller.select_stage(second.id)
+
+    controller.delete_stage(second.id)
+
+    assert controller.project.active_stage_id == third.id
+
+    controller.delete_stage(third.id)
+
+    assert controller.project.active_stage_id == first.id
+
+
+def test_manual_stage_survives_practiscore_reimport(tmp_path: Path) -> None:
+    controller = ProjectController()
+    source = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+    manual = controller.create_stage("My Stage")
+    manual_id = manual.id
+
+    controller.import_practiscore_file(str(source), source_name="IDPA.csv")
+
+    assert [stage.id for stage in controller.project.stages][-1] == manual_id
+    assert controller.project.stages[-1].label == "My Stage"
+    assert controller.project.stages[-1].order_index == len(controller.project.stages)
+    assert [stage.imported_stage_number for stage in controller.project.stages[:-1]] == [1, 2, 3, 4]
+
+
 def test_trim_selected_stages_processes_only_requested_stages_and_restores_active(
     monkeypatch,
 ) -> None:

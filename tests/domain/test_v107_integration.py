@@ -22,17 +22,17 @@ import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
 
 from splitshot.domain.models import (
     Project,
     ProjectStage,
     QueueStatus,
-    project_to_dict,
     project_from_dict,
+    project_to_dict,
 )
+from splitshot.persistence.projects import load_project, save_project
 from splitshot.ui.controller import ProjectController
-from splitshot.persistence.projects import save_project, load_project
-
 
 DATA_ROOT = Path("05072026")
 CSV_PATH = DATA_ROOT / "CSV" / "IDPA.csv"
@@ -77,6 +77,10 @@ def _get_first_shooter_stage_data(csv_path: Path, stage_number: int) -> dict | N
     return None
 
 
+_fixture_missing = not CSV_PATH.exists()
+
+
+@pytest.mark.skipif(_fixture_missing, reason="Local fixture 05072026/ not present")
 class TestV107MultiStageWorkflow:
     """Integration test for v107 multi-stage workflow with real media."""
 

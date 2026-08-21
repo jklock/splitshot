@@ -211,13 +211,19 @@
               <div class="section-header pane-title-row">
                 <h3>Review</h3>
               </div>
+              <section class="settings-section review-queue-manager">
+                <div class="section-header sub-section-header">
+                  <h3>Queue</h3>
+                </div>
+                <button id="review-queue-all-btn" class="btn btn-primary" type="button">Queue All Files</button>
+              </section>
               <section class="review-visibility-manager">
                 <div class="section-header sub-section-header">
                   <h3>Show Boxes</h3>
                 </div>
                 <div class="button-grid two-up review-visibility-grid">
                   <label class="check-row review-visibility-option"><input id="show-markers" type="checkbox" /> Show markers</label>
-                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show added media</label>
+                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show secondary media</label>
                   <label class="check-row review-visibility-option"><input id="show-timer" type="checkbox" /> Show timer badge</label>
                   <label class="check-row review-visibility-option"><input id="show-draw" type="checkbox" /> Show draw badge</label>
                   <label class="check-row review-visibility-option"><input id="show-shots" type="checkbox" /> Show split badges</label>
@@ -648,7 +654,7 @@
                     <h3>Defaults</h3>
                     <button id="restore-merge-defaults" class="btn-sm btn-secondary" type="button">Reset Defaults</button>
                   </div>
-                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Include added media</label>
+                  <label class="check-row"><input id="merge-enabled" type="checkbox" /> Include secondary media</label>
                   <label>Layout
                     <select id="merge-layout">
                       <option value="side_by_side">Side by side</option>
@@ -674,7 +680,7 @@
                     </label>
                   </div>
                 </section>
-                <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+                <div id="merge-media-list" class="merge-media-list" aria-label="Secondary media list"></div>
               </div>
             </section>
 

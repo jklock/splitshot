@@ -173,6 +173,9 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/queue/media": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
+    "/api/project/queue/add-all": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
     "/api/project/intro-outro/fades": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
@@ -573,6 +576,10 @@ def test_activity_logger_console_level_filters_events(tmp_path, capsys) -> None:
     assert "server.initialized" in output
     assert '"level": "info"' in output
     assert "http.get" not in output
+
+
+def test_expected_media_disconnect_is_debug_not_warning() -> None:
+    assert ActivityLogger.level_for_event("media.client_disconnect") == "debug"
 
 
 def test_browser_server_primes_export_runtime_on_construction(monkeypatch) -> None:
@@ -2302,6 +2309,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
     server.start_background(open_browser=False)
     try:
         _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        _post_json(f"{server.url}api/project/stage/create", {"label": "Stage 1"})
         primary_path = Path(synthetic_video_factory(name="upload-primary"))
         secondary_one = Path(synthetic_video_factory(name="secondary-one", beep_ms=620))
         secondary_two = Path(synthetic_video_factory(name="secondary-two", beep_ms=640))
@@ -2320,6 +2328,11 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert len(saved["analysis"]["shots"]) == len(
             uploaded_primary["project"]["analysis"]["shots"]
         )
+
+        _post_json(f"{server.url}api/project/queue/add-all", {})
+        saved = _read_project_json(project_path)
+        assert len(saved["queue"]) == 1
+        assert saved["queue"][0]["stage_id"] == saved["active_stage_id"]
 
         _post_json(
             f"{server.url}api/project/in-out/media",

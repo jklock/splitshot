@@ -127,9 +127,7 @@ def test_media_stage_switch_keeps_primary_and_added_media_owned_by_each_stage(
                         )""",
                         {"stageId": stage_id, "path": str(primary)},
                     )
-                    page.wait_for_function(
-                        "() => Boolean(state?.project?.primary_video?.path)"
-                    )
+                    page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
                     assert page.locator(".media-add-more-btn").is_enabled()
                     page.evaluate(
                         """({ stageId, path }) => callApi(
@@ -202,6 +200,106 @@ def test_media_stage_switch_keeps_primary_and_added_media_owned_by_each_stage(
         server.shutdown()
 
 
+def test_practiscore_autosave_keeps_empty_selected_stage_and_player_isolated(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    warmup_path = Path(synthetic_video_factory(name="warmup-stage-primary"))
+    practiscore = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
+    project_path = tmp_path / "practiscore-stage-state.ssproj"
+
+    controller = ProjectController()
+    controller.import_practiscore_file(str(practiscore), source_name="IDPA.csv")
+    controller.save_project(str(project_path))
+    warmup_stage = controller.project.stages[0]
+    controller.import_stage_primary(warmup_stage.id, str(warmup_path))
+    empty_stage = controller.create_stage("Empty Stage")
+
+    assert controller.project.active_stage_id == empty_stage.id
+    assert controller.project.primary_video.path == ""
+    assert empty_stage.primary_media.path == ""
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+    assert reopened.project.active_stage_id == empty_stage.id
+    assert reopened.project.primary_video.path == ""
+    assert reopened.project.active_stage.primary_media.path == ""
+
+    server = BrowserControlServer(controller=reopened, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.locator("button[data-tool='media']").click(force=True)
+                assert (
+                    page.locator("#media-pane").get_by_text("Primary Media", exact=True).count()
+                    == 1
+                )
+                assert (
+                    page.locator("#media-pane").get_by_text("Secondary Media", exact=True).count()
+                    == 1
+                )
+                for selector, label in (
+                    (".media-add-primary-btn", "Add Primary"),
+                    (".media-add-more-btn", "Add Media"),
+                ):
+                    button = page.locator(selector)
+                    assert button.inner_text() == label
+                    dimensions = button.evaluate(
+                        """(node) => ({
+                            clientHeight: node.clientHeight,
+                            scrollHeight: node.scrollHeight,
+                            clientWidth: node.clientWidth,
+                            scrollWidth: node.scrollWidth,
+                        })"""
+                    )
+                    assert dimensions["scrollHeight"] <= dimensions["clientHeight"]
+                    assert dimensions["scrollWidth"] <= dimensions["clientWidth"]
+                assert "No primary media." in page.locator("#media-pane").inner_text()
+                assert warmup_path.name not in page.locator("#media-pane").inner_text()
+
+                page.locator("#media-active-stage-select").select_option(warmup_stage.id)
+                page.wait_for_function(
+                    """({ stageId, name }) => (
+                        state?.project?.active_stage_id === stageId
+                        && state?.project?.primary_video?.path?.endsWith(name)
+                        && document.querySelector('#primary-video')?.dataset.sourcePath?.endsWith(name)
+                    )""",
+                    arg={"stageId": warmup_stage.id, "name": warmup_path.name},
+                )
+
+                page.locator("#media-active-stage-select").select_option(empty_stage.id)
+                page.wait_for_function(
+                    """(stageId) => (
+                        state?.project?.active_stage_id === stageId
+                        && !state?.project?.primary_video?.path
+                        && !state?.media?.primary_available
+                        && !document.querySelector('#primary-video')?.dataset.sourcePath
+                        && document.querySelector('#media-pane')?.innerText.includes('No primary media.')
+                    )""",
+                    arg=empty_stage.id,
+                )
+                assert warmup_path.name not in page.locator("#media-pane").inner_text()
+
+                saved = {}
+                for _ in range(50):
+                    saved = json.loads((project_path / "project.json").read_text())
+                    if saved.get("active_stage_id") == empty_stage.id:
+                        break
+                    page.wait_for_timeout(100)
+                saved_empty_stage = next(
+                    stage for stage in saved["stages"] if stage["id"] == empty_stage.id
+                )
+                assert saved["active_stage_id"] == empty_stage.id
+                assert saved["primary_video"]["path"] == ""
+                assert saved_empty_stage["primary_media"]["path"] == ""
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_media_pane_active_stage_workspace_present(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="media-qa-card"))
     server = BrowserControlServer(port=0)
@@ -219,8 +317,14 @@ def test_media_pane_active_stage_workspace_present(synthetic_video_factory) -> N
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
                 assert page.locator("#media-pane").get_by_text("Stage", exact=True).count() >= 1
-                assert page.locator("#media-pane").get_by_text("Primary", exact=True).count() == 1
-                assert page.locator("#media-pane").get_by_text("Added Media", exact=True).count() == 1
+                assert (
+                    page.locator("#media-pane").get_by_text("Primary Media", exact=True).count()
+                    == 1
+                )
+                assert (
+                    page.locator("#media-pane").get_by_text("Secondary Media", exact=True).count()
+                    == 1
+                )
                 assert page.locator("#media-pane").get_by_text("Stages", exact=True).count() == 0
                 assert page.locator("button.media-add-stage-btn").count() >= 1
             finally:
@@ -272,8 +376,8 @@ def test_media_pane_primary_and_added_sections_present(synthetic_video_factory) 
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
                 inner_text = page.locator("#media-pane").inner_text()
-                assert "Primary" in inner_text
-                assert "Added Media" in inner_text
+                assert "Primary Media" in inner_text
+                assert "Secondary Media" in inner_text
             finally:
                 browser.close()
     finally:
@@ -299,13 +403,19 @@ def test_media_inventory_disclosures_persist_without_stages_wrapper(
 
                 primary_toggle = page.locator('[data-media-section="primary"]')
                 primary_toggle.click()
-                assert primary_toggle.get_attribute("aria-label") == "Expand Primary"
-                assert page.locator("#media-pane .media-pane-section").nth(1).get_attribute(
-                    "class"
-                ).endswith("collapsed")
-                assert page.evaluate(
-                    "() => JSON.parse(localStorage.getItem('splitshot.media.sectionExpanded')).primary"
-                ) is False
+                assert primary_toggle.get_attribute("aria-label") == "Expand Primary Media"
+                assert (
+                    page.locator("#media-pane .media-pane-section")
+                    .nth(1)
+                    .get_attribute("class")
+                    .endswith("collapsed")
+                )
+                assert (
+                    page.evaluate(
+                        "() => JSON.parse(localStorage.getItem('splitshot.media.sectionExpanded')).primary"
+                    )
+                    is False
+                )
                 assert page.locator("#media-pane").get_by_text("Stages", exact=True).count() == 0
             finally:
                 browser.close()
@@ -372,6 +482,64 @@ def test_media_save_stage_updates_active_stage_label_visibly(synthetic_video_fac
                 )
 
                 assert "Classifier Bay" in page.locator("#media-pane").inner_text()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_stage_rename_resorts_every_stage_order_consumer_and_persists(tmp_path: Path) -> None:
+    project_path = tmp_path / "stage-natural-order.ssproj"
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                create_project(page, str(project_path))
+                for label in ("Stage 2", "Stage 3", "Stage 6"):
+                    page.evaluate(
+                        "(stageLabel) => callApi('/api/project/stage/create', { label: stageLabel })",
+                        label,
+                    )
+
+                page.locator("button[data-tool='media']").click(force=True)
+                page.locator("#media-active-stage-label").fill("Stage 1")
+                page.locator(".media-save-stage-btn").click()
+                page.wait_for_function(
+                    """() => (state?.project?.stages || [])
+                        .map((stage) => stage.label).join('|') === 'Stage 1|Stage 2|Stage 3'"""
+                )
+
+                assert page.locator("#media-active-stage-select option").all_text_contents() == [
+                    "Stage 1",
+                    "Stage 2",
+                    "Stage 3",
+                ]
+                assert page.evaluate(
+                    "() => state.project.stages.map((stage) => stage.order_index)"
+                ) == [1, 2, 3]
+                assert page.evaluate(
+                    "() => state.stage_metrics.map((entry) => entry.stage_name)"
+                ) == ["Stage 1", "Stage 2", "Stage 3"]
+
+                page.locator("button[data-tool='queue']").click(force=True)
+                assert page.locator(".queue-stage-copy > strong").all_text_contents() == [
+                    "Stage 1",
+                    "Stage 2",
+                    "Stage 3",
+                ]
+
+                controller.autosave_project_if_needed()
+                reopened = ProjectController()
+                reopened.open_project(str(project_path))
+                assert [stage.label for stage in reopened.project.stages] == [
+                    "Stage 1",
+                    "Stage 2",
+                    "Stage 3",
+                ]
+                assert [stage.order_index for stage in reopened.project.stages] == [1, 2, 3]
             finally:
                 browser.close()
     finally:

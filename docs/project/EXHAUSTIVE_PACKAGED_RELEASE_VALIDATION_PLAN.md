@@ -116,7 +116,7 @@ Adversarial checks cover rapid edits, reordered responses, focus changes, pane/s
 
 ### Shared shell
 
-Test launch intent, project arguments, recent projects, restart, package identity, every rail destination, pane state, resizing, scrolling, locks, modals, color picker, keyboard access, status/progress/errors, and native reveal/open actions. At minimum and desktop window sizes, verify 100%, 125%, 150%, and 200% effective zoom; launch resets to 100% while deliberate zoom remains usable. Shell, pane, preview, workbenches, and controls remain contained, with scrolling in the owning pane.
+Test launch intent, project arguments, recent projects, restart, package identity, every rail destination, pane state, resizing, scrolling, locks, modals, color picker, keyboard access, status/progress/errors, and native reveal/open actions. At minimum and desktop window sizes, verify 90%, 100%, 125%, 150%, and 200% effective zoom; launch resets to 90% while deliberate zoom remains usable. Shell, pane, preview, workbenches, and controls remain contained, with scrolling in the owning pane.
 
 ### Project and PractiScore
 
@@ -124,7 +124,7 @@ Create, select, open, save, reopen, and delete projects; validate managed folder
 
 ### Media
 
-Add, name, save, select, and delete stages. Add `primary.MP4` as primary and `secondary.MP4` as added media. Test replace, clear, set-primary, remove, re-add, duplicate rejection, in-flight lock, disclosures, stage isolation, preview continuity, project copies, and relative persistence.
+Add, name, save, select, and delete stages. Add `primary.MP4` as primary media and `secondary.MP4` as secondary media. Test replace, clear, set-primary, remove, re-add, duplicate rejection, in-flight lock, disclosures, stage isolation, preview continuity, project copies, and relative persistence.
 
 ### Compose
 

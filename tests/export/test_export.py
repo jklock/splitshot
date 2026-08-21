@@ -83,6 +83,7 @@ def test_output_fades_scale_to_short_clip_and_emit_video_audio_filters(tmp_path:
     assert command[command.index("-af") + 1] == (
         "afade=t=in:st=0:d=0.500,afade=t=out:st=9.500:d=0.500"
     )
+    assert command[command.index("-threads") + 1] == "4"
 
 
 def test_export_with_audio_fade_enabled_handles_silent_video(
@@ -933,11 +934,11 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     project.overlay.show_shots = False
     project.overlay.show_score = True
     project.overlay.text_boxes = [
-            OverlayTextBox(
-                enabled=True,
-                source="imported_summary",
-                text="Geometry\nRaw 13.05\nPD 4\nFinal 17.05",
-                quadrant="above_final",
+        OverlayTextBox(
+            enabled=True,
+            source="imported_summary",
+            text="Geometry\nRaw 13.05\nPD 4\nFinal 17.05",
+            quadrant="above_final",
             background_color="#ff7b22",
             text_color="#ffffff",
             opacity=1.0,
@@ -1087,9 +1088,7 @@ def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot()
 def test_overlay_renderer_uses_review_metric_configuration_and_stage_data() -> None:
     project = Project(name="WYSIWYG Review Summary")
     project.analysis.beep_time_ms_primary = 0
-    project.analysis.shots = [
-        ShotEvent(time_ms=26500, score=ScoreMark(letter=ScoreLetter.DOWN_3))
-    ]
+    project.analysis.shots = [ShotEvent(time_ms=26500, score=ScoreMark(letter=ScoreLetter.DOWN_3))]
     apply_scoring_preset(project, "idpa_time_plus")
     project.scoring.enabled = True
     project.scoring.competitor_name = "Shooter"
@@ -1150,12 +1149,7 @@ def test_overlay_renderer_uses_review_metric_configuration_and_stage_data() -> N
         "Summary\nRaw 21.71\nPD 3\nFinal 23.71",
         True,
         ["score_time", "raw_time", "points_down", "penalties"],
-    ) == (
-        "Score / Time 23.71\n"
-        "Raw Time 21.71s\n"
-        "Points Down 3\n"
-        "Penalties 0"
-    )
+    ) == ("Score / Time 23.71\nRaw Time 21.71s\nPoints Down 3\nPenalties 0")
 
 
 def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
@@ -1170,11 +1164,11 @@ def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_sum
     project.overlay.show_score = False
     project.overlay.font_size = 14
     project.overlay.text_boxes = [
-            OverlayTextBox(
-                enabled=True,
-                source="imported_summary",
-                text="Geometry\nRaw 23.24\nPoints 101\nHF 4.3460",
-                quadrant="top_left",
+        OverlayTextBox(
+            enabled=True,
+            source="imported_summary",
+            text="Geometry\nRaw 23.24\nPoints 101\nHF 4.3460",
+            quadrant="top_left",
             background_color="#ff0000",
             text_color="#ffffff",
             opacity=1.0,

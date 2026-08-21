@@ -728,7 +728,7 @@ export function createTrimSyncPane({
           <div class="settings-section trim-pane-section ${isExpanded("sources") ? "" : "collapsed"}" data-trim-section="sources">
             ${renderSectionHeader("Sources", "sources")}
             <div id="trim-sync-list" class="trim-source-list">
-              ${sources.length ? sources.map((source, index) => buildSourceCard(source, index)).join("") : '<div class="empty-state">No added media for this stage.</div>'}
+              ${sources.length ? sources.map((source, index) => buildSourceCard(source, index)).join("") : '<div class="empty-state">No secondary media for this stage.</div>'}
             </div>
           </div>
         </div>

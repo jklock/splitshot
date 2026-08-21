@@ -48,13 +48,15 @@
 
 .tool-nav {
   display: grid;
-  align-content: start;
-  grid-auto-rows: var(--rail-item-height);
-  grid-template-rows: none;
+  grid-auto-rows: minmax(0, 1fr);
+  grid-template-rows: repeat(14, minmax(0, 1fr));
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  overflow-y: hidden;
+}
+
+.tool-nav > .tool-item {
+  height: 100%;
 }
 
 .tool-rail-footer {
@@ -123,7 +125,7 @@
 }
 
 .cockpit-shell.rail-collapsed .tool-nav {
-  grid-auto-rows: var(--rail-item-height);
+  grid-auto-rows: minmax(0, 1fr);
 }
 
 .cockpit-shell.rail-collapsed .tool-item {
@@ -481,4 +483,3 @@ small,
   border-color: var(--accent);
   color: #111;
 }
-

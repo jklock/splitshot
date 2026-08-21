@@ -9,10 +9,10 @@ from splitshot.domain.models import (
     Project,
     ProjectStage,
     VideoAsset,
-    project_to_dict,
     project_from_dict,
+    project_to_dict,
 )
-from splitshot.persistence.projects import save_project, load_project
+from splitshot.persistence.projects import load_project, save_project
 
 
 def test_legacy_load_produces_valid_v2_save():
@@ -176,4 +176,4 @@ def test_v2_project_saved_and_loaded_roundtrip():
         assert loaded.stages[1].label == "Stage 2"
         assert loaded.active_stage_id == "s1"
         assert loaded.schema_version == 2
-        assert loaded.practiscore_source_file == "match.csv"
+        assert Path(loaded.practiscore_source_file) == (proj_dir / "match.csv").resolve()

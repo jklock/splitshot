@@ -5,7 +5,6 @@ import inspect
 import re
 from pathlib import Path
 
-
 STATIC_ROOT = Path("src/splitshot/browser/static")
 
 
@@ -246,7 +245,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="show-pip"' in html
     assert 'id="markers-enable"' in html
     assert "Show markers" in html
-    assert "Show added media" in html
+    assert "Show secondary media" in html
     assert "Enable Markers" in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="markers"' in html
@@ -543,7 +542,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     waveform_component = (STATIC_ROOT / "components" / "waveform.js").read_text()
     js = _StaticBrowserSourceContract(
         app_source=app_js,
-        combined_source="\n".join(
+        combined_source="\n".join(  # noqa: FLY002 - clearer for the source inventory
             [
                 app_js,
                 shell_runtime_js,
@@ -994,7 +993,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "Show Log (${Math.round" not in (STATIC_ROOT / "panes" / "export-pane.js").read_text()
     finish_index = api_js.index('finishProcessing(data.status || "Ready.")')
     assert finish_index < api_js.index("requestRender();", finish_index)
-    assert "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines" in export_pane
+    assert (
+        "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines"
+        in export_pane
+    )
     assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}`)" in activity_js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
@@ -1005,7 +1007,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'activity("layout.resize.start"' in layout_js
     assert 'activity("layout.resize.commit"' in layout_js
     assert 'activity("layout.unlock.request"' in layout_js
-    assert 'toggleLayoutLock();\n    }\n    const startSize =' in layout_js
+    assert "toggleLayoutLock();\n    }\n    const startSize =" in layout_js
     assert "[kind]: true," in layout_js
     assert "|| popupBubbleDrag" in js
     assert "function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {" in js
@@ -1306,7 +1308,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "const badgeDisplayLabels = {" in js
     assert 'card.className = "style-card badge-style-card";' in js
     assert '<span class="style-card-label">Bg</span>' in js
-    assert '<span class="style-card-label">Alpha</span>' in js
+    assert '<span class="style-card-label">Opacity</span>' in js
+    assert '<span class="style-card-label">Alpha</span>' not in js
+    assert "Background alpha" not in js
+    assert "background alpha percent" not in js
     assert 'const displayTitle = badgeDisplayLabels[key] || title.replace(/ Badge$/, "");' in js
     assert "function renderMetricsTrendTable(table) {" in js
     assert '["Shot", "Split", "Run", "Score", "ShotML", "Action"].forEach((label) => {' in js
@@ -1443,6 +1448,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "--waveform-height: 206px;" in css
     assert "--resize-handle-size: 4px;" in css
     assert "--app-height: 100vh;" in css
+    assert "grid-template-rows: repeat(14, minmax(0, 1fr));" in css
+    assert ".tool-nav > .tool-item {\n  height: 100%;" in css
     assert (
         "grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);" in css
     )
@@ -1451,8 +1458,10 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "height: var(--topbar-height);" in css
     assert "top: var(--topbar-height);" not in css
     assert ".processing-bar[hidden] {\n  display: none !important;" in css
-    assert "grid-auto-rows: 56px;" in css
-    assert "align-content: start;" in css
+    assert "grid-auto-rows: minmax(0, 1fr);" in css
+    tool_nav_css = css[css.index(".tool-nav {") : css.index(".tool-rail-footer {")]
+    assert "align-content: start;" not in tool_nav_css
+    assert "overflow-y: auto;" not in tool_nav_css
     assert "height: 56px;" in css
     assert "overflow: hidden;" in css
     assert "display: flex;" in css
@@ -1982,9 +1991,9 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "open-practiscore-dashboard",
         "import-practiscore",
         "save-project",
-        "open-project",
         "delete-project",
         "review-add-text-box",
+        "review-queue-all-btn",
         "review-add-imported-box",
         "review-set-source",
         "export-badges",
@@ -2048,7 +2057,7 @@ def test_browser_ui_removes_gpa_from_browser_preset_catalog() -> None:
 def test_browser_overlay_color_inputs_preview_on_input_and_commit_on_change() -> None:
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
     match = re.search(
-        r"function bindOverlayColorInput\(control\) \{(?P<body>.*?)\n\}", overlay_pane, re.S
+        r"function bindOverlayColorInput\(control\) \{(?P<body>.*?)\n\}", overlay_pane, re.DOTALL
     )
 
     assert match is not None
@@ -2093,7 +2102,7 @@ def test_browser_client_validates_remote_state_shape_and_restores_server_selecti
 
 def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
-    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n  \}", overlay_pane, re.S)
+    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n  \}", overlay_pane, re.DOTALL)
 
     assert "validOverlayBadgeNames = new Set()," in overlay_pane
     assert match is not None
@@ -2164,7 +2173,7 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
 
 def test_browser_merge_file_uploads_treat_partial_success_as_success() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
-    match = re.search(r"async function postFiles\(path, files\) \{(?P<body>.*?)\n\}", js, re.S)
+    match = re.search(r"async function postFiles\(path, files\) \{(?P<body>.*?)\n\}", js, re.DOTALL)
 
     assert match is not None
     body = match.group("body")
@@ -2397,15 +2406,53 @@ def test_browser_static_logo_is_packaged() -> None:
     assert (STATIC_ROOT / "logo.png").is_file()
 
 
-def test_badge_alpha_control_reserves_space_for_number_spinner_and_suffix() -> None:
+def test_badge_opacity_control_removes_number_spinner_and_keeps_suffix() -> None:
     css = _read_split_css()
     selector = "#badge-style-grid .badge-style-card .opacity-percent-input"
     within = css[css.index(selector) : css.index(selector) + 650]
     assert "min-width: 0;" in within
-    assert "padding: var(--space-1) 2.75rem var(--space-1) 0.75rem;" in within
+    assert "padding: var(--space-1) 0.75rem;" in within
     assert "width: 100%;" in within
+    assert re.search(r"(?m)^\.opacity-percent-input \{[^}]*appearance: textfield;[^}]*\}", css)
+    assert re.search(
+        r"\.opacity-percent-input::webkit-outer-spin-button|"
+        r"\.opacity-percent-input::-webkit-outer-spin-button",
+        css,
+    )
+    assert re.search(
+        r"(?m)^\.opacity-percent-input::?-webkit-inner-spin-button \{[^}]*"
+        r"-webkit-appearance: none;",
+        css,
+    )
     suffix = css.index("#badge-style-grid .badge-style-card .opacity-percent-suffix")
     assert "margin-left: 0;" in css[suffix : suffix + 400]
+
+
+def test_every_opacity_number_control_uses_the_spinnerless_class() -> None:
+    source_paths = [
+        STATIC_ROOT / "index.html",
+        STATIC_ROOT / "app.js",
+        STATIC_ROOT / "lib" / "shell-runtime.js",
+        STATIC_ROOT / "panes" / "intro-outro-pane.js",
+        STATIC_ROOT / "panes" / "review-pane.js",
+    ]
+    opacity_number_lines = [
+        line
+        for path in source_paths
+        for line in path.read_text().splitlines()
+        if 'type="number"' in line and "opacity" in line.lower()
+    ]
+    assert len(opacity_number_lines) == 10
+    assert all('class="opacity-percent-input"' in line for line in opacity_number_lines)
+
+    merge_source = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    opacity_builder = merge_source[
+        merge_source.index("const buildSourceOpacityInput") : merge_source.index(
+            "const opacityField = buildSourceOpacityInput"
+        )
+    ]
+    assert 'input.type = "number";' in opacity_builder
+    assert 'input.className = "opacity-percent-input";' in opacity_builder
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

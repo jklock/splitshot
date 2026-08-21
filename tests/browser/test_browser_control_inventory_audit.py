@@ -258,6 +258,7 @@ id:resize-sidebar
 id:resize-waveform
 id:review-add-imported-box
 id:review-add-text-box
+id:review-queue-all-btn
 id:score-lock-to-stack
 id:score-x
 id:score-y

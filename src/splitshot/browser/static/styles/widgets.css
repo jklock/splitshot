@@ -56,10 +56,11 @@
   .tool-nav {
     grid-auto-flow: unset;
     grid-auto-columns: unset;
-    grid-auto-rows: 56px;
+    grid-auto-rows: minmax(0, 1fr);
     grid-template-columns: none;
+    grid-template-rows: repeat(14, minmax(0, 1fr));
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
   }
 
   .tool-item {

@@ -156,6 +156,8 @@ export function createShellRuntime({
   readPopupTemplatePayload = () => ({}),
   scheduleSettingsDefaultsApply = () => {},
   readSettingsDefaultsPayload = () => ({}),
+  captureSettingsDraft = () => null,
+  clearSettingsDraft = () => {},
   applySettingsDefaults = () => {},
   toggleLayoutLock = () => {},
   resetLayout = () => {},
@@ -217,6 +219,13 @@ export function createShellRuntime({
     });
   }
 
+  function scheduleCurrentSettingsDefaultsApply() {
+    const payload = captureSettingsDraft() || readSettingsDefaultsPayload();
+    const scheduledGeneration = Number(windowObject.settingsDefaultsApplyGeneration || 0) + 1;
+    windowObject.settingsDefaultsApplyGeneration = scheduledGeneration;
+    scheduleSettingsDefaultsApply({ payload, scheduledGeneration });
+  }
+
   function renderStyleControls() {
     const state = currentState();
     const project = state?.project;
@@ -248,7 +257,7 @@ export function createShellRuntime({
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Text hex value" placeholder="#F9FAFB" />
           </span>
         </label>
-        <label class="opacity-field"><span class="style-card-label">Alpha</span>
+        <label class="opacity-field"><span class="style-card-label">Opacity</span>
           <span class="opacity-control-pair">
             <span class="opacity-percent-field">
               <input type="number" class="opacity-percent-input" data-field="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
@@ -855,10 +864,14 @@ export function createShellRuntime({
     $("settings-import-current")?.addEventListener("click", async () => {
       await saveCurrentSettings();
     });
-    $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
+    $("settings-scope")?.addEventListener("change", () => {
+      clearSettingsDraft();
+      renderSettingsPane();
+    });
     [
       "settings-default-tool",
       "settings-reopen-last-tool",
+      "settings-layout-locked",
       "settings-default-match-type",
       "settings-overlay-position",
       "settings-badge-size",
@@ -889,10 +902,11 @@ export function createShellRuntime({
       "settings-marker-motion-mode",
       "settings-marker-background-color",
       "settings-marker-text-color",
-    ].forEach((id) => $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply()));
+      "settings-marker-quadrant",
+    ].forEach((id) => $(id)?.addEventListener("change", scheduleCurrentSettingsDefaultsApply));
     $("settings-marker-follow-motion")?.addEventListener("change", () => {
       if ($("settings-marker-motion-mode")) $("settings-marker-motion-mode").value = $("settings-marker-follow-motion").checked ? "guided" : "fixed";
-      scheduleSettingsDefaultsApply();
+      scheduleCurrentSettingsDefaultsApply();
     });
     [
       "settings-overlay-custom-opacity",
@@ -906,19 +920,22 @@ export function createShellRuntime({
       "settings-marker-duration",
       "settings-marker-width",
       "settings-marker-height",
+      "settings-layout-rail-width",
+      "settings-layout-inspector-width",
+      "settings-layout-waveform-height",
     ].forEach((id) => {
-      $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply());
+      $(id)?.addEventListener("change", scheduleCurrentSettingsDefaultsApply);
       $(id)?.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        scheduleSettingsDefaultsApply();
+        scheduleCurrentSettingsDefaultsApply();
       });
     });
-    $("settings-shotml-threshold")?.addEventListener("change", () => scheduleSettingsDefaultsApply());
+    $("settings-shotml-threshold")?.addEventListener("change", scheduleCurrentSettingsDefaultsApply);
     $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
-      scheduleSettingsDefaultsApply();
+      scheduleCurrentSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
       await enqueueSettingsMutation(async () => {

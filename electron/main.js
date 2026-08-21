@@ -220,6 +220,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      zoomFactor: 0.9,
     },
     show: false,
   });
@@ -228,9 +229,8 @@ function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     // Chromium persists per-origin zoom between desktop sessions. Always open
-    // SplitShot at the layout's designed scale; users can still zoom from the
+    // SplitShot at the requested 90% default; users can still zoom from the
     // standard View menu after launch.
-    mainWindow.webContents.setZoomFactor(1);
     windowLoaded = true;
     launchIntentRouter.setWindowReady(true);
     appendTestEvent('window-loaded', { url: PYTHON_URL });

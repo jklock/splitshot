@@ -149,8 +149,8 @@ def test_media_pane_uses_flat_og_sections():
     assert "sectionExpanded" in source
     assert "Active Stage" not in source
     assert "media-active-stage-label" in source
-    assert "<strong>Primary</strong>" in source
-    assert "<strong>Added Media</strong>" in source
+    assert "<strong>Primary Media</strong>" in source
+    assert "<strong>Secondary Media</strong>" in source
 
 
 def test_media_pane_uses_backend_dialog_not_file_inputs():
@@ -224,8 +224,8 @@ def test_media_inventory_uses_active_stage_selector_only():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "renderActiveStageSection" in source
     assert "renderStagesSection" in source
-    assert "Primary" in source
-    assert "Added Media" in source
+    assert "Primary Media" in source
+    assert "Secondary Media" in source
     assert "renderInventoryFileRow" in source
     assert "Stage Navigator" not in source
     assert "data-stage-nav-id" not in source
@@ -247,9 +247,7 @@ def test_media_active_stage_is_not_collapsible_and_does_not_queue():
 def test_media_picker_root_is_fixed_to_project_input():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     within = source[
-        source.index("function mediaPickerDefaultRoot") : source.index(
-            "function selectStage"
-        )
+        source.index("function mediaPickerDefaultRoot") : source.index("function selectStage")
     ]
     assert "stage?.primary_media?.path" not in within
     assert "stageAddedMedia(stage)[0]" not in within
@@ -334,7 +332,10 @@ def test_review_uses_final_standings_and_defaults_to_actual_three_cohorts():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     assert "buildFinalStandingsComparison" in source
     assert "DEFAULT_SUMMARY_METRIC_IDS" in source
-    default_block = source[source.index("DEFAULT_SUMMARY_METRIC_IDS") : source.index("DEFAULT_SUMMARY_METRIC_IDS") + 300]
+    default_block = source[
+        source.index("DEFAULT_SUMMARY_METRIC_IDS") : source.index("DEFAULT_SUMMARY_METRIC_IDS")
+        + 300
+    ]
     assert '"overall_placement"' in default_block
     assert '"division_class_placement"' not in default_block
     assert "buildCompetitionComparison" not in source
@@ -388,13 +389,11 @@ def test_review_summary_uses_imported_score_time_raw_time_and_penalties():
     assert "summary.total_penalties ?? imported.shot_penalties" in within
 
 
-def test_badge_alpha_field_reserves_stepper_space_and_suffix_gap():
+def test_badge_opacity_field_removes_stepper_space_and_keeps_suffix_gap():
     source = (STATIC_ROOT / "styles" / "panes.css").read_text()
-    start = source.index(
-        "#badge-style-grid .badge-style-card .opacity-percent-input"
-    )
+    start = source.index("#badge-style-grid .badge-style-card .opacity-percent-input")
     within = source[start : start + 1200]
-    assert "padding: var(--space-1) 2.75rem" in within
+    assert "padding: var(--space-1) 0.75rem" in within
     assert "text-align: left" in within
     assert "grid-template-columns: minmax(76px, 1fr) auto" in within
     assert "gap: 12px" in within

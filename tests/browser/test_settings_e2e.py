@@ -306,21 +306,21 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                 _set_settings_control(page, "settings-badge-size", "L")
                 _set_settings_control(page, "settings-overlay-custom-background-color", "#123456")
                 _set_settings_control(page, "settings-overlay-custom-text-color", "#abcdef")
-                _set_settings_control(page, "settings-overlay-custom-opacity", "0.75")
+                _set_settings_control(page, "settings-overlay-custom-opacity", "75")
                 _set_settings_control(page, "settings-timer-badge-background-color", "#101010")
                 _set_settings_control(page, "settings-timer-badge-text-color", "#f8fafc")
-                _set_settings_control(page, "settings-timer-badge-opacity", "0.85")
+                _set_settings_control(page, "settings-timer-badge-opacity", "85")
                 _set_settings_control(page, "settings-shot-badge-background-color", "#1d4ed8")
                 _set_settings_control(page, "settings-shot-badge-text-color", "#eef2ff")
-                _set_settings_control(page, "settings-shot-badge-opacity", "0.8")
+                _set_settings_control(page, "settings-shot-badge-opacity", "80")
                 _set_settings_control(
                     page, "settings-current-shot-badge-background-color", "#dc2626"
                 )
                 _set_settings_control(page, "settings-current-shot-badge-text-color", "#ffffff")
-                _set_settings_control(page, "settings-current-shot-badge-opacity", "0.75")
+                _set_settings_control(page, "settings-current-shot-badge-opacity", "75")
                 _set_settings_control(page, "settings-hit-factor-badge-background-color", "#047857")
                 _set_settings_control(page, "settings-hit-factor-badge-text-color", "#ecfdf5")
-                _set_settings_control(page, "settings-hit-factor-badge-opacity", "0.7")
+                _set_settings_control(page, "settings-hit-factor-badge-opacity", "70")
                 page.locator("#settings-merge-layout").select_option("pip")
                 page.locator("#settings-pip-size").select_option("50%")
                 page.locator("#settings-export-preset").select_option(next_export_preset)
@@ -408,7 +408,9 @@ def test_settings_layout_section_captures_current_layout_and_resets(tmp_path: Pa
                       && state?.settings?.layout_inspector_width === 620
                       && state?.settings?.layout_waveform_height === 240"""
                 )
-                page.wait_for_function("() => window.__layoutSaveProof.settingsRequests.length === 1")
+                page.wait_for_function(
+                    "() => window.__layoutSaveProof.settingsRequests.length === 1"
+                )
                 request_payload = page.evaluate(
                     "() => window.__layoutSaveProof.settingsRequests[0]"
                 )
@@ -425,9 +427,12 @@ def test_settings_layout_section_captures_current_layout_and_resets(tmp_path: Pa
                 }
                 assert page.evaluate("() => window.__layoutSaveProof.button.isConnected") is True
                 assert page.evaluate("() => layoutSizes.inspectorWidth") == 620
-                assert page.evaluate(
-                    "() => getComputedStyle(document.documentElement).getPropertyValue('--inspector-width').trim()"
-                ) == "614px"
+                assert (
+                    page.evaluate(
+                        "() => getComputedStyle(document.documentElement).getPropertyValue('--inspector-width').trim()"
+                    )
+                    == "614px"
+                )
 
                 disk_settings = json.loads(splitshot_config.SETTINGS_PATH.read_text())
                 assert disk_settings["layout_locked"] is False
@@ -496,6 +501,269 @@ def test_settings_section_reset_preserves_other_sections() -> None:
                     """() => state?.settings?.pip_size === '50%'
                       && state?.settings?.export_quality === 'high'"""
                 )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def _value_at_path(payload: object, path: list[str]) -> object:
+    current = payload
+    for key in path:
+        assert isinstance(current, dict)
+        current = current[key]
+    return current
+
+
+def test_every_settings_value_survives_immediate_rerender_disk_save_and_restart() -> None:
+    cases = [
+        ("settings-default-tool", "metrics", ["default_tool"], "metrics", False),
+        ("settings-reopen-last-tool", False, ["reopen_last_tool"], False, True),
+        ("settings-layout-locked", False, ["layout_locked"], False, True),
+        ("settings-layout-rail-width", "92", ["layout_rail_width"], 92, False),
+        ("settings-layout-inspector-width", "610", ["layout_inspector_width"], 610, False),
+        ("settings-layout-waveform-height", "245", ["layout_waveform_height"], 245, False),
+        ("settings-default-match-type", "idpa", ["default_match_type"], "idpa", False),
+        ("settings-merge-layout", "pip", ["merge_layout"], "pip", False),
+        ("settings-pip-size", "50%", ["pip_size"], "50%", False),
+        ("settings-merge-pip-x", "0.24", ["merge_pip_x"], 0.24, False),
+        ("settings-merge-pip-y", "0.76", ["merge_pip_y"], 0.76, False),
+        ("settings-overlay-position", "left", ["overlay_position"], "left", False),
+        ("settings-badge-size", "L", ["badge_size"], "L", False),
+        (
+            "settings-overlay-custom-background-color",
+            "#123456",
+            ["overlay_custom_box_background_color"],
+            "#123456",
+            False,
+        ),
+        (
+            "settings-overlay-custom-text-color",
+            "#abcdef",
+            ["overlay_custom_box_text_color"],
+            "#abcdef",
+            False,
+        ),
+        (
+            "settings-overlay-custom-opacity",
+            "63",
+            ["overlay_custom_box_opacity"],
+            0.63,
+            False,
+        ),
+        (
+            "settings-timer-badge-background-color",
+            "#101010",
+            ["timer_badge", "background_color"],
+            "#101010",
+            False,
+        ),
+        (
+            "settings-timer-badge-text-color",
+            "#f0f0f0",
+            ["timer_badge", "text_color"],
+            "#f0f0f0",
+            False,
+        ),
+        ("settings-timer-badge-opacity", "81", ["timer_badge", "opacity"], 0.81, False),
+        (
+            "settings-shot-badge-background-color",
+            "#202020",
+            ["shot_badge", "background_color"],
+            "#202020",
+            False,
+        ),
+        (
+            "settings-shot-badge-text-color",
+            "#e0e0e0",
+            ["shot_badge", "text_color"],
+            "#e0e0e0",
+            False,
+        ),
+        ("settings-shot-badge-opacity", "72", ["shot_badge", "opacity"], 0.72, False),
+        (
+            "settings-current-shot-badge-background-color",
+            "#303030",
+            ["current_shot_badge", "background_color"],
+            "#303030",
+            False,
+        ),
+        (
+            "settings-current-shot-badge-text-color",
+            "#d0d0d0",
+            ["current_shot_badge", "text_color"],
+            "#d0d0d0",
+            False,
+        ),
+        (
+            "settings-current-shot-badge-opacity",
+            "69",
+            ["current_shot_badge", "opacity"],
+            0.69,
+            False,
+        ),
+        (
+            "settings-hit-factor-badge-background-color",
+            "#404040",
+            ["hit_factor_badge", "background_color"],
+            "#404040",
+            False,
+        ),
+        (
+            "settings-hit-factor-badge-text-color",
+            "#c0c0c0",
+            ["hit_factor_badge", "text_color"],
+            "#c0c0c0",
+            False,
+        ),
+        (
+            "settings-hit-factor-badge-opacity",
+            "58",
+            ["hit_factor_badge", "opacity"],
+            0.58,
+            False,
+        ),
+        ("settings-marker-enabled", False, ["marker_template", "enabled"], False, True),
+        (
+            "settings-marker-content-type",
+            "text_image",
+            ["marker_template", "content_type"],
+            "text_image",
+            False,
+        ),
+        (
+            "settings-marker-text-source",
+            "custom",
+            ["marker_template", "text_source"],
+            "custom",
+            False,
+        ),
+        ("settings-marker-duration", "1.250", ["marker_template", "duration_ms"], 1250, False),
+        (
+            "settings-marker-use-shot-split-duration",
+            True,
+            ["marker_template", "use_shot_split_duration"],
+            True,
+            True,
+        ),
+        ("settings-marker-width", "420", ["marker_template", "width"], 420, False),
+        ("settings-marker-height", "180", ["marker_template", "height"], 180, False),
+        (
+            "settings-marker-follow-motion",
+            True,
+            ["marker_template", "follow_motion"],
+            True,
+            True,
+        ),
+        (
+            "settings-marker-quadrant",
+            "bottom_right",
+            ["marker_template", "quadrant"],
+            "bottom_right",
+            False,
+        ),
+        (
+            "settings-marker-background-color",
+            "#505050",
+            ["marker_template", "background_color"],
+            "#505050",
+            False,
+        ),
+        (
+            "settings-marker-text-color",
+            "#b0b0b0",
+            ["marker_template", "text_color"],
+            "#b0b0b0",
+            False,
+        ),
+        ("settings-marker-opacity", "47", ["marker_template", "opacity"], 0.47, False),
+        ("settings-export-quality", "low", ["export_quality"], "low", False),
+        (
+            "settings-export-preset",
+            "universal_vertical",
+            ["export_preset"],
+            "universal_vertical",
+            False,
+        ),
+        ("settings-export-frame-rate", "60", ["export_frame_rate"], "60", False),
+        ("settings-export-video-codec", "hevc", ["export_video_codec"], "hevc", False),
+        ("settings-export-audio-codec", "aac", ["export_audio_codec"], "aac", False),
+        ("settings-export-color-space", "bt709_sdr", ["export_color_space"], "bt709_sdr", False),
+        ("settings-export-two-pass", True, ["export_two_pass"], True, True),
+        (
+            "settings-export-ffmpeg-preset",
+            "slow",
+            ["export_ffmpeg_preset"],
+            "slow",
+            False,
+        ),
+        (
+            "settings-shotml-threshold",
+            "0.55",
+            ["shotml_defaults", "detection_threshold"],
+            0.55,
+            False,
+        ),
+    ]
+
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                page.evaluate(
+                    """() => {
+                        window.__settingsSaveRequests = [];
+                        const originalFetch = window.fetch.bind(window);
+                        window.fetch = (input, init = {}) => {
+                            const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
+                            if (url.pathname === "/api/settings" && init.method === "POST") {
+                                window.__settingsSaveRequests.push(JSON.parse(init.body || "{}"));
+                            }
+                            return originalFetch(input, init);
+                        };
+                    }"""
+                )
+
+                for index, (control_id, value, path, expected, is_checkbox) in enumerate(
+                    cases, start=1
+                ):
+                    visible_value = page.evaluate(
+                        """({ controlId, value, isCheckbox }) => {
+                            const control = document.getElementById(controlId);
+                            if (isCheckbox) control.checked = Boolean(value);
+                            else control.value = String(value);
+                            control.dispatchEvent(new Event("change", { bubbles: true }));
+                            control.blur();
+                            renderSettingsPane();
+                            return isCheckbox ? control.checked : control.value;
+                        }""",
+                        {
+                            "controlId": control_id,
+                            "value": value,
+                            "isCheckbox": is_checkbox,
+                        },
+                    )
+                    assert visible_value == value, control_id
+                    page.wait_for_function(
+                        "count => window.__settingsSaveRequests.length >= count", arg=index
+                    )
+                    page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
+                    layer_value = page.evaluate(
+                        """path => path.reduce(
+                            (value, key) => value?.[key], state?.settings_layers?.app
+                        )""",
+                        path,
+                    )
+                    assert layer_value == expected, control_id
+
+                disk_settings = json.loads(splitshot_config.SETTINGS_PATH.read_text())
+                restarted_settings = ProjectController().settings.config_dict()
+                for control_id, _value, path, expected, _is_checkbox in cases:
+                    assert _value_at_path(disk_settings, path) == expected, control_id
+                    assert _value_at_path(restarted_settings, path) == expected, control_id
             finally:
                 browser.close()
     finally:

@@ -194,7 +194,7 @@ export function createProcessingRuntime({
       return { message: "Importing primary media...", detail: "Copying into project Input and analyzing locally" };
     }
     if (path === "/api/project/stage/import-added") {
-      return { message: "Importing added media...", detail: "Copying into project Input" };
+      return { message: "Importing secondary media...", detail: "Copying into project Input" };
     }
     if (
       (path === "/api/analysis/threshold" || (path === "/api/analysis/shotml-settings" && payload?.rerun))

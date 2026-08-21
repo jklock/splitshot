@@ -15,7 +15,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Media | active stage selector, stage name, `Save`, `Delete`, `Add Stage`, persistent Primary/Added Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
+        "| Media | active stage selector, stage name, `Save`, `Delete`, `Add Stage`, persistent Primary Media/Secondary Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (
@@ -23,7 +23,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, stage presentation waterfall, marker editor, text-box drag |"
+        "| Markers / Review / Overlay | marker authoring, one-action `Queue All Files`, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, stage presentation waterfall, marker editor, text-box drag |"
         in matrix
     )
     assert "| In / Out |" in matrix

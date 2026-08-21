@@ -261,7 +261,9 @@ def test_project_create_and_open_actions_fill_the_inspector_evenly() -> None:
         server.shutdown()
 
 
-def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated(tmp_path: Path) -> None:
+def test_overlay_opacity_controls_hide_number_stepper_and_keep_suffix_separated(
+    tmp_path: Path,
+) -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -270,7 +272,7 @@ def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated(tmp_pat
             page = browser.new_page(viewport={"width": 1500, "height": 1000})
             try:
                 page.goto(server.url, wait_until="domcontentloaded")
-                create_project(page, str(tmp_path / "alpha-spacing.ssproj"))
+                create_project(page, str(tmp_path / "opacity-spacing.ssproj"))
                 page.evaluate("() => callApi('/api/project/stage/create', {})")
                 page.locator('button[data-tool="overlay"]').click(force=True)
 
@@ -292,13 +294,15 @@ def test_overlay_alpha_controls_keep_number_stepper_and_suffix_separated(tmp_pat
                               return {
                                 gap: suffixRect.left - inputRect.right,
                                 rightPadding: parseFloat(style.paddingRight),
+                                appearance: style.appearance,
                                 textAlign: style.textAlign,
                                 overflow: inputRect.right > field.getBoundingClientRect().right + 1,
                               };
                             }"""
                         )
                         assert geometry["gap"] >= 12
-                        assert geometry["rightPadding"] >= 44
+                        assert geometry["rightPadding"] < 28
+                        assert geometry["appearance"] in {"textfield", "none"}
                         assert geometry["textAlign"] == "left"
                         assert geometry["overflow"] is False
             finally:

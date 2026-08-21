@@ -157,8 +157,8 @@ async function main() {
     const zoomFactor = await electronApp.evaluate(({ BrowserWindow }) => (
       BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor()
     ));
-    assert.equal(zoomFactor, 1);
-    console.log('  launch zoom reset to 100%');
+    assert.equal(zoomFactor, 0.9);
+    console.log('  launch zoom reset to 90%');
 
     console.log('Evaluating bridge API...');
     const bridge = await window.evaluate(() => ({

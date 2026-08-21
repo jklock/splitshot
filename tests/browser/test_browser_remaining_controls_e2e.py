@@ -271,9 +271,7 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
     image_path = tmp_path / "popup-reference.png"
     image_path.write_bytes(b"fake-image")
 
-    def fake_path_chooser(
-        kind: str, current: str | None, default_root: str | None = None
-    ) -> str:
+    def fake_path_chooser(kind: str, current: str | None, default_root: str | None = None) -> str:
         assert kind == "popup_image"
         assert default_root is not None
         assert Path(default_root).name == "Markers"
@@ -680,7 +678,7 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(
                     _set_input_value(card.locator('button[data-field="text_color"] + input'), text)
                     _set_input_value(card.locator('[data-field="opacity"]'), opacity_percent)
 
-                alpha_layout = page.locator(
+                opacity_layout = page.locator(
                     '#badge-style-grid .style-card[data-badge="timer_badge"] .opacity-percent-field'
                 ).evaluate(
                     """field => {
@@ -695,10 +693,10 @@ def test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles(
                         };
                     }"""
                 )
-                assert alpha_layout["inputWidth"] >= 76
-                assert alpha_layout["suffixGap"] >= 8
-                assert alpha_layout["paddingRight"] >= 28
-                page.screenshot(path="artifacts/overlay-alpha-spacing.png", full_page=True)
+                assert opacity_layout["inputWidth"] >= 76
+                assert opacity_layout["suffixGap"] >= 8
+                assert opacity_layout["paddingRight"] < 28
+                page.screenshot(path="artifacts/overlay-opacity-spacing.png", full_page=True)
 
                 page.evaluate(
                     """() => {

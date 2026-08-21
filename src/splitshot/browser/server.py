@@ -1055,6 +1055,7 @@ class BrowserControlServer:
                     "/api/project/stage/clear-primary": self._clear_stage_primary,
                     "/api/project/stage/remove-added": self._remove_stage_added,
                     "/api/project/queue/add": self._add_to_queue,
+                    "/api/project/queue/add-all": self._add_all_to_queue,
                     "/api/project/queue/remove": self._remove_from_queue,
                     "/api/project/queue/apply-all": self._apply_settings_to_all,
                     "/api/project/queue/settings": self._set_queue_settings,
@@ -1389,7 +1390,9 @@ class BrowserControlServer:
                     if "match_type" not in payload
                     else str(payload.get("match_type", "")),
                     stage_number=(
-                        0
+                        None
+                        if "stage_number" not in payload
+                        else 0
                         if payload.get("stage_number") in {None, ""}
                         else int(payload["stage_number"])
                     ),
@@ -1399,7 +1402,9 @@ class BrowserControlServer:
                         else None
                     ),
                     competitor_place=(
-                        0
+                        None
+                        if "competitor_place" not in payload
+                        else 0
                         if payload.get("competitor_place") in {None, ""}
                         else int(payload["competitor_place"])
                     ),
@@ -2383,6 +2388,9 @@ class BrowserControlServer:
                 if not stage_id:
                     raise ValueError("stage_id is required")
                 controller.remove_stage_from_queue(stage_id)
+
+            def _add_all_to_queue(self, _payload: dict[str, Any]) -> None:
+                controller.add_all_stages_to_queue()
 
             def _apply_settings_to_all(self, _payload: dict[str, Any]) -> None:
                 controller.apply_settings_to_all_stages()

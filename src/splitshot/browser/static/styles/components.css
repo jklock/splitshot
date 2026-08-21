@@ -56,6 +56,11 @@
   width: 100%;
 }
 
+.video-stage video[hidden],
+.video-stage img#secondary-image[hidden] {
+  display: none !important;
+}
+
 #secondary-video,
 #secondary-image {
   display: none;
