@@ -3855,7 +3855,7 @@
 
 .queue-process-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .queue-boundary-actions,
@@ -3922,18 +3922,6 @@
   font-weight: var(--weight-medium);
   justify-self: end;
   line-height: 1.35;
-  white-space: nowrap;
-}
-
-.queue-title-actions {
-  align-items: center;
-  display: flex;
-  gap: var(--space-2);
-  justify-content: flex-end;
-}
-
-.queue-title-actions #queue-all-btn {
-  min-height: 32px;
   white-space: nowrap;
 }
 

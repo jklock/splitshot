@@ -4978,6 +4978,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   }
   if (tool === "media" && mediaPane) mediaPane.render();
   if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
+  if (changed && tool === "intro-outro") renderVideo();
   if (changed && previousTool === "intro-outro" && tool !== "intro-outro") renderVideo();
   if (changed && (tool === "intro-outro" || previousTool === "intro-outro")) renderWaveform();
   if (tool === "queue" && queuePane) queuePane.render();
@@ -9969,6 +9970,7 @@ introOutroPane = createIntroOutroPane({
   pickPath,
   activity,
   fileName,
+  buildMediaUrl,
   previewFrameClientRect,
 });
 

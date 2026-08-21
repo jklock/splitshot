@@ -290,10 +290,7 @@ export function createQueuePane({
       <div class="pane-section queue-pane-shell">
         <div class="section-header pane-title-row">
           <h3>Queue</h3>
-          <div class="queue-title-actions">
-            <span class="pane-status-text">${count} queued</span>
-            <button id="queue-all-btn" class="btn btn-primary" type="button" ${stages().some((stage) => stage?.primary_media?.path) ? "" : "disabled"}>Queue All Files</button>
-          </div>
+          <span class="pane-status-text">${count} queued</span>
         </div>
         ${renderControlsSection()}
         <section class="settings-section queue-pane-section">
@@ -314,6 +311,7 @@ export function createQueuePane({
             <strong>Process</strong>
           </div>
           <div class="queue-process-actions">
+            <button id="queue-all-btn" class="btn btn-primary" type="button" ${stages().some((stage) => stage?.primary_media?.path) ? "" : "disabled"}>Queue All Files</button>
             <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Queue</button>
             <button id="queue-combined-btn" class="btn queue-combined-btn" type="button">Process as One File</button>
           </div>

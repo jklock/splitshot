@@ -381,7 +381,14 @@ def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> No
 def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
     synthetic_video_factory,
 ) -> None:
-    intro = Path(synthetic_video_factory(name="intro-pane-preview", beep_ms=250))
+    intro = Path(
+        synthetic_video_factory(
+            name="intro-pane-preview",
+            beep_ms=250,
+            duration_ms=5_000,
+            resolution=(640, 640),
+        )
+    )
     primary = Path(synthetic_video_factory(name="intro-pane-primary", beep_ms=400))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -418,9 +425,39 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.get_by_role("button", name="Outro", exact=True).is_visible()
                 assert page.locator("#intro-outro-fade-in").input_value() == "0.5"
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.5"
+                page.wait_for_function(
+                    "() => document.querySelector('#primary-video')?.readyState >= HTMLMediaElement.HAVE_METADATA"
+                )
+                video_fit = page.locator("#primary-video").evaluate(
+                    """video => ({
+                        objectFit: getComputedStyle(video).objectFit,
+                        inlinePosition: video.style.position,
+                        inlineWidth: video.style.width,
+                        videoWidth: video.videoWidth,
+                        videoHeight: video.videoHeight,
+                        stageClasses: document.getElementById('video-stage').className,
+                    })"""
+                )
+                assert video_fit == {
+                    "objectFit": "contain",
+                    "inlinePosition": "",
+                    "inlineWidth": "",
+                    "videoWidth": 640,
+                    "videoHeight": 640,
+                    "stageClasses": "video-stage",
+                }
+                page.locator("#primary-video").evaluate("video => { video.currentTime = 1.25; }")
+                page.wait_for_function(
+                    "() => Math.abs(document.querySelector('#primary-video').currentTime - 1.25) < 0.05"
+                )
+                source_before_inspector_save = page.locator("#primary-video").get_attribute("src")
                 page.locator("#intro-outro-fade-in").fill("0.7")
                 page.locator("#intro-outro-fade-in").dispatch_event("change")
                 page.wait_for_function("() => state.project.intro_clip.fade_in_s === 0.7")
+                assert page.locator("#primary-video").get_attribute("src") == source_before_inspector_save
+                assert abs(
+                    page.locator("#primary-video").evaluate("video => video.currentTime") - 1.25
+                ) < 0.05
                 page.locator("#intro-outro-fade-out").fill("0.9")
                 page.locator("#intro-outro-fade-out").dispatch_event("change")
                 page.wait_for_function("() => state.project.intro_clip.fade_out_s === 0.9")
@@ -611,6 +648,12 @@ def test_queue_all_files_queues_every_stage_in_one_action(
                 page.locator("button[data-tool='queue']").click(force=True)
                 button = page.get_by_role("button", name="Queue All Files", exact=True)
                 assert button.is_visible()
+                assert button.locator("xpath=..").get_attribute("class") == "queue-process-actions"
+                assert button.locator("xpath=..").get_by_role("button").all_inner_texts() == [
+                    "Queue All Files",
+                    "Process Queue",
+                    "Process as One File",
+                ]
                 page.locator("button[data-tool='review']").click(force=True)
                 assert page.get_by_role("button", name="Queue All Files", exact=True).count() == 0
                 page.locator("button[data-tool='queue']").click(force=True)

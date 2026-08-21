@@ -42,6 +42,7 @@ export function createIntroOutroPane({
   pickPath = async () => "",
   activity = () => {},
   fileName = (value) => String(value || ""),
+  buildMediaUrl = (url) => url,
   previewFrameClientRect = () => null,
 } = {}) {
   let selectedKind = "intro";
@@ -256,7 +257,7 @@ export function createIntroOutroPane({
       delete video.dataset.mediaUrl;
       video.load();
     } else if (video) {
-      const mediaUrl = `/media/${selectedKind}?v=${encodeURIComponent(state().media?.cache_token || "")}`;
+      const mediaUrl = buildMediaUrl(`/media/${selectedKind}`, path);
       if (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== mediaUrl) {
         video.dataset.sourcePath = path;
         video.dataset.mediaUrl = mediaUrl;
