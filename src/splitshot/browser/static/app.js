@@ -144,6 +144,8 @@ let activeProcessingPath = null;
 let activityQueue = [];
 let activityFlushTimer = null;
 let activityCursor = 0;
+let processingJobId = "";
+let processingLogCursor = 0;
 let activityPollTimer = null;
 let overlayBadgeDrag = null;
 let mergePreviewDrag = null;
@@ -9407,6 +9409,8 @@ const runtimeBackboneStateBindings = {
   activityQueue: [() => activityQueue, (value) => { activityQueue = value; }],
   activityFlushTimer: [() => activityFlushTimer, (value) => { activityFlushTimer = value; }],
   activityCursor: [() => activityCursor, (value) => { activityCursor = value; }],
+  processingJobId: [() => processingJobId, (value) => { processingJobId = value; }],
+  processingLogCursor: [() => processingLogCursor, (value) => { processingLogCursor = value; }],
   activityPollTimer: [() => activityPollTimer, (value) => { activityPollTimer = value; }],
   overlayBadgeDrag: [() => overlayBadgeDrag, (value) => { overlayBadgeDrag = value; }],
   mergePreviewDrag: [() => mergePreviewDrag, (value) => { mergePreviewDrag = value; }],
@@ -9459,6 +9463,8 @@ activityRuntime = createActivityRuntime({
   runtime: runtimeBackboneState,
   renderExportLog,
   setProcessingProgress,
+  scheduleProcessingBarShow,
+  scheduleProcessingBarHide,
   ACTIVITY_FLUSH_DELAY_MS,
   ACTIVITY_BATCH_SIZE,
   ACTIVITY_POLL_INTERVAL_MS,

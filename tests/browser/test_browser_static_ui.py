@@ -997,7 +997,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines"
         in export_pane
     )
-    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}`)" in activity_js
+    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)" in activity_js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
     assert "const BADGE_FONT_SIZES = {" in js
@@ -2340,7 +2340,7 @@ def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
 
     assert "export function createActivityRuntime({" in activity_runtime
     assert "function wireGlobalActivityLogging() {" in activity_runtime
-    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}`)" in activity_runtime
+    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)" in activity_runtime
 
     assert "export function createProcessingRuntime({" in processing_runtime
     assert "function processingForPath(path, payload = null) {" in processing_runtime

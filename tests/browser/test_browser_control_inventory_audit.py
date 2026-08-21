@@ -15,7 +15,7 @@ EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
     "app.js": 39,
     "lib/shell-runtime.js": 5,
     "panes/intro-outro-pane.js": 25,
-    "panes/media-pane.js": 13,
+    "panes/media-pane.js": 15,
     "panes/queue-pane.js": 10,
     "panes/review-pane.js": 17,
     "panes/trim-sync-pane.js": 26,

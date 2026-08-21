@@ -4036,6 +4036,66 @@ def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp
         server.shutdown()
 
 
+def test_processing_job_progress_and_log_rehydrate_across_navigation() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                server._begin_processing_job("/api/project/queue/process", "combined")
+                server._append_processing_log("Stage 1 started")
+                server._update_processing_job(
+                    {
+                        "progress": 0.25,
+                        "stage_label": "Stage 1",
+                        "stage_index": 1,
+                        "stage_count": 3,
+                        "phase": "render",
+                    }
+                )
+                page.wait_for_function("() => activeProcessingPath === '/api/project/queue/process'")
+                page.wait_for_function("() => processingProgressPercent === 25")
+                _open_tool(page, "queue")
+                page.locator("#queue-show-log").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-output')?.textContent.includes('Stage 1 started')"
+                )
+                page.locator("#close-export-log").click()
+                _open_tool(page, "media")
+                server._append_processing_log("Stage 2 continued while hidden")
+                server._update_processing_job(
+                    {
+                        "progress": 0.75,
+                        "stage_label": "Stage 2",
+                        "stage_index": 2,
+                        "stage_count": 3,
+                        "phase": "render",
+                    }
+                )
+                page.wait_for_function("() => processingProgressPercent === 75")
+                assert page.locator("[data-tool-pane='media']").get_attribute("class").endswith(
+                    "active"
+                )
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("() => activeProcessingPath === '/api/project/queue/process'")
+                page.wait_for_function("() => processingProgressPercent === 75")
+                _open_tool(page, "queue")
+                page.locator("#queue-show-log").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-output')?.textContent.includes('Stage 2 continued while hidden')"
+                )
+                server._finish_processing_job(status="Combined export complete")
+                page.wait_for_function("() => activeProcessingPath === null")
+                assert "Stage 2 continued while hidden" in page.locator(
+                    "#export-log-output"
+                ).text_content()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_export_controls_update_preset_and_settings_state(
     synthetic_video_factory, tmp_path: Path
 ) -> None:

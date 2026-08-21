@@ -7,6 +7,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import ProjectStage, QueueEntry, QueueStatus, ShotEvent, VideoAsset
 from splitshot.ui.controller import ProjectController
 from tests.browser.helpers.video_test_helpers import create_project
 
@@ -23,6 +24,54 @@ def test_added_media_requires_primary_in_controller() -> None:
     stage = controller.create_stage()
     with pytest.raises(ValueError, match="Add primary media"):
         controller.import_stage_added(stage.id, "/does/not/matter.mp4")
+
+
+def test_media_global_settings_controls_preserve_target_stage_data() -> None:
+    controller = ProjectController()
+    source = ProjectStage(label="Stage 1", primary_media=VideoAsset(path="one.mp4"))
+    target = ProjectStage(label="Stage 2", primary_media=VideoAsset(path="two.mp4"))
+    source.overlay.font_size = 48
+    target.analysis.shots = [ShotEvent(time_ms=3210)]
+    target.scoring.stage_number = 2
+    controller.project.stages = [source, target]
+    controller.project.active_stage_id = source.id
+    controller._sync_active_stage_to_project()
+    controller.project.queue = [QueueEntry(stage_id=target.id, status=QueueStatus.QUEUED)]
+    target.queue_status = QueueStatus.QUEUED
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.locator("button[data-tool='media']").click(force=True)
+                primary = page.locator("#media-global-settings-primary")
+                ignored = page.locator("#media-ignore-global-settings")
+                assert primary.is_visible()
+                assert ignored.is_visible()
+                primary.click()
+                page.wait_for_function(
+                    "(id) => state.project.global_settings_stage_id === id", arg=source.id
+                )
+                assert page.locator("#media-global-settings-primary").get_attribute(
+                    "aria-pressed"
+                ) == "true"
+                page.locator("#media-active-stage-select").select_option(target.id)
+                page.wait_for_function(
+                    "(id) => state.project.active_stage_id === id", arg=target.id
+                )
+                page.locator("#media-ignore-global-settings").click()
+                page.wait_for_function(
+                    "(id) => state.project.stages.find(stage => stage.id === id)?.ignore_global_settings === true",
+                    arg=target.id,
+                )
+                saved_target = next(stage for stage in controller.project.stages if stage.id == target.id)
+                assert [shot.time_ms for shot in saved_target.analysis.shots] == [3210]
+                assert saved_target.scoring.stage_number == 2
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_media_intake_buttons_use_distinct_primary_and_green_add_styles(

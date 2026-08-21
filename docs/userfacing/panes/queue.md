@@ -2,7 +2,7 @@
 
 <!-- Documentation reviewed: 2026-08-11 -->
 
-The Queue pane is the multi-stage export surface. It shows every loaded match stage, manages queue membership, and processes individual or combined outputs.
+The Queue pane is the multi-stage export surface. It shows every loaded match stage, manages queue membership, and processes individual or combined outputs. Processing progress and logs remain live when the log is closed or another pane is opened; returning to Queue or reopening the log rehydrates the current server-owned job state.
 
 <img src="../../screenshots/QueuePane.png" alt="Queue pane with active-stage selection, queue status rows, settings propagation, and processing actions" width="960">
 

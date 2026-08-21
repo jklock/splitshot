@@ -176,6 +176,12 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/queue/add-all": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
+    "/api/project/stage/global-settings-primary": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/project/stage/ignore-global-settings": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
     "/api/project/intro-outro/fades": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
@@ -2333,6 +2339,21 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         saved = _read_project_json(project_path)
         assert len(saved["queue"]) == 1
         assert saved["queue"][0]["stage_id"] == saved["active_stage_id"]
+
+        active_stage_id = saved["active_stage_id"]
+        _post_json(
+            f"{server.url}api/project/stage/global-settings-primary",
+            {"stage_id": active_stage_id},
+        )
+        saved = _read_project_json(project_path)
+        assert saved["global_settings_stage_id"] == active_stage_id
+        _post_json(
+            f"{server.url}api/project/stage/ignore-global-settings",
+            {"stage_id": active_stage_id},
+        )
+        saved = _read_project_json(project_path)
+        assert saved["global_settings_stage_id"] == ""
+        assert saved["stages"][0]["ignore_global_settings"] is True
 
         _post_json(
             f"{server.url}api/project/in-out/media",

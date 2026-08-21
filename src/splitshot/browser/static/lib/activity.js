@@ -14,6 +14,8 @@ export function createActivityRuntime({
   runtime,
   renderExportLog = () => {},
   setProcessingProgress = () => {},
+  scheduleProcessingBarShow = () => {},
+  scheduleProcessingBarHide = () => {},
   ACTIVITY_FLUSH_DELAY_MS = 160,
   ACTIVITY_BATCH_SIZE = 48,
   ACTIVITY_POLL_INTERVAL_MS = 250,
@@ -23,6 +25,8 @@ export function createActivityRuntime({
       activityCursor: Number(runtime?.activityCursor || 0),
       activityQueueLength: Array.isArray(runtime?.activityQueue) ? runtime.activityQueue.length : 0,
       exportLogLineCount: Array.isArray(runtime?.exportLogLines) ? runtime.exportLogLines.length : 0,
+      processingJobId: runtime?.processingJobId || "",
+      processingLogCursor: Number(runtime?.processingLogCursor || 0),
     });
   }
 
@@ -162,13 +166,53 @@ export function createActivityRuntime({
     if (exportLogChanged) renderExportLog();
   }
 
+  function consumeProcessingSnapshot(job = {}) {
+    if (!job || typeof job !== "object" || !job.id) return;
+    if (runtime.processingJobId !== job.id) {
+      runtime.processingJobId = String(job.id);
+      runtime.processingLogCursor = 0;
+      runtime.exportLogLines = [];
+    }
+    let logChanged = false;
+    (Array.isArray(job.logs) ? job.logs : []).forEach((entry) => {
+      const seq = Number(entry?.seq || 0);
+      if (seq <= Number(runtime.processingLogCursor || 0)) return;
+      appendExportLogLine(entry?.line);
+      runtime.processingLogCursor = seq;
+      logChanged = true;
+    });
+    runtime.processingLogCursor = Math.max(
+      Number(runtime.processingLogCursor || 0),
+      Number(job.log_seq || 0),
+    );
+    const progress = Number(job.progress);
+    if (job.active) {
+      runtime.activeProcessingPath = String(job.path || "/api/project/queue/process");
+      runtime.busyCount = Math.max(1, Number(runtime.busyCount || 0));
+      if (Number.isFinite(progress)) setProcessingProgress(progress * 100);
+      scheduleProcessingBarShow(
+        String(job.message || "Processing queue..."),
+        String(job.detail || "Rendering queued stages locally"),
+      );
+    } else if (runtime.processingJobId === job.id) {
+      if (job.status === "complete") setProcessingProgress(100);
+      runtime.activeProcessingPath = null;
+      runtime.busyCount = 0;
+      scheduleProcessingBarHide(String(job.message || (job.error ? "Processing failed." : "Ready.")));
+      logChanged = true;
+    }
+    syncActivityBackbone();
+    if (logChanged || job.active) renderExportLog();
+  }
+
   async function runActivityPoll() {
     clearActivityPollTimer();
     try {
-      const response = await fetch(`/api/activity/poll?after=${runtime.activityCursor}`);
+      const response = await fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`);
       const data = await response.json();
       if (!response.ok || data.error) throw new Error(data.error || response.statusText);
       consumeActivityEntries(Array.isArray(data.entries) ? data.entries : []);
+      consumeProcessingSnapshot(data.processing || {});
       runtime.activityCursor = Math.max(runtime.activityCursor, Number(data.cursor || 0));
       syncActivityBackbone();
       emitBackbone(backbone, "activity.poll", {

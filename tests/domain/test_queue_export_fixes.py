@@ -1,19 +1,125 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from splitshot.domain.models import (
+    ImportedStageScore,
     OverlayTextBox,
     ProjectStage,
     QueueEntry,
     QueueStatus,
+    ShotEvent,
     VideoAsset,
     project_from_dict,
     project_to_dict,
 )
 from splitshot.ui.controller import ProjectController
+
+
+def test_global_settings_primary_preserves_stage_owned_data_and_round_trips(tmp_path: Path) -> None:
+    controller = ProjectController()
+    controller.project_path = tmp_path / "global-settings.ssproj"
+    controller.project_path.mkdir()
+    source = ProjectStage(label="Stage 1", primary_media=VideoAsset(path="one.mp4"))
+    target = ProjectStage(label="Stage 2", primary_media=VideoAsset(path="two.mp4"))
+    source.overlay.font_size = 42
+    source.merge.pip_x = 0.25
+    source.export.video_bitrate_mbps = 22.0
+    target.analysis.shots = [ShotEvent(time_ms=1234)]
+    target.scoring.competitor_name = "Target Shooter"
+    target.scoring.stage_number = 2
+    target.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa", stage_number=2, raw_seconds=28.89, final_time=30.89
+    )
+    controller.project.stages = [source, target]
+    controller.project.active_stage_id = source.id
+    controller._sync_active_stage_to_project()
+    controller.project.queue = [QueueEntry(stage_id=target.id, status=QueueStatus.QUEUED)]
+    target.queue_status = QueueStatus.QUEUED
+
+    controller.set_global_settings_primary(source.id)
+
+    assert controller.project.global_settings_stage_id == source.id
+    assert target.overlay.font_size == 42
+    assert target.merge.pip_x == 0.25
+    assert target.export.video_bitrate_mbps == 22.0
+    assert [shot.time_ms for shot in target.analysis.shots] == [1234]
+    assert target.scoring.competitor_name == "Target Shooter"
+    assert target.scoring.stage_number == 2
+    assert target.scoring.imported_stage.final_time == 30.89
+
+    restored = project_from_dict(project_to_dict(controller.project))
+    assert restored.global_settings_stage_id == source.id
+    assert restored.stages[1].ignore_global_settings is False
+
+
+def test_ignore_global_settings_uses_effective_defaults_without_changing_stage_data(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.project_path = tmp_path / "ignore-global.ssproj"
+    controller.project_path.mkdir()
+    source = ProjectStage(label="Stage 1", primary_media=VideoAsset(path="one.mp4"))
+    target = ProjectStage(label="Stage 2", primary_media=VideoAsset(path="two.mp4"))
+    source.overlay.font_size = 64
+    target.overlay.font_size = 64
+    target.analysis.shots = [ShotEvent(time_ms=2345)]
+    target.scoring.stage_number = 2
+    controller.project.stages = [source, target]
+    controller.project.active_stage_id = target.id
+    controller.project.global_settings_stage_id = source.id
+
+    controller.ignore_global_settings(target.id)
+
+    assert target.ignore_global_settings is True
+    assert target.overlay.font_size != 64
+    assert [shot.time_ms for shot in target.analysis.shots] == [2345]
+    assert target.scoring.stage_number == 2
+    assert controller.project.primary_video.path == "two.mp4"
+
+
+def test_queue_renders_immutable_stage_views_with_distinct_analysis_and_scoring(
+    monkeypatch, tmp_path: Path
+) -> None:
+    controller = ProjectController()
+    controller.project_path = tmp_path / "immutable-render.ssproj"
+    controller.project_path.mkdir()
+    first = ProjectStage(label="Stage 1", primary_media=VideoAsset(path="one.mp4"))
+    second = ProjectStage(label="Stage 2", primary_media=VideoAsset(path="two.mp4"))
+    first.analysis.shots = [ShotEvent(time_ms=1000)]
+    second.analysis.shots = [ShotEvent(time_ms=2000), ShotEvent(time_ms=3000)]
+    first.scoring.stage_number = 1
+    second.scoring.stage_number = 2
+    controller.project.stages = [first, second]
+    controller.project.active_stage_id = first.id
+    controller.project.primary_video = first.primary_media
+    controller.project.analysis = first.analysis
+    controller.project.scoring = first.scoring
+    for stage in (first, second):
+        controller.project.queue.append(
+            QueueEntry(stage_id=stage.id, status=QueueStatus.QUEUED)
+        )
+        stage.queue_status = QueueStatus.QUEUED
+
+    rendered: list[tuple[str, int, int]] = []
+
+    def fake_export(project, output_path, **_kwargs):
+        rendered.append(
+            (Path(project.primary_video.path).name, len(project.analysis.shots), project.scoring.stage_number)
+        )
+        Path(output_path).write_bytes(b"rendered")
+
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+
+    controller.process_queue("individual")
+
+    assert rendered == [("one.mp4", 1, 1), ("two.mp4", 2, 2)]
+    assert controller.project.active_stage_id == first.id
+    assert controller.project.primary_video.path == "one.mp4"
+    assert len(controller.project.analysis.shots) == 1
 
 
 def test_applying_saved_export_profile_restores_settings_and_stales_queue(
@@ -325,7 +431,7 @@ def test_combined_queue_includes_only_enabled_boundary_media(
 def test_combined_output_uses_dated_name_in_output_directory(tmp_path: Path, monkeypatch) -> None:
     controller = ProjectController()
     controller.project.name = "08/16/2026 IDPA @ WSRC"
-    output_date = datetime.now().strftime("%Y-%m-%d")
+    output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
 
     def fake_concat(_results, _output_dir, output_path: Path) -> Path:
         assert output_path.parent == tmp_path

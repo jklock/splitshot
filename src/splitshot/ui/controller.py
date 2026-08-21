@@ -2804,20 +2804,91 @@ class ProjectController(QObject):
         if active is None:
             return
         self._sync_project_to_active_stage()
+        global_source_id = self.project.global_settings_stage_id
+        if global_source_id:
+            if active.id != global_source_id:
+                return
+            queued_stage_ids = {entry.stage_id for entry in self.project.queue}
+            for stage in self.project.stages:
+                if (
+                    stage.id == active.id
+                    or stage.id not in queued_stage_ids
+                    or stage.ignore_global_settings
+                ):
+                    continue
+                self._copy_stage_presentation_settings(active, stage)
+                self._mark_stage_queue_stale(stage.id)
+            self._mark_stage_queue_stale(active.id)
+            return
         active.presentation_overridden = True
         for stage in self.project.stages:
             if stage.order_index <= active.order_index or stage.presentation_overridden:
                 continue
-            stage.overlay = deepcopy(active.overlay)
-            stage.popups = deepcopy(active.popups)
-            stage.popup_template = deepcopy(active.popup_template)
-            stage.merge = deepcopy(active.merge)
-            stage.export = deepcopy(active.export)
-            stage.export.output_path = None
-            stage.export.last_log = ""
-            stage.export.last_error = None
+            self._copy_stage_presentation_settings(active, stage)
             self._mark_stage_queue_stale(stage.id)
         self._mark_stage_queue_stale(active.id)
+
+    @staticmethod
+    def _copy_stage_presentation_settings(source: ProjectStage, target: ProjectStage) -> None:
+        """Copy visual/export configuration without copying stage-owned media or results."""
+        target.overlay = deepcopy(source.overlay)
+        target.popup_template = deepcopy(source.popup_template)
+        target.merge = deepcopy(source.merge)
+        target.export = deepcopy(source.export)
+        target.export.output_path = None
+        target.export.last_log = ""
+        target.export.last_error = None
+
+    def set_global_settings_primary(self, stage_id: str) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError("Stage not found")
+        if self.project.active_stage_id == stage.id:
+            self._sync_project_to_active_stage()
+        self.project.global_settings_stage_id = stage.id
+        stage.ignore_global_settings = False
+        queued_stage_ids = {entry.stage_id for entry in self.project.queue}
+        applied_count = 0
+        for target in self.project.stages:
+            if (
+                target.id == stage.id
+                or target.id not in queued_stage_ids
+                or target.ignore_global_settings
+            ):
+                continue
+            self._copy_stage_presentation_settings(stage, target)
+            self._mark_stage_queue_stale(target.id)
+            applied_count += 1
+        self._mark_stage_queue_stale(stage.id)
+        self._set_status(
+            f"Set {stage.label} as global settings primary for {applied_count} queued stage(s)."
+        )
+        self.project.touch()
+        self.project_changed.emit()
+
+    def ignore_global_settings(self, stage_id: str) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError("Stage not found")
+        defaults = ProjectStage()
+        default_project = Project()
+        self._apply_effective_settings_to_project(
+            default_project, self.effective_settings(), reset_tool=False
+        )
+        defaults.overlay = deepcopy(default_project.overlay)
+        defaults.popup_template = deepcopy(default_project.popup_template)
+        defaults.merge = deepcopy(default_project.merge)
+        defaults.export = deepcopy(default_project.export)
+        self._copy_stage_presentation_settings(defaults, stage)
+        stage.ignore_global_settings = True
+        if self.project.global_settings_stage_id == stage.id:
+            self.project.global_settings_stage_id = ""
+        if self.project.active_stage_id == stage.id:
+            self._sync_active_stage_to_project()
+        self._mark_stage_queue_stale(stage.id)
+        self._set_status(f"{stage.label} now ignores global settings and uses defaults.")
+        self.project.touch()
+        self.project_changed.emit()
 
     def _active_stage_label(self) -> str:
         stage = self.project.active_stage
@@ -3193,6 +3264,13 @@ class ProjectController(QObject):
             self._sync_project_to_active_stage()
         if not stage.primary_media.path:
             raise ValueError("Stage must have primary media before queuing.")
+        global_source = self._stage_by_id(self.project.global_settings_stage_id)
+        if (
+            global_source is not None
+            and global_source.id != stage.id
+            and not stage.ignore_global_settings
+        ):
+            self._copy_stage_presentation_settings(global_source, stage)
         stage.queue_status = QueueStatus.QUEUED
         existing = next((e for e in self.project.queue if e.stage_id == stage_id), None)
         if existing:
@@ -3219,7 +3297,14 @@ class ProjectController(QObject):
             raise ValueError("No stages with primary media are available to queue.")
         existing_by_stage = {entry.stage_id: entry for entry in self.project.queue}
         now = datetime.now(UTC)
+        global_source = self._stage_by_id(self.project.global_settings_stage_id)
         for stage in queueable:
+            if (
+                global_source is not None
+                and global_source.id != stage.id
+                and not stage.ignore_global_settings
+            ):
+                self._copy_stage_presentation_settings(global_source, stage)
             stage.queue_status = QueueStatus.QUEUED
             snapshot = deepcopy(stage_to_dict(stage))
             existing = existing_by_stage.get(stage.id)
@@ -3256,44 +3341,10 @@ class ProjectController(QObject):
 
     def apply_settings_to_all_stages(self) -> None:
         active = self.project.active_stage
-        queued_stage_ids = {
-            entry.stage_id
-            for entry in self.project.queue
-            if entry.status
-            in (
-                QueueStatus.QUEUED,
-                QueueStatus.STALE,
-                QueueStatus.PROCESSING,
-                QueueStatus.COMPLETE,
-                QueueStatus.FAILED,
-            )
-        }
-        if active is None or not queued_stage_ids:
+        if active is None or not self.project.queue:
             self._set_status("No queued stages to update.")
             return
-        applied_count = 0
-        for stage in self.project.stages:
-            if stage.id == active.id or stage.id not in queued_stage_ids:
-                continue
-            stage.analysis = deepcopy(active.analysis)
-            stage.scoring = deepcopy(active.scoring)
-            stage.overlay = deepcopy(active.overlay)
-            stage.popups = list(active.popups)
-            stage.popup_template = deepcopy(active.popup_template)
-            stage.merge = deepcopy(active.merge)
-            stage.export = deepcopy(active.export)
-            applied_count += 1
-            if stage.queue_status == QueueStatus.QUEUED:
-                stage.queue_status = QueueStatus.STALE
-                entry = next((e for e in self.project.queue if e.stage_id == stage.id), None)
-                if entry:
-                    entry.status = QueueStatus.STALE
-        if applied_count == 0:
-            self._set_status("No other queued stages to update.")
-            return
-        self._set_status("Applied active stage settings to queued stages (markers excluded).")
-        self.project.touch()
-        self.project_changed.emit()
+        self.set_global_settings_primary(active.id)
 
     def process_queue(
         self,
@@ -3311,7 +3362,17 @@ class ProjectController(QObject):
             return
         self._set_status(f"Processing {len(queued)} queued stage(s)...")
         self._sync_project_to_active_stage()
-        original_active_stage_id = self.project.active_stage_id
+        global_source = self._stage_by_id(self.project.global_settings_stage_id)
+        if global_source is not None:
+            queued_stage_ids = {entry.stage_id for entry in queued}
+            for target in self.project.stages:
+                if (
+                    target.id == global_source.id
+                    or target.id not in queued_stage_ids
+                    or target.ignore_global_settings
+                ):
+                    continue
+                self._copy_stage_presentation_settings(global_source, target)
         output_dir = self._ensure_output_dir()
         results: list[Path] = []
         self.project.last_combined_output_path = ""
@@ -3394,18 +3455,29 @@ class ProjectController(QObject):
                     continue
                 stage.queue_status = QueueStatus.PROCESSING
                 self._set_status(f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}...")
-                self.project.active_stage_id = stage.id
-                self._sync_active_stage_to_project()
-                self._refresh_practiscore_comparison_for_active_stage()
-                self._sync_project_to_active_stage()
                 slug = self._stage_slug(stage)
                 output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
                 render_path = self._temporary_output_path(output_path)
                 try:
                     from splitshot.export.pipeline import export_project
 
+                    render_project = deepcopy(self.project)
+                    render_project.active_stage_id = stage.id
+                    render_project.primary_video = deepcopy(stage.primary_media)
+                    render_project.primary_trim_derivative = deepcopy(
+                        stage.primary_trim_derivative
+                    )
+                    render_project.merge_sources = deepcopy(stage.added_media)
+                    render_project.analysis = deepcopy(stage.analysis)
+                    render_project.scoring = deepcopy(stage.scoring)
+                    render_project.overlay = deepcopy(stage.overlay)
+                    render_project.popups = deepcopy(stage.popups)
+                    render_project.popup_template = deepcopy(stage.popup_template)
+                    render_project.merge = deepcopy(stage.merge)
+                    render_project.export = deepcopy(stage.export)
+                    _sync_secondary_video_from_merge_sources(render_project)
                     export_project(
-                        self.project,
+                        render_project,
                         str(render_path),
                         progress_callback=lambda value, idx=idx, label=stage.label: report_progress(
                             stage_progress=value,
@@ -3430,7 +3502,8 @@ class ProjectController(QObject):
                     stage.queue_status = QueueStatus.COMPLETE
                     stage.last_output_path = str(output_path)
                     stage.last_processed_at = entry.processed_at
-                    self._sync_project_to_active_stage()
+                    stage.export.last_log = render_project.export.last_log
+                    stage.export.last_error = render_project.export.last_error
                     results.append(output_path)
                     report_progress(
                         stage_progress=1.0,
@@ -3443,7 +3516,6 @@ class ProjectController(QObject):
                     entry.status = QueueStatus.FAILED
                     entry.error_message = str(exc)
                     stage.queue_status = QueueStatus.FAILED
-                    self._sync_project_to_active_stage()
                     report_progress(
                         stage_progress=1.0,
                         stage_index=idx,
@@ -3592,9 +3664,6 @@ class ProjectController(QObject):
                     f"Queue finished: {len(results)} succeeded, {failed_count} failed."
                 )
         finally:
-            self.project.active_stage_id = original_active_stage_id
-            if self.project.active_stage:
-                self._sync_active_stage_to_project()
             self.project.touch()
             self.project_changed.emit()
 
@@ -3617,7 +3686,7 @@ class ProjectController(QObject):
         return output_dir / f"{target_stage.order_index}-{self._stage_slug(target_stage)}.mp4"
 
     def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
-        output_date = datetime.now().strftime("%Y-%m-%d")
+        output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
         combined_path = output_dir / f"Combined-{output_date}.mp4"
         temp_combined_path = self._temporary_output_path(combined_path)
         ces = self.project.combined_export_settings

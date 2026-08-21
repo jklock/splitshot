@@ -31,6 +31,8 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 | `Remove` | Removes that file from the stage. |
 | `Add Media` | Opens in project `Input/` and adds project-managed media to the active stage. |
 | `Add Stage` | Creates another stage and makes it active. |
+| `Global Settings Primary` | Uses this stage's Compose, overlay, Review, marker-template, and Export presentation settings for every other queued stage without replacing stage media, timing, or scoring data. |
+| `Ignore Global Settings` | Excludes this stage from global presentation inheritance and restores folder/project defaults, falling back to app defaults. |
 
 ## Workflow
 

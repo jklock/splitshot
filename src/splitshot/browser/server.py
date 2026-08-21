@@ -11,10 +11,12 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
+from copy import deepcopy
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -611,6 +613,10 @@ class BrowserControlServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._controller_lock = threading.Lock()
+        self._processing_lock = threading.Lock()
+        self._processing_job: dict[str, Any] = {}
+        self._processing_activity_last_at = 0.0
+        self._processing_activity_last_phase = ""
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
         self._display_names: dict[str, str] = {}
@@ -704,6 +710,125 @@ class BrowserControlServer:
 
     def _bump_media_url_token(self) -> None:
         self._media_url_token = uuid4().hex
+
+    def _begin_processing_job(self, path: str, mode: str) -> None:
+        with self._processing_lock:
+            self._processing_activity_last_at = 0.0
+            self._processing_activity_last_phase = ""
+            self._processing_job = {
+                "id": uuid4().hex,
+                "path": path,
+                "mode": mode,
+                "active": True,
+                "status": "processing",
+                "message": "Processing combined queue..."
+                if mode == "combined"
+                else "Processing queue...",
+                "detail": "Rendering queued stages locally",
+                "progress": 0.0,
+                "stage_label": "",
+                "stage_index": 0,
+                "stage_count": 0,
+                "phase": "render",
+                "log_seq": 0,
+                "logs": [],
+                "error": "",
+            }
+
+    def _update_processing_job(self, detail: dict[str, Any]) -> bool:
+        with self._processing_lock:
+            if not self._processing_job:
+                return False
+            self._processing_job.update(
+                {
+                    key: detail[key]
+                    for key in (
+                        "progress",
+                        "stage_label",
+                        "stage_index",
+                        "stage_count",
+                        "phase",
+                    )
+                    if key in detail
+                }
+            )
+            phase = str(detail.get("phase") or "render")
+            label = str(detail.get("stage_label") or "queue")
+            if phase == "combine":
+                self._processing_job["message"] = "Finalizing combined output..."
+                self._processing_job["detail"] = "Concatenating, fading, and validating"
+            else:
+                self._processing_job["message"] = f"Processing {label}..."
+                self._processing_job["detail"] = (
+                    f"Stage {detail.get('stage_index', 0)} of {detail.get('stage_count', 0)}"
+                )
+            now = time.monotonic()
+            should_log = (
+                phase != self._processing_activity_last_phase
+                or phase in {"complete", "failed"}
+                or now - self._processing_activity_last_at >= 0.25
+            )
+            if should_log:
+                self._processing_activity_last_at = now
+                self._processing_activity_last_phase = phase
+            return should_log
+
+    def _append_processing_log(self, line: str) -> None:
+        normalized = str(line or "").rstrip()
+        if not normalized:
+            return
+        with self._processing_lock:
+            if not self._processing_job:
+                return
+            self._processing_job["log_seq"] = int(self._processing_job["log_seq"]) + 1
+            logs = self._processing_job["logs"]
+            logs.append({"seq": self._processing_job["log_seq"], "line": normalized})
+            if len(logs) > 20000:
+                del logs[:-20000]
+
+    def _finish_processing_job(self, *, status: str, error: str = "") -> None:
+        with self._processing_lock:
+            if not self._processing_job:
+                return
+            self._processing_job["active"] = False
+            self._processing_job["status"] = "failed" if error else "complete"
+            self._processing_job["progress"] = 1.0 if not error else self._processing_job.get(
+                "progress", 0.0
+            )
+            self._processing_job["message"] = status
+            self._processing_job["detail"] = "Ready" if not error else "Processing failed"
+            self._processing_job["error"] = error
+
+    def _processing_snapshot(self, after_log: int = 0) -> dict[str, Any]:
+        with self._processing_lock:
+            if not self._processing_job:
+                return {}
+            job = self._processing_job
+            return {
+                key: deepcopy(job[key])
+                for key in (
+                    "id",
+                    "path",
+                    "mode",
+                    "active",
+                    "status",
+                    "message",
+                    "detail",
+                    "progress",
+                    "stage_label",
+                    "stage_index",
+                    "stage_count",
+                    "phase",
+                    "log_seq",
+                    "error",
+                )
+            } | {
+                "logs": [
+                    deepcopy(item)
+                    for item in job["logs"]
+                    if int(item.get("seq", 0)) > after_log
+                ]
+            }
 
     def _prepare_browser_media(self, path: Path) -> tuple[Path, bool, str | None, str | None]:
         if not path.exists() or not path.is_file():
@@ -1054,6 +1179,8 @@ class BrowserControlServer:
                     "/api/project/stage/set-primary": self._set_stage_primary,
                     "/api/project/stage/clear-primary": self._clear_stage_primary,
                     "/api/project/stage/remove-added": self._remove_stage_added,
+                    "/api/project/stage/global-settings-primary": self._set_global_settings_primary,
+                    "/api/project/stage/ignore-global-settings": self._ignore_global_settings,
                     "/api/project/queue/add": self._add_to_queue,
                     "/api/project/queue/add-all": self._add_all_to_queue,
                     "/api/project/queue/remove": self._remove_from_queue,
@@ -1225,7 +1352,14 @@ class BrowserControlServer:
                     limit = max(0, int(raw_limit))
                 except ValueError:
                     limit = 400
-                self._send_json(activity.snapshot(after_seq=after_seq, limit=limit))
+                raw_job_after = params.get("job_after", ["0"])[0]
+                try:
+                    job_after = max(0, int(raw_job_after))
+                except ValueError:
+                    job_after = 0
+                payload = activity.snapshot(after_seq=after_seq, limit=limit)
+                payload["processing"] = server._processing_snapshot(after_log=job_after)
+                self._send_json(payload)
 
             def _browser_state(self) -> dict[str, Any]:
                 controller._sync_project_to_active_stage()
@@ -2375,6 +2509,18 @@ class BrowserControlServer:
                 server._bump_media_url_token()
                 controller.remove_stage_added_media(stage_id, source_id)
 
+            def _set_global_settings_primary(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or controller.project.active_stage_id)
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.set_global_settings_primary(stage_id)
+
+            def _ignore_global_settings(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or controller.project.active_stage_id)
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.ignore_global_settings(stage_id)
+
             def _add_to_queue(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")
                 if not stage_id:
@@ -2429,10 +2575,37 @@ class BrowserControlServer:
 
             def _process_queue(self, payload: dict[str, Any]) -> None:
                 mode = str(payload.get("mode", "individual")).strip().lower()
-                controller.process_queue(
-                    mode,
-                    progress_callback=lambda detail: activity.log("api.queue.progress", **detail),
-                    log_callback=lambda line: activity.log("api.export.log", line=line),
+                server._begin_processing_job("/api/project/queue/process", mode)
+
+                def progress(detail: dict[str, Any]) -> None:
+                    if server._update_processing_job(detail):
+                        activity.log("api.queue.progress", **detail)
+
+                def log(line: str) -> None:
+                    server._append_processing_log(line)
+                    activity.log("api.export.log", line=line)
+
+                try:
+                    controller.process_queue(
+                        mode,
+                        progress_callback=progress,
+                        log_callback=log,
+                    )
+                except Exception as exc:
+                    controller.project.export.last_error = str(exc)
+                    if controller.project.active_stage is not None:
+                        controller.project.active_stage.export.last_error = str(exc)
+                    server._finish_processing_job(status=str(exc), error=str(exc))
+                    raise
+                completed_job = server._processing_snapshot()
+                completed_log = "\n".join(
+                    str(item.get("line") or "") for item in completed_job.get("logs", [])
                 )
+                controller.project.export.last_log = completed_log
+                controller.project.export.last_error = None
+                if controller.project.active_stage is not None:
+                    controller.project.active_stage.export.last_log = completed_log
+                    controller.project.active_stage.export.last_error = None
+                server._finish_processing_job(status=controller.status_message)
 
         return Handler

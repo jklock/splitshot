@@ -1005,6 +1005,7 @@ class ProjectStage:
     last_processed_at: str = ""
     last_output_path: str = ""
     presentation_overridden: bool = False
+    ignore_global_settings: bool = False
 
 
 @dataclass(slots=True)
@@ -1052,6 +1053,7 @@ class Project:
     outro_clip: IntroOutroClip = field(default_factory=IntroOutroClip)
     practiscore_source_file: str = ""
     excluded_imported_stage_numbers: list[int] = field(default_factory=list)
+    global_settings_stage_id: str = ""
 
     @property
     def active_stage(self) -> ProjectStage | None:
@@ -1107,6 +1109,7 @@ def stage_to_dict(stage: ProjectStage) -> dict[str, Any]:
         "last_processed_at": stage.last_processed_at,
         "last_output_path": stage.last_output_path,
         "presentation_overridden": stage.presentation_overridden,
+        "ignore_global_settings": stage.ignore_global_settings,
     }
 
 
@@ -1160,6 +1163,7 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
         last_processed_at=str(data.get("last_processed_at", "") or ""),
         last_output_path=str(data.get("last_output_path", "") or ""),
         presentation_overridden=bool(data.get("presentation_overridden", False)),
+        ignore_global_settings=bool(data.get("ignore_global_settings", False)),
     )
 
 
@@ -2870,6 +2874,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             data.get("outro_clip"), project.queue_settings.outro_path
         )
         project.practiscore_source_file = str(data.get("practiscore_source_file", ""))
+        project.global_settings_stage_id = str(data.get("global_settings_stage_id", "") or "")
         raw_excluded_stage_numbers = data.get("excluded_imported_stage_numbers", [])
         if isinstance(raw_excluded_stage_numbers, list):
             project.excluded_imported_stage_numbers = sorted(
