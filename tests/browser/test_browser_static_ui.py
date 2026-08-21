@@ -1993,7 +1993,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "save-project",
         "delete-project",
         "review-add-text-box",
-        "review-queue-all-btn",
+        "queue-all-btn",
         "review-add-imported-box",
         "review-set-source",
         "export-badges",

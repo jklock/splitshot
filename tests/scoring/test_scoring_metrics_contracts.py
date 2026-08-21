@@ -198,3 +198,26 @@ def test_stage_overlay_uses_official_spreadsheet_values_and_stage_rankings() -> 
         "SS - 1/2",
         "Overall - 2/4",
     ]
+
+
+def test_review_summary_overlay_falls_back_to_computed_stage_metrics_without_import() -> None:
+    project = Project()
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 1_000
+    project.analysis.shots = [
+        ShotEvent(time_ms=5_000, score=ScoreMark(letter=ScoreLetter.DOWN_1)),
+        ShotEvent(time_ms=9_000, score=ScoreMark(letter=ScoreLetter.DOWN_3)),
+    ]
+
+    text = format_review_summary_overlay_text(
+        project,
+        ["score_time", "raw_time", "points_down", "penalties", "overall_placement"],
+    )
+
+    assert text.splitlines() == [
+        "Score / Time 12.00",
+        "Raw Time 8.00s",
+        "Points Down 4",
+        "Penalties 0",
+    ]

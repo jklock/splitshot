@@ -16,7 +16,7 @@ EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
     "lib/shell-runtime.js": 5,
     "panes/intro-outro-pane.js": 25,
     "panes/media-pane.js": 13,
-    "panes/queue-pane.js": 9,
+    "panes/queue-pane.js": 10,
     "panes/review-pane.js": 17,
     "panes/trim-sync-pane.js": 26,
 }
@@ -258,7 +258,6 @@ id:resize-sidebar
 id:resize-waveform
 id:review-add-imported-box
 id:review-add-text-box
-id:review-queue-all-btn
 id:score-lock-to-stack
 id:score-x
 id:score-y

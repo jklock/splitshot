@@ -2,6 +2,7 @@ export function createWaveformComponent({
   $ = (id) => document.getElementById(id),
   windowObject = window,
   getState = () => null,
+  getActiveTool = () => "project",
   getSelectedShotId = () => null,
   setSelectedShotIdValue = () => {},
   getWaveformMode = () => "select",
@@ -376,7 +377,31 @@ export function createWaveformComponent({
     const canvas = $("waveform");
     const { width, height } = resizeCanvasToDisplay(canvas);
     const ctx = canvas.getContext("2d");
+    if (getActiveTool() === "intro-outro") {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#102033";
+      ctx.fillRect(0, 0, width, height);
+      canvas.dataset.boundaryPreview = "true";
+      canvas.dataset.waveformLaneCount = "0";
+      canvas.dataset.waveformSamples = "0";
+      canvas.dataset.secondaryWaveformSamples = "0";
+      const totalLabel = $("waveform-total-time");
+      if (totalLabel) totalLabel.textContent = "—";
+      const shotList = $("waveform-shot-list");
+      if (shotList) shotList.innerHTML = "";
+      const navigator = $("waveform-window");
+      if (navigator) navigator.hidden = true;
+      const playhead = $("waveform-playhead");
+      if (playhead) playhead.hidden = true;
+      return;
+    }
+    canvas.dataset.boundaryPreview = "false";
+    const navigator = $("waveform-window");
+    if (navigator) navigator.hidden = false;
+    const playhead = $("waveform-playhead");
+    if (playhead) playhead.hidden = false;
     const waveform = currentState()?.project?.analysis?.waveform_primary || [];
+    canvas.dataset.waveformSamples = String(waveform.length);
     const totalMs = durationMs();
     const totalLabel = $("waveform-total-time");
     if (totalLabel) totalLabel.textContent = formatTimelineTime(totalMs);

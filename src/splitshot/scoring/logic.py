@@ -683,8 +683,6 @@ def format_review_summary_overlay_text(
 ) -> str:
     """Return the same auto Review summary text used by the browser preview."""
     imported = project.scoring.imported_stage
-    if imported is None:
-        return ""
     requested = tuple(
         "overall_placement" if metric_id == "division_class_placement" else metric_id
         for metric_id in (metric_ids or _DEFAULT_REVIEW_SUMMARY_METRIC_IDS)
@@ -692,31 +690,48 @@ def format_review_summary_overlay_text(
     summary = calculate_scoring_summary(project)
     points_down = (
         imported.score_counts.get("Points Down", imported.aggregate_points)
-        if imported.match_type == "idpa"
-        else None
+        if imported is not None and imported.match_type == "idpa"
+        else (summary.get("shot_points") if summary.get("sport") == "IDPA" else None)
     )
     division_label = _competition_code(
-        project.scoring.division or imported.division, _DIVISION_CODES
+        project.scoring.division or (imported.division if imported is not None else ""),
+        _DIVISION_CODES,
     )
     class_label = _competition_code(
-        project.scoring.classification or imported.classification, _class_codes(project)
+        project.scoring.classification
+        or (imported.classification if imported is not None else ""),
+        _class_codes(project),
     )
+    raw_seconds = summary.get("raw_seconds")
+    display_value = str(summary.get("display_value") or "").replace("--", "")
     values = {
         "score_time": (
             f"{float(imported.final_time):.2f}"
-            if imported.final_time is not None
-            else str(summary.get("display_value") or "").replace("--", "")
+            if imported is not None and imported.final_time is not None
+            else display_value
         ),
         "raw_time": (
             f"{float(imported.raw_seconds):.2f}s"
-            if imported.raw_seconds is not None
-            else ""
+            if imported is not None and imported.raw_seconds is not None
+            else ("" if raw_seconds is None else f"{float(raw_seconds):.2f}s")
         ),
         "points_down": "" if points_down is None else _format_overlay_stat(float(points_down)),
-        "penalties": _format_overlay_stat(imported_stage_penalty_count(project)),
-        "division_placement": stage_competition_placement(project, dimension="division"),
-        "class_placement": stage_competition_placement(project, dimension="classification"),
-        "overall_placement": stage_competition_placement(project),
+        "penalties": _format_overlay_stat(
+            imported_stage_penalty_count(project)
+            if imported is not None
+            else float(summary.get("total_penalties") or 0.0)
+        ),
+        "division_placement": (
+            stage_competition_placement(project, dimension="division")
+            if imported is not None
+            else ""
+        ),
+        "class_placement": (
+            stage_competition_placement(project, dimension="classification")
+            if imported is not None
+            else ""
+        ),
+        "overall_placement": stage_competition_placement(project) if imported is not None else "",
     }
     labels = {
         "division_placement": division_label or "Division",

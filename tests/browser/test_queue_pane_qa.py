@@ -406,6 +406,13 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     "node => node.compareDocumentPosition(document.querySelector(\"button[data-tool='queue']\")) & Node.DOCUMENT_POSITION_FOLLOWING"
                 )
                 intro_nav.click(force=True)
+                page.wait_for_function(
+                    "() => document.querySelector('#waveform')?.dataset.boundaryPreview === 'true'"
+                )
+                assert page.locator("#waveform").get_attribute("data-waveform-samples") == "0"
+                assert page.locator("#waveform").get_attribute("data-waveform-lane-count") == "0"
+                assert page.locator("#waveform-shot-list").count() == 1
+                assert page.locator("#waveform-shot-list").inner_text() == ""
                 assert page.get_by_role("heading", name="Intro / Outro", exact=True).is_visible()
                 assert page.get_by_role("button", name="Intro", exact=True).is_visible()
                 assert page.get_by_role("button", name="Outro", exact=True).is_visible()
@@ -449,6 +456,9 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert page.get_by_role("button", name="Add Match Results").is_visible()
 
                 queue_nav.click(force=True)
+                page.wait_for_function(
+                    "() => document.querySelector('#waveform')?.dataset.boundaryPreview === 'false'"
+                )
                 page.wait_for_function(
                     "() => document.querySelector('#primary-video').src.includes('/media/primary')"
                 )
@@ -508,6 +518,28 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 assert card.locator('[data-box-field="x"]').input_value() == "0.21"
                 assert card.locator('[data-box-field="y"]').input_value() == "0.73"
 
+                preview_geometry = page.evaluate(
+                    """() => {
+                        const badge = document.querySelector('.intro-outro-preview-badge');
+                        const overlay = document.getElementById('custom-overlay');
+                        const media = state.project.primary_video;
+                        const rect = badge.getBoundingClientRect();
+                        const frame = overlay.getBoundingClientRect();
+                        return {
+                            width: rect.width,
+                            height: rect.height,
+                            expectedWidth: 320 * (frame.width / media.width),
+                            expectedHeight: 96 * (frame.height / media.height),
+                            opacity: getComputedStyle(badge).opacity,
+                            background: getComputedStyle(badge).backgroundColor,
+                        };
+                    }"""
+                )
+                assert abs(preview_geometry["width"] - preview_geometry["expectedWidth"]) < 1
+                assert abs(preview_geometry["height"] - preview_geometry["expectedHeight"]) < 1
+                assert preview_geometry["opacity"] == "1"
+                assert preview_geometry["background"] == "rgba(0, 0, 0, 0.62)"
+
                 badge = page.locator(".intro-outro-preview-badge")
                 badge_box = badge.bounding_box()
                 stage_box = page.locator("#video-stage").bounding_box()
@@ -553,7 +585,7 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
         server.shutdown()
 
 
-def test_review_queue_all_files_queues_every_stage_in_one_action(
+def test_queue_all_files_queues_every_stage_in_one_action(
     synthetic_video_factory,
     tmp_path: Path,
 ) -> None:
@@ -576,9 +608,12 @@ def test_review_queue_all_files_queues_every_stage_in_one_action(
         with sync_playwright() as playwright:
             browser, page = _open_page(playwright, server)
             try:
-                page.locator("button[data-tool='review']").click(force=True)
+                page.locator("button[data-tool='queue']").click(force=True)
                 button = page.get_by_role("button", name="Queue All Files", exact=True)
                 assert button.is_visible()
+                page.locator("button[data-tool='review']").click(force=True)
+                assert page.get_by_role("button", name="Queue All Files", exact=True).count() == 0
+                page.locator("button[data-tool='queue']").click(force=True)
                 button.click()
                 page.wait_for_function(
                     """() => state?.project?.queue?.length === 3

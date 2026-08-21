@@ -23,12 +23,12 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | marker authoring, one-action `Queue All Files`, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported summary preview formatting, stage presentation waterfall, marker editor, text-box drag |"
+        "| Markers / Review / Overlay | marker authoring, review visibility selectors, independent split-badge score visibility, overlay badge/text-box controls, imported and computed summary preview formatting, stage presentation waterfall, marker editor, text-box drag |"
         in matrix
     )
     assert "| In / Out |" in matrix
     assert (
-        "| Queue | all-match stage membership, always-visible status rows, intro/outro include choices, project fades, output-folder reveal, live processing log, whole-queue progress, `Process Queue`, `Process as One File` |"
+        "| Queue | one-action `Queue All Files`, all-match stage membership, always-visible status rows, intro/outro include choices, project fades, output-folder reveal, live processing log, whole-queue progress, `Process Queue`, `Process as One File` |"
         in matrix
     )
     assert (

@@ -3925,6 +3925,18 @@
   white-space: nowrap;
 }
 
+.queue-title-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.queue-title-actions #queue-all-btn {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
 .queue-stage-actions .queue-membership-btn {
   justify-self: end;
   width: auto;

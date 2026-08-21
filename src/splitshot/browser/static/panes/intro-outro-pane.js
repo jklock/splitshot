@@ -119,6 +119,24 @@ export function createIntroOutroPane({
       .join("\n");
   }
 
+  function previewOutputSize() {
+    const activeStage = (project().stages || []).find((stage) => stage.id === project().active_stage_id);
+    const media = activeStage?.primary_media || project().primary_video || {};
+    const exportSettings = activeStage?.export || project().export || {};
+    return {
+      width: Math.max(1, Number(exportSettings.target_width || media.width || 1920)),
+      height: Math.max(1, Number(exportSettings.target_height || media.height || 1080)),
+    };
+  }
+
+  function colorWithOpacity(color, opacity) {
+    const value = String(color || "#000000").replace(/^#/, "");
+    const expanded = value.length === 3 ? value.split("").map((part) => `${part}${part}`).join("") : value;
+    const parsed = Number.parseInt(expanded, 16);
+    if (!Number.isFinite(parsed)) return `rgba(0, 0, 0, ${opacity})`;
+    return `rgba(${(parsed >> 16) & 255}, ${(parsed >> 8) & 255}, ${parsed & 255}, ${opacity})`;
+  }
+
   function normalizedBox(box = {}) {
     return {
       id: box.id || `boundary-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`,
@@ -253,6 +271,21 @@ export function createIntroOutroPane({
     if (liveOverlay) liveOverlay.innerHTML = "";
     const overlay = $("custom-overlay");
     if (!overlay) return;
+    const stage = $("video-stage");
+    const frame = frameRect();
+    const stageRect = stage?.getBoundingClientRect();
+    if (frame && stageRect) {
+      overlay.style.inset = "auto";
+      overlay.style.left = `${frame.left - stageRect.left}px`;
+      overlay.style.top = `${frame.top - stageRect.top}px`;
+      overlay.style.width = `${frame.width}px`;
+      overlay.style.height = `${frame.height}px`;
+    }
+    const outputSize = previewOutputSize();
+    const scaleX = Math.max(0.01, Number(frame?.width || 1) / outputSize.width);
+    const scaleY = Math.max(0.01, Number(frame?.height || 1) / outputSize.height);
+    const fontScale = Math.min(scaleX, scaleY);
+    const margin = Math.max(0, Number(clip()?.overlay?.margin ?? project()?.overlay?.margin ?? 20));
     const visibleBoxes = boxes()
       .map((box, index) => ({ box, index }))
       .filter(({ box }) => box.enabled && boxDisplayText(box).trim());
@@ -265,6 +298,7 @@ export function createIntroOutroPane({
         const badge = documentObject.createElement("div");
         badge.className = "overlay-badge intro-outro-preview-badge";
         badge.dataset.introOutroBoxDrag = "true";
+        badge.dataset.textBoxDrag = "true";
         badge.addEventListener("pointerdown", beginBoundaryDrag);
         overlay.appendChild(badge);
       });
@@ -276,27 +310,39 @@ export function createIntroOutroPane({
       badge.dataset.boxIndex = String(index);
       badge.dataset.boundaryKind = selectedKind;
       badge.textContent = boxDisplayText(box);
-      badge.style.background = box.background_color || "#000000";
+      badge.style.background = colorWithOpacity(box.background_color, Number(box.opacity ?? 0.9));
       badge.style.color = box.text_color || "#ffffff";
-      badge.style.opacity = String(box.opacity ?? 0.9);
-      badge.style.fontSize = `${Math.max(8, Number(box.font_size || 28))}px`;
+      badge.style.opacity = "1";
+      badge.style.fontSize = `${Math.max(1, Number(box.font_size || 28) * fontScale)}px`;
       badge.style.fontFamily = box.font_family || "Arial";
       badge.style.fontWeight = box.font_bold === false ? "400" : "700";
       badge.style.fontStyle = box.font_italic ? "italic" : "normal";
-      badge.style.borderRadius = box.style_type === "rounded" ? "10px" : box.style_type === "bubble" ? "999px" : "0";
-      if (box.width) badge.style.width = `${box.width}px`;
-      if (box.height) badge.style.height = `${box.height}px`;
-      const positions = {
-        top_left: ["4%", "6%"], top_middle: ["50%", "6%"], top_right: ["96%", "6%"],
-        middle_left: ["4%", "50%"], middle_middle: ["50%", "50%"], middle_right: ["96%", "50%"],
-        bottom_left: ["4%", "94%"], bottom_middle: ["50%", "94%"], bottom_right: ["96%", "94%"],
-      };
-      const [left, top] = box.quadrant === "custom"
-        ? [`${Number(box.x ?? 0.5) * 100}%`, `${Number(box.y ?? 0.5) * 100}%`]
-        : (positions[box.quadrant] || positions.top_right);
-      badge.style.left = left;
-      badge.style.top = top;
-      badge.style.transform = `translate(${left === "4%" ? "0" : left === "96%" ? "-100%" : "-50%"}, ${top === "6%" ? "0" : top === "94%" ? "-100%" : "-50%"})`;
+      badge.style.borderRadius = box.style_type === "rounded" ? `${10 * fontScale}px` : box.style_type === "bubble" ? "999px" : "0";
+      badge.style.boxSizing = "border-box";
+      badge.style.lineHeight = "normal";
+      badge.style.padding = `${5 * scaleY}px ${10 * scaleX}px`;
+      badge.style.width = box.width ? `${Number(box.width) * scaleX}px` : "auto";
+      badge.style.height = box.height ? `${Number(box.height) * scaleY}px` : "auto";
+      badge.style.transform = "none";
+      const badgeWidth = badge.getBoundingClientRect().width;
+      const badgeHeight = badge.getBoundingClientRect().height;
+      const frameWidth = Number(frame?.width || 1);
+      const frameHeight = Number(frame?.height || 1);
+      const [vertical, horizontal] = String(box.quadrant || "top_right").split("_");
+      let left = box.quadrant === "custom"
+        ? (Number(box.x ?? 0.5) * frameWidth) - (badgeWidth / 2)
+        : horizontal === "left" ? margin * scaleX
+          : horizontal === "middle" ? (frameWidth - badgeWidth) / 2
+            : frameWidth - badgeWidth - (margin * scaleX);
+      let top = box.quadrant === "custom"
+        ? (Number(box.y ?? 0.5) * frameHeight) - (badgeHeight / 2)
+        : vertical === "top" ? margin * scaleY
+          : vertical === "middle" ? (frameHeight - badgeHeight) / 2
+            : frameHeight - badgeHeight - (margin * scaleY);
+      left = Math.max(0, Math.min(left, Math.max(0, frameWidth - badgeWidth)));
+      top = Math.max(0, Math.min(top, Math.max(0, frameHeight - badgeHeight)));
+      badge.style.left = `${left}px`;
+      badge.style.top = `${top}px`;
     });
     overlay.classList.toggle("has-badge", overlay.childElementCount > 0);
   }

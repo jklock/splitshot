@@ -4979,6 +4979,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   if (tool === "media" && mediaPane) mediaPane.render();
   if (tool === "intro-outro" && introOutroPane) introOutroPane.render({ force: changed });
   if (changed && previousTool === "intro-outro" && tool !== "intro-outro") renderVideo();
+  if (changed && (tool === "intro-outro" || previousTool === "intro-outro")) renderWaveform();
   if (tool === "queue" && queuePane) queuePane.render();
   renderOutputProfiles();
   renderLiveOverlay();
@@ -9575,6 +9576,7 @@ waveformComponent = createWaveformComponent({
   $,
   windowObject: window,
   getState: () => state,
+  getActiveTool: () => activeTool,
   getSelectedShotId: () => selectedShotId,
   setSelectedShotIdValue,
   getWaveformMode: () => waveformMode,
@@ -10030,8 +10032,6 @@ reviewPane = createReviewPane({
   renderLiveOverlay,
   scheduleSecondaryPreviewSync,
   restoreVideoElementFrame,
-  callApi,
-  setStatus,
 });
 
 timingPane = createTimingPane({

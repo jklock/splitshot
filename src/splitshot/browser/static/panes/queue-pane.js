@@ -117,6 +117,18 @@ export function createQueuePane({
     }
   }
 
+  async function queueAllFiles() {
+    const button = $("queue-all-btn");
+    if (button) button.disabled = true;
+    activity("queue.add-all");
+    try {
+      const result = await callApi("/api/project/queue/add-all", {});
+      if (result) setStatus(result.status || "Queued all files.");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   async function processAll() {
     activity("queue.process");
     setStatus("Processing queued stages...");
@@ -238,6 +250,10 @@ export function createQueuePane({
         openProcessingLog();
         return;
       }
+      if (target.closest("#queue-all-btn")) {
+        void queueAllFiles();
+        return;
+      }
       if (target.closest(".queue-process-btn")) {
         processAll();
         return;
@@ -274,7 +290,10 @@ export function createQueuePane({
       <div class="pane-section queue-pane-shell">
         <div class="section-header pane-title-row">
           <h3>Queue</h3>
-          <span class="pane-status-text">${count} queued</span>
+          <div class="queue-title-actions">
+            <span class="pane-status-text">${count} queued</span>
+            <button id="queue-all-btn" class="btn btn-primary" type="button" ${stages().some((stage) => stage?.primary_media?.path) ? "" : "disabled"}>Queue All Files</button>
+          </div>
         </div>
         ${renderControlsSection()}
         <section class="settings-section queue-pane-section">
