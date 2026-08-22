@@ -27,6 +27,37 @@ from splitshot.domain.models import (
 APP_DIR = Path.home() / ".splitshot"
 SETTINGS_PATH = APP_DIR / "settings.json"
 FOLDER_SETTINGS_FILENAME = "splitshot.conf"
+APPLICATION_DEFAULTS_SCHEMA_VERSION = 1
+
+_APPLICATION_DEFAULT_KEYS = {
+    "schema_version",
+    "trim_defaults",
+    "scoring",
+    "ui_state",
+    "merge",
+    "compose_source_templates",
+    "overlay",
+    "popup_template",
+    "export",
+    "shotml_settings",
+    "queue_settings",
+    "combined_export_settings",
+    "intro_clip_settings",
+    "outro_clip_settings",
+}
+
+
+def normalize_application_project_defaults(value: object) -> dict[str, object]:
+    """Migrate legacy project_defaults into the versioned application-only schema."""
+    if not isinstance(value, dict):
+        return {"schema_version": APPLICATION_DEFAULTS_SCHEMA_VERSION}
+    normalized = {
+        key: deepcopy(item) for key, item in value.items() if key in _APPLICATION_DEFAULT_KEYS
+    }
+    normalized["schema_version"] = APPLICATION_DEFAULTS_SCHEMA_VERSION
+    return normalized
+
+
 _POPUP_MOTION_MODES = {"fixed", "guided", "manual", "auto"}
 
 
@@ -141,7 +172,9 @@ class AppSettings:
     layout_waveform_height: int | None = None
     marker_template: PopupTemplate = field(default_factory=PopupTemplate)
     review_text_boxes: list[dict[str, object]] = field(default_factory=list)
-    project_defaults: dict[str, object] = field(default_factory=dict)
+    project_defaults: dict[str, object] = field(
+        default_factory=lambda: {"schema_version": APPLICATION_DEFAULTS_SCHEMA_VERSION}
+    )
     active_template_name: str = "Default"
     settings_templates: dict[str, dict[str, object]] = field(default_factory=dict)
     recent_projects: list[str] = field(default_factory=list)
@@ -238,26 +271,22 @@ class AppSettings:
                 )
             except json.JSONDecodeError:
                 merge_source_defaults = []
+        project_defaults = normalize_application_project_defaults(data.get("project_defaults", {}))
+        if merge_source_defaults and not project_defaults.get("compose_source_templates"):
+            project_defaults["compose_source_templates"] = [
+                {
+                    key: item[key]
+                    for key in ("angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity")
+                    if key in item
+                }
+                for item in merge_source_defaults
+            ]
         settings_templates = _settings_templates_from_dict(data.get("settings_templates"))
         active_template_name = str(data.get("active_template_name", "Default") or "Default")
-        default_stage_number = data.get("default_stage_number")
-        default_competitor_place = data.get("default_competitor_place")
         layout_locked = data.get("layout_locked")
         layout_rail_width = data.get("layout_rail_width")
         layout_inspector_width = data.get("layout_inspector_width")
         layout_waveform_height = data.get("layout_waveform_height")
-        try:
-            parsed_default_stage_number = (
-                None if default_stage_number in {None, ""} else int(default_stage_number)
-            )
-        except (TypeError, ValueError):
-            parsed_default_stage_number = None
-        try:
-            parsed_default_competitor_place = (
-                None if default_competitor_place in {None, ""} else int(default_competitor_place)
-            )
-        except (TypeError, ValueError):
-            parsed_default_competitor_place = None
 
         def _optional_int(value: object) -> int | None:
             try:
@@ -279,9 +308,9 @@ class AppSettings:
             default_match_type=str(data.get("default_match_type", "uspsa") or "uspsa")
             .strip()
             .lower(),
-            default_stage_number=parsed_default_stage_number,
-            default_competitor_name=str(data.get("default_competitor_name", "") or ""),
-            default_competitor_place=parsed_default_competitor_place,
+            default_stage_number=None,
+            default_competitor_name="",
+            default_competitor_place=None,
             overlay_position=OverlayPosition(
                 str(data.get("overlay_position", OverlayPosition.BOTTOM.value))
             ),
@@ -308,7 +337,7 @@ class AppSettings:
             merge_pip_x=_float_or_default(data.get("merge_pip_x"), 1.0),
             merge_pip_y=_float_or_default(data.get("merge_pip_y"), 1.0),
             pip_size=PipSize(str(data.get("pip_size", PipSize.MEDIUM.value))),
-            merge_source_defaults=merge_source_defaults,
+            merge_source_defaults=[],
             export_quality=ExportQuality(str(data.get("export_quality", ExportQuality.HIGH.value))),
             export_preset=ExportPreset(str(data.get("export_preset", ExportPreset.SOURCE.value))),
             export_frame_rate=ExportFrameRate(
@@ -334,11 +363,7 @@ class AppSettings:
             layout_waveform_height=_optional_int(layout_waveform_height),
             marker_template=_popup_template_from_dict(data.get("marker_template")),
             review_text_boxes=review_text_boxes,
-            project_defaults=(
-                deepcopy(data.get("project_defaults", {}))
-                if isinstance(data.get("project_defaults"), dict)
-                else {}
-            ),
+            project_defaults=project_defaults,
             active_template_name=active_template_name,
             settings_templates=settings_templates,
             recent_projects=recent_projects,

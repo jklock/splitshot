@@ -1026,6 +1026,8 @@ class Project:
     name: str = "Untitled Project"
     description: str = ""
     output_root: str = ""
+    trim_keep_before_beep_s: float = 2.0
+    trim_keep_after_last_shot_s: float = 2.0
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     primary_video: VideoAsset = field(default_factory=VideoAsset)
@@ -1069,6 +1071,48 @@ class Project:
 
     def touch(self) -> None:
         self.updated_at = datetime.now(UTC)
+
+
+def format_stage_name_overlay_text(
+    *,
+    stage_number: int | None,
+    imported_stage_name: str = "",
+    stage_label: str = "",
+    fallback_order: int = 1,
+) -> str:
+    """Return the canonical dynamic Stage Name text used by preview and export."""
+    number = stage_number if stage_number is not None else fallback_order
+    prefix = f"Stage {max(1, int(number or 1))}"
+    name = str(imported_stage_name or stage_label or "").strip()
+    if not name or name.casefold() == prefix.casefold():
+        return prefix
+    return f"{prefix} - {name}"
+
+
+def project_stage_name_overlay_text(project: Project) -> str:
+    stage = project.active_stage
+    imported = project.scoring.imported_stage
+    if stage is not None:
+        imported = stage.scoring.imported_stage or imported
+        return format_stage_name_overlay_text(
+            stage_number=(
+                stage.imported_stage_number
+                or (imported.stage_number if imported is not None else None)
+                or stage.scoring.stage_number
+            ),
+            imported_stage_name=(
+                stage.imported_stage_name or (imported.stage_name if imported is not None else "")
+            ),
+            stage_label=stage.label,
+            fallback_order=stage.order_index,
+        )
+    return format_stage_name_overlay_text(
+        stage_number=(
+            imported.stage_number if imported is not None else project.scoring.stage_number
+        ),
+        imported_stage_name=imported.stage_name if imported is not None else "",
+        fallback_order=1,
+    )
 
 
 def _serialize(value: Any) -> Any:
@@ -1365,7 +1409,9 @@ def _queue_settings_from_dict(data: dict[str, Any] | None) -> QueueSettings:
     )
 
 
-def _intro_outro_clip_from_dict(data: dict[str, Any] | None, legacy_path: str = "") -> IntroOutroClip:
+def _intro_outro_clip_from_dict(
+    data: dict[str, Any] | None, legacy_path: str = ""
+) -> IntroOutroClip:
     payload = data if isinstance(data, dict) else {}
     asset_payload = payload.get("asset") if isinstance(payload.get("asset"), dict) else {}
     asset = _video_from_dict(asset_payload)
@@ -1480,6 +1526,8 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     data["active_stage_id"] = project.active_stage_id
     data["queue"] = [queue_entry_to_dict(entry) for entry in project.queue]
     data["last_combined_output_path"] = project.last_combined_output_path
+    data["trim_keep_before_beep_s"] = project.trim_keep_before_beep_s
+    data["trim_keep_after_last_shot_s"] = project.trim_keep_after_last_shot_s
     data["combined_export_settings"] = _serialize(project.combined_export_settings)
     data["queue_settings"] = _serialize(project.queue_settings)
     data["intro_clip"] = _serialize(project.intro_clip)
@@ -1552,7 +1600,7 @@ def _normalize_scoring_color_map(data: dict[str, Any] | None) -> dict[str, str]:
     return normalized
 
 
-_TEXT_BOX_SOURCES = {"manual", "imported_summary", "match_summary"}
+_TEXT_BOX_SOURCES = {"manual", "imported_summary", "match_summary", "stage_name"}
 _TEXT_BOX_QUADRANTS = {
     "above_final",
     "top_left",
@@ -1951,21 +1999,12 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
         score_counts={
             str(key): float(value) for key, value in data.get("score_counts", {}).items()
         },
-        match_final_time=(
-            None if match_final_time in {None, ""} else float(match_final_time)
-        ),
-        match_points_down=(
-            None if match_points_down in {None, ""} else float(match_points_down)
-        ),
-        match_penalties=(
-            None if match_penalties in {None, ""} else float(match_penalties)
-        ),
-        match_stage_count=(
-            None if match_stage_count in {None, ""} else int(match_stage_count)
-        ),
+        match_final_time=(None if match_final_time in {None, ""} else float(match_final_time)),
+        match_points_down=(None if match_points_down in {None, ""} else float(match_points_down)),
+        match_penalties=(None if match_penalties in {None, ""} else float(match_penalties)),
+        match_stage_count=(None if match_stage_count in {None, ""} else int(match_stage_count)),
         match_penalty_counts={
-            str(key): float(value)
-            for key, value in data.get("match_penalty_counts", {}).items()
+            str(key): float(value) for key, value in data.get("match_penalty_counts", {}).items()
         },
     )
 
@@ -2863,6 +2902,12 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 _queue_entry_from_dict(item) for item in raw_queue if isinstance(item, dict)
             ]
         project.last_combined_output_path = str(data.get("last_combined_output_path", "") or "")
+        project.trim_keep_before_beep_s = max(
+            0.0, float(data.get("trim_keep_before_beep_s", 2.0) or 0.0)
+        )
+        project.trim_keep_after_last_shot_s = max(
+            0.0, float(data.get("trim_keep_after_last_shot_s", 2.0) or 0.0)
+        )
         project.combined_export_settings = _combined_export_settings_from_dict(
             data.get("combined_export_settings")
         )

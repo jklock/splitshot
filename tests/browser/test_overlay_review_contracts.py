@@ -17,12 +17,92 @@ from splitshot.domain.models import (
     ScoreMark,
     ShotEvent,
     ShotSource,
+    VideoAsset,
+    format_stage_name_overlay_text,
+    project_stage_name_overlay_text,
 )
 from splitshot.overlay.render import OverlayRenderer, _shot_score_badge_content
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.ui.controller import ProjectController
 
 STATIC_ROOT = Path("src/splitshot/browser/static")
+
+
+def test_stage_name_text_uses_shared_dynamic_formatting_contract() -> None:
+    controller = ProjectController()
+    stage = controller.create_stage("John's Stage")
+    stage.imported_stage_number = 3
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+
+    expected = "Stage 3 - John's Stage"
+    assert format_stage_name_overlay_text(stage_number=3, stage_label="John's Stage") == expected
+    assert project_stage_name_overlay_text(controller.project) == expected
+
+    stage.label = "Stage 3"
+    assert project_stage_name_overlay_text(controller.project) == "Stage 3"
+
+
+def test_stage_name_review_box_renderer_is_dynamic_and_style_complete() -> None:
+    controller = ProjectController()
+    stage = controller.create_stage("Classifier Bay")
+    stage.imported_stage_number = 2
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+    box = {
+        "id": "stage-name",
+        "source": "stage_name",
+        "text": "",
+        "enabled": True,
+        "quadrant": "top_middle",
+        "style_type": "rounded",
+        "font_family": "Arial",
+        "font_size": 24,
+        "font_bold": False,
+        "font_italic": True,
+    }
+    controller.set_overlay_display_options({"text_boxes": [box]})
+    saved = controller.project.overlay.text_boxes[0]
+
+    assert saved.source == "stage_name"
+    assert saved.text == ""
+    assert saved.quadrant == "top_middle"
+    assert saved.style_type == "rounded"
+    assert saved.font_size == 24
+    assert (
+        OverlayRenderer._text_box_text(
+            controller.project, 0, saved.source, saved.text, saved.enabled
+        )
+        == "Stage 2 - Classifier Bay"
+    )
+    stage.label = "Renamed Bay"
+    assert (
+        OverlayRenderer._text_box_text(
+            controller.project, 0, saved.source, saved.text, saved.enabled
+        )
+        == "Stage 2 - Renamed Bay"
+    )
+
+
+def test_stage_name_box_renames_dynamically_and_queue_snapshot_keeps_source() -> None:
+    controller = ProjectController()
+    stage = controller.create_stage("Stage 3")
+    stage.imported_stage_number = 3
+    stage.primary_media = VideoAsset(path="stage-three.mp4")
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+    controller.set_overlay_display_options(
+        {"text_boxes": [{"source": "stage_name", "enabled": True, "text": ""}]}
+    )
+
+    assert project_stage_name_overlay_text(controller.project) == "Stage 3"
+    controller.update_stage_metadata(stage.id, label="Moving Targets")
+    assert project_stage_name_overlay_text(controller.project) == "Stage 3 - Moving Targets"
+
+    controller.add_stage_to_queue(stage.id)
+    snapshot_box = controller.project.queue[0].snapshot["overlay"]["text_boxes"][0]
+    assert snapshot_box["source"] == "stage_name"
+    assert snapshot_box["text"] == ""
 
 
 def _post_json(url: str, payload: dict) -> dict:
@@ -666,7 +746,7 @@ def test_popup_bubble_follow_motion_path_interpolates_between_points() -> None:
 def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync() -> None:
     app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
     overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
-    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", overlay_js, re.S)
+    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", overlay_js, re.DOTALL)
 
     assert match is not None
     assert 'import { createOverlayPane } from "./panes/overlay-pane.js";' in app_js
@@ -811,13 +891,8 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert "reviewPane = createReviewPane({" in app_js
     assert 'function buildOverlayTextBox(source = "manual") {' in app_js
     assert "return reviewPane?.buildOverlayTextBox(source);" in app_js
-    assert (
-        'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left"' in review_js
-    )
-    assert (
-        'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";'
-        in review_js
-    )
+    assert 'source === "stage_name" ? "top_middle" : "top_left"' in review_js
+    assert 'const fallbackQuadrant = source === "imported_summary"' in review_js
     assert "imported_overlay_text" in review_js
     assert (
         "const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;"
@@ -825,7 +900,7 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     )
     assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in review_js
     assert 'const overrideText = String(box.text || "").trim();' in review_js
-    assert 'box.text = summaryTextForBox(' not in review_js
+    assert "box.text = summaryTextForBox(" not in review_js
     assert "function resolvedOverlayTextBoxSize(box) {" in review_js
     assert "function overlayStackAnchorRect(overlay) {" in app_js
     assert "return overlayPane?.overlayStackAnchorRect(overlay) || null;" in app_js

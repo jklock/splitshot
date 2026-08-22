@@ -228,9 +228,10 @@
                 <div class="section-header sub-section-header">
                   <h3>Review Text Boxes</h3>
                 </div>
-                <div class="button-grid two-up">
+                <div class="button-grid three-up review-text-box-actions">
                   <button id="review-add-text-box" type="button">Add Custom Box</button>
                   <button id="review-add-imported-box" type="button">Add Summary Box</button>
+                  <button id="review-add-stage-name-box" type="button">Add Stage Name</button>
                 </div>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
@@ -806,16 +807,10 @@
               <section class="settings-section collapsed" data-settings-section="global-template">
                 <div class="section-header sub-section-header">
                   <div>
-                    <h3>Global template</h3>
+                    <h3>Application Defaults</h3>
                   </div>
                 </div>
                 <div class="control-grid">
-                  <label>Save scope
-                    <select id="settings-scope">
-                      <option value="app">App Defaults</option>
-                      <option value="folder">Folder Defaults</option>
-                    </select>
-                  </label>
                   <label>Landing pane
                     <select id="settings-default-tool">
                       <option value="project">Project</option>
@@ -833,8 +828,8 @@
                 </div>
                 <label class="check-row"><input id="settings-reopen-last-tool" type="checkbox" /> Reopen the selected pane on new projects</label>
                 <div class="button-grid two-up">
-                  <button id="settings-import-current" type="button">Save Current Settings</button>
-                  <button id="settings-reset-defaults" type="button">Reset to Default</button>
+                  <button id="settings-import-current" type="button">Save Current Project as Application Defaults</button>
+                  <button id="settings-reset-defaults" type="button">Reset Application Defaults</button>
                 </div>
                 <p id="settings-scope-status" class="hint"></p>
               </section>
@@ -859,8 +854,8 @@
                   </label>
                 </div>
                 <div class="button-grid two-up settings-layout-actions">
-                  <button id="settings-use-current-layout" type="button">Save Current Settings</button>
-                  <button id="settings-release-layout" type="button">Reset to Default</button>
+                  <button id="settings-use-current-layout" type="button">Use Current Layout</button>
+                  <button id="settings-release-layout" type="button">Reset Layout</button>
                 </div>
                 <p id="settings-layout-summary" class="hint"></p>
               </section>
@@ -882,8 +877,8 @@
                   </label>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-scoring" data-settings-save-section="scoring" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-scoring" data-settings-reset-section="scoring" type="button">Reset to Default</button>
+                  <button id="settings-save-current-scoring" data-settings-save-section="scoring" type="button">Use Current Scoring</button>
+                  <button id="settings-reset-section-scoring" data-settings-reset-section="scoring" type="button">Reset Scoring</button>
                 </div>
               </section>
 
@@ -920,8 +915,8 @@
                   </label>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset to Default</button>
+                  <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Use Current Compose</button>
+                  <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset Compose</button>
                 </div>
                 <p id="settings-pip-summary" class="hint"></p>
               </section>
@@ -1029,8 +1024,8 @@
                   </article>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-overlay" data-settings-save-section="overlay" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-overlay" data-settings-reset-section="overlay" type="button">Reset to Default</button>
+                  <button id="settings-save-current-overlay" data-settings-save-section="overlay" type="button">Use Current Overlay / Review</button>
+                  <button id="settings-reset-section-overlay" data-settings-reset-section="overlay" type="button">Reset Overlay / Review</button>
                 </div>
               </section>
 
@@ -1101,8 +1096,8 @@
                   </div>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-markers" data-settings-save-section="markers" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-markers" data-settings-reset-section="markers" type="button">Reset to Default</button>
+                  <button id="settings-save-current-markers" data-settings-save-section="markers" type="button">Use Current Markers</button>
+                  <button id="settings-reset-section-markers" data-settings-reset-section="markers" type="button">Reset Markers</button>
                 </div>
               </section>
 
@@ -1162,8 +1157,8 @@
                   <label class="check-row"><input id="settings-export-two-pass" type="checkbox" /> Use two-pass export</label>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-export" data-settings-save-section="export" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-export" data-settings-reset-section="export" type="button">Reset to Default</button>
+                  <button id="settings-save-current-export" data-settings-save-section="export" type="button">Use Current Export</button>
+                  <button id="settings-reset-section-export" data-settings-reset-section="export" type="button">Reset Export</button>
                 </div>
               </section>
 
@@ -1180,8 +1175,8 @@
                   </label>
                 </div>
                 <div class="button-grid two-up">
-                  <button id="settings-save-current-shotml" data-settings-save-section="shotml" type="button">Save Current Settings</button>
-                  <button id="settings-reset-section-shotml" data-settings-reset-section="shotml" type="button">Reset to Default</button>
+                  <button id="settings-save-current-shotml" data-settings-save-section="shotml" type="button">Use Current ShotML</button>
+                  <button id="settings-reset-section-shotml" data-settings-reset-section="shotml" type="button">Reset ShotML</button>
                 </div>
               </section>
             </section>

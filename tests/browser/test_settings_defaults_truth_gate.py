@@ -422,11 +422,9 @@ def test_project_selection_stays_on_project_before_reopen_last_tool_applies(tmp_
         server.shutdown()
 
 
-def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_path: Path) -> None:
-    folder_scoped_project = tmp_path / f"folder-scope-project-{uuid.uuid4().hex[:8]}"
-    second_folder_project = tmp_path / f"second-folder-scope-project-{uuid.uuid4().hex[:8]}"
-    shutil.rmtree(folder_scoped_project, ignore_errors=True)
-    shutil.rmtree(second_folder_project, ignore_errors=True)
+def test_settings_are_application_only_for_new_projects(tmp_path: Path) -> None:
+    first_project = tmp_path / f"application-defaults-project-{uuid.uuid4().hex[:8]}"
+    second_project = tmp_path / f"second-application-defaults-project-{uuid.uuid4().hex[:8]}"
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -436,9 +434,7 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
                 _open_settings(page)
                 _expand_settings_section(page, "global-template")
 
-                _set_global_template_defaults(
-                    page, scope="app", default_tool="metrics", reopen_last_tool=True
-                )
+                _set_global_template_defaults(page, default_tool="metrics", reopen_last_tool=True)
                 page.evaluate("() => flushPendingSettingsDefaults()")
                 page.evaluate("() => applySettingsDefaults()")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
@@ -446,39 +442,26 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
                     page,
                     "() => document.getElementById('settings-default-tool')?.value === 'metrics'",
                 )
-                _set_project_path(page, folder_scoped_project)
-                page.evaluate("(path) => createNewProject(path)", str(folder_scoped_project))
+                assert page.locator("#settings-scope").count() == 0
+                _set_project_path(page, first_project)
+                page.evaluate("(path) => createNewProject(path)", str(first_project))
                 page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(folder_scoped_project)
-                )
-
-                _open_settings(page)
-                _expand_settings_section(page, "global-template")
-                _set_global_template_defaults(
-                    page, scope="folder", default_tool="review", reopen_last_tool=True
-                )
-                _apply_settings_defaults_and_wait(
-                    page,
-                    "() => state?.settings?.default_tool === 'review'",
-                )
-                page.evaluate("(path) => useProjectFolder(path)", str(folder_scoped_project))
-                page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(folder_scoped_project)
+                    "(path) => state?.project?.path === path", arg=str(first_project)
                 )
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(folder_scoped_project)
+                    "(path) => state?.project?.path === path", arg=str(first_project)
                 )
-                _wait_for_page_predicate(page, "() => activeTool === 'review'")
+                _wait_for_page_predicate(page, "() => activeTool === 'metrics'")
 
-                _set_project_path(page, second_folder_project)
-                page.evaluate("(path) => createNewProject(path)", str(second_folder_project))
+                _set_project_path(page, second_project)
+                page.evaluate("(path) => createNewProject(path)", str(second_project))
                 page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(second_folder_project)
+                    "(path) => state?.project?.path === path", arg=str(second_project)
                 )
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(second_folder_project)
+                    "(path) => state?.project?.path === path", arg=str(second_project)
                 )
                 _wait_for_page_predicate(page, "() => activeTool === 'metrics'")
             finally:
@@ -487,11 +470,7 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
         server.shutdown()
 
 
-def test_settings_scope_switch_shows_saved_layer_values_without_rewriting_other_scope(
-    tmp_path: Path,
-) -> None:
-    folder_scoped_project = tmp_path / f"scope-display-project-{uuid.uuid4().hex[:8]}"
-    shutil.rmtree(folder_scoped_project, ignore_errors=True)
+def test_settings_state_exposes_only_application_layer(tmp_path: Path) -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
     try:
@@ -501,48 +480,14 @@ def test_settings_scope_switch_shows_saved_layer_values_without_rewriting_other_
                 _open_settings(page)
                 _expand_settings_section(page, "global-template")
 
-                _set_global_template_defaults(
-                    page, scope="app", default_tool="metrics", reopen_last_tool=True
-                )
+                _set_global_template_defaults(page, default_tool="metrics", reopen_last_tool=True)
                 _apply_settings_defaults_and_wait(
                     page,
                     "() => state?.settings_layers?.app?.default_tool === 'metrics'",
                 )
 
-                _set_project_path(page, folder_scoped_project)
-                page.evaluate("(path) => createNewProject(path)", str(folder_scoped_project))
-                page.wait_for_function(
-                    "(path) => state?.project?.path === path", arg=str(folder_scoped_project)
-                )
-
-                _open_settings(page)
-                _expand_settings_section(page, "global-template")
-                _set_global_template_defaults(
-                    page, scope="folder", default_tool="review", reopen_last_tool=True
-                )
-                _apply_settings_defaults_and_wait(
-                    page,
-                    "() => state?.settings_layers?.folder?.default_tool === 'review'",
-                )
-
-                page.locator("#settings-scope").select_option("app")
-                _wait_for_page_predicate(
-                    page,
-                    "() => document.getElementById('settings-default-tool')?.value === 'metrics'",
-                )
-                assert (
-                    page.evaluate("() => state?.settings_layers?.folder?.default_tool") == "review"
-                )
-                assert page.evaluate("() => state?.settings_layers?.app?.default_tool") == "metrics"
-
-                page.locator("#settings-scope").select_option("folder")
-                _wait_for_page_predicate(
-                    page,
-                    "() => document.getElementById('settings-default-tool')?.value === 'review'",
-                )
-                assert (
-                    page.evaluate("() => state?.settings_layers?.folder?.default_tool") == "review"
-                )
+                assert page.locator("#settings-scope").count() == 0
+                assert page.evaluate("() => state?.settings_layers?.folder") == {}
                 assert page.evaluate("() => state?.settings_layers?.app?.default_tool") == "metrics"
             finally:
                 browser.close()

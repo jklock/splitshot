@@ -22,17 +22,17 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 | Control | What it does |
 | --- | --- |
 | `Stage` | Chooses which stage is active across the rest of the app. |
-| `Name` | Renames the active stage. |
-| `Save` | Saves the current stage label. |
-| `Delete` | Removes the active stage. An imported stage stays deleted after autosave and reopen; explicitly reimporting the PractiScore file restores it. |
+| `Stage Name` | Renames the active stage. |
+| `Save Stage` | Saves the current valid, changed stage label. Pressing Enter does the same. |
+| `Delete Stage` | Removes the active stage. An imported stage stays deleted after autosave and reopen; explicitly reimporting the PractiScore file restores it. |
 | File row | Shows one attached file with its filename, type, duration, and dimensions. |
 | `Add Primary` / `Replace` | Opens in project `Input/`, imports the selected file there when needed, and replaces the active stage primary. |
 | `Set Primary` | Promotes an added file into the primary slot. |
 | `Remove` | Removes that file from the stage. |
 | `Add Media` | Opens in project `Input/` and adds project-managed media to the active stage. |
 | `Add Stage` | Creates another stage and makes it active. |
-| `Global Settings Primary` | Uses this stage's Compose, overlay, Review, marker-template, and Export presentation settings for every other queued stage without replacing stage media, timing, or scoring data. |
-| `Ignore Global Settings` | Excludes this stage from global presentation inheritance and restores folder/project defaults, falling back to app defaults. |
+| `Global Settings Primary` checkbox | Uses this stage's Compose, Overlay, Review, marker-template, and Export presentation settings for other queued stages without replacing stage media, timing, or scoring data. Clearing it removes the designation without rewriting stages. |
+| `Ignore Global Settings` checkbox | Excludes this stage from global presentation inheritance and restores project/application defaults. Clearing it resumes the current global source when one exists. |
 
 ## Workflow
 
@@ -53,8 +53,7 @@ The Media pane is the stage media workspace. It makes one stage active at a time
 - Stage media is stage-local. Switching stages swaps the full editing context.
 - Media temporarily locks its stage controls while a file picker/import is running so one import cannot be attached while another stage is being selected or created.
 - Stage names must be unique.
-- A manually created stage starts with no media or imported stage result, but inherits the active stage's analysis settings, scoring family, Compose, overlay, marker, and Export configuration.
-- Imported match stages exist before their videos are paired. On the first primary import, an imported stage inherits the nearest earlier stage's analysis, Compose, overlay, marker, and Export configuration while retaining its own imported scoring result.
+- New manual and imported stages start from application defaults while retaining their own stage identity and imported scoring result.
 - Competitor identity selectors live in Project, not here. Media owns stage selection, stage naming, and stage files.
 - Files selected outside the project are copied into `Input/` before analysis. Files already in `Input/` are used directly.
 - Removing a file row detaches it from the stage but does not delete the file from `Input/`.

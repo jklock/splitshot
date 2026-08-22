@@ -959,7 +959,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function downloadExportLog() {" in js
     assert "function buildMetricsRows()" in js
     assert "function renderMetricsPanel()" in js
-    assert "function openExportLogModal()" in js
+    assert 'function openExportLogModal(startingState = "")' in js
     assert "function closeExportLogModal()" in js
     assert "function exportMetrics(kind)" in js
     assert "function mediaCacheToken() {" in js
@@ -997,7 +997,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         "persistedLines.length >= visibleLines.length ? persistedLines : visibleLines"
         in export_pane
     )
-    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)" in activity_js
+    assert (
+        "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)"
+        in activity_js
+    )
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
     assert "const BADGE_FONT_SIZES = {" in js
@@ -1097,14 +1100,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "scoreBadgeTokens(shot)" in js
     assert "badge.style.width = `${scaledWidth}px`;" in js
     assert '<option value="above_final">Above Final Box</option>' in js
-    assert (
-        'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";'
-        in review_pane
-    )
-    assert (
-        'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left",'
-        in review_pane
-    )
+    assert 'source === "stage_name" ? "top_middle" : "top_left"' in review_pane
     assert "if (customX === null || customY === null) return false;" in js
     assert 'group.style.left = "0px";' in js
     assert 'group.style.top = "0px";' in js
@@ -1938,6 +1934,37 @@ def test_browser_color_picker_is_custom_and_os_agnostic() -> None:
     assert "function updateColorPickerFromHexInput({ commit = false } = {}) {" in js
 
 
+def test_processing_log_opens_before_trim_and_queue_requests() -> None:
+    trim_source = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
+    queue_source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
+    export_source = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
+
+    assert trim_source.index(
+        "await openProcessingLog", trim_source.index("async function trimAll")
+    ) < trim_source.index(
+        'await callApi("/api/merge/source/trim-all"', trim_source.index("async function trimAll")
+    )
+    assert trim_source.index(
+        "await openProcessingLog", trim_source.index("async function trimSource")
+    ) < trim_source.index(
+        'await callApi("/api/primary/trim"', trim_source.index("async function trimSource")
+    )
+    assert queue_source.index(
+        "await openProcessingLog", queue_source.index("async function processAll")
+    ) < queue_source.index(
+        'await callApi("/api/project/queue/process"',
+        queue_source.index("async function processAll"),
+    )
+    combined_start = queue_source.index("async function processIntoOneFile")
+    assert queue_source.index("await openProcessingLog", combined_start) < queue_source.index(
+        'await callApi("/api/project/queue/process"', combined_start
+    )
+    modal_start = export_source.index("async function openExportLogModal")
+    assert export_source.index("modal.hidden = false", modal_start) < export_source.index(
+        "await refreshState()", modal_start
+    )
+
+
 def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     activity_js = (STATIC_ROOT / "lib" / "activity.js").read_text()
@@ -1995,6 +2022,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "review-add-text-box",
         "queue-all-btn",
         "review-add-imported-box",
+        "review-add-stage-name-box",
         "review-set-source",
         "export-badges",
         "create-output-profile",
@@ -2102,7 +2130,9 @@ def test_browser_client_validates_remote_state_shape_and_restores_server_selecti
 
 def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
-    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n  \}", overlay_pane, re.DOTALL)
+    match = re.search(
+        r"function readOverlayPayload\(\) \{(?P<body>.*?)\n  \}", overlay_pane, re.DOTALL
+    )
 
     assert "validOverlayBadgeNames = new Set()," in overlay_pane
     assert match is not None
@@ -2135,7 +2165,10 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert "renderHeader();" in project_pane
     assert "autoApplyProjectDetails(payload);" in project_pane
     assert "autoApplyPractiScoreContext.cancel?.();" in project_pane
-    assert 'return callApi("/api/project/practiscore", readPractiScoreContextPayload());' in project_pane
+    assert (
+        'return callApi("/api/project/practiscore", readPractiScoreContextPayload());'
+        in project_pane
+    )
     assert "autoApplyShotMLSettings.cancel?.();" in js
     assert "autoApplyProjectDetails.cancel?.();" in js
     assert "autoApplyPractiScoreContext.cancel?.();" in js
@@ -2341,7 +2374,10 @@ def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
 
     assert "export function createActivityRuntime({" in activity_runtime
     assert "function wireGlobalActivityLogging() {" in activity_runtime
-    assert "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)" in activity_runtime
+    assert (
+        "fetch(`/api/activity/poll?after=${runtime.activityCursor}&job_after=${runtime.processingLogCursor || 0}`)"
+        in activity_runtime
+    )
 
     assert "export function createProcessingRuntime({" in processing_runtime
     assert "function processingForPath(path, payload = null) {" in processing_runtime

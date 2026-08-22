@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -297,6 +297,7 @@ def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> Non
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 _wait_for_first_merge_derivative(page, True)
+                page.locator("#close-export-log").click()
 
                 state = _get_first_merge_source_state(page)
                 assert state is not None
@@ -340,6 +341,7 @@ def test_trim_clear_all_removes_derivative(synthetic_video_factory) -> None:
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 _wait_for_first_merge_derivative(page, True)
+                page.locator("#close-export-log").click()
 
                 before = _get_first_merge_source_state(page)
                 assert before["has_derivative"] is True
@@ -472,6 +474,7 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                 _wait_for_first_merge_derivative(page, True)
 
                 after_first = _get_first_merge_source_state(page)
+                page.locator("#close-export-log").click()
                 assert after_first["has_derivative"] is True
                 first_derivative_path = after_first["derivative_path"]
 
@@ -501,6 +504,7 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                 )
 
                 after_second = _get_first_merge_source_state(page)
+                page.locator("#close-export-log").click()
                 assert after_second["start_s"] == pytest.approx(expected_second["start_s"], abs=0.2)
                 assert after_second["end_s"] == pytest.approx(expected_second["end_s"], abs=0.2)
                 second_derivative_path = after_second["derivative_path"]

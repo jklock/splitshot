@@ -25,8 +25,8 @@ The Trim pane creates project-managed media derivatives. Bulk Trim can apply the
 | `After last shot` | Keeps this many seconds after each selected stage's final shot. |
 | `Reset` | Restores two seconds before and after the run. |
 | `Undo` | Restores the previous bulk trim state for every stage included in that action. |
-| `Apply All` | Creates trim derivatives for every video in each selected stage. |
-| `Clear All` | Returns every source in each selected stage to its original. |
+| `Apply All` | Opens the Processing Log immediately, then creates trim derivatives for every video in each selected stage. |
+| `Clear All` | Opens the Processing Log when processing is required, then returns every source in each selected stage to its original. |
 | `Show Log` | Opens the live trim log while ffmpeg processes the selected files. |
 
 Bulk Apply and Clear use the same green aggregate progress bar as Queue. Each primary or added video advances the match-wide percentage, and the bar reaches 100% only after every selected video is terminal.
@@ -38,8 +38,8 @@ Each source card identifies the original file and whether original or trimmed me
 | Control | What it does |
 | --- | --- |
 | `Start` / `End` | Set the source-specific retained range in seconds. |
-| `Apply` | Creates and activates the derivative for that source. |
-| `Clear` | Returns that source to its original media. |
+| `Apply` | Opens the Processing Log immediately, then creates and activates the derivative for that source. |
+| `Clear` | Opens the Processing Log when processing is required, then returns that source to its original media. |
 | `Undo` | Restores the previous trim state for that source. |
 | `Start at Beep` | Sets the start from the detected beep. |
 | `End at Last Shot` | Sets the end from the final shot. |

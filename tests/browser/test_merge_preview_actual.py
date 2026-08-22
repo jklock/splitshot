@@ -248,6 +248,7 @@ def test_merge_preview_updated_by_trim(synthetic_video_factory) -> None:
                     source_id,
                 )
 
+                page.locator("#close-export-log").click()
                 navigate_to_tool(page, "merge")
                 page.wait_for_timeout(500)
                 page.wait_for_function(

@@ -20,8 +20,8 @@ export function createTrimSyncPane({
   ]);
   const trimUndoHistory = [];
   let restoringUndo = false;
-  let keepBeforeBeepS = 2;
-  let keepAfterLastShotS = 2;
+  let keepBeforeBeepS = null;
+  let keepAfterLastShotS = null;
   let transportActive = false;
   let transportVideo = null;
   let stageSelectionInitialized = false;
@@ -30,6 +30,15 @@ export function createTrimSyncPane({
 
   function currentState() {
     return getState() || {};
+  }
+
+  function initializeTrimDefaults() {
+    if (keepBeforeBeepS === null) {
+      keepBeforeBeepS = Math.max(0, Number(currentState()?.project?.trim_keep_before_beep_s ?? 2));
+    }
+    if (keepAfterLastShotS === null) {
+      keepAfterLastShotS = Math.max(0, Number(currentState()?.project?.trim_keep_after_last_shot_s ?? 2));
+    }
   }
 
   function htmlEscape(value) {
@@ -377,6 +386,7 @@ export function createTrimSyncPane({
   }
 
   async function trimAll(clear = false, { recordUndo = true } = {}) {
+    initializeTrimDefaults();
     const startInput = $("trim-global-start");
     const endInput = $("trim-global-end");
     const startValue = parseFloat(startInput?.value || "");
@@ -403,6 +413,7 @@ export function createTrimSyncPane({
         ? `Clearing trim for ${selectedCount} selected stage${selectedCount === 1 ? "" : "s"}...`
         : `Trimming ${selectedCount} selected stage${selectedCount === 1 ? "" : "s"}...`,
     );
+    await openProcessingLog(clear ? "Starting trim clear…" : "Starting trim processing…");
     const request = {
       clear,
       keep_before_beep_s: clear || !Number.isFinite(startValue) || startValue < 0 ? null : startValue,
@@ -425,6 +436,7 @@ export function createTrimSyncPane({
     if (recordUndo) queueUndoSnapshot("source", sourceId);
     activity(clear ? "trim.clear" : "trim.apply", { sourceId, start_s: startValue, end_s: endValue });
     setStatus(clear ? "Clearing trim derivative..." : "Trimming source...");
+    await openProcessingLog(clear ? "Starting trim clear…" : "Starting trim processing…");
     if (sourceId === PRIMARY_SOURCE_ID) {
       await callApi("/api/primary/trim", {
         clear,
@@ -472,12 +484,14 @@ export function createTrimSyncPane({
   function applyGlobalDefaults() {
     const startInput = $("trim-global-start");
     const endInput = $("trim-global-end");
-    if (startInput) startInput.value = "2.00";
-    if (endInput) endInput.value = "2.00";
-    keepBeforeBeepS = 2;
-    keepAfterLastShotS = 2;
-    activity("trim.global-defaults", { keep_before_beep_s: 2, keep_after_last_shot_s: 2 });
-    setStatus("Reset trim defaults to 2-second buffers.");
+    const before = Math.max(0, Number(currentState()?.settings?.project_defaults?.trim_defaults?.keep_before_beep_s ?? 2));
+    const after = Math.max(0, Number(currentState()?.settings?.project_defaults?.trim_defaults?.keep_after_last_shot_s ?? 2));
+    if (startInput) startInput.value = before.toFixed(2);
+    if (endInput) endInput.value = after.toFixed(2);
+    keepBeforeBeepS = before;
+    keepAfterLastShotS = after;
+    activity("trim.global-defaults", { keep_before_beep_s: before, keep_after_last_shot_s: after });
+    setStatus("Reset trim buffers to application defaults.");
   }
 
   function buildSourceCard(source, index) {
@@ -666,6 +680,7 @@ export function createTrimSyncPane({
   }
 
   function renderTrimSyncList() {
+    initializeTrimDefaults();
     const pane = documentObject.querySelector('[data-tool-pane="trim-sync"]');
     if (!pane) return;
     const sources = stageSources();

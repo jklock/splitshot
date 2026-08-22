@@ -176,6 +176,9 @@ export function createReviewPane({
         ? overrideText
         : configuredText || legacyText);
     }
+    if (box.source === "stage_name") {
+      return String(currentState()?.project?.stage_name_overlay_text || "Stage 1").trim();
+    }
     return box.text || "";
   }
 
@@ -219,7 +222,9 @@ export function createReviewPane({
   function normalizeOverlayTextBox(box = {}, index = 0) {
     const normalizedX = normalizedCoordinateValue(box.x);
     const normalizedY = normalizedCoordinateValue(box.y);
-    const source = box.source === "imported_summary" ? "imported_summary" : "manual";
+    const source = ["imported_summary", "stage_name"].includes(box.source)
+      ? box.source
+      : "manual";
     const validQuadrants = new Set([
       aboveFinalTextBoxValue,
       "top_left",
@@ -233,7 +238,9 @@ export function createReviewPane({
       "bottom_right",
       customQuadrantValue,
     ]);
-    const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";
+    const fallbackQuadrant = source === "imported_summary"
+      ? aboveFinalTextBoxValue
+      : source === "stage_name" ? "top_middle" : "top_left";
     const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;
     const usesExplicitCoordinates = requestedQuadrant === customQuadrantValue || normalizedX !== null || normalizedY !== null;
     const width = Math.max(0, Number(box.width || 0));
@@ -253,6 +260,15 @@ export function createReviewPane({
       width,
       height,
       summary_metric_ids: normalizedSummaryMetricIds(box.summary_metric_ids),
+      style_type: ["square", "rounded", "pill"].includes(box.style_type)
+        ? box.style_type
+        : "square",
+      font_family: String(
+        box.font_family || currentState()?.project?.overlay?.font_family || "Arial",
+      ).slice(0, 80),
+      font_size: clampNumber(Number(box.font_size || 14), 8, 72),
+      font_bold: Boolean(box.font_bold ?? true),
+      font_italic: Boolean(box.font_italic ?? false),
       order: Number(box.order ?? index),
     };
   }
@@ -327,7 +343,9 @@ export function createReviewPane({
       lock_to_stack: false,
       source,
       text: "",
-      quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left",
+      quadrant: source === "imported_summary"
+        ? aboveFinalTextBoxValue
+        : source === "stage_name" ? "top_middle" : "top_left",
       x: null,
       y: null,
       background_color: "#000000",
@@ -336,11 +354,17 @@ export function createReviewPane({
       width: 0,
       height: 0,
       summary_metric_ids: source === "imported_summary" ? [...DEFAULT_SUMMARY_METRIC_IDS] : [],
+      style_type: "square",
+      font_family: currentState()?.project?.overlay?.font_family || "Arial",
+      font_size: currentState()?.project?.overlay?.font_size || 14,
+      font_bold: currentState()?.project?.overlay?.font_bold ?? true,
+      font_italic: currentState()?.project?.overlay?.font_italic ?? false,
     });
   }
 
   function overlayTextBoxLabel(box, index) {
     if (box.source === "imported_summary") return `Summary ${index + 1}`;
+    if (box.source === "stage_name") return "Stage Name";
     return `Custom Box ${index + 1}`;
   }
 
@@ -385,7 +409,9 @@ export function createReviewPane({
         return box;
       }
       if (field === "source") {
-        box.source = rawValue === "imported_summary" ? "imported_summary" : "manual";
+        box.source = ["imported_summary", "stage_name"].includes(rawValue)
+          ? rawValue
+          : "manual";
         if (box.source === "imported_summary") {
           if (!usesCustomQuadrant(box.quadrant)) {
             box.quadrant = aboveFinalTextBoxValue;
@@ -444,6 +470,24 @@ export function createReviewPane({
         box.opacity = numericOpacity > 1
           ? opacityValueFromPercent(numericOpacity)
           : clampNumber(numericOpacity || 0, 0, 1);
+        return box;
+      }
+      if (field === "style_type") {
+        box.style_type = ["square", "rounded", "pill"].includes(rawValue)
+          ? rawValue
+          : "square";
+        return box;
+      }
+      if (field === "font_family") {
+        box.font_family = String(rawValue || "Arial").slice(0, 80);
+        return box;
+      }
+      if (field === "font_size") {
+        box.font_size = clampNumber(Number(rawValue || 14), 8, 72);
+        return box;
+      }
+      if (field === "font_bold" || field === "font_italic") {
+        box[field] = Boolean(rawValue);
         return box;
       }
       return box;
@@ -546,6 +590,12 @@ export function createReviewPane({
           </label>
         </div>
       `
+      : box.source === "stage_name"
+      ? `
+        <label>Preview
+          <textarea data-text-box-preview rows="2" readonly></textarea>
+        </label>
+      `
       : `
         <label>Box text
           <textarea data-text-box-field="text" rows="3"></textarea>
@@ -617,6 +667,25 @@ export function createReviewPane({
                 </span>
               </span>
             </label>
+            <label>Shape
+              <select data-text-box-field="style_type">
+                <option value="square">Square</option>
+                <option value="rounded">Rounded</option>
+                <option value="pill">Pill</option>
+              </select>
+            </label>
+            <div class="control-grid">
+              <label>Font
+                <input data-text-box-field="font_family" type="text" maxlength="80" />
+              </label>
+              <label>Font size
+                <input data-text-box-field="font_size" type="number" min="8" max="72" step="1" />
+              </label>
+            </div>
+            <div class="control-grid">
+              <label class="check-row"><input data-text-box-field="font_bold" type="checkbox" /> Bold</label>
+              <label class="check-row"><input data-text-box-field="font_italic" type="checkbox" /> Italic</label>
+            </div>
           </section>
         </div>
       </div>
@@ -632,6 +701,11 @@ export function createReviewPane({
     syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
     syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
     syncOpacityPercentControl(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
+    syncControlValue(card.querySelector('[data-text-box-field="style_type"]'), box.style_type);
+    syncControlValue(card.querySelector('[data-text-box-field="font_family"]'), box.font_family);
+    syncControlValue(card.querySelector('[data-text-box-field="font_size"]'), box.font_size);
+    syncControlChecked(card.querySelector('[data-text-box-field="font_bold"]'), box.font_bold);
+    syncControlChecked(card.querySelector('[data-text-box-field="font_italic"]'), box.font_italic);
     const textArea = card.querySelector('[data-text-box-field="text"]');
     if (textArea) {
       textArea.dataset.importedSummaryDefault = box.source === "imported_summary"

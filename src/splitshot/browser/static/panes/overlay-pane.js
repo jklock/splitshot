@@ -284,6 +284,11 @@ export function createOverlayPane({
         width: box.width,
         height: box.height,
         summary_metric_ids: Array.isArray(box.summary_metric_ids) ? box.summary_metric_ids.slice() : [],
+        style_type: box.style_type,
+        font_family: box.font_family,
+        font_size: box.font_size,
+        font_bold: box.font_bold,
+        font_italic: box.font_italic,
       })),
       custom_box_enabled: Boolean(primaryTextBox?.enabled),
       custom_box_mode: primaryTextBox?.source || "manual",
@@ -730,6 +735,13 @@ export function createOverlayPane({
         "center",
         overlayScale,
       );
+      customBadge.style.borderRadius = box.style_type === "pill"
+        ? "999px"
+        : box.style_type === "rounded" ? "16px" : "0";
+      customBadge.style.fontFamily = String(box.font_family || "Arial");
+      customBadge.style.fontSize = `${Math.max(8, Number(box.font_size || 14)) * overlayScale}px`;
+      customBadge.style.fontWeight = box.font_bold ? "700" : "400";
+      customBadge.style.fontStyle = box.font_italic ? "italic" : "normal";
       customBadge.dataset.textBoxDrag = "true";
       customBadge.dataset.textBoxId = box.id;
       customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);

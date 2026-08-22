@@ -109,19 +109,6 @@ export function createSettingsPane({
     settingsDraft = null;
   }
 
-  function sanitizeMergeSourceDefaults(mergeSources = []) {
-    return (Array.isArray(mergeSources) ? mergeSources : [])
-      .filter((source) => source && typeof source === "object")
-      .map((source) => ({
-        asset: { ...(source.asset || {}) },
-        pip_size_percent: source.pip_size_percent ?? null,
-        pip_x: Number(source.pip_x ?? 1.0),
-        pip_y: Number(source.pip_y ?? 1.0),
-        opacity: Number(source.opacity ?? 1.0),
-        sync_offset_ms: Number(source.sync_offset_ms ?? 0),
-      }));
-  }
-
   function sectionSettingsPayload(section, { projectDefaults = false } = {}) {
     const state = currentState();
     const projectOverlay = state?.project?.overlay || {};
@@ -171,7 +158,6 @@ export function createSettingsPane({
         pip_size: projectDefaults ? (projectMerge.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
         merge_pip_x: projectDefaults ? (projectMerge.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
         merge_pip_y: projectDefaults ? (projectMerge.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
-        merge_source_defaults: projectDefaults ? sanitizeMergeSourceDefaults(state?.project?.merge_sources || []) : undefined,
       },
       overlay: {
         overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
@@ -232,35 +218,21 @@ export function createSettingsPane({
   function renderSettingsPane() {
     const state = currentState();
     const layers = state?.settings_layers || {};
-    const hasProjectPath = Boolean(state?.project?.path);
-    const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
     const projectOverlay = state?.project?.overlay || {};
     const projectExport = state?.project?.export || {};
     const projectScoring = state?.project?.scoring || {};
     const projectAnalysis = state?.project?.analysis || {};
 
-    const scopeSelect = $("settings-scope");
     const scopeStatus = $("settings-scope-status");
-    if (scopeSelect) {
-      const folderOption = scopeSelect.querySelector('option[value="folder"]');
-      if (folderOption) folderOption.disabled = !hasProjectPath;
-      if (!hasProjectPath && scopeSelect.value === "folder") syncControlValue(scopeSelect, "app");
-      if (hasProjectPath && !scopeSelect.value) syncControlValue(scopeSelect, "folder");
-    }
-    const selectedScope = scopeSelect?.value === "folder" && hasProjectPath ? "folder" : "app";
-    const persistedSettings = selectedScope === "folder"
-      ? (Object.keys(layers.folder || {}).length > 0 ? (layers.folder || {}) : (layers.app || {}))
-      : (layers.app || {});
-    if (settingsDraft?.scope === selectedScope && settingsSubsetMatches(persistedSettings, settingsDraft.settings)) {
+    const persistedSettings = layers.app || {};
+    if (settingsDraft?.scope === "app" && settingsSubsetMatches(persistedSettings, settingsDraft.settings)) {
       settingsDraft = null;
     }
-    const displayedSettings = settingsDraft?.scope === selectedScope
+    const displayedSettings = settingsDraft?.scope === "app"
       ? settingsDraft.settings
       : persistedSettings;
     if (scopeStatus) {
-      scopeStatus.textContent = folderSettingsError
-        ? folderSettingsError
-        : "";
+      scopeStatus.textContent = "Saved in application settings.json. Existing splitshot.conf files are preserved but ignored.";
     }
 
     const shotmlDefaults = displayedSettings.shotml_defaults || {};
@@ -297,7 +269,7 @@ export function createSettingsPane({
     syncControlValue(
       $("settings-shotml-threshold"),
       Number(
-        settingsDraft?.scope === selectedScope
+        settingsDraft?.scope === "app"
           ? displayedSettings.detection_threshold
           : shotmlDefaults.detection_threshold
             ?? displayedSettings.detection_threshold
@@ -307,11 +279,7 @@ export function createSettingsPane({
     );
     syncSettingsMarkerTemplate(markerTemplate);
     const markerSource = $("settings-marker-source");
-    if (markerSource) {
-      markerSource.textContent = hasProjectPath
-        ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
-        : "App template";
-    }
+    if (markerSource) markerSource.textContent = "Application template";
     const layoutStatus = $("settings-layout-status");
     if (layoutStatus) {
       layoutStatus.textContent = "";
@@ -346,7 +314,7 @@ export function createSettingsPane({
         ...sectionSettingsPayload("shotml", { projectDefaults }),
       };
     return {
-      scope: $("settings-scope")?.value || "app",
+      scope: "app",
       section: sectionName || undefined,
       project_defaults: Boolean(projectDefaults),
       settings,

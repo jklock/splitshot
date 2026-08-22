@@ -24,11 +24,10 @@ from splitshot.analysis.detection import (
 )
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import (
+    APPLICATION_DEFAULTS_SCHEMA_VERSION,
     AppSettings,
-    delete_folder_settings,
-    load_folder_settings,
     load_settings,
-    save_folder_settings,
+    normalize_application_project_defaults,
     save_settings,
 )
 from splitshot.domain.models import (
@@ -44,6 +43,7 @@ from splitshot.domain.models import (
     ExportQuality,
     ExportVideoCodec,
     MergeLayout,
+    MergeSettings,
     MergeSource,
     MergeSourceAssetPathKind,
     MergeSourceTrimDerivative,
@@ -1346,6 +1346,7 @@ class ProjectController(QObject):
         seeded_popup_template = deepcopy(self.project.popup_template)
         seeded_merge = deepcopy(self.project.merge)
         seeded_export = deepcopy(self.project.export)
+        default_project = self._new_project_with_settings_defaults()
         self._sync_project_to_active_stage()
 
         existing_by_number = {
@@ -1368,15 +1369,15 @@ class ProjectController(QObject):
                     imported_stage_number=stage_number,
                     imported_stage_name=stage_name,
                     analysis=AnalysisState(
-                        detection_threshold=seeded_analysis.detection_threshold,
-                        shotml_settings=deepcopy(seeded_analysis.shotml_settings),
+                        detection_threshold=default_project.analysis.detection_threshold,
+                        shotml_settings=deepcopy(default_project.analysis.shotml_settings),
                     ),
-                    scoring=deepcopy(seeded_scoring),
-                    overlay=deepcopy(seeded_overlay),
-                    popups=deepcopy(seeded_popups),
-                    popup_template=deepcopy(seeded_popup_template),
-                    merge=deepcopy(seeded_merge),
-                    export=deepcopy(seeded_export),
+                    scoring=deepcopy(default_project.scoring),
+                    overlay=deepcopy(default_project.overlay),
+                    popups=deepcopy(default_project.popups),
+                    popup_template=deepcopy(default_project.popup_template),
+                    merge=deepcopy(default_project.merge),
+                    export=deepcopy(default_project.export),
                 )
                 stage.scoring.stage_number = stage_number
                 stage.scoring.imported_stage = None
@@ -1846,21 +1847,7 @@ class ProjectController(QObject):
                 default_match_type = normalize_match_type(match_type)
             except ValueError:
                 default_match_type = str(current_settings.get("default_match_type") or "uspsa")
-            stage_number = scoring.get("stage_number")
-            competitor_name = str(scoring.get("competitor_name") or "")
-            competitor_place = scoring.get("competitor_place")
-            next_snapshot.update(
-                {
-                    "default_match_type": default_match_type,
-                    "default_stage_number": None
-                    if stage_number in {None, ""}
-                    else int(stage_number),
-                    "default_competitor_name": competitor_name,
-                    "default_competitor_place": None
-                    if competitor_place in {None, ""}
-                    else int(competitor_place),
-                }
-            )
+            next_snapshot.update({"default_match_type": default_match_type})
 
         def update_pip_defaults() -> None:
             merge = project_payload.get("merge", {})
@@ -2604,16 +2591,39 @@ class ProjectController(QObject):
             self.project.touch()
             self.project_changed.emit()
 
+    def _new_merge_source_from_application_template(
+        self, asset: VideoAsset, slot_index: int, merge: MergeSettings
+    ) -> MergeSource:
+        templates = self.settings.project_defaults.get("compose_source_templates", [])
+
+        def template_slot(item: object) -> int:
+            if not isinstance(item, dict):
+                return -1
+            try:
+                return int(item.get("slot_index", -1))
+            except (TypeError, ValueError):
+                return -1
+
+        template = next(
+            (item for item in templates if template_slot(item) == slot_index),
+            {},
+        )
+        payload = {
+            **deepcopy(template),
+            "asset": asdict(asset),
+            "pip_size_percent": template.get("pip_size_percent", merge.pip_size_percent),
+            "pip_x": template.get("pip_x", merge.pip_x),
+            "pip_y": template.get("pip_y", merge.pip_y),
+            "sync_offset_ms": 0,
+        }
+        return _merge_source_from_dict(payload)
+
     def add_merge_source(self, path: str, source_name: str | None = None) -> None:
         project_path = self._stage_project_input_path(path, source_name=source_name)
         asset = probe_video(project_path)
         self.project.merge_sources.append(
-            MergeSource(
-                asset=asset,
-                pip_size_percent=self.project.merge.pip_size_percent,
-                pip_x=self.project.merge.pip_x,
-                pip_y=self.project.merge.pip_y,
-                sync_offset_ms=0,
+            self._new_merge_source_from_application_template(
+                asset, len(self.project.merge_sources), self.project.merge
             )
         )
         new_source = self.project.merge_sources[-1]
@@ -2711,26 +2721,22 @@ class ProjectController(QObject):
             stage.merge = deepcopy(self.project.merge)
             stage.export = deepcopy(self.project.export)
         else:
-            active = self.project.active_stage
-            if active is not None:
-                stage.analysis = AnalysisState(
-                    detection_threshold=active.analysis.detection_threshold,
-                    shotml_settings=deepcopy(active.analysis.shotml_settings),
-                )
-                stage.scoring = deepcopy(active.scoring)
-                stage.scoring.stage_number = next_order
-                stage.scoring.imported_stage = None
-                stage.scoring.penalties = 0.0
-                stage.scoring.penalty_counts = {}
-                stage.scoring.hit_factor = None
-                stage.overlay = deepcopy(active.overlay)
-                stage.popups = deepcopy(active.popups)
-                stage.popup_template = deepcopy(active.popup_template)
-                stage.merge = deepcopy(active.merge)
-                stage.export = deepcopy(active.export)
-                stage.export.output_path = None
-                stage.export.last_log = ""
-                stage.export.last_error = None
+            defaults = self._new_project_with_settings_defaults()
+            stage.analysis = deepcopy(defaults.analysis)
+            stage.scoring = deepcopy(defaults.scoring)
+            stage.scoring.stage_number = next_order
+            stage.scoring.imported_stage = None
+            stage.scoring.penalties = 0.0
+            stage.scoring.penalty_counts = {}
+            stage.scoring.hit_factor = None
+            stage.overlay = deepcopy(defaults.overlay)
+            stage.popups = deepcopy(defaults.popups)
+            stage.popup_template = deepcopy(defaults.popup_template)
+            stage.merge = deepcopy(defaults.merge)
+            stage.export = deepcopy(defaults.export)
+            stage.export.output_path = None
+            stage.export.last_log = ""
+            stage.export.last_error = None
         self.project.stages.append(stage)
         self._normalize_stage_order()
         self.project.active_stage_id = stage.id
@@ -2858,10 +2864,17 @@ class ProjectController(QObject):
         target.export.last_log = ""
         target.export.last_error = None
 
-    def set_global_settings_primary(self, stage_id: str) -> None:
+    def set_global_settings_primary(self, stage_id: str, *, enabled: bool = True) -> None:
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError("Stage not found")
+        if not enabled:
+            if self.project.global_settings_stage_id == stage.id:
+                self.project.global_settings_stage_id = ""
+                self._set_status(f"Cleared {stage.label} as global settings primary.")
+                self.project.touch()
+                self.project_changed.emit()
+            return
         if self.project.active_stage_id == stage.id:
             self._sync_project_presentation_to_active_stage()
         self.project.global_settings_stage_id = stage.id
@@ -2885,10 +2898,22 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def ignore_global_settings(self, stage_id: str) -> None:
+    def ignore_global_settings(self, stage_id: str, *, enabled: bool = True) -> None:
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError("Stage not found")
+        if not enabled:
+            stage.ignore_global_settings = False
+            global_source = self._stage_by_id(self.project.global_settings_stage_id)
+            if global_source is not None and global_source.id != stage.id:
+                self._copy_stage_presentation_settings(global_source, stage)
+            if self.project.active_stage_id == stage.id:
+                self._sync_active_stage_to_project()
+            self._mark_stage_queue_stale(stage.id)
+            self._set_status(f"{stage.label} now follows global settings.")
+            self.project.touch()
+            self.project_changed.emit()
+            return
         defaults = ProjectStage()
         default_project = Project()
         self._apply_effective_settings_to_project(
@@ -3011,33 +3036,6 @@ class ProjectController(QObject):
         stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
-        if not stage.primary_media.path:
-            configured_source = max(
-                (
-                    item
-                    for item in self.project.stages
-                    if item.id != stage.id
-                    and item.primary_media.path
-                    and item.order_index < stage.order_index
-                ),
-                key=lambda item: item.order_index,
-                default=None,
-            )
-            if configured_source is not None:
-                stage.analysis = AnalysisState(
-                    detection_threshold=configured_source.analysis.detection_threshold,
-                    shotml_settings=deepcopy(configured_source.analysis.shotml_settings),
-                )
-                stage.overlay = deepcopy(configured_source.overlay)
-                stage.popups = deepcopy(configured_source.popups)
-                stage.popup_template = deepcopy(configured_source.popup_template)
-                stage.merge = deepcopy(configured_source.merge)
-                stage.export = deepcopy(configured_source.export)
-                stage.export.output_path = None
-                stage.export.last_log = ""
-                stage.export.last_error = None
-                if stage_id == self.project.active_stage_id:
-                    self._sync_active_stage_to_project()
         self._set_status(f"Importing primary media for stage {stage.label}...")
         project_path = self._stage_project_input_path(path)
         if stage_id == self.project.active_stage_id:
@@ -3080,12 +3078,8 @@ class ProjectController(QObject):
             self._sync_project_to_active_stage()
         else:
             stage.added_media.append(
-                MergeSource(
-                    asset=probe_video(project_path),
-                    pip_size_percent=stage.merge.pip_size_percent,
-                    pip_x=stage.merge.pip_x,
-                    pip_y=stage.merge.pip_y,
-                    sync_offset_ms=0,
+                self._new_merge_source_from_application_template(
+                    probe_video(project_path), len(stage.added_media), stage.merge
                 )
             )
         self._mark_stage_queue_stale(stage_id)
@@ -3483,9 +3477,7 @@ class ProjectController(QObject):
                     render_project = deepcopy(self.project)
                     render_project.active_stage_id = stage.id
                     render_project.primary_video = deepcopy(stage.primary_media)
-                    render_project.primary_trim_derivative = deepcopy(
-                        stage.primary_trim_derivative
-                    )
+                    render_project.primary_trim_derivative = deepcopy(stage.primary_trim_derivative)
                     render_project.merge_sources = deepcopy(stage.added_media)
                     render_project.analysis = deepcopy(stage.analysis)
                     render_project.scoring = deepcopy(stage.scoring)
@@ -4486,6 +4478,11 @@ class ProjectController(QObject):
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         log_callback: Callable[[str], None] | None = None,
     ) -> None:
+        if not clear:
+            if keep_before_beep_s is not None:
+                self.project.trim_keep_before_beep_s = max(0.0, float(keep_before_beep_s))
+            if keep_after_last_shot_s is not None:
+                self.project.trim_keep_after_last_shot_s = max(0.0, float(keep_after_last_shot_s))
         primary_is_trimmable = bool(
             self.project.primary_video.path
             and not self.project.primary_video.is_still_image
@@ -5539,7 +5536,12 @@ class ProjectController(QObject):
         valid_shot_quadrants = {*valid_quadrants, "custom"}
         valid_custom_box_quadrants = {*valid_quadrants, "custom"}
         valid_directions = {"right", "left", "down", "up"}
-        valid_custom_box_modes = {"manual", "imported_summary", "match_summary"}
+        valid_custom_box_modes = {
+            "manual",
+            "imported_summary",
+            "match_summary",
+            "stage_name",
+        }
         if "max_visible_shots" in payload:
             overlay.max_visible_shots = max(1, min(40, int(payload["max_visible_shots"])))
         if "shot_quadrant" in payload:
@@ -5666,7 +5668,7 @@ class ProjectController(QObject):
                         box.x = 0.5
                     if box.y is None:
                         box.y = 0.5
-                if box.source in {"imported_summary", "match_summary"}:
+                if box.source in {"imported_summary", "match_summary", "stage_name"}:
                     box.text = ""
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
@@ -6047,7 +6049,8 @@ class ProjectController(QObject):
         self._sync_project_to_active_stage()
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
-        self.folder_settings = self._load_folder_settings_safe(self.project_path)
+        self.folder_settings = None
+        self.folder_settings_error = None
         self._stage_existing_practiscore_source_for_project()
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
@@ -6064,7 +6067,8 @@ class ProjectController(QObject):
         self._normalize_stage_order()
         self._sync_active_stage_to_project()
         self.project_path = ensure_project_suffix(path)
-        self.folder_settings = self._load_folder_settings_safe(self.project_path)
+        self.folder_settings = None
+        self.folder_settings_error = None
         self._ensure_project_output_path()
         self._reload_output_profiles_cache()
         loaded_snapshot = project_to_dict(self.project)
@@ -6104,25 +6108,16 @@ class ProjectController(QObject):
         self._set_status("Deleted the saved project metadata file.")
 
     def effective_settings(self) -> AppSettings:
-        if self.folder_settings is None:
-            return AppSettings.from_dict(self.settings.to_dict())
-        merged = self.settings.config_dict()
-        folder_payload = self.folder_settings.config_dict()
-        for key, value in folder_payload.items():
-            merged[key] = value
-        merged["recent_projects"] = self.settings.recent_projects
-        merged["active_template_name"] = self.settings.active_template_name
-        merged["settings_templates"] = deepcopy(self.settings.settings_templates)
-        return AppSettings.from_dict(merged)
+        return AppSettings.from_dict(self.settings.to_dict())
 
     def settings_layers(self) -> dict[str, object]:
         return {
             "app": self.settings.config_dict(),
-            "folder": {} if self.folder_settings is None else self.folder_settings.config_dict(),
+            "folder": {},
             "effective": self.effective_settings().config_dict(),
             "project": {
                 "path": "" if self.project_path is None else str(self.project_path),
-                "folder_settings_error": self.folder_settings_error or "",
+                "folder_settings_error": "",
                 "popup_template": {
                     "enabled": self.project.popup_template.enabled,
                     "content_type": self.project.popup_template.content_type,
@@ -6155,15 +6150,74 @@ class ProjectController(QObject):
         *,
         section: str | None,
     ) -> dict[str, object]:
-        """Snapshot every persistent control owned by the requested Settings section."""
-        captured = deepcopy(existing)
+        """Capture the versioned, path-free application defaults whitelist."""
+        captured = normalize_application_project_defaults(existing)
+        captured["schema_version"] = APPLICATION_DEFAULTS_SCHEMA_VERSION
         project_payload = project_to_dict(self.project)
         section_name = str(section or "all").strip().lower()
 
+        if section_name in {"all", "global-template", "layout"}:
+            ui_state = project_payload.get("ui_state", {})
+            if isinstance(ui_state, dict):
+                captured["ui_state"] = {
+                    key: deepcopy(ui_state[key])
+                    for key in (
+                        "active_tool",
+                        "waveform_expanded",
+                        "timing_expanded",
+                        "timing_enabled",
+                        "review_show_markers",
+                        "review_show_pip",
+                        "metrics_expanded",
+                        "markers_expanded",
+                        "scoring_expanded",
+                        "layout_locked",
+                        "rail_width",
+                        "inspector_width",
+                        "waveform_height",
+                    )
+                    if key in ui_state
+                }
+        if section_name in {"all", "trim"}:
+            captured["trim_defaults"] = {
+                "keep_before_beep_s": self.project.trim_keep_before_beep_s,
+                "keep_after_last_shot_s": self.project.trim_keep_after_last_shot_s,
+            }
+        if section_name in {"all", "scoring"}:
+            scoring = project_payload.get("scoring", {})
+            if isinstance(scoring, dict):
+                captured["scoring"] = {
+                    key: deepcopy(scoring[key])
+                    for key in ("enabled", "ruleset", "match_type", "point_map")
+                    if key in scoring
+                }
         if section_name in {"all", "overlay"}:
-            captured["overlay"] = deepcopy(project_payload.get("overlay", {}))
+            overlay = deepcopy(project_payload.get("overlay", {}))
+            if isinstance(overlay, dict):
+                for box in overlay.get("text_boxes", []):
+                    if isinstance(box, dict) and box.get("source") == "stage_name":
+                        box["text"] = ""
+                captured["overlay"] = overlay
         if section_name in {"all", "pip"}:
             captured["merge"] = deepcopy(project_payload.get("merge", {}))
+            captured["compose_source_templates"] = [
+                {
+                    "slot_index": index,
+                    "angle_role": source.angle_role,
+                    "pip_size_percent": source.pip_size_percent,
+                    "pip_x": source.pip_x,
+                    "pip_y": source.pip_y,
+                    "opacity": source.opacity,
+                    "placement": {
+                        "mode": source.placement.mode.value,
+                        "slot": source.placement.slot.value,
+                        "target_kind": source.placement.target_kind.value,
+                        "order_index": source.placement.order_index,
+                        "layer_index": source.placement.layer_index,
+                    },
+                }
+                for index, source in enumerate(self.project.merge_sources)
+            ]
         if section_name in {"all", "markers"}:
             captured["popup_template"] = deepcopy(project_payload.get("popup_template", {}))
         if section_name in {"all", "export"}:
@@ -6190,6 +6244,9 @@ class ProjectController(QObject):
             captured["combined_export_settings"] = deepcopy(
                 project_payload.get("combined_export_settings", {})
             )
+            combined = captured.get("combined_export_settings")
+            if isinstance(combined, dict):
+                combined["separator_image_path"] = ""
             for kind in ("intro", "outro"):
                 clip = project_payload.get(f"{kind}_clip", {})
                 if isinstance(clip, dict):
@@ -6208,6 +6265,8 @@ class ProjectController(QObject):
         section: str | None = None,
         capture_current_project: bool = False,
     ) -> None:
+        if scope != "app":
+            raise ValueError("Settings defaults are application-only.")
         template_action = str(payload.get("template_action") or "").strip().lower()
         if template_action:
             template_name = (
@@ -6237,11 +6296,7 @@ class ProjectController(QObject):
             if template_action == "delete":
                 self.delete_settings_template(template_name)
                 return
-        base = (
-            self.folder_settings
-            if scope == "folder" and self.folder_settings is not None
-            else self.settings
-        )
+        base = self.settings
         target = AppSettings.from_dict(base.to_dict())
         if capture_current_project:
             target.project_defaults = self._capture_current_project_defaults(
@@ -6255,23 +6310,9 @@ class ProjectController(QObject):
                     target.default_match_type = normalize_match_type(default_match_type)
                 except ValueError:
                     pass
-        if "default_stage_number" in payload:
-            raw_stage_number = payload.get("default_stage_number")
-            if raw_stage_number in {None, ""}:
-                target.default_stage_number = None
-            else:
-                target.default_stage_number = max(1, int(raw_stage_number))
-        if "default_competitor_name" in payload:
-            target.default_competitor_name = str(
-                payload.get("default_competitor_name", target.default_competitor_name)
-                or target.default_competitor_name
-            )
-        if "default_competitor_place" in payload:
-            raw_competitor_place = payload.get("default_competitor_place")
-            if raw_competitor_place in {None, ""}:
-                target.default_competitor_place = None
-            else:
-                target.default_competitor_place = int(raw_competitor_place)
+        target.default_stage_number = None
+        target.default_competitor_name = ""
+        target.default_competitor_place = None
         if "overlay_position" in payload:
             target.overlay_position = OverlayPosition(str(payload["overlay_position"]))
         if "timer_badge" in payload:
@@ -6313,12 +6354,7 @@ class ProjectController(QObject):
                 target.merge_pip_y = float(raw_pip_y)
         if "pip_size" in payload:
             target.pip_size = PipSize(str(payload["pip_size"]))
-        if "merge_source_defaults" in payload:
-            target.merge_source_defaults = [
-                deepcopy(item)
-                for item in payload.get("merge_source_defaults", [])
-                if isinstance(item, dict)
-            ]
+        target.merge_source_defaults = []
         if "export_quality" in payload:
             target.export_quality = ExportQuality(str(payload["export_quality"]))
         if "export_preset" in payload:
@@ -6366,35 +6402,26 @@ class ProjectController(QObject):
         marker_template_payload = payload.get("marker_template")
         if isinstance(marker_template_payload, dict):
             _popup_template_from_payload(target.marker_template, marker_template_payload)
-        if scope == "folder":
-            if self.project_path is None:
-                raise ValueError("Save the project before writing folder defaults.")
-            self.folder_settings = target
-            self.folder_settings_error = None
-            save_folder_settings(self.project_path, target)
-        else:
-            target.recent_projects = self.settings.recent_projects
-            target.active_template_name = self.settings.active_template_name
-            target.settings_templates = deepcopy(self.settings.settings_templates)
-            self.settings = target
-            self._sync_active_settings_template()
-            save_settings(self.settings)
+        target.recent_projects = self.settings.recent_projects
+        target.active_template_name = self.settings.active_template_name
+        target.settings_templates = deepcopy(self.settings.settings_templates)
+        self.settings = target
+        self._sync_active_settings_template()
+        save_settings(self.settings)
         self.settings_changed.emit()
-        self._set_status(f"Updated {'folder' if scope == 'folder' else 'app'} defaults.")
+        self._set_status("Updated application defaults.")
 
     def reset_settings_defaults(self, *, scope: str = "app", section: str | None = None) -> None:
+        if scope != "app":
+            raise ValueError("Settings defaults are application-only.")
         if not section:
             self.restore_defaults()
             return
 
         section_name = str(section or "").strip().lower()
-        base = (
-            self.folder_settings
-            if scope == "folder" and self.folder_settings is not None
-            else self.settings
-        )
+        base = self.settings
         target = AppSettings.from_dict(base.to_dict())
-        fallback = self.settings if scope == "folder" else AppSettings()
+        fallback = AppSettings()
 
         def rebuild_with_updates(updates: dict[str, object]) -> None:
             nonlocal target
@@ -6415,12 +6442,7 @@ class ProjectController(QObject):
                 "layout_inspector_width",
                 "layout_waveform_height",
             ),
-            "scoring": (
-                "default_match_type",
-                "default_stage_number",
-                "default_competitor_name",
-                "default_competitor_place",
-            ),
+            "scoring": ("default_match_type",),
             "pip": (
                 "merge_layout",
                 "pip_size",
@@ -6466,34 +6488,21 @@ class ProjectController(QObject):
         }.get(section_name)
         if project_defaults_key:
             fallback_project_defaults = fallback.project_defaults
-            if scope == "folder" and project_defaults_key in fallback_project_defaults:
+            if project_defaults_key in fallback_project_defaults:
                 target.project_defaults[project_defaults_key] = deepcopy(
                     fallback_project_defaults[project_defaults_key]
                 )
             else:
                 target.project_defaults.pop(project_defaults_key, None)
 
-        if scope == "folder":
-            if self.project_path is None:
-                raise ValueError("Save the project before writing folder defaults.")
-            if target.config_dict() == self.settings.config_dict():
-                delete_folder_settings(self.project_path)
-                self.folder_settings = None
-            else:
-                self.folder_settings = target
-                save_folder_settings(self.project_path, target)
-            self.folder_settings_error = None
-        else:
-            target.recent_projects = self.settings.recent_projects
-            target.active_template_name = self.settings.active_template_name
-            target.settings_templates = deepcopy(self.settings.settings_templates)
-            self.settings = target
-            self._sync_active_settings_template()
-            save_settings(self.settings)
+        target.recent_projects = self.settings.recent_projects
+        target.active_template_name = self.settings.active_template_name
+        target.settings_templates = deepcopy(self.settings.settings_templates)
+        self.settings = target
+        self._sync_active_settings_template()
+        save_settings(self.settings)
         self.settings_changed.emit()
-        self._set_status(
-            f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope."
-        )
+        self._set_status(f"Reset {section_name} application defaults.")
 
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
@@ -6501,16 +6510,10 @@ class ProjectController(QObject):
             self.settings.active_template_name: self.settings.template_snapshot()
         }
         save_settings(self.settings)
-        delete_folder_settings(self.project_path)
         self.folder_settings = None
         self.folder_settings_error = None
-        self._apply_effective_settings_to_project(
-            self.project, self.effective_settings(), reset_tool=False
-        )
-        self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()
-        self.project_changed.emit()
 
     def update_hit_factor(self) -> None:
         self.project.sort_shots()
@@ -6786,9 +6789,9 @@ class ProjectController(QObject):
         if normalized_match_type:
             project.scoring.match_type = normalized_match_type
             apply_scoring_preset(project, default_ruleset_for_match_type(normalized_match_type))
-        project.scoring.stage_number = effective.default_stage_number
-        project.scoring.competitor_name = effective.default_competitor_name
-        project.scoring.competitor_place = effective.default_competitor_place
+        project.scoring.stage_number = None
+        project.scoring.competitor_name = ""
+        project.scoring.competitor_place = None
         project.overlay.position = effective.overlay_position
         project.overlay.badge_size = effective.badge_size
         if effective.badge_size != BadgeSize.CUSTOM:
@@ -6805,16 +6808,10 @@ class ProjectController(QObject):
         project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
         project.merge.pip_x = effective.merge_pip_x
         project.merge.pip_y = effective.merge_pip_y
-        project.merge_sources = [
-            _merge_source_from_dict(item)
-            for item in effective.merge_source_defaults
-            if isinstance(item, dict)
-        ]
-        _sync_secondary_video_from_merge_sources(project)
-        analyzed_source = _first_analyzable_merge_source(project)
-        if analyzed_source is not None:
-            project.analysis.analyzed_secondary_source_id = analyzed_source.id
-            project.analysis.sync_offset_ms = int(analyzed_source.sync_offset_ms)
+        project.merge_sources = []
+        project.secondary_video = None
+        project.analysis.analyzed_secondary_source_id = None
+        project.analysis.sync_offset_ms = 0
         project.export.quality = effective.export_quality
         project.export.preset = effective.export_preset
         project.export.frame_rate = effective.export_frame_rate
@@ -6828,6 +6825,29 @@ class ProjectController(QObject):
             OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
         ]
         saved_project_defaults = effective.project_defaults
+        saved_trim = saved_project_defaults.get("trim_defaults")
+        if isinstance(saved_trim, dict):
+            project.trim_keep_before_beep_s = max(
+                0.0, float(saved_trim.get("keep_before_beep_s", 2.0) or 0.0)
+            )
+            project.trim_keep_after_last_shot_s = max(
+                0.0, float(saved_trim.get("keep_after_last_shot_s", 2.0) or 0.0)
+            )
+        saved_scoring = saved_project_defaults.get("scoring")
+        if isinstance(saved_scoring, dict):
+            project.scoring.enabled = bool(saved_scoring.get("enabled", True))
+            project.scoring.ruleset = str(
+                saved_scoring.get("ruleset", project.scoring.ruleset) or project.scoring.ruleset
+            )
+            project.scoring.match_type = str(
+                saved_scoring.get("match_type", project.scoring.match_type)
+                or project.scoring.match_type
+            )
+            point_map = saved_scoring.get("point_map")
+            if isinstance(point_map, dict):
+                project.scoring.point_map = {
+                    str(key): float(value) for key, value in point_map.items()
+                }
         saved_overlay = saved_project_defaults.get("overlay")
         if isinstance(saved_overlay, dict):
             project.overlay = _overlay_from_dict(saved_overlay)
@@ -6868,6 +6888,25 @@ class ProjectController(QObject):
             clip = _intro_outro_clip_from_dict(saved_clip, "")
             clip.asset = VideoAsset()
             setattr(project, f"{kind}_clip", clip)
+        saved_ui = saved_project_defaults.get("ui_state")
+        if isinstance(saved_ui, dict):
+            for key in (
+                "active_tool",
+                "waveform_expanded",
+                "timing_expanded",
+                "timing_enabled",
+                "review_show_markers",
+                "review_show_pip",
+                "metrics_expanded",
+                "markers_expanded",
+                "scoring_expanded",
+                "layout_locked",
+                "rail_width",
+                "inspector_width",
+                "waveform_height",
+            ):
+                if key in saved_ui:
+                    setattr(project.ui_state, key, deepcopy(saved_ui[key]))
         if effective.layout_locked is not None:
             project.ui_state.layout_locked = bool(effective.layout_locked)
         if effective.layout_rail_width is not None:
@@ -6884,14 +6923,6 @@ class ProjectController(QObject):
             project.ui_state.active_tool = (
                 effective.default_tool if effective.reopen_last_tool else "project"
             )
-
-    def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
-        self.folder_settings_error = None
-        try:
-            return load_folder_settings(project_path)
-        except Exception as exc:  # noqa: BLE001
-            self.folder_settings_error = f"Folder defaults were ignored: {exc}"
-            return None
 
     def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
         if self.project_path is None:

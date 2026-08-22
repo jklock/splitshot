@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from splitshot.config import AppSettings
 from splitshot.domain.models import (
     AspectRatio,
     ExportFrameRate,
@@ -81,6 +82,10 @@ def test_save_current_settings_captures_all_persistent_values_across_projects_an
     project.intro_clip.overlay.text_boxes = [OverlayTextBox(text="Saved intro box")]
     project.outro_clip.fade_in_s = 1.1
     project.outro_clip.fade_out_s = 1.4
+    project.trim_keep_before_beep_s = 1.25
+    project.trim_keep_after_last_shot_s = 2.75
+    project.ui_state.timing_enabled = False
+    project.scoring.enabled = False
 
     controller.set_settings_defaults({}, capture_current_project=True)
 
@@ -89,21 +94,47 @@ def test_save_current_settings_captures_all_persistent_values_across_projects_an
 
     reloaded_controller = ProjectController()
     _assert_saved_current_settings(reloaded_controller)
+    assert reloaded_controller.settings.project_defaults["schema_version"] == 1
+    assert reloaded_controller.project.trim_keep_before_beep_s == 1.25
+    assert reloaded_controller.project.trim_keep_after_last_shot_s == 2.75
+    assert reloaded_controller.project.ui_state.timing_enabled is False
+    assert reloaded_controller.project.scoring.enabled is False
+    serialized = str(reloaded_controller.settings.project_defaults)
+    assert "/runtime-only/" not in serialized
 
 
 def test_save_current_export_section_does_not_replace_other_saved_sections() -> None:
     controller = ProjectController()
     controller.project.overlay.style_type = "rounded"
-    controller.set_settings_defaults(
-        {}, section="overlay", capture_current_project=True
-    )
+    controller.set_settings_defaults({}, section="overlay", capture_current_project=True)
 
     controller.project.overlay.style_type = "square"
     controller.project.export.target_width = 720
-    controller.set_settings_defaults(
-        {}, section="export", capture_current_project=True
-    )
+    controller.set_settings_defaults({}, section="export", capture_current_project=True)
 
     reloaded_controller = ProjectController()
     assert reloaded_controller.project.overlay.style_type == "rounded"
     assert reloaded_controller.project.export.target_width == 720
+
+
+def test_legacy_compose_defaults_migrate_to_path_free_slot_templates() -> None:
+    settings = AppSettings.from_dict(
+        {
+            "merge_source_defaults": [
+                {
+                    "asset": {"path": "/legacy/camera.mp4"},
+                    "id": "legacy-source",
+                    "pip_size_percent": 42,
+                    "pip_x": 0.2,
+                    "pip_y": 0.8,
+                    "opacity": 0.75,
+                    "sync_offset_ms": 900,
+                }
+            ]
+        }
+    )
+
+    assert settings.project_defaults["schema_version"] == 1
+    assert settings.project_defaults["compose_source_templates"] == [
+        {"pip_size_percent": 42, "pip_x": 0.2, "pip_y": 0.8, "opacity": 0.75}
+    ]

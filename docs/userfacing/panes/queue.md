@@ -26,8 +26,9 @@ The Queue pane is the multi-stage export surface. It shows every loaded match st
 | `Fade in` / `Fade out` | Sets project-level video and audio fades in 0.1-second steps. `0` disables that boundary. |
 | `Show Output Folder` | Opens the configured project output directory. |
 | `Show Log` | Opens the live processing log for the current or latest Queue run. Its label stays static while progress is reported inside the log dialog and status bar. |
-| `Process Queue` | Exports one output file per queued stage. |
-| `Process as One File` | Renders all queued stages and enabled boundary clips, then concatenates them into one file. |
+| `Queue All Files` | Full-width gray action that adds every stage to the queue without opening the Processing Log. |
+| `Process Queue` | Opens the Processing Log immediately, then exports one output file per queued stage. |
+| `Process as One File` | Opens the Processing Log immediately, then renders all queued stages and enabled boundary clips into one file. |
 
 ## Status Meanings
 

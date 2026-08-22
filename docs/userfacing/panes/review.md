@@ -30,6 +30,7 @@ Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custo
 | `Show scoring summary` | Shows or hides the final result badge. |
 | `Add Custom Box` | Adds a manually typed text box. |
 | `Add Summary Box` | Adds a PractiScore-backed summary box. |
+| `Add Stage Name` | Adds a dynamic top-middle box formatted as `Stage N - Name`. It updates when the stage label or imported metadata changes and resolves separately for Queue/export. |
 | Box enable checkbox | Turns one text box on or off. |
 | `Duplicate` | Copies the box and its styling. |
 | `Remove` | Deletes the box. |
@@ -87,6 +88,7 @@ Unchecked metrics do not render. Metrics that are unavailable from the imported 
 - Locked boxes keep the same spacing relationship as the shot stack. Drag any locked item to reposition the stack as a group.
 - Custom boxes stay visible according to their own enable state and placement.
 - Enabled review boxes render into export.
+- Stage Name boxes use the same placement, size, typography, color, opacity, duplicate, remove, drag, and lock controls as other Review boxes. Their resolved text is never saved as an application default.
 
 ## Common Fixes
 

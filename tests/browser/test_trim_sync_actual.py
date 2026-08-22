@@ -35,7 +35,7 @@ def test_apply_all_trims_logs_event(synthetic_video_factory) -> None:
                 page.fill("#trim-global-end", "3.0")
                 page.click("#trim-global-apply")
                 page.wait_for_function(
-                    "() => document.querySelector('#status')?.textContent?.startsWith('Trimming ')",
+                    "() => document.querySelector('#export-log-modal')?.hidden === false",
                 )
                 tracker.assert_activity("trim.apply-all")
                 page.wait_for_function(
@@ -96,6 +96,7 @@ def test_bulk_trim_duration_matches_displayed_original_boundaries(
                 )
                 page.screenshot(path="artifacts/trim-visual-applied.png", full_page=True)
 
+                page.click("#close-export-log")
                 page.click("#trim-global-apply")
                 page.wait_for_function(
                     "(path) => state?.project?.primary_trim_derivative?.derivative_path !== path",
@@ -109,6 +110,7 @@ def test_bulk_trim_duration_matches_displayed_original_boundaries(
                     round((repeated["end_s"] - repeated["start_s"]) * 1000), abs=40
                 )
                 page.screenshot(path="artifacts/trim-visual-reapplied.png", full_page=True)
+                page.click("#close-export-log")
                 page.click("#trim-global-clear")
                 page.wait_for_function(
                     "() => !state?.project?.primary_trim_derivative?.derivative_path",
@@ -138,6 +140,7 @@ def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
                     "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)",
                     timeout=120_000,
                 )
+                page.click("#close-export-log")
                 page.click("#trim-global-clear")
                 page.wait_for_function(
                     "() => !state?.project?.primary_trim_derivative?.derivative_path",
@@ -281,6 +284,7 @@ def test_trim_apply_and_clear_switch_active_media_and_waveform(synthetic_video_f
                     == "Using trimmed media"
                 )
 
+                page.click("#close-export-log")
                 page.locator(f'button.trim-clear-btn[data-source-id="{source_id}"]').click()
                 page.wait_for_function(
                     """(payload) => {
@@ -394,6 +398,7 @@ def test_trim_apply_all_switches_primary_and_added_active_media(synthetic_video_
                 assert Path(primary_state["derivative_path"]).exists()
                 assert Path(added_state["derivative_path"]).exists()
 
+                page.click("#close-export-log")
                 navigate_to_tool(page, "media")
                 media_text = page.locator("#media-pane").inner_text()
                 assert primary_state["active_display_name"] in media_text
@@ -644,10 +649,7 @@ def test_reset_trim_defaults_logs(synthetic_video_factory) -> None:
                 page.click("#trim-global-defaults-btn")
                 page.wait_for_timeout(300)
                 tracker.assert_activity("trim.global-defaults")
-                try:
-                    assert_status(page, "Reset trim defaults")
-                except AssertionError:
-                    assert_status(page, "analysis")
+                assert_status(page, "Reset trim buffers to application defaults")
             finally:
                 browser.close()
     finally:
@@ -668,11 +670,13 @@ def test_trim_undo_restores_values(synthetic_video_factory) -> None:
                 page.fill("#trim-global-end", "3.0")
                 page.click("#trim-global-apply")
                 page.wait_for_timeout(500)
+                page.click("#close-export-log")
                 page.fill("#trim-global-start", "0.5")
                 page.fill("#trim-global-end", "2.0")
                 page.click("#trim-global-apply")
                 page.wait_for_timeout(500)
 
+                page.click("#close-export-log")
                 page.click("#trim-global-undo")
                 page.wait_for_timeout(500)
                 tracker.assert_activity_count("trim.apply-all", 2)

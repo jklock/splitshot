@@ -17,7 +17,7 @@ EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
     "panes/intro-outro-pane.js": 25,
     "panes/media-pane.js": 15,
     "panes/queue-pane.js": 10,
-    "panes/review-pane.js": 17,
+    "panes/review-pane.js": 22,
     "panes/trim-sync-pane.js": 26,
 }
 
@@ -257,6 +257,7 @@ id:resize-rail
 id:resize-sidebar
 id:resize-waveform
 id:review-add-imported-box
+id:review-add-stage-name-box
 id:review-add-text-box
 id:score-lock-to-stack
 id:score-x
@@ -315,7 +316,6 @@ id:settings-reset-section-overlay
 id:settings-reset-section-pip
 id:settings-reset-section-scoring
 id:settings-reset-section-shotml
-id:settings-scope
 id:settings-save-current-export
 id:settings-save-current-markers
 id:settings-save-current-overlay
@@ -451,9 +451,7 @@ def _dynamic_literal_control_counts() -> dict[str, int]:
             ):
                 continue
             count += 1
-            assert re.search(
-                r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes
-            ), (
+            assert re.search(r"\b(?:id|class|data-[A-Za-z0-9_-]+)\s*=", attributes), (
                 "JavaScript-rendered interactive control needs a stable id, class, or data owner: "
                 f"{path}:{text.count(chr(10), 0, match.start()) + 1}"
             )

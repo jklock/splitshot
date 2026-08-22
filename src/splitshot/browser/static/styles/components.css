@@ -954,6 +954,10 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.button-grid.three-up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .text-box-manager > .button-grid {
   gap: var(--space-1);
 }

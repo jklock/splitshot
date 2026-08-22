@@ -15,7 +15,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Media | active stage selector, stage name, `Save`, `Delete`, `Add Stage`, `Global Settings Primary`, `Ignore Global Settings`, persistent Primary Media/Secondary Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
+        "| Media | active stage selector, `Stage Name`, `Save Stage`, `Delete Stage`, `Add Stage`, `Global Settings Primary` checkbox, `Ignore Global Settings` checkbox, persistent Primary Media/Secondary Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (
@@ -32,7 +32,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, complete Overlay/Review defaults, marker defaults including default quadrant, complete persistent Export and Queue/combined-output defaults, Intro/Outro fade/overlay defaults, complete ShotML defaults, section collapse, template fields |"
+        "| Settings | application-only defaults, landing pane, reopen-last-tool, section use-current/reset actions, layout defaults, Compose slot templates, complete Overlay/Review defaults, marker templates, complete persistent Export and Queue/combined-output defaults, Intro/Outro fade/overlay defaults, complete ShotML defaults, section collapse, versioned whitelist |"
         in matrix
     )
     for surface in [

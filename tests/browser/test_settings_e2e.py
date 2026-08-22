@@ -180,8 +180,8 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 assert page.locator("#settings-export-quality").input_value() == "high"
                 project_layout = page.evaluate("state.project.merge.layout")
                 project_quality = page.evaluate("state.project.export.quality")
-                assert project_layout == "side_by_side", f"unexpected layout: {project_layout}"
-                assert project_quality == "high", f"unexpected quality: {project_quality}"
+                assert project_layout == "pip", f"unexpected layout: {project_layout}"
+                assert project_quality == "low", f"unexpected quality: {project_quality}"
             finally:
                 browser.close()
     finally:
@@ -198,7 +198,6 @@ def test_settings_global_template_fields_update_defaults_state_and_reset() -> No
                 _open_settings(page)
                 _expand_settings_section(page, "global-template")
 
-                page.locator("#settings-scope").select_option("app")
                 page.locator("#settings-default-tool").select_option("metrics")
                 page.locator("#settings-reopen-last-tool").uncheck()
                 _apply_settings_defaults_and_wait(

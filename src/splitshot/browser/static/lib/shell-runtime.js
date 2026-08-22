@@ -809,6 +809,7 @@ export function createShellRuntime({
     [
       ["review-add-text-box", "manual"],
       ["review-add-imported-box", "imported_summary"],
+      ["review-add-stage-name-box", "stage_name"],
     ].forEach(([id, source]) => {
       $(id)?.addEventListener("click", () => addOverlayTextBox(source));
     });
@@ -863,10 +864,6 @@ export function createShellRuntime({
 
     $("settings-import-current")?.addEventListener("click", async () => {
       await saveCurrentSettings();
-    });
-    $("settings-scope")?.addEventListener("change", () => {
-      clearSettingsDraft();
-      renderSettingsPane();
     });
     [
       "settings-default-tool",
@@ -955,7 +952,7 @@ export function createShellRuntime({
         documentObject.activeElement?.blur?.();
         await flushPendingSettingsDefaults();
         await callApi("/api/settings/reset-defaults", {
-          scope: $("settings-scope")?.value || "app",
+          scope: "app",
           section: "layout",
         });
       });
@@ -973,7 +970,7 @@ export function createShellRuntime({
           const section = button.getAttribute("data-settings-reset-section") || "";
           await flushPendingSettingsDefaults();
           await callApi("/api/settings/reset-defaults", {
-            scope: $("settings-scope")?.value || "app",
+            scope: "app",
             section,
           });
         });

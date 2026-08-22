@@ -205,22 +205,32 @@ export function createMediaPane({
     });
   }
 
-  async function setGlobalSettingsPrimary(stageId) {
+  async function setGlobalSettingsPrimary(stageId, enabled) {
     if (!stageId) return;
     return runMediaMutation(async () => {
       activity("media.global-settings-primary", { stageId });
-      const result = await callApi("/api/project/stage/global-settings-primary", { stage_id: stageId });
-      if (result) setStatus("Set global settings primary.");
+      const result = await callApi("/api/project/stage/global-settings-primary", {
+        stage_id: stageId,
+        enabled: Boolean(enabled),
+      });
+      if (result) setStatus(enabled ? "Set global settings primary." : "Cleared global settings primary.");
       return result;
     });
   }
 
-  async function ignoreGlobalSettings(stageId) {
+  async function ignoreGlobalSettings(stageId, enabled) {
     if (!stageId) return;
     return runMediaMutation(async () => {
       activity("media.ignore-global-settings", { stageId });
-      const result = await callApi("/api/project/stage/ignore-global-settings", { stage_id: stageId });
-      if (result) setStatus("This stage now uses project or app defaults.");
+      const result = await callApi("/api/project/stage/ignore-global-settings", {
+        stage_id: stageId,
+        enabled: Boolean(enabled),
+      });
+      if (result) {
+        setStatus(enabled
+          ? "This stage now uses project or app defaults."
+          : "This stage now follows the global settings primary.");
+      }
       return result;
     });
   }
@@ -335,17 +345,23 @@ export function createMediaPane({
             <label>Stage
               <select id="media-active-stage-select" ${mediaMutationPending ? "disabled" : ""}>${stageOptions}</select>
             </label>
-            <label>Name
+            <label>Stage Name
               <input id="media-active-stage-label" type="text" value="${htmlEscape(stage ? stageLabel(stage) : "")}" placeholder="Stage name" ${mediaMutationPending ? "disabled" : ""} />
             </label>
           </div>
           <div class="media-active-stage-actions media-pane-actions media-pane-actions-split">
-            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage && !mediaMutationPending ? "" : "disabled"}>Save</button>
-            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 && !mediaMutationPending ? "" : "disabled"}>Delete</button>
+            <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage && !mediaMutationPending ? "" : "disabled"}>Save Stage</button>
+            <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 && !mediaMutationPending ? "" : "disabled"}>Delete Stage</button>
           </div>
-          <div class="media-global-settings-actions control-grid">
-            <button id="media-global-settings-primary" class="btn-sm ${isGlobalPrimary ? "btn-primary" : "btn-secondary"}" type="button" aria-pressed="${isGlobalPrimary}" ${stage && !mediaMutationPending ? "" : "disabled"}>Global Settings Primary</button>
-            <button id="media-ignore-global-settings" class="btn-sm ${ignoresGlobal ? "btn-primary" : "btn-secondary"}" type="button" aria-pressed="${ignoresGlobal}" ${stage && !isGlobalPrimary && !mediaMutationPending ? "" : "disabled"}>Ignore Global Settings</button>
+          <div class="media-global-settings-actions">
+            <label class="check-row media-global-setting-row">
+              <input id="media-global-settings-primary" type="checkbox" ${isGlobalPrimary ? "checked" : ""} ${stage && !mediaMutationPending ? "" : "disabled"} />
+              <span><strong>Global Settings Primary</strong><small>Apply this stage's presentation settings to queued stages.</small></span>
+            </label>
+            <label class="check-row media-global-setting-row">
+              <input id="media-ignore-global-settings" type="checkbox" ${ignoresGlobal ? "checked" : ""} ${stage && !isGlobalPrimary && !mediaMutationPending ? "" : "disabled"} />
+              <span><strong>Ignore Global Settings</strong><small>Use project or application defaults for this stage.</small></span>
+            </label>
           </div>
           <button class="primary-button media-add-stage-btn media-add-stage-full" type="button" ${mediaMutationPending ? "disabled" : ""}>Add Stage</button>
         </div>
@@ -413,16 +429,6 @@ export function createMediaPane({
         renameStage(stage.id, $("media-active-stage-label")?.value || "");
         return;
       }
-      if (target.closest("#media-global-settings-primary")) {
-        const stage = activeStage();
-        if (stage) void setGlobalSettingsPrimary(stage.id);
-        return;
-      }
-      if (target.closest("#media-ignore-global-settings")) {
-        const stage = activeStage();
-        if (stage) void ignoreGlobalSettings(stage.id);
-        return;
-      }
       const deleteStageButton = target.closest(".media-delete-stage-btn");
       if (deleteStageButton instanceof HTMLElement) {
         deleteStage(deleteStageButton.dataset.stageId || "");
@@ -460,6 +466,39 @@ export function createMediaPane({
       if (!target) return;
       if (target.id === "media-active-stage-select") {
         void selectStage(target.value || "");
+        return;
+      }
+      if (target.id === "media-global-settings-primary") {
+        const stage = activeStage();
+        if (stage) void setGlobalSettingsPrimary(stage.id, target.checked);
+        return;
+      }
+      if (target.id === "media-ignore-global-settings") {
+        const stage = activeStage();
+        if (stage) void ignoreGlobalSettings(stage.id, target.checked);
+      }
+    };
+    pane.oninput = (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.id !== "media-active-stage-label") return;
+      const stage = activeStage();
+      const nextLabel = String(target.value || "").trim();
+      const saveButton = pane.querySelector(".media-save-stage-btn");
+      if (saveButton) {
+        saveButton.disabled = mediaMutationPending
+          || !stage
+          || !nextLabel
+          || nextLabel === stageLabel(stage);
+      }
+    };
+    pane.onkeydown = (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.id !== "media-active-stage-label" || event.key !== "Enter") return;
+      event.preventDefault();
+      const stage = activeStage();
+      const nextLabel = String(target.value || "").trim();
+      if (stage && nextLabel && nextLabel !== stageLabel(stage)) {
+        void renameStage(stage.id, nextLabel);
       }
     };
   }
@@ -504,7 +543,13 @@ export function createMediaPane({
     }
 
     const saveBtn = pane.querySelector(".media-save-stage-btn");
-    if (saveBtn) saveBtn.disabled = !stage || mediaMutationPending;
+    if (saveBtn) {
+      const draft = String(labelInput?.value || "").trim();
+      saveBtn.disabled = !stage
+        || mediaMutationPending
+        || !draft
+        || draft === stageLabel(stage);
+    }
 
     const deleteBtn = pane.querySelector(".media-delete-stage-btn");
     if (deleteBtn) {
@@ -515,22 +560,18 @@ export function createMediaPane({
     const addStageBtn = pane.querySelector(".media-add-stage-btn");
     if (addStageBtn) addStageBtn.disabled = mediaMutationPending;
 
-    const globalPrimaryBtn = pane.querySelector("#media-global-settings-primary");
-    if (globalPrimaryBtn) {
+    const globalPrimaryInput = pane.querySelector("#media-global-settings-primary");
+    if (globalPrimaryInput) {
       const active = Boolean(stage?.id && project()?.global_settings_stage_id === stage.id);
-      globalPrimaryBtn.disabled = !stage || mediaMutationPending;
-      globalPrimaryBtn.setAttribute("aria-pressed", String(active));
-      globalPrimaryBtn.classList.toggle("btn-primary", active);
-      globalPrimaryBtn.classList.toggle("btn-secondary", !active);
+      globalPrimaryInput.disabled = !stage || mediaMutationPending;
+      globalPrimaryInput.checked = active;
     }
-    const ignoreGlobalBtn = pane.querySelector("#media-ignore-global-settings");
-    if (ignoreGlobalBtn) {
+    const ignoreGlobalInput = pane.querySelector("#media-ignore-global-settings");
+    if (ignoreGlobalInput) {
       const ignored = Boolean(stage?.ignore_global_settings);
       const active = Boolean(stage?.id && project()?.global_settings_stage_id === stage.id);
-      ignoreGlobalBtn.disabled = !stage || active || mediaMutationPending;
-      ignoreGlobalBtn.setAttribute("aria-pressed", String(ignored));
-      ignoreGlobalBtn.classList.toggle("btn-primary", ignored);
-      ignoreGlobalBtn.classList.toggle("btn-secondary", !ignored);
+      ignoreGlobalInput.disabled = !stage || active || mediaMutationPending;
+      ignoreGlobalInput.checked = ignored;
     }
 
     const addPrimaryBtn = pane.querySelector(".media-add-primary-btn");

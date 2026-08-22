@@ -12,6 +12,7 @@ from splitshot.domain.models import (
     OverlayPosition,
     Project,
     overlay_text_boxes_for_render,
+    project_stage_name_overlay_text,
 )
 from splitshot.overlay.font_policy import (
     WINDOWS_MONO_FONT_FAMILIES,
@@ -416,7 +417,11 @@ class OverlayRenderer:
             imported = project.scoring.imported_stage
             display_label = str(summary["display_label"])
             display_value = str(summary["display_value"])
-            if imported is not None and imported.match_type == "idpa" and imported.final_time is not None:
+            if (
+                imported is not None
+                and imported.match_type == "idpa"
+                and imported.final_time is not None
+            ):
                 display_label = "Final"
                 display_value = f"{float(imported.final_time):.2f}"
             elif imported is not None and imported.hit_factor is not None:
@@ -456,17 +461,15 @@ class OverlayRenderer:
             if final_shot_time is None or position_ms < final_shot_time:
                 return ""
             override_text = text.strip()
-            review_text = format_review_summary_overlay_text(
-                project, summary_metric_ids
-            ).strip()
-            legacy_text = format_imported_stage_overlay_text(
-                project.scoring.imported_stage
-            ).strip()
+            review_text = format_review_summary_overlay_text(project, summary_metric_ids).strip()
+            legacy_text = format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
             if override_text and override_text not in {review_text, legacy_text}:
                 return override_text
             if review_text:
                 return review_text
             return legacy_text
+        if source == "stage_name":
+            return project_stage_name_overlay_text(project)
         return text.strip()
 
     def paint(
@@ -696,14 +699,18 @@ class OverlayRenderer:
             return []
 
         first_badge = badges[0]
-        font_size = first_badge.font_size or project.overlay.font_size or _FONT_SIZE.get(
-            project.overlay.badge_size, _FONT_SIZE[BadgeSize.M]
+        font_size = (
+            first_badge.font_size
+            or project.overlay.font_size
+            or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
         )
         font = _overlay_qfont(
             first_badge.font_family or project.overlay.font_family or default_overlay_font_family(),
             font_size,
             project.overlay.font_bold if first_badge.font_bold is None else first_badge.font_bold,
-            project.overlay.font_italic if first_badge.font_italic is None else first_badge.font_italic,
+            project.overlay.font_italic
+            if first_badge.font_italic is None
+            else first_badge.font_italic,
         )
         painter.setFont(font)
         metrics = painter.fontMetrics()

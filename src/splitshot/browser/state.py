@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from splitshot.domain.models import Project, project_to_dict
+from splitshot.domain.models import Project, project_stage_name_overlay_text, project_to_dict
 from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
@@ -387,6 +387,7 @@ def browser_state(
         practiscore_payload.pop("_sync_payload", None)
     )
     project_payload = project_to_dict(project)
+    project_payload["stage_name_overlay_text"] = project_stage_name_overlay_text(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
     primary_asset_payload = project_payload.get("primary_video")

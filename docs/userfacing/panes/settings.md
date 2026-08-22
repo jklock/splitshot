@@ -2,7 +2,7 @@
 
 <!-- Documentation reviewed: 2026-08-11 -->
 
-The Settings pane controls app-wide and folder-scoped defaults for layout, scoring, compose, overlay, markers, export, and ShotML.
+The Settings pane controls application defaults for layout, Trim, scoring, Compose, Overlay and Review, markers, In/Out, Queue, export, and ShotML.
 
 <img src="../../screenshots/SettingsPane.png" alt="Settings pane with scope, layout, scoring, Compose, Overlay, Markers, Export, and ShotML defaults" width="960">
 
@@ -14,20 +14,19 @@ The Settings pane controls app-wide and folder-scoped defaults for layout, scori
 - When you want to change the landing pane or reopen-last-tool behavior.
 - When you want to capture the current project's layout as the default.
 - When you want to tune default marker templates.
-- When defaults should apply to a specific project folder instead of globally.
+- When every newly created or imported stage should start from the same reusable settings.
 
 ## Key Controls
 
-### Global Template
+### Application Defaults
 
 | Control | What it does |
 | --- | --- |
-| `Save scope` | Chooses between `App Defaults` (global) and `Folder Defaults` (project-folder scoped). |
 | `Landing pane` | Sets which pane opens by default when a new project is created. |
 | `Reopen the selected pane on new projects` | Remembers the last-used pane and reopens it on the next project. |
-| `Save Current Settings` | Flushes pending edits, then copies every persistent project setting into the selected scope, including Queue/combined-output and Intro/Outro fade and overlay configuration. Media paths, output paths, logs, errors, and include-media choices are excluded. |
-| `Reset Defaults` | Restores the selected scope to factory defaults. |
-| Scope status hint | Shows whether app or folder defaults are active. Folder defaults only apply to new projects in that folder, not retroactively. |
+| `Save Current Project as Application Defaults` | Flushes pending edits, then copies the whitelisted reusable project settings into application `settings.json`. Media, identity, timing results, marker instances, destinations, logs, and Queue history are excluded. |
+| `Reset Application Defaults` | Restores application defaults to factory values. |
+| Status hint | Confirms that legacy `splitshot.conf` files are preserved but ignored. |
 
 ### Layout
 
@@ -48,7 +47,7 @@ The Settings pane controls app-wide and folder-scoped defaults for layout, scori
 
 ### Compose
 
-The Compose section is the sole owner of global/folder compose defaults. Per-source controls in the Compose pane do not set defaults — they only affect individual items.
+The Compose section owns application Compose defaults. Source styling is stored as a slot template; source paths, IDs, trim state, and sync offsets are never copied.
 
 | Control | What it does |
 | --- | --- |
@@ -99,20 +98,19 @@ The Compose section is the sole owner of global/folder compose defaults. Per-sou
 
 ## How To Use It
 
-1. Choose `Save scope` first — `App Defaults` for global settings, `Folder Defaults` for project-folder scoped settings.
-2. Expand each section with the chevron to reveal its controls.
-3. Adjust the `Landing pane` and `Reopen the selected pane on new projects` before starting a new project.
-4. Use `Save Current Settings` in Global Template to capture the current Compose, Overlay and Review, Marker, Export, ShotML, scoring, layout, Queue, combined-output, and Intro/Outro configuration together. Section buttons update only that section.
-5. Use `Reset Defaults` when you want to start fresh.
-6. For layout, use `Use Current Layout` after arranging the workspace exactly as you want new projects to open.
-7. Marker template changes apply to newly created markers, not existing ones. Existing markers keep their own state.
+1. Expand each section with the chevron to reveal its controls.
+2. Adjust the `Landing pane` and `Reopen the selected pane on new projects` before starting a new project.
+3. Use `Save Current Project as Application Defaults` to capture every whitelisted reusable setting together. Section buttons update only that section.
+4. Use `Reset Application Defaults` when you want to start fresh.
+5. For layout, use `Use Current Layout` after arranging the workspace exactly as you want new projects to open.
+6. Marker template changes apply to newly created markers, not existing marker instances or placements.
 
-## Scope Behavior
+## Defaults Behavior
 
-- `App Defaults` are stored outside any project and apply to every new project, including after restarting SplitShot.
-- `Folder Defaults` apply only to new projects created inside the selected folder.
-- Folder defaults take priority over app defaults when both exist for the same setting.
-- Changing folder defaults does not retroactively apply to existing projects in that folder.
+- Application defaults are stored in `settings.json` and apply to empty projects, manually added stages, and newly imported stages, including after restarting SplitShot.
+- Existing projects retain their saved project-specific values.
+- Saving defaults never copies project or competitor identity, imported results, media paths, detected timing data, Queue membership/history, output destinations, or marker instances/placements.
+- Existing legacy `splitshot.conf` files remain on disk but do not override application defaults.
 
 ## Related Guides
 

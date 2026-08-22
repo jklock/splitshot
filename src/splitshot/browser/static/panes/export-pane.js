@@ -12,6 +12,8 @@ export function createExportPane({
   autoApplyExportSettings = () => {},
   refreshState = async () => {},
 } = {}) {
+  let processingLogStartingState = "";
+  let processingWasActive = false;
   function currentState() {
     return getState() || {};
   }
@@ -69,14 +71,22 @@ export function createExportPane({
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
     const exportButton = $("export-export-log");
+    const activeProcessing = Boolean(getActiveProcessingPath());
+    if (activeProcessing) {
+      processingWasActive = true;
+      processingLogStartingState = "";
+    } else if (processingWasActive) {
+      processingWasActive = false;
+      processingLogStartingState = "";
+    }
     if (output) {
       output.textContent = visibleLines.join("\n");
-      if (getActiveProcessingPath()) output.scrollTop = output.scrollHeight;
+      if (activeProcessing || processingLogStartingState) output.scrollTop = output.scrollHeight;
     }
     if (summary) {
-      summary.textContent = getActiveProcessingPath()
+      summary.textContent = activeProcessing
         ? `Processing in progress • ${Math.round(getProcessingProgressPercent())}%`
-        : "";
+        : processingLogStartingState;
     }
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
@@ -85,16 +95,18 @@ export function createExportPane({
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }
 
-  async function openExportLogModal() {
-    if (visibleExportLogLines().length === 0) {
-      await refreshState();
-    }
+  async function openExportLogModal(startingState = "") {
+    processingLogStartingState = String(startingState || "");
     const modal = $("export-log-modal");
     if (!modal) return;
     modal.hidden = false;
     renderExportLog();
     const output = $("export-log-output");
     if (output) output.scrollTop = output.scrollHeight;
+    if (visibleExportLogLines().length === 0) {
+      await refreshState();
+      renderExportLog();
+    }
   }
 
   function closeExportLogModal() {

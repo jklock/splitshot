@@ -2513,13 +2513,17 @@ class BrowserControlServer:
                 stage_id = str(payload.get("stage_id") or controller.project.active_stage_id)
                 if not stage_id:
                     raise ValueError("stage_id is required")
-                controller.set_global_settings_primary(stage_id)
+                controller.set_global_settings_primary(
+                    stage_id, enabled=bool(payload.get("enabled", True))
+                )
 
             def _ignore_global_settings(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or controller.project.active_stage_id)
                 if not stage_id:
                     raise ValueError("stage_id is required")
-                controller.ignore_global_settings(stage_id)
+                controller.ignore_global_settings(
+                    stage_id, enabled=bool(payload.get("enabled", True))
+                )
 
             def _add_to_queue(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")

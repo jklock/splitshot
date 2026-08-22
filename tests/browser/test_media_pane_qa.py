@@ -49,13 +49,16 @@ def test_media_global_settings_controls_preserve_target_stage_data() -> None:
                 ignored = page.locator("#media-ignore-global-settings")
                 assert primary.is_visible()
                 assert ignored.is_visible()
+                assert primary.get_attribute("type") == "checkbox"
+                assert ignored.get_attribute("type") == "checkbox"
+                assert page.locator("label", has_text="Stage Name").count() == 1
+                assert page.locator(".media-save-stage-btn").text_content() == "Save Stage"
+                assert page.locator(".media-delete-stage-btn").text_content() == "Delete Stage"
                 primary.click()
                 page.wait_for_function(
                     "(id) => state.project.global_settings_stage_id === id", arg=source.id
                 )
-                assert page.locator("#media-global-settings-primary").get_attribute(
-                    "aria-pressed"
-                ) == "true"
+                assert page.locator("#media-global-settings-primary").is_checked()
                 page.locator("#media-active-stage-select").select_option(target.id)
                 page.wait_for_function(
                     "(id) => state.project.active_stage_id === id", arg=target.id
@@ -65,9 +68,23 @@ def test_media_global_settings_controls_preserve_target_stage_data() -> None:
                     "(id) => state.project.stages.find(stage => stage.id === id)?.ignore_global_settings === true",
                     arg=target.id,
                 )
-                saved_target = next(stage for stage in controller.project.stages if stage.id == target.id)
+                saved_target = next(
+                    stage for stage in controller.project.stages if stage.id == target.id
+                )
                 assert [shot.time_ms for shot in saved_target.analysis.shots] == [3210]
                 assert saved_target.scoring.stage_number == 2
+                page.locator("#media-ignore-global-settings").uncheck()
+                page.wait_for_function(
+                    "(id) => state.project.stages.find(stage => stage.id === id)?.ignore_global_settings === false",
+                    arg=target.id,
+                )
+                assert saved_target.overlay.font_size == 48
+                page.locator("#media-active-stage-select").select_option(source.id)
+                page.wait_for_function(
+                    "(id) => state.project.active_stage_id === id", arg=source.id
+                )
+                page.locator("#media-global-settings-primary").uncheck()
+                page.wait_for_function("() => !state.project.global_settings_stage_id")
             finally:
                 browser.close()
     finally:

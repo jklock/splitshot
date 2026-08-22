@@ -893,6 +893,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     timeout=120000,
                 )
                 trimmed_source = _source_state(page, source_id)
+                page.locator("#close-export-log").click()
                 assert trimmed_source is not None
                 assert trimmed_source["asset"]["path"]
                 assert trimmed_source["trim_derivative"]["derivative_path"]

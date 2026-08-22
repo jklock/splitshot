@@ -66,7 +66,7 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
         "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
     ),
     "/api/settings/reset-defaults": (
-        "test_browser_settings_reset_defaults_restores_project_state",
+        "test_browser_settings_reset_defaults_preserves_existing_project_state",
     ),
     "/api/beep": (
         "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
@@ -2694,7 +2694,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         server.shutdown()
 
 
-def test_browser_settings_reset_defaults_restores_project_state(
+def test_browser_settings_reset_defaults_preserves_existing_project_state(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
@@ -2740,24 +2740,24 @@ def test_browser_settings_reset_defaults_restores_project_state(
         assert reset["settings"]["shotml_defaults"]["min_shot_interval_ms"] == 100
         assert reset["settings"]["shotml_defaults"]["shot_peak_min_spacing_ms"] == 200
 
-        assert saved["overlay"]["position"] == "bottom"
-        assert saved["overlay"]["badge_size"] == "M"
-        assert saved["merge"]["layout"] == "side_by_side"
-        assert saved["merge"]["pip_size"] == "35%"
-        assert saved["merge"]["pip_size_percent"] == 35
+        assert saved["overlay"]["position"] == "top"
+        assert saved["overlay"]["badge_size"] == "XL"
+        assert saved["merge"]["layout"] == "pip"
+        assert saved["merge"]["pip_size"] == "50%"
+        assert saved["merge"]["pip_size_percent"] == 50
         assert saved["merge"]["pip_x"] == 1.0
         assert saved["merge"]["pip_y"] == 1.0
-        assert saved["export"]["quality"] == "high"
-        assert saved["export"]["preset"] == "source"
+        assert saved["export"]["quality"] == "low"
+        assert saved["export"]["preset"] == "custom"
         assert saved["export"]["frame_rate"] == "source"
         assert saved["scoring"]["match_type"] == "uspsa"
-        assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 100
-        assert saved["analysis"]["shotml_settings"]["shot_peak_min_spacing_ms"] == 200
+        assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 130
+        assert saved["analysis"]["shotml_settings"]["shot_peak_min_spacing_ms"] == 230
     finally:
         server.shutdown()
 
 
-def test_browser_settings_reset_defaults_deletes_folder_settings_file(
+def test_browser_settings_reset_defaults_preserves_legacy_folder_settings_file(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
@@ -2771,23 +2771,18 @@ def test_browser_settings_reset_defaults_deletes_folder_settings_file(
     server.start_background(open_browser=False)
     try:
         _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
-        _post_json(
-            f"{server.url}api/settings",
-            {
-                "scope": "folder",
-                "settings": {
-                    "default_tool": "review",
-                    "merge_layout": "pip",
-                },
-            },
-        )
-
         folder_settings_path = project_path / "splitshot.conf"
-        assert folder_settings_path.exists()
+        folder_settings_path.write_text('default_tool = "review"\n', encoding="utf-8")
+        with pytest.raises(urllib.error.HTTPError) as error:
+            _post_json(
+                f"{server.url}api/settings",
+                {"scope": "folder", "settings": {"default_tool": "review"}},
+            )
+        assert error.value.code == 400
 
         _post_json(f"{server.url}api/settings/reset-defaults", {})
 
-        assert not folder_settings_path.exists()
+        assert folder_settings_path.read_text(encoding="utf-8") == 'default_tool = "review"\n'
         reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
         assert reopened["settings"]["default_tool"] == "project"
         assert reopened["settings"]["merge_layout"] == "side_by_side"
@@ -2815,10 +2810,7 @@ def test_browser_project_open_ignores_invalid_folder_settings(tmp_path: Path, mo
 
         assert state["settings"]["default_tool"] == "metrics"
         assert state["settings_layers"]["folder"] == {}
-        assert (
-            "Folder defaults were ignored:"
-            in state["settings_layers"]["project"]["folder_settings_error"]
-        )
+        assert state["settings_layers"]["project"]["folder_settings_error"] == ""
     finally:
         server.shutdown()
 
@@ -2866,9 +2858,7 @@ def test_browser_popup_image_assets_are_bundled_and_served(tmp_path: Path) -> No
         server.shutdown()
 
 
-def test_browser_state_exposes_settings_layers_and_folder_precedence(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_browser_state_exposes_application_settings_layer_only(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
     monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
 
@@ -2891,25 +2881,13 @@ def test_browser_state_exposes_settings_layers_and_folder_precedence(
                 },
             },
         )
-        _post_json(
-            f"{server.url}api/settings",
-            {
-                "scope": "folder",
-                "settings": {
-                    "default_tool": "review",
-                    "merge_layout": "above_below",
-                },
-            },
-        )
-
         state = _get_json(f"{server.url}api/state")
 
         assert state["settings_layers"]["app"]["default_tool"] == "metrics"
-        assert state["settings_layers"]["folder"]["default_tool"] == "review"
-        assert state["settings"]["default_tool"] == "review"
+        assert state["settings_layers"]["folder"] == {}
+        assert state["settings"]["default_tool"] == "metrics"
         assert state["settings_layers"]["app"]["merge_layout"] == "pip"
-        assert state["settings_layers"]["folder"]["merge_layout"] == "above_below"
-        assert state["settings"]["merge_layout"] == "above_below"
+        assert state["settings"]["merge_layout"] == "pip"
         assert state["settings_layers"]["project"]["path"] == str(project_path)
     finally:
         server.shutdown()
@@ -2931,7 +2909,7 @@ def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, m
         updated = _post_json(
             f"{server.url}api/settings",
             {
-                "scope": "folder",
+                "scope": "app",
                 "settings": {
                     "layout_locked": False,
                     "layout_rail_width": 96,
@@ -2941,42 +2919,26 @@ def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, m
             },
         )
 
-        folder_settings_path = project_path / "splitshot.conf"
-        folder_settings_text = folder_settings_path.read_text(encoding="utf-8")
-
         assert updated["settings"]["layout_locked"] is False
         assert updated["settings"]["layout_rail_width"] == 96
         assert updated["settings"]["layout_inspector_width"] == 640
         assert updated["settings"]["layout_waveform_height"] == 260
-        assert updated["settings_layers"]["folder"]["layout_locked"] is False
-        assert updated["settings_layers"]["folder"]["layout_rail_width"] == 96
-        assert updated["settings_layers"]["folder"]["layout_inspector_width"] == 640
-        assert updated["settings_layers"]["folder"]["layout_waveform_height"] == 260
-        assert "layout_locked = false" in folder_settings_text
-        assert "layout_rail_width = 96" in folder_settings_text
-        assert "layout_inspector_width = 640" in folder_settings_text
-        assert "layout_waveform_height = 260" in folder_settings_text
+        assert updated["settings_layers"]["folder"] == {}
 
         cleared = _post_json(
             f"{server.url}api/settings",
             {
-                "scope": "folder",
+                "scope": "app",
                 "settings": {
                     "clear_layout_defaults": True,
                 },
             },
         )
 
-        cleared_folder_text = folder_settings_path.read_text(encoding="utf-8")
-
         assert cleared["settings"]["layout_locked"] is None
         assert cleared["settings"]["layout_rail_width"] is None
         assert cleared["settings"]["layout_inspector_width"] is None
         assert cleared["settings"]["layout_waveform_height"] is None
-        assert "layout_locked" not in cleared_folder_text
-        assert "layout_rail_width" not in cleared_folder_text
-        assert "layout_inspector_width" not in cleared_folder_text
-        assert "layout_waveform_height" not in cleared_folder_text
     finally:
         server.shutdown()
 
@@ -3023,7 +2985,7 @@ def test_browser_settings_section_reset_only_clears_selected_section(
         server.shutdown()
 
 
-def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project(
+def test_browser_settings_pip_defaults_never_seed_media_sources_on_new_project(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
@@ -3069,14 +3031,8 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
 
         assert created["project"]["merge"]["layout"] == "pip"
         assert created["project"]["merge"]["pip_size"] == "50%"
-        assert len(created["project"]["merge_sources"]) == 1
-        assert created["project"]["merge_sources"][0]["asset"]["path"] == str(
-            tmp_path / "reference.png"
-        )
-        assert created["project"]["merge_sources"][0]["asset"]["is_still_image"] is True
-        assert created["project"]["merge_sources"][0]["pip_size_percent"] == 42
-        assert created["project"]["merge_sources"][0]["pip_x"] == 0.25
-        assert created["project"]["merge_sources"][0]["pip_y"] == 0.75
+        assert created["project"]["merge_sources"] == []
+        assert created["project"]["secondary_video"] is None
     finally:
         server.shutdown()
 

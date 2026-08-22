@@ -496,6 +496,28 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.media-global-settings-actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.media-global-setting-row {
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  padding: var(--space-2);
+}
+
+.media-global-setting-row > span {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.media-global-setting-row small {
+  color: var(--muted);
+  font-weight: var(--weight-normal);
+  line-height: 1.25;
+}
+
 .media-intake-btn {
   height: 30px;
   min-height: 30px;
@@ -3855,7 +3877,11 @@
 
 .queue-process-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#queue-all-btn {
+  grid-column: 1 / -1;
 }
 
 .queue-boundary-actions,

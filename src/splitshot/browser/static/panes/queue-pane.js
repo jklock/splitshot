@@ -132,12 +132,14 @@ export function createQueuePane({
   async function processAll() {
     activity("queue.process");
     setStatus("Processing queued stages...");
+    await openProcessingLog("Starting queue processing…");
     await callApi("/api/project/queue/process", { mode: "individual" });
   }
 
   async function processIntoOneFile() {
     activity("queue.process-combined");
     setStatus("Processing combined queue export...");
+    await openProcessingLog("Starting combined queue processing…");
     await callApi("/api/project/queue/process", { mode: "combined" });
   }
 
@@ -311,7 +313,7 @@ export function createQueuePane({
             <strong>Process</strong>
           </div>
           <div class="queue-process-actions">
-            <button id="queue-all-btn" class="btn btn-primary" type="button" ${stages().some((stage) => stage?.primary_media?.path) ? "" : "disabled"}>Queue All Files</button>
+            <button id="queue-all-btn" class="btn btn-secondary" type="button" ${stages().some((stage) => stage?.primary_media?.path) ? "" : "disabled"}>Queue All Files</button>
             <button id="queue-process-btn" class="btn btn-primary queue-process-btn" type="button">Process Queue</button>
             <button id="queue-combined-btn" class="btn queue-combined-btn" type="button">Process as One File</button>
           </div>
