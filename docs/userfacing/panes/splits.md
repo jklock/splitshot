@@ -30,7 +30,7 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 | --- | --- |
 | Orange beep marker | Shows the detected start signal. |
 | Green shot markers | Show detected and manual shots. |
-| `Select` | Lets you select and drag existing markers. Waveform cards use the same selected shot as the timing table. |
+| `Select` | Lets you select and drag one existing marker without shifting later shot markers. Waveform cards use the same selected shot as the timing table. |
 | `Add Shot` | Places a manual shot where you click the waveform. |
 | `Zoom -` / `Zoom +` | Changes the visible time range. |
 | `Amp -` / `Amp +` | Changes waveform amplitude scale. |

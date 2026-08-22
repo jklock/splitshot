@@ -732,7 +732,7 @@ export function createWaveformComponent({
     setPendingDragTimeMs(null);
     releasePointer($("waveform"), event.pointerId);
     activity("waveform.drag_commit", { shot_id: shotId, time_ms: timeMs });
-    callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs, preserve_following_splits: true });
+    callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs });
   }
 
   return Object.freeze({

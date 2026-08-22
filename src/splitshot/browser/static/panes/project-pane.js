@@ -634,8 +634,10 @@ export function createProjectPane({
     autoApplyProjectDetails(payload);
   }
 
-  function schedulePractiScoreContextApply() {
-    autoApplyPractiScoreContext(readPractiScoreContextPayload());
+  async function schedulePractiScoreContextApply() {
+    autoApplyPractiScoreContext.cancel?.();
+    activity("auto_apply.practiscore_context", {});
+    return callApi("/api/project/practiscore", readPractiScoreContextPayload());
   }
 
   return Object.freeze({

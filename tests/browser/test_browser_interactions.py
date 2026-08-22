@@ -797,6 +797,11 @@ def test_waveform_shot_drag_moves_selected_shot_time(synthetic_video_factory) ->
                                         """
                 )
                 assert shot_info is not None
+                original_shot_times = page.evaluate(
+                    """() => Object.fromEntries(
+                        (state?.project?.analysis?.shots || []).map((shot) => [shot.id, shot.time_ms])
+                    )"""
+                )
                 waveform_box = page.locator("#waveform").bounding_box()
                 assert waveform_box is not None
 
@@ -824,6 +829,20 @@ def test_waveform_shot_drag_moves_selected_shot_time(synthetic_video_factory) ->
                 )
                 assert updated_time is not None
                 assert updated_time != shot_info["timeMs"]
+                updated_shot_times = page.evaluate(
+                    """() => Object.fromEntries(
+                        (state?.project?.analysis?.shots || []).map((shot) => [shot.id, shot.time_ms])
+                    )"""
+                )
+                assert {
+                    shot_id: time_ms
+                    for shot_id, time_ms in updated_shot_times.items()
+                    if shot_id != shot_info["id"]
+                } == {
+                    shot_id: time_ms
+                    for shot_id, time_ms in original_shot_times.items()
+                    if shot_id != shot_info["id"]
+                }
             finally:
                 browser.close()
     finally:

@@ -90,6 +90,27 @@ def test_overlay_api_preserves_locked_coordinates_but_renderer_uses_stack() -> N
         server.shutdown()
 
 
+def test_overlay_score_badge_uses_authoritative_imported_time() -> None:
+    controller = ProjectController()
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [ShotEvent(time_ms=5890)]
+    controller.project.scoring.enabled = True
+    apply_scoring_preset(controller.project, "idpa")
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        stage_number=2,
+        raw_seconds=5.53,
+        final_time=5.53,
+    )
+    controller.project.overlay.show_score = True
+    controller.project.overlay.show_timer = False
+    controller.project.overlay.show_shots = False
+
+    badges, _score_marks = OverlayRenderer().build_badges(controller.project, 6000)
+
+    assert [badge.text for badge in badges] == ["Final 5.53"]
+
+
 def test_overlay_changes_waterfall_to_later_unedited_stages() -> None:
     controller = ProjectController()
     first = controller.create_stage("Stage 1")

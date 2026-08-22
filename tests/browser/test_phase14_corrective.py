@@ -385,7 +385,7 @@ def test_review_summary_uses_imported_score_time_raw_time_and_penalties():
     source = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     within = source[source.index("function reviewMetricValue") :]
     assert "imported.final_time" in within
-    assert "summary.raw_seconds ?? imported.raw_seconds" in within
+    assert "imported.raw_seconds ?? summary.raw_seconds" in within
     assert "summary.total_penalties ?? imported.shot_penalties" in within
 
 

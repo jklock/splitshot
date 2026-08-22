@@ -27,6 +27,11 @@ def test_global_settings_primary_preserves_stage_owned_data_and_round_trips(tmp_
     source.overlay.font_size = 42
     source.merge.pip_x = 0.25
     source.export.video_bitrate_mbps = 22.0
+    source.analysis.shots = [ShotEvent(time_ms=777)]
+    source.scoring.competitor_name = "Source Shooter"
+    source.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa", stage_number=1, raw_seconds=7.36, final_time=7.36
+    )
     target.analysis.shots = [ShotEvent(time_ms=1234)]
     target.scoring.competitor_name = "Target Shooter"
     target.scoring.stage_number = 2
@@ -36,12 +41,20 @@ def test_global_settings_primary_preserves_stage_owned_data_and_round_trips(tmp_
     controller.project.stages = [source, target]
     controller.project.active_stage_id = source.id
     controller._sync_active_stage_to_project()
+    controller.project.analysis.shots = [ShotEvent(time_ms=9999)]
+    controller.project.scoring.competitor_name = "Stale Project Shooter"
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa", stage_number=1, raw_seconds=99.99, final_time=99.99
+    )
     controller.project.queue = [QueueEntry(stage_id=target.id, status=QueueStatus.QUEUED)]
     target.queue_status = QueueStatus.QUEUED
 
     controller.set_global_settings_primary(source.id)
 
     assert controller.project.global_settings_stage_id == source.id
+    assert [shot.time_ms for shot in source.analysis.shots] == [777]
+    assert source.scoring.competitor_name == "Source Shooter"
+    assert source.scoring.imported_stage.final_time == 7.36
     assert target.overlay.font_size == 42
     assert target.merge.pip_x == 0.25
     assert target.export.video_bitrate_mbps == 22.0

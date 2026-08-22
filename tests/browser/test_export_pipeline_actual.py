@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -182,7 +183,7 @@ def test_export_queue_process_combined(synthetic_video_factory) -> None:
                     "Expected a combined output path for combined queue export"
                 )
                 combined_output = Path(combined_output_path)
-                assert combined_output.name.endswith("-combined.mp4")
+                assert re.fullmatch(r"Combined-\d{4}-\d{2}-\d{2}\.mp4", combined_output.name)
                 assert_video_file(combined_output, min_duration_s=0.5)
             finally:
                 browser.close()

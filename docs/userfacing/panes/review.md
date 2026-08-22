@@ -4,7 +4,7 @@
 
 The Review pane controls preview/export artifact visibility, Summary boxes, and custom boxes. It is where you decide which overlay badges remain visible, choose which metrics appear in a Summary box, and tune each box's placement, size, color, and opacity.
 
-Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custom text, styling, size, and placement shown over the video. Auto Summary boxes use each output stage's own timing, scoring, and placement data.
+Review is WYSIWYG: Queue renders the same enabled badges, Summary metrics, custom text, styling, size, and placement shown over the video. Auto Summary boxes use each output stage's own imported official timing, scoring, and placement data when PractiScore is available; waveform edits do not replace those official values.
 
 <img src="../../screenshots/ReviewPane.png" alt="Review pane with badge visibility toggles and an expanded Summary box" width="960">
 

@@ -1032,6 +1032,7 @@ class ProjectController(QObject):
     def load_primary_video(self, path: str) -> None:
         _reset_media_dependent_state_for_primary_video(self.project)
         self.project.primary_video = probe_video(path)
+        self._sync_project_to_active_stage()
         self._remember_original_shots()
         self._set_status("Loaded primary video.")
         self.project.touch()
@@ -1287,6 +1288,7 @@ class ProjectController(QObject):
                     self._practiscore_source_name,
                 )
                 if explicit_overrides:
+                    scoring = self.project.scoring
                     for key, value in explicit_overrides.items():
                         if value not in (None, ""):
                             setattr(scoring, key, value)
@@ -2798,12 +2800,29 @@ class ProjectController(QObject):
         stage.merge = deepcopy(self.project.merge)
         stage.export = deepcopy(self.project.export)
 
+    def _sync_project_presentation_to_active_stage(self) -> None:
+        """Persist presentation edits without replacing stage-owned media or results."""
+        stage = self.project.active_stage
+        if stage is None:
+            return
+        stage.overlay = deepcopy(self.project.overlay)
+        stage.popups = deepcopy(self.project.popups)
+        stage.popup_template = deepcopy(self.project.popup_template)
+        stage.merge = deepcopy(self.project.merge)
+        stage.export = deepcopy(self.project.export)
+        self.project.primary_video = deepcopy(stage.primary_media)
+        self.project.primary_trim_derivative = deepcopy(stage.primary_trim_derivative)
+        self.project.merge_sources = deepcopy(stage.added_media)
+        self.project.analysis = deepcopy(stage.analysis)
+        self.project.scoring = deepcopy(stage.scoring)
+        _sync_secondary_video_from_merge_sources(self.project)
+
     def _cascade_active_presentation_settings(self) -> None:
         """Waterfall video presentation settings to later stages without overrides."""
         active = self.project.active_stage
         if active is None:
             return
-        self._sync_project_to_active_stage()
+        self._sync_project_presentation_to_active_stage()
         global_source_id = self.project.global_settings_stage_id
         if global_source_id:
             if active.id != global_source_id:
@@ -2844,7 +2863,7 @@ class ProjectController(QObject):
         if stage is None:
             raise ValueError("Stage not found")
         if self.project.active_stage_id == stage.id:
-            self._sync_project_to_active_stage()
+            self._sync_project_presentation_to_active_stage()
         self.project.global_settings_stage_id = stage.id
         stage.ignore_global_settings = False
         queued_stage_ids = {entry.stage_id for entry in self.project.queue}

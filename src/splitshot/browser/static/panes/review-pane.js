@@ -741,14 +741,15 @@ export function createReviewPane({
       : null;
     switch (metricId) {
       case "score_time": {
+        if (imported.final_time !== null && imported.final_time !== undefined) {
+          return Number(imported.final_time).toFixed(2);
+        }
         const computed = String(summary.display_value || "").trim();
         if (computed && computed !== "--") return computed;
-        return imported.final_time !== null && imported.final_time !== undefined
-          ? Number(imported.final_time).toFixed(2)
-          : "";
+        return "";
       }
       case "raw_time": {
-        const rawSeconds = summary.raw_seconds ?? imported.raw_seconds;
+        const rawSeconds = imported.raw_seconds ?? summary.raw_seconds;
         return rawSeconds !== null && rawSeconds !== undefined
           ? `${Number(rawSeconds).toFixed(2)}s`
           : "";

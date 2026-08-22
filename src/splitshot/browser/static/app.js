@@ -7946,8 +7946,15 @@ function overlayAutoSizedBadgeContents() {
     });
   }
   const summary = state?.scoring_summary || {};
-  if (overlay.show_score && state?.project?.scoring?.enabled && summary.display_value && summary.display_value !== "--") {
-    contents.push(`${summary.display_label} ${summary.display_value}`);
+  const imported = summary.imported_stage || {};
+  const officialScoreValue = imported.match_type === "idpa" && imported.final_time != null
+    ? Number(imported.final_time).toFixed(2)
+    : imported.hit_factor != null
+      ? Number(imported.hit_factor).toFixed(2)
+      : String(summary.display_value || "");
+  const officialScoreLabel = imported.match_type === "idpa" ? "Final" : summary.display_label;
+  if (overlay.show_score && state?.project?.scoring?.enabled && officialScoreValue && officialScoreValue !== "--") {
+    contents.push(`${officialScoreLabel} ${officialScoreValue}`);
   }
   return contents;
 }

@@ -413,10 +413,19 @@ class OverlayRenderer:
 
         if final_shot_reached and project.scoring.enabled and project.overlay.show_score:
             summary = calculate_scoring_summary(project)
-            if summary["display_value"] != "--":
+            imported = project.scoring.imported_stage
+            display_label = str(summary["display_label"])
+            display_value = str(summary["display_value"])
+            if imported is not None and imported.match_type == "idpa" and imported.final_time is not None:
+                display_label = "Final"
+                display_value = f"{float(imported.final_time):.2f}"
+            elif imported is not None and imported.hit_factor is not None:
+                display_label = "Hit Factor"
+                display_value = f"{float(imported.hit_factor):.2f}"
+            if display_value != "--":
                 append_badge(
                     Badge(
-                        f"{summary['display_label']} {summary['display_value']}",
+                        f"{display_label} {display_value}",
                         project.overlay.hit_factor_badge,
                     ),
                     None if project.overlay.score_lock_to_stack else project.overlay.score_x,

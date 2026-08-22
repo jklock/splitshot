@@ -1113,9 +1113,16 @@ export function createOverlayPane({
     }
 
     const summary = currentState().scoring_summary || {};
+    const imported = summary.imported_stage || {};
+    const officialScoreValue = imported.match_type === "idpa" && imported.final_time != null
+      ? Number(imported.final_time).toFixed(2)
+      : imported.hit_factor != null
+        ? Number(imported.hit_factor).toFixed(2)
+        : String(summary.display_value || "");
+    const officialScoreLabel = imported.match_type === "idpa" ? "Final" : summary.display_label;
     let finalScoreBadge = null;
-    if (finalShotReached && currentState().project.scoring.enabled && currentState().project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
-      const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
+    if (finalShotReached && currentState().project.scoring.enabled && currentState().project.overlay.show_score && officialScoreValue && officialScoreValue !== "--") {
+      const scoreBadge = badgeElement(`${officialScoreLabel} ${officialScoreValue}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
       scoreBadge.dataset.overlayDrag = "score";
       appendOverlayBadge(scoreBadge, "score", currentState().project.overlay.score_x, currentState().project.overlay.score_y);
       finalScoreBadge = scoreBadge;

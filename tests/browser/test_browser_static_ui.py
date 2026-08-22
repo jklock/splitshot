@@ -1889,7 +1889,7 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
     )
     assert "currentState().project.overlay.show_shot_scores" in overlay_pane
     assert (
-        'badgeElement(`${summary.display_label} ${summary.display_value}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);'
+        'badgeElement(`${officialScoreLabel} ${officialScoreValue}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);'
         in overlay_pane
     )
     assert "function scoreTokenColor(token) {" in js
@@ -2134,7 +2134,8 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert "applyProjectDetailsDraft(payload);" in project_pane
     assert "renderHeader();" in project_pane
     assert "autoApplyProjectDetails(payload);" in project_pane
-    assert "autoApplyPractiScoreContext(readPractiScoreContextPayload());" in project_pane
+    assert "autoApplyPractiScoreContext.cancel?.();" in project_pane
+    assert 'return callApi("/api/project/practiscore", readPractiScoreContextPayload());' in project_pane
     assert "autoApplyShotMLSettings.cancel?.();" in js
     assert "autoApplyProjectDetails.cancel?.();" in js
     assert "autoApplyPractiScoreContext.cancel?.();" in js
