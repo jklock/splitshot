@@ -7,18 +7,17 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
+from splitshot.analysis.audio_features import extract_window_features
 from splitshot.analysis.ml_runtime import (
     AudioEventClassifier,
     ModelPredictions,
     pick_event_peaks,
     sensitivity_to_cutoff,
 )
-from splitshot.analysis.audio_features import extract_window_features
 from splitshot.domain.models import ShotEvent, ShotMLSettings, ShotSource, TimingChangeProposal
 from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
 from splitshot.media.ffmpeg import run_ffprobe_json
 from splitshot.utils.time import seconds_to_ms
-
 
 DEFAULT_SHOTML_SETTINGS = ShotMLSettings()
 BEEP_ONSET_FRACTION = DEFAULT_SHOTML_SETTINGS.beep_onset_fraction
@@ -331,7 +330,7 @@ def _fallback_beep_from_heuristic(
         energy = float(np.mean(np.abs(segment)))
         onset = max(0.0, energy - previous_energy)
         heuristic_scores.append((band_energy / total_energy) * (energy + onset))
-        heuristic_centers.append(int(round(((start + (window / 2)) / sample_rate) * 1000.0)))
+        heuristic_centers.append(round(((start + (window / 2)) / sample_rate) * 1000.0))
         previous_energy = energy
 
     if not heuristic_scores:
@@ -349,11 +348,11 @@ def _fallback_beep_from_heuristic(
 
 
 def _sample_to_ms(sample_index: float, sample_rate: int) -> int:
-    return int(round((sample_index / float(sample_rate)) * 1000.0))
+    return round((sample_index / float(sample_rate)) * 1000.0)
 
 
-def _ms_to_sample(time_ms: int | float, sample_rate: int) -> int:
-    return int(round((float(time_ms) / 1000.0) * sample_rate))
+def _ms_to_sample(time_ms: float, sample_rate: int) -> int:
+    return round((float(time_ms) / 1000.0) * sample_rate)
 
 
 def _float_metadata_value(value: object, fallback: float = 0.0) -> float:
@@ -934,7 +933,7 @@ def _detect_beep_from_predictions(
         peak_ratio = float(np.max(band) / ((np.mean(band)) + eps))
         flatness = float(np.exp(np.mean(np.log(band + eps))) / ((np.mean(band)) + eps))
         tonal_score = band_ratio * peak_ratio * max(0.05, 1.0 - flatness)
-        center_ms = int(round(((start + (window / 2)) / sample_rate) * 1000.0))
+        center_ms = round(((start + (window / 2)) / sample_rate) * 1000.0)
         ml_boost = active_settings.beep_model_boost_floor + _nearest_probability(
             predictions, center_ms, "beep"
         )
@@ -987,7 +986,7 @@ def _detect_beep_from_predictions(
             active_settings,
         ) or _fallback_beep_from_model(predictions, search_start_ms, search_end_ms)
         return _refine_beep_time(samples, sample_rate, fallback, first_shot_ms, active_settings)
-    weighted_center = int(round(float(np.average(region_centers, weights=region_scores))))
+    weighted_center = round(float(np.average(region_centers, weights=region_scores)))
     return _refine_beep_time(samples, sample_rate, weighted_center, first_shot_ms, active_settings)
 
 

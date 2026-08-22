@@ -13,7 +13,6 @@ import socket
 import subprocess
 import sys
 import time
-
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,7 +27,6 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 from splitshot.domain.models import MergeLayout, MergeSource, ProjectStage, QueueStatus
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import load_project, save_project
-
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_APP = Path("/Applications/SplitShot.app")
@@ -591,7 +589,7 @@ def _api_post(page: Page, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         )
         raise RuntimeError(f"API call failed for {path}: {status_text or 'no status message'}")
     if not isinstance(result, dict):
-        raise RuntimeError(f"Unexpected API result for {path}: {result!r}")
+        raise TypeError(f"Unexpected API result for {path}: {result!r}")
     return result
 
 
@@ -1552,7 +1550,7 @@ def main() -> int:
             _write_report(artifact_root, payload)
             print(json.dumps(payload, indent=2))
             browser.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         (artifact_root / "failure.txt").write_text(
             f"{exc}\n\n{_tail_logs(app_session.stdout_log, app_session.stderr_log)}\n",
             encoding="utf-8",

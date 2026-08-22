@@ -6,7 +6,6 @@ import pytest
 
 from splitshot.analysis.detection import analyze_video_audio
 
-
 STAGE1_PATH = Path(".training") / "Stage1.MP4"
 EXPECTED_SHOT_COUNT = 18
 EXPECTED_DRAW_MS = 1950

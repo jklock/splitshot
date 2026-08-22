@@ -9,7 +9,6 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-
 MAX_BLOB_BYTES = 5 * 1024 * 1024
 GENERATED_DIRS = {
     ".archive",
@@ -93,9 +92,7 @@ def _machine_path_pattern() -> re.Pattern[str]:
 
 
 def _git(repo: Path, *args: str) -> bytes:
-    result = subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, check=False
-    )
+    result = subprocess.run(["git", *args], cwd=repo, capture_output=True, check=False)
     if result.returncode:
         message = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(message or f"git {' '.join(args)} failed")
@@ -134,17 +131,13 @@ def audit(repo: Path) -> list[str]:
             violations.append(f"generated output/log: {path}")
 
         suffix = pure_path.suffix.lower()
-        approved_media = path in APPROVED_MEDIA_FILES or path.startswith(
-            APPROVED_MEDIA_PREFIXES
-        )
+        approved_media = path in APPROVED_MEDIA_FILES or path.startswith(APPROVED_MEDIA_PREFIXES)
         if suffix in MEDIA_SUFFIXES and not approved_media:
             violations.append(f"unexpected media: {path}")
 
         blob = tracked_blob(repo, path)
         if len(blob) > MAX_BLOB_BYTES:
-            violations.append(
-                f"unapproved blob over 5 MiB ({len(blob)} bytes): {path}"
-            )
+            violations.append(f"unapproved blob over 5 MiB ({len(blob)} bytes): {path}")
 
         if suffix in TEXT_SUFFIXES and path not in MACHINE_PATH_ALLOWLIST:
             text = blob.decode("utf-8", errors="replace")

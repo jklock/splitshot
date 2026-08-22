@@ -31,15 +31,9 @@ def test_ordinary_value_classification_does_not_claim_buttons_or_file_pickers() 
 def test_every_unexercised_inventory_row_is_an_explicit_gap() -> None:
     audit = _load_audit_module()
 
-    button = audit._initial_gap(
-        {"identity": "#save", "tag": "button", "input_type": ""}
-    )
-    picker = audit._initial_gap(
-        {"identity": "#media", "tag": "input", "input_type": "file"}
-    )
-    value = audit._initial_gap(
-        {"identity": "#quality", "tag": "select", "input_type": ""}
-    )
+    button = audit._initial_gap({"identity": "#save", "tag": "button", "input_type": ""})
+    picker = audit._initial_gap({"identity": "#media", "tag": "input", "input_type": "file"})
+    value = audit._initial_gap({"identity": "#quality", "tag": "select", "input_type": ""})
 
     assert button.status == "gap"
     assert "button" in button.reason

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import re
 import shutil
-from typing import Any, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import splitshot.config as splitshot_config
-
 
 EXPIRED_AUTHENTICATION_ERROR = "expired_authentication"
 TRANSIENT_NETWORK_FAILURE_ERROR = "transient_network_failure"
@@ -555,7 +555,7 @@ def _active_page(authenticated_browser: Any) -> Any:
             try:
                 if is_closed():
                     continue
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 - continue parsing other candidate values.
                 continue
         return page
     page = getattr(authenticated_browser, "page", None)
@@ -719,7 +719,7 @@ def _close_page(page: Any) -> None:
     if callable(close):
         try:
             close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - fallback extraction accepts partial page data.
             return
 
 

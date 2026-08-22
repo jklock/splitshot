@@ -13,7 +13,6 @@ from splitshot.domain.models import Project
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.utils.time import format_time_ms
 
-
 DEFAULT_THRESHOLD_GRID = (0.25, 0.35, 0.45, 0.55, 0.65)
 
 

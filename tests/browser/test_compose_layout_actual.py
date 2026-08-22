@@ -6,14 +6,13 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
-    navigate_to_tool,
     get_merge_source_state,
-    setup_server_and_browser,
     import_merge_video,
+    navigate_to_tool,
+    open_page,
+    setup_server_and_browser,
 )
-
 
 ALL_LAYOUTS = [
     "side_by_side",
@@ -26,7 +25,7 @@ ALL_LAYOUTS = [
 
 
 def test_enable_merge_logs_and_updates_state(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-enable-p"},
         merge_kwargs={"name": "comp-enable-m"},
@@ -51,7 +50,7 @@ def test_enable_merge_logs_and_updates_state(synthetic_video_factory) -> None:
 
 @pytest.mark.parametrize("layout", ALL_LAYOUTS)
 def test_each_layout_option(synthetic_video_factory, layout: str) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": f"comp-lo-p-{layout}"},
         merge_kwargs={"name": f"comp-lo-m-{layout}"},
@@ -88,7 +87,7 @@ def test_each_layout_option(synthetic_video_factory, layout: str) -> None:
 
 @pytest.mark.parametrize("layout", ALL_LAYOUTS)
 def test_each_layout_with_three_sources(synthetic_video_factory, layout: str) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": f"comp-l3-p-{layout}"},
         merge_kwargs={"name": f"comp-l3-m-{layout}", "duration_ms": 3000, "beep_ms": 600},
@@ -121,7 +120,7 @@ def test_each_layout_with_three_sources(synthetic_video_factory, layout: str) ->
 
 
 def test_pip_size_change_updates(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-pipsz-p"},
         merge_kwargs={"name": "comp-pipsz-m"},
@@ -158,7 +157,7 @@ def test_pip_size_change_updates(synthetic_video_factory) -> None:
 
 
 def test_pip_position_controls(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-pippos-p"},
         merge_kwargs={"name": "comp-pippos-m"},
@@ -200,7 +199,7 @@ def test_pip_position_controls(synthetic_video_factory) -> None:
 
 
 def test_restore_merge_defaults(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-restore-p"},
         merge_kwargs={"name": "comp-restore-m"},
@@ -236,7 +235,7 @@ def test_restore_merge_defaults(synthetic_video_factory) -> None:
 
 
 def test_per_source_opacity_change(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-opacity-p"},
         merge_kwargs={"name": "comp-opacity-m"},
@@ -276,7 +275,7 @@ def test_per_source_opacity_change(synthetic_video_factory) -> None:
 
 
 def test_per_source_placement_mode_changes(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-placement-p"},
         merge_kwargs={"name": "comp-placement-m"},
@@ -313,7 +312,7 @@ def test_per_source_placement_mode_changes(synthetic_video_factory) -> None:
 
 
 def test_per_source_layout_change_updates_visible_preview_mode(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-visible-layout-p"},
         merge_kwargs={"name": "comp-visible-layout-m"},
@@ -368,7 +367,7 @@ def test_per_source_layout_change_updates_visible_preview_mode(synthetic_video_f
 
 
 def test_project_layout_change_keeps_per_source_override(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-override-p"},
         merge_kwargs={"name": "comp-override-m"},
@@ -422,7 +421,7 @@ def test_project_layout_change_keeps_per_source_override(synthetic_video_factory
 
 
 def test_compose_controls_use_two_columns_before_compact_width(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "comp-columns-p"},
         merge_kwargs={"name": "comp-columns-m"},

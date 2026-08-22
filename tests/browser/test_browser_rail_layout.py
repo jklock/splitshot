@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
 
@@ -283,7 +284,9 @@ def test_review_video_frame_stays_contained_at_scaled_effective_viewports(
                     assert geometry["shell"]["right"] <= geometry["viewport"]["width"] + 1
                     assert geometry["shell"]["bottom"] <= geometry["viewport"]["height"] + 1
                     assert geometry["documentScroll"]["width"] <= geometry["viewport"]["width"] + 1
-                    assert geometry["documentScroll"]["height"] <= geometry["viewport"]["height"] + 1
+                    assert (
+                        geometry["documentScroll"]["height"] <= geometry["viewport"]["height"] + 1
+                    )
                     assert geometry["mapped"][0] == pytest.approx({"x": 0, "y": 0}, abs=0.01)
                     assert geometry["mapped"][1] == pytest.approx({"x": 0.5, "y": 0.5}, abs=0.01)
                     assert geometry["mapped"][2] == pytest.approx({"x": 1, "y": 1}, abs=0.01)
@@ -577,9 +580,7 @@ def test_locked_layout_resize_uses_first_drag_and_survives_reload(
                 )
                 handle_box = page.locator(f"#{handle_id}").bounding_box()
                 assert handle_box is not None
-                before = page.evaluate(
-                    "(key) => Number(localStorage.getItem(key))", storage_key
-                )
+                before = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
                 cx = handle_box["x"] + handle_box["width"] / 2
                 cy = handle_box["y"] + handle_box["height"] / 2
                 target_x = cx + delta_x

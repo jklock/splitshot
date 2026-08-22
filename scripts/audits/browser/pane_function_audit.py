@@ -179,13 +179,9 @@ def _selectors_from_body(body: str) -> list[str]:
         selectors.add(f"#{match.group(2).strip()}")
     for match in re.finditer(r'\bid=["\']([A-Za-z0-9_-]+)["\']', body):
         selectors.add(f"#{match.group(1)}")
-    for match in re.finditer(
-        r'\b(data-[A-Za-z0-9_-]+)=["\']([^"\']+)["\']', body
-    ):
+    for match in re.finditer(r'\b(data-[A-Za-z0-9_-]+)=["\']([^"\']+)["\']', body):
         attribute, value = match.groups()
-        selectors.add(
-            f"[{attribute}]" if "${" in value else f'[{attribute}="{value}"]'
-        )
+        selectors.add(f"[{attribute}]" if "${" in value else f'[{attribute}="{value}"]')
     return sorted(selectors)
 
 
@@ -516,13 +512,31 @@ def _control_trace_rows(rows: list[FunctionAuditRow]) -> list[dict[str, object]]
                 row
                 for row in owning_rows
                 if row.function_type in {"browser-action", "local-ui-state"}
-                or any(token in row.function_name.lower() for token in ("bind", "handle", "apply", "save", "set", "toggle", "select", "delete", "add", "remove", "drag"))
+                or any(
+                    token in row.function_name.lower()
+                    for token in (
+                        "bind",
+                        "handle",
+                        "apply",
+                        "save",
+                        "set",
+                        "toggle",
+                        "select",
+                        "delete",
+                        "add",
+                        "remove",
+                        "drag",
+                    )
+                )
             ]
             draft_owners = sorted(
                 {
                     row.function_name
                     for row in pane_rows
-                    if any(token in row.function_name.lower() for token in ("draft", "editable", "read", "save", "queue"))
+                    if any(
+                        token in row.function_name.lower()
+                        for token in ("draft", "editable", "read", "save", "queue")
+                    )
                 }
             )
             route_rows = [row for row in owning_rows if row.route_paths] or pane_route_rows
@@ -532,10 +546,18 @@ def _control_trace_rows(rows: list[FunctionAuditRow]) -> list[dict[str, object]]
                     "control": control,
                     "event_handlers": sorted({row.function_name for row in handler_rows}),
                     "client_draft_state_owners": draft_owners,
-                    "api_routes": sorted({route for row in route_rows for route in row.route_paths}),
-                    "server_methods": sorted({method for row in route_rows for method in row.server_methods}),
-                    "controller_methods": sorted({method for row in route_rows for method in row.controller_methods}),
-                    "stored_project_profile_fields": sorted({field for row in route_rows for field in row.persisted_state_paths}),
+                    "api_routes": sorted(
+                        {route for row in route_rows for route in row.route_paths}
+                    ),
+                    "server_methods": sorted(
+                        {method for row in route_rows for method in row.server_methods}
+                    ),
+                    "controller_methods": sorted(
+                        {method for row in route_rows for method in row.controller_methods}
+                    ),
+                    "stored_project_profile_fields": sorted(
+                        {field for row in route_rows for field in row.persisted_state_paths}
+                    ),
                     "renderer_refresh_paths": renderers,
                     "later_export_queue_trim_consumption": sorted(
                         {
@@ -545,7 +567,9 @@ def _control_trace_rows(rows: list[FunctionAuditRow]) -> list[dict[str, object]]
                             for target in row.visible_truth_targets
                         }
                     ),
-                    "proof_sources": sorted({source for row in owning_rows for source in row.proof_sources}),
+                    "proof_sources": sorted(
+                        {source for row in owning_rows for source in row.proof_sources}
+                    ),
                 }
             )
     return traces

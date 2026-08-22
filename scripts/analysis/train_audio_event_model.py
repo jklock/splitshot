@@ -9,7 +9,6 @@ import numpy as np
 
 from splitshot.analysis.audio_features import FEATURE_NAMES, extract_window_features
 
-
 SAMPLE_RATE = 22050
 WINDOW_SIZE = 2048
 HIDDEN_UNITS = 24

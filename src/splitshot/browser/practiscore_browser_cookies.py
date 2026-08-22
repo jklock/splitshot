@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from http.cookiejar import Cookie
 
-
 _PRACTISCORE_DOMAIN = "practiscore.com"
 _SUPPORTED_BROWSERS = (
     ("chrome", "chrome"),
@@ -27,7 +26,7 @@ class PractiScoreBrowserSession:
 def load_practiscore_system_browser_session() -> PractiScoreBrowserSession | None:
     try:
         import browser_cookie3
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional browser backend can fail during import.
         return None
 
     best_session: PractiScoreBrowserSession | None = None
@@ -46,7 +45,7 @@ def load_practiscore_system_browser_session() -> PractiScoreBrowserSession | Non
 def _load_browser_session(browser_name: str, loader) -> PractiScoreBrowserSession | None:
     try:
         cookie_jar = loader(domain_name=_PRACTISCORE_DOMAIN)
-    except Exception:
+    except Exception:  # noqa: BLE001 - third-party cookie stores fail inconsistently.
         return None
 
     payloads: list[dict[str, object]] = []

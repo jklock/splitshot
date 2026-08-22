@@ -83,7 +83,7 @@ def test_export_combined_file_exists(synthetic_video_factory) -> None:
 
 @pytest.mark.slow
 def test_export_queue_process_individual(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -130,7 +130,7 @@ def test_export_queue_process_individual(synthetic_video_factory) -> None:
 
 @pytest.mark.slow
 def test_export_queue_process_combined(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(
         synthetic_video_factory,
         primary_kwargs={"name": "queue-combined-primary"},
         merge_kwargs={"name": "queue-combined-merge"},

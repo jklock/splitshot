@@ -68,9 +68,5 @@ def test_control_interaction_trace_maps_every_discovered_control_to_proof() -> N
     in_out = [row for row in traces if row["pane_owner"] == "In / Out"]
     assert len(in_out) >= 30
     assert any(row["control"] == "#intro-outro-fade-in" for row in in_out)
-    assert any(
-        "/api/project/intro-outro/fades" in row["api_routes"] for row in in_out
-    )
-    assert any(
-        "/api/project/intro-outro/overlay" in row["api_routes"] for row in in_out
-    )
+    assert any("/api/project/intro-outro/fades" in row["api_routes"] for row in in_out)
+    assert any("/api/project/intro-outro/overlay" in row["api_routes"] for row in in_out)

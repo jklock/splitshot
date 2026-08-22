@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import queue
 import signal
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from PySide6.QtCore import QDateTime, QEventLoop, QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkCookie
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication
-
 
 _QT_INVOKER_LOCK = threading.Lock()
 _QT_INVOKER: QtMainThreadInvoker | None = None
@@ -137,7 +137,7 @@ class _QtPageController:
         finally:
             try:
                 self._page.loadFinished.disconnect(_done)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - Qt cleanup is best-effort.
                 pass
             timer.stop()
         if not finished["value"]:
@@ -154,23 +154,20 @@ class _QtPageController:
         base_expression = (
             f"({script})({json.dumps(argument)})" if argument is not None else f"({script})()"
         )
-        expression = (
-            """
-(() => {
-    const value = %s;
+        expression = f"""
+(() => {{
+    const value = {base_expression};
     if (value === undefined) return '__splitshot_undefined__';
     if (value === null) return 'null';
     if (typeof value === 'string') return JSON.stringify(value);
     if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
-    try {
+    try {{
         return JSON.stringify(value);
-    } catch (_error) {
+    }} catch (_error) {{
         return JSON.stringify(String(value));
-    }
-})()
+    }}
+}})()
 """
-            % base_expression
-        )
 
         def _done(value: Any) -> None:
             result["value"] = value
@@ -296,7 +293,7 @@ class _QtRuntimeOwner:
             if expires not in {None, "", 0}:
                 try:
                     cookie.setExpirationDate(QDateTime.fromSecsSinceEpoch(int(expires)))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - Qt cleanup is best-effort.
                     pass
             origin_host = domain.lstrip(".") or "practiscore.com"
             origin_path = path if path.startswith("/") else f"/{path}"
@@ -420,7 +417,7 @@ def launch_qt_practiscore_browser(profile_dir: Path, entry_url: str):
         context = QtPractiScoreBrowserContext(invoker, owner)
         try:
             owner.auth_page.goto(entry_url, timeout_ms=_TASK_TIMEOUT_MS)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - Qt shutdown is best-effort.
             pass
         return owner, context
 

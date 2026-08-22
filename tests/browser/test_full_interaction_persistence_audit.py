@@ -155,7 +155,9 @@ def _interact_scalar(
     # Wait for server state to reflect the change (may be debounced)
     page.wait_for_function(
         f"(expected) => {state_expr} === expected",
-        arg=next_value if isinstance(next_value, bool) else (float(next_value) if "." in str(next_value) else next_value),
+        arg=next_value
+        if isinstance(next_value, bool)
+        else (float(next_value) if "." in str(next_value) else next_value),
         timeout=5_000,
     )
     # Allow debounced saves to reach the server before checking node identity
@@ -193,7 +195,10 @@ def _write_report(results: list[dict[str, Any]], browser_name: str) -> None:
             {
                 "browser": browser_name,
                 "scope": "interaction, persistence, and stale-render audit",
-                "summary": {"passed": len([r for r in results if r.get("status") == "PASS"]), "total": len(results)},
+                "summary": {
+                    "passed": len([r for r in results if r.get("status") == "PASS"]),
+                    "total": len(results),
+                },
                 "results": results,
             },
             indent=2,
@@ -223,7 +228,11 @@ def test_scalar_controls_preserve_node_and_persist(
     results: list[dict[str, Any]] = []
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -252,7 +261,9 @@ def test_scalar_controls_preserve_node_and_persist(
                 media_select = page.locator("#media-active-stage-select")
                 assert media_select.count() > 0
                 # Verify media pane shell exists after render
-                assert page.evaluate("() => document.querySelector('#media-pane .media-pane-shell') !== null")
+                assert page.evaluate(
+                    "() => document.querySelector('#media-pane .media-pane-shell') !== null"
+                )
                 # Change project name from project pane and come back
                 _open_tool(page, "project")
                 _interact_scalar(
@@ -265,8 +276,16 @@ def test_scalar_controls_preserve_node_and_persist(
                     state_expr="state.project.name",
                 )
                 _open_tool(page, "media")
-                assert page.evaluate("() => document.querySelector('#media-pane .media-pane-shell') !== null")
-                results.append({"pane": "media", "case": "structural-key-survives-cross-pane", "status": "PASS"})
+                assert page.evaluate(
+                    "() => document.querySelector('#media-pane .media-pane-shell') !== null"
+                )
+                results.append(
+                    {
+                        "pane": "media",
+                        "case": "structural-key-survives-cross-pane",
+                        "status": "PASS",
+                    }
+                )
 
                 # Scoring pane: checkbox
                 _open_tool(page, "scoring")
@@ -383,15 +402,26 @@ def test_scalar_controls_preserve_node_and_persist(
                 _open_tool(page, "queue")
                 settled_value = page.evaluate("state.project.queue_settings.fade_out_s")
                 assert settled_value == 1.2
-                results.append({"pane": "queue", "case": "cross-pane-persistence", "status": "PASS", "value": settled_value})
+                results.append(
+                    {
+                        "pane": "queue",
+                        "case": "cross-pane-persistence",
+                        "status": "PASS",
+                        "value": settled_value,
+                    }
+                )
 
                 # Verify project file persistence
                 page.evaluate(
                     "path => useProjectFolder(path)",
                     str(controller.project_path),
                 )
-                page.wait_for_function("expected => state.project.name === expected", arg="Structural Key Test")
-                stored = json.loads((controller.project_path / "project.json").read_text(encoding="utf-8"))
+                page.wait_for_function(
+                    "expected => state.project.name === expected", arg="Structural Key Test"
+                )
+                stored = json.loads(
+                    (controller.project_path / "project.json").read_text(encoding="utf-8")
+                )
                 assert stored["name"] == "Structural Key Test"
                 assert stored["queue_settings"]["fade_out_s"] == 1.2
                 results.append({"case": "project-file-persistence", "status": "PASS"})
@@ -424,7 +454,11 @@ def test_timing_row_editor_survives_concurrent_render(
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -445,7 +479,9 @@ def test_timing_row_editor_survives_concurrent_render(
 
                 # Click first unlock button
                 page.locator("#timing-workbench-table .timing-lock-cell .lock-button").first.click()
-                page.wait_for_selector("#timing-workbench-table .timing-adjustment-input", timeout=3_000)
+                page.wait_for_selector(
+                    "#timing-workbench-table .timing-adjustment-input", timeout=3_000
+                )
 
                 # Type a new adjustment value
                 page.evaluate(
@@ -517,7 +553,11 @@ def test_scoring_row_editor_survives_concurrent_render(
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -537,7 +577,9 @@ def test_scoring_row_editor_survives_concurrent_render(
                 page.wait_for_selector("#scoring-workbench-table .timing-lock-cell", timeout=5_000)
 
                 # Click first unlock button
-                page.locator("#scoring-workbench-table .timing-lock-cell .lock-button").first.click()
+                page.locator(
+                    "#scoring-workbench-table .timing-lock-cell .lock-button"
+                ).first.click()
                 page.wait_for_selector("#scoring-workbench-table .shot-score-select", timeout=3_000)
 
                 # Change the score select
@@ -607,7 +649,11 @@ def test_rapid_control_changes_coalesce_to_one_mutation_each(
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -619,8 +665,9 @@ def test_rapid_control_changes_coalesce_to_one_mutation_each(
 
             try:
                 _open_tool(page, "queue")
-                request_before_fade_in = _mutating_request_count(page, "/api/project/queue/settings")
-                request_before_fade_out = request_before_fade_in
+                request_before_fade_in = _mutating_request_count(
+                    page, "/api/project/queue/settings"
+                )
 
                 page.evaluate(
                     """() => {
@@ -663,7 +710,9 @@ def test_rapid_control_changes_coalesce_to_one_mutation_each(
                 assert settled["events"] == {"first": 1, "second": 1}
 
                 request_after = _mutating_request_count(page, "/api/project/queue/settings")
-                assert request_after - request_before_fade_in <= 2, f"Expected <= 2 mutations, got {request_after - request_before_fade_in}"
+                assert request_after - request_before_fade_in <= 2, (
+                    f"Expected <= 2 mutations, got {request_after - request_before_fade_in}"
+                )
 
             finally:
                 browser.close()
@@ -690,7 +739,11 @@ def test_media_pane_preserves_controls_during_scalar_update(
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -720,7 +773,9 @@ def test_media_pane_preserves_controls_during_scalar_update(
                       input.dispatchEvent(new Event('change', { bubbles: true }));
                     }"""
                 )
-                page.wait_for_function("() => state.project.name === 'Media Structural Key Test'", timeout=5_000)
+                page.wait_for_function(
+                    "() => state.project.name === 'Media Structural Key Test'", timeout=5_000
+                )
 
                 # Return to media pane
                 _open_tool(page, "media")
@@ -731,7 +786,9 @@ def test_media_pane_preserves_controls_during_scalar_update(
                     }"""
                 )
                 assert after_node["connected"] is True
-                assert after_node["id"] == before_node["id"], "Media pane select was replaced by full rebuild"
+                assert after_node["id"] == before_node["id"], (
+                    "Media pane select was replaced by full rebuild"
+                )
 
             finally:
                 browser.close()

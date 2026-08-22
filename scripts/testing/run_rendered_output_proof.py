@@ -22,7 +22,6 @@ from splitshot.media.probe import probe_video
 from splitshot.scoring.logic import apply_scoring_preset, ensure_default_shot_scores
 from splitshot.ui.controller import ProjectController
 
-
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v107-release-proof" / "source-rendered-output"
 PRIMARY_CLIP = REPO / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
@@ -34,7 +33,7 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _seconds(value: float | int | None) -> float:
+def _seconds(value: float | None) -> float:
     if value is None:
         return 0.0
     return float(value)
@@ -233,13 +232,7 @@ def main() -> int:
     _write_json(state_dir / "state-summary.json", state_summary)
     _write_contact_sheet_html(artifact_root / "contact-sheet.html", proof_entries)
     (logs_dir / "proof.log").write_text(
-        "\n".join(
-            [
-                "Generated side_by_side, above_below, and pip exports from final rendered mp4 files.",
-                "Decoded frames were extracted from the rendered outputs themselves.",
-                "Each export used tests/fixtures/media/e2e-stage.mp4 as primary input with a copied secondary clip.",
-            ]
-        ),
+        "Generated side_by_side, above_below, and pip exports from final rendered mp4 files.\nDecoded frames were extracted from the rendered outputs themselves.\nEach export used tests/fixtures/media/e2e-stage.mp4 as primary input with a copied secondary clip.",
         encoding="utf-8",
     )
     return 0

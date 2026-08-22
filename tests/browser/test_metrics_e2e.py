@@ -187,9 +187,11 @@ def test_metrics_is_match_first_with_collapsed_stage_tree() -> None:
             browser, page = _open_test_page(playwright, server)
             try:
                 _activate_tool(page, "metrics")
-                assert page.locator('[data-tool-pane="metrics"]').get_by_text(
-                    "Match Metrics", exact=True
-                ).is_visible()
+                assert (
+                    page.locator('[data-tool-pane="metrics"]')
+                    .get_by_text("Match Metrics", exact=True)
+                    .is_visible()
+                )
                 branches = page.locator("#metrics-stage-tree details.metrics-stage-tree-item")
                 assert branches.count() == 2
                 assert branches.evaluate_all("items => items.every((item) => item.open === false)")

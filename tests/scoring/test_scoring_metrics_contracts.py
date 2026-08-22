@@ -169,9 +169,27 @@ def test_stage_overlay_uses_official_spreadsheet_values_and_stage_rankings() -> 
         score_counts={"Points Down": 3.0, "Procedural Error": 1.0},
     )
     project.scoring.comparison_competitors = [
-        {"name": "CO Leader", "place": 9, "division": "CO", "classification": "MA", "final_time": 31.0},
-        {"name": "SS Peer", "place": 1, "division": "PCC", "classification": "SS", "final_time": 33.0},
-        {"name": "Other", "place": 2, "division": "PCC", "classification": "MA", "final_time": 34.0},
+        {
+            "name": "CO Leader",
+            "place": 9,
+            "division": "CO",
+            "classification": "MA",
+            "final_time": 31.0,
+        },
+        {
+            "name": "SS Peer",
+            "place": 1,
+            "division": "PCC",
+            "classification": "SS",
+            "final_time": 33.0,
+        },
+        {
+            "name": "Other",
+            "place": 2,
+            "division": "PCC",
+            "classification": "MA",
+            "final_time": 34.0,
+        },
     ]
 
     assert stage_competition_placement(project, dimension="division") == "2/2"

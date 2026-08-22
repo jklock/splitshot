@@ -3,11 +3,9 @@ from __future__ import annotations
 import importlib.util
 import sys
 import urllib.error
-
 from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "audits" / "browser" / "run_installed_app_pane_audit.py"
@@ -170,7 +168,7 @@ def test_prepare_project_copy_reuses_matching_cached_copy(monkeypatch, tmp_path:
 
 def test_api_post_raises_when_browser_runtime_reports_failure() -> None:
     class FakePage:
-        def evaluate(self, script, payload=None):  # noqa: ANN001
+        def evaluate(self, script, payload=None):
             if "callApi(path, payload)" in script:
                 return None
             if "status-message" in script:
@@ -187,18 +185,18 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
     combined_path.write_bytes(b"video")
 
     class FakeLocator:
-        def click(self, force=False):  # noqa: ANN001, FBT002
+        def click(self, force=False):
             assert force is True
 
     class FakePage:
-        def locator(self, selector):  # noqa: ANN001
+        def locator(self, selector):
             assert selector == "#queue-combined-btn"
             return FakeLocator()
 
-        def wait_for_function(self, script, arg=None, timeout=None):  # noqa: ANN001
+        def wait_for_function(self, script, arg=None, timeout=None):
             return None
 
-        def evaluate(self, script, payload=None):  # noqa: ANN001
+        def evaluate(self, script, payload=None):
             if "state?.project?.queue" in script:
                 return [{"stage_id": "stage-1", "status": "complete"}] * 3
             if "last_combined_output_path" in script:
@@ -229,16 +227,15 @@ def test_requeue_all_stages_clears_existing_queue_before_readding(monkeypatch) -
     calls: list[tuple[str, str]] = []
 
     class FakePage:
-        def evaluate(self, script, payload=None):  # noqa: ANN001
+        def evaluate(self, script, payload=None):
             if "state?.project?.queue" in script:
                 return ["stage-1", "stage-2"]
             if "state?.project?.stages" in script:
                 return ["stage-1", "stage-2", "stage-3"]
             raise AssertionError(script)
 
-        def wait_for_function(self, script, arg=None, timeout=None):  # noqa: ANN001
+        def wait_for_function(self, script, arg=None, timeout=None):
             assert "state?.project?.queue" in script
-            return None
 
     monkeypatch.setattr(
         MODULE,
@@ -264,18 +261,18 @@ def test_requeue_all_stages_clears_existing_queue_before_readding(monkeypatch) -
 
 def test_warm_installed_app_media_ignores_missing_urls(monkeypatch) -> None:
     class FakeResponse:
-        def __enter__(self):  # noqa: ANN001
+        def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+        def __exit__(self, exc_type, exc, tb):
             return None
 
-        def read(self, _size):  # noqa: ANN001
+        def read(self, _size):
             return b"x"
 
     calls: list[str] = []
 
-    def fake_urlopen(url, timeout):  # noqa: ANN001
+    def fake_urlopen(url, timeout):
         calls.append(url)
         if url.endswith("/media/secondary"):
             raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
@@ -304,17 +301,17 @@ def test_terminate_process_uses_process_group_on_posix(monkeypatch) -> None:
     class FakeProc:
         pid = 4321
 
-        def poll(self):  # noqa: ANN001
+        def poll(self):
             return None
 
-        def wait(self, timeout=None):  # noqa: ANN001
+        def wait(self, timeout=None):
             calls.append(("wait", self.pid, timeout))
             return 0
 
-        def terminate(self):  # noqa: ANN001
+        def terminate(self):
             calls.append(("terminate", self.pid, None))
 
-        def kill(self):  # noqa: ANN001
+        def kill(self):
             calls.append(("kill", self.pid, None))
 
     monkeypatch.setattr(MODULE.os, "name", "posix")
@@ -351,7 +348,7 @@ def test_terminate_matching_processes_kills_matching_bundle_descendants(
     class FakeCompleted:
         stdout = ps_output
 
-    def fake_run(cmd, capture_output, text, timeout, check):  # noqa: ANN001
+    def fake_run(cmd, capture_output, text, timeout, check):
         assert cmd == ["ps", "-axo", "pid=,ppid=,command="]
         assert capture_output is True
         assert text is True
@@ -359,7 +356,7 @@ def test_terminate_matching_processes_kills_matching_bundle_descendants(
         assert check is True
         return FakeCompleted()
 
-    def fake_kill(pid, sig):  # noqa: ANN001
+    def fake_kill(pid, sig):
         force_signal = getattr(MODULE.signal, "SIGKILL", MODULE.signal.SIGTERM)
         if sig in (MODULE.signal.SIGTERM, force_signal):
             signals.append((pid, sig))

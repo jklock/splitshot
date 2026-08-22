@@ -16,6 +16,7 @@ def ffprobe_info(path: str | Path) -> dict:
             str(path),
         ],
         capture_output=True,
+        check=False,
         text=True,
         timeout=30,
     )

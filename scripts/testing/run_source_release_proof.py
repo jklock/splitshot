@@ -8,7 +8,6 @@ import os
 import subprocess
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v107-release-proof" / "source"
 RELEASE_PROOF_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"

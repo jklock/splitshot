@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from splitshot.analysis.corpus import DEFAULT_THRESHOLD_GRID, audit_corpus, list_corpus_videos

@@ -40,6 +40,7 @@ def _create_project_bundle(name: str) -> Path:
         [sys.executable, "-c", script, str(project_path), name],
         cwd=REPO,
         capture_output=True,
+        check=False,
         text=True,
         timeout=60,
     )

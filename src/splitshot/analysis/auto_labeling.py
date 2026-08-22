@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import asdict, dataclass
-import json
 from pathlib import Path
 
 import numpy as np
-
 
 AUTO_LABEL_STATUS = "auto_labeled"
 MANUAL_VERIFIED_STATUS = "verified"
@@ -56,7 +55,7 @@ def load_manifest(manifest_path: str | Path) -> dict[str, object]:
     path = Path(manifest_path).expanduser().resolve()
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"Manifest must contain a JSON object: {path}")
+        raise TypeError(f"Manifest must contain a JSON object: {path}")
     return payload
 
 
@@ -97,7 +96,7 @@ def _select_consensus_beep(
         ]
         if agreeing_candidates:
             closest = min(agreeing_candidates, key=lambda item: abs(item[1] - primary_beep_time_ms))
-            selected_beep_time_ms = int(round(np.mean([primary_beep_time_ms, closest[1]])))
+            selected_beep_time_ms = round(np.mean([primary_beep_time_ms, closest[1]]))
             gap_ms = abs(primary_beep_time_ms - closest[1])
             score = 0.92 - min(gap_ms / 1200.0, 0.04)
             return (
@@ -129,7 +128,7 @@ def _select_consensus_beep(
                 best_pair = (left, right)
 
     if best_pair is not None and best_gap_ms is not None:
-        selected_beep_time_ms = int(round(np.mean([best_pair[0][1], best_pair[1][1]])))
+        selected_beep_time_ms = round(np.mean([best_pair[0][1], best_pair[1][1]]))
         label_names = "+".join([best_pair[0][0], best_pair[1][0]])
         score = 0.92 if "final" in {best_pair[0][0], best_pair[1][0]} else 0.88
         score -= min(best_gap_ms / 1200.0, 0.04)
@@ -143,7 +142,7 @@ def _select_consensus_beep(
     spread_ms = max(candidate[1] for candidate in candidates) - min(
         candidate[1] for candidate in candidates
     )
-    selected_beep_time_ms = int(round(float(np.median([candidate[1] for candidate in candidates]))))
+    selected_beep_time_ms = round(float(np.median([candidate[1] for candidate in candidates])))
     score = 0.70 - min(spread_ms / 10000.0, 0.12)
     return (
         selected_beep_time_ms,
@@ -218,7 +217,7 @@ def apply_auto_labels(
 ) -> AutoLabelSummary:
     videos = manifest.get("videos", [])
     if not isinstance(videos, list):
-        raise ValueError("Manifest videos must be a list.")
+        raise TypeError("Manifest videos must be a list.")
 
     decisions: list[AutoLabelDecision] = []
     skipped_reason_counts: Counter[str] = Counter()

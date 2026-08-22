@@ -16,7 +16,6 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.media.ffmpeg import resolve_media_binary
 from splitshot.ui.controller import ProjectController
 
-
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
 DEFAULT_STAGE_VIDEOS = [

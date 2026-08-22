@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import threading
+import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-import threading
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
-import webbrowser
 
 from splitshot.browser.practiscore_browser_cookies import (
     PractiScoreBrowserSession,
@@ -17,7 +18,6 @@ from splitshot.browser.practiscore_profile import (
     ensure_practiscore_profile_dir,
     resolve_practiscore_profile_paths,
 )
-
 
 PRACTISCORE_ENTRY_URL = "https://practiscore.com/dashboard/home"
 _PRACTISCORE_HOST_SUFFIX = "practiscore.com"
@@ -110,7 +110,7 @@ def launch_practiscore_browser(
 def open_practiscore_in_system_browser(url: str = PRACTISCORE_ENTRY_URL) -> bool:
     try:
         return bool(webbrowser.open(url, new=2))
-    except Exception:
+    except Exception:  # noqa: BLE001 - browser adapter capabilities vary by runtime.
         return False
 
 
@@ -119,7 +119,7 @@ def _page_is_closed(page: Any) -> bool:
     if callable(is_closed):
         try:
             return bool(is_closed())
-        except Exception:
+        except Exception:  # noqa: BLE001 - browser adapter capabilities vary by runtime.
             return True
     return False
 
@@ -145,9 +145,10 @@ def _has_practiscore_cookie(cookies: list[dict[str, Any]]) -> bool:
         domain = str(cookie.get("domain", "") or "").lower().lstrip(".")
         if not domain:
             continue
-        if domain == _PRACTISCORE_HOST_SUFFIX or domain.endswith(f".{_PRACTISCORE_HOST_SUFFIX}"):
-            if str(cookie.get("value", "") or ""):
-                return True
+        if (
+            domain == _PRACTISCORE_HOST_SUFFIX or domain.endswith(f".{_PRACTISCORE_HOST_SUFFIX}")
+        ) and str(cookie.get("value", "") or ""):
+            return True
     return False
 
 
@@ -157,7 +158,7 @@ def _page_auth_markers(page: Any) -> dict[str, bool] | None:
         return None
     try:
         payload = evaluate(_AUTH_MARKERS_SCRIPT)
-    except Exception:
+    except Exception:  # noqa: BLE001 - browser adapter capabilities vary by runtime.
         return None
     if not isinstance(payload, dict):
         return None
@@ -343,7 +344,7 @@ class PractiScoreSessionManager:
             active_page = pages[-1] if pages else None
             current_url = _page_url(active_page) if active_page is not None else ""
             cookies = list(context.cookies())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - external browser navigation failures are normalized.
             was_authenticated = self._had_authenticated_session
             self._close_runtime_locked()
             if was_authenticated:
@@ -399,7 +400,7 @@ class PractiScoreSessionManager:
             return False
         try:
             browser_session = self._system_cookie_loader()
-        except Exception:
+        except Exception:  # noqa: BLE001 - browser adapter capabilities vary by runtime.
             return False
         if browser_session is None or not browser_session.cookies:
             return False
@@ -412,7 +413,7 @@ class PractiScoreSessionManager:
             return False
         try:
             import_cookies(browser_session.cookies)
-        except Exception:
+        except Exception:  # noqa: BLE001 - browser adapter capabilities vary by runtime.
             return False
         page = getattr(context, "page", None)
         goto = getattr(page, "goto", None) if page is not None else None
@@ -422,9 +423,9 @@ class PractiScoreSessionManager:
             except TypeError:
                 try:
                     goto(self._entry_url)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - browser close is best-effort.
                     pass
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - context close is best-effort.
                 pass
         self._imported_cookie_signature = signature
         self._source_browser_name = browser_session.browser_name
@@ -439,11 +440,11 @@ class PractiScoreSessionManager:
             return
         try:
             runtime.context.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - browser close is best-effort.
             pass
         try:
             runtime.playwright.stop()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - Playwright stop is best-effort.
             pass
 
     def _profile_has_contents(self) -> bool:

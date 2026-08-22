@@ -8,9 +8,9 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Sequence
 from importlib import resources
 from pathlib import Path
-from typing import Sequence
 
 from splitshot.media.ffmpeg import MediaError, resolve_media_binary
 
@@ -59,7 +59,7 @@ def run_browser(
 ) -> int:
     try:
         BrowserControlServer, ProjectController, SplitShotDesktopRuntime = _browser_runtime()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise SystemExit(f"SplitShot browser runtime is unavailable: {exc}") from exc
 
     controller = ProjectController()
@@ -77,8 +77,8 @@ def run_browser(
 
 
 def _browser_runtime():
-    from splitshot.browser.server import BrowserControlServer
     from splitshot.browser.practiscore_qt_runtime import SplitShotDesktopRuntime
+    from splitshot.browser.server import BrowserControlServer
     from splitshot.ui.controller import ProjectController
 
     return BrowserControlServer, ProjectController, SplitShotDesktopRuntime
@@ -110,8 +110,9 @@ def _check_qt_runtime() -> str:
     try:
         from PySide6 import __version__ as pyside_version
         from PySide6.QtWebEngineCore import QWebEnginePage  # noqa: F401
+
         from splitshot.export.pipeline import prepare_export_runtime
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(f"PySide6 runtime unavailable: {exc}") from exc
 
     prepare_export_runtime()
@@ -129,7 +130,7 @@ def _check_dialog_runtime() -> str:
 
     try:
         import tkinter  # noqa: F401
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(
             f"Native file dialogs require tkinter in this environment: {exc}"
         ) from exc

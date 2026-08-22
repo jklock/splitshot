@@ -6,7 +6,6 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import splitshot.ui.controller as controller_module
-
 from splitshot.analysis.detection import DetectionResult
 from splitshot.browser.server import BrowserControlServer
 from splitshot.browser.state import browser_state

@@ -10,7 +10,7 @@ def ms_to_seconds(value_ms: int) -> float:
 
 
 def seconds_to_ms(value_seconds: float) -> int:
-    return int(round(value_seconds * 1000))
+    return round(value_seconds * 1000)
 
 
 def format_time_ms(value_ms: int | None) -> str:

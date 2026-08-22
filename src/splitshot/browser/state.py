@@ -45,11 +45,7 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
         scoring_summary = dict(presentation.metrics.scoring_summary)
         imported = scoring_summary.get("imported_stage") or {}
         is_idpa = str(imported.get("match_type") or "").casefold() == "idpa"
-        official_result = (
-            imported.get("final_time")
-            if is_idpa
-            else imported.get("hit_factor")
-        )
+        official_result = imported.get("final_time") if is_idpa else imported.get("hit_factor")
         official_metrics = {
             "raw_time_ms": (
                 None
@@ -58,23 +54,17 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
             ),
             "result_label": "Final" if is_idpa else scoring_summary.get("display_label", "Result"),
             "result_value": official_result,
-            "display_value": (
-                "--" if official_result is None else f"{float(official_result):.2f}"
-            ),
+            "display_value": ("--" if official_result is None else f"{float(official_result):.2f}"),
             "score_label": "Points Down" if is_idpa else "Shot Points",
             "score_value": (
-                imported.get("aggregate_points")
-                if is_idpa
-                else scoring_summary.get("shot_points")
+                imported.get("aggregate_points") if is_idpa else scoring_summary.get("shot_points")
             ),
             "points_down": imported.get("aggregate_points") if is_idpa else None,
             "penalties": imported_stage_penalty_count(view),
             "division": imported.get("division") or stage.scoring.division,
             "classification": imported.get("classification") or stage.scoring.classification,
             "division_placement": stage_competition_placement(view, dimension="division"),
-            "class_placement": stage_competition_placement(
-                view, dimension="classification"
-            ),
+            "class_placement": stage_competition_placement(view, dimension="classification"),
             "overall_placement": stage_competition_placement(view),
             "spreadsheet_authoritative": bool(imported),
         }

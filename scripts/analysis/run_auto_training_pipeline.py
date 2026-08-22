@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 
@@ -17,12 +17,11 @@ from splitshot.analysis.corpus import (
     list_corpus_videos,
 )
 from splitshot.analysis.training_dataset import (
-    DatasetExtractionConfig,
     LABEL_STATUS_AUTO_LABELED,
     LABEL_STATUS_VERIFIED,
+    DatasetExtractionConfig,
     extract_training_dataset,
 )
-
 
 ROOT = Path(__file__).resolve().parents[2]
 TRAIN_SCRIPT = ROOT / "scripts" / "analysis" / "train_audio_event_model_from_dataset.py"

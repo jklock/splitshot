@@ -6,8 +6,8 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-import splitshot.browser.practiscore_session as practiscore_session_module
 
+import splitshot.browser.practiscore_session as practiscore_session_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 

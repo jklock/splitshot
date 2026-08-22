@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "analysis" / "extract_training_dataset.py"
 

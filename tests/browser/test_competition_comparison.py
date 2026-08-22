@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 MODULE_URI = (Path("src/splitshot/browser/static/lib/competition-comparison.js").resolve()).as_uri()
 
 
@@ -147,9 +146,24 @@ def test_final_standings_uses_match_places_for_all_review_cohorts() -> None:
             },
             "importedStage": {"competitor_name": "Selected", "competitor_place": 8},
             "competitors": [
-                {"name": "Overall Leader", "place": 1, "division": "Limited", "classification": "M"},
-                {"name": "Cohort Leader", "place": 3, "division": "carry optics", "classification": "a"},
-                {"name": "Division Only", "place": 5, "division": "Carry Optics", "classification": "B"},
+                {
+                    "name": "Overall Leader",
+                    "place": 1,
+                    "division": "Limited",
+                    "classification": "M",
+                },
+                {
+                    "name": "Cohort Leader",
+                    "place": 3,
+                    "division": "carry optics",
+                    "classification": "a",
+                },
+                {
+                    "name": "Division Only",
+                    "place": 5,
+                    "division": "Carry Optics",
+                    "classification": "B",
+                },
                 {"name": "Class Only", "place": 6, "division": "Limited", "classification": "A"},
                 {"name": "Tie", "place": 8, "division": "Carry Optics", "classification": "A"},
                 {"name": "No Place", "division": "Carry Optics", "classification": "A"},

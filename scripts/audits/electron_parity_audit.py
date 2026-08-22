@@ -103,7 +103,7 @@ def _read_process_tail(proc: subprocess.Popen[bytes]) -> str:
             continue
         try:
             chunks.append(stream.read() or b"")
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - preserve output from the readable stream.
             continue
     combined = b"".join(chunks).decode(errors="replace").strip()
     if not combined:

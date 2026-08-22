@@ -6,7 +6,6 @@ from pathlib import Path
 
 from splitshot.analysis.auto_labeling import load_manifest as load_review_manifest
 
-
 STATUS_BASE_SCORES = {
     "needs_review": 100.0,
     "verified": 10.0,
@@ -91,8 +90,6 @@ class ReviewQueueSummary:
             "beep_family_counts": dict(self.beep_family_counts),
             "entries": [entry.to_dict() for entry in self.entries],
         }
-
-
 
 
 def _safe_int(value: object, default: int = 0) -> int:
@@ -216,7 +213,7 @@ def build_review_queue(
     manifest = load_review_manifest(path)
     videos = manifest.get("videos", [])
     if not isinstance(videos, list):
-        raise ValueError(f"Manifest videos must be a list: {path}")
+        raise TypeError(f"Manifest videos must be a list: {path}")
 
     included = []
     for video in videos:
@@ -272,7 +269,7 @@ def build_review_queue(
 
     for candidate in included:
         status = str(candidate["status"])
-        flags = set(str(flag) for flag in candidate["review_flags"])
+        flags = {str(flag) for flag in candidate["review_flags"]}
         if status == "verified":
             candidate["recommended_action"] = ACTION_ALREADY_VERIFIED
         elif flags & CRITICAL_REVIEW_FLAGS:

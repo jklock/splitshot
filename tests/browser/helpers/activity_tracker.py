@@ -18,7 +18,7 @@ class ActivityTracker:
         try:
             response = urllib.request.urlopen(url, timeout=5)
             data = json.loads(response.read().decode("utf-8"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - polling tolerates transient server shutdown.
             return []
         entries = data.get("entries", [])
         if entries:

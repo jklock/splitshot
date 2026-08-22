@@ -12,7 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_VALIDATION_SCRIPT = REPO / "scripts" / "testing" / "test_electron_app.py"
 
@@ -35,7 +34,7 @@ class InstalledArtifact:
                     shutil.rmtree(path, ignore_errors=True)
                 elif path.exists():
                     path.unlink()
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 - continue checking other archive members.
                 continue
 
 

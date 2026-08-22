@@ -6,8 +6,8 @@ from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
+    open_page,
     open_tool,
 )
 

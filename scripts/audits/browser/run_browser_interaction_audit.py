@@ -455,7 +455,9 @@ def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
     stored_enabled = None
     project_file = Path(settled["project_path"]) / "project.json"
     if project_file.is_file():
-        stored_enabled = bool(json.loads(project_file.read_text(encoding="utf-8"))["scoring"]["enabled"])
+        stored_enabled = bool(
+            json.loads(project_file.read_text(encoding="utf-8"))["scoring"]["enabled"]
+        )
     page.locator("[data-tool='export']").click()
     page.locator("[data-tool='scoring']").click()
     after_navigation = page.locator("#scoring-enabled").is_checked()
@@ -466,12 +468,14 @@ def reordered_response_preserves_newer_control(page: Page) -> CheckResult:
     )
     after_reopen = page.locator("#scoring-enabled").is_checked()
     return expect(
-        immediate_threshold == {
+        immediate_threshold
+        == {
             "value": threshold_after,
             "connected": True,
             "events": {"input": 1, "change": 1},
         }
-        and immediate_scoring == {
+        and immediate_scoring
+        == {
             "checked": scoring_after,
             "connected": True,
             "events": {"click": 1, "change": 1},

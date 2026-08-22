@@ -5,7 +5,6 @@ from splitshot.browser.server import BrowserControlServer
 
 from .activity_tracker import ActivityTracker
 
-
 DEFAULT_VIEWPORT = {"width": 1280, "height": 900}
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]

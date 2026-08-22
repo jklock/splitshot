@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -906,8 +907,12 @@ def test_practiscore_csv_infers_match_type_and_hydrates_every_imported_stage() -
         assert controller.practiscore_browser_state()["comparison_competitors"]
 
 
-def test_new_stage_inherits_active_configuration_without_media_or_results() -> None:
+def test_new_stage_uses_application_defaults_without_media_or_results() -> None:
     controller = ProjectController()
+    default_overlay = deepcopy(controller.project.overlay)
+    default_merge = deepcopy(controller.project.merge)
+    default_export = deepcopy(controller.project.export)
+    default_match_type = controller.project.scoring.match_type
     source = controller.create_stage("Stage 2")
     controller.project.overlay.font_size = 32
     controller.project.overlay.show_score = True
@@ -923,16 +928,14 @@ def test_new_stage_inherits_active_configuration_without_media_or_results() -> N
     assert inherited.primary_media.path == ""
     assert inherited.added_media == []
     assert inherited.analysis.shots == []
-    assert inherited.overlay.font_size == 32
-    assert inherited.overlay.show_score is True
-    assert inherited.merge.layout == MergeLayout.PIP
-    assert inherited.export.target_width == 1920
-    assert inherited.export.target_height == 1080
-    assert inherited.scoring.match_type == "idpa"
+    assert inherited.overlay == default_overlay
+    assert inherited.merge == default_merge
+    assert inherited.export == default_export
+    assert inherited.scoring.match_type == default_match_type
     assert inherited.scoring.imported_stage is None
 
 
-def test_first_primary_import_inherits_previous_stage_configuration(
+def test_first_primary_import_preserves_stage_application_defaults(
     synthetic_video_factory,
 ) -> None:
     controller = ProjectController()
@@ -941,6 +944,9 @@ def test_first_primary_import_inherits_previous_stage_configuration(
     )
     second = next(stage for stage in controller.project.stages if stage.imported_stage_number == 2)
     third = next(stage for stage in controller.project.stages if stage.imported_stage_number == 3)
+    third_overlay = deepcopy(third.overlay)
+    third_merge = deepcopy(third.merge)
+    third_export = deepcopy(third.export)
     controller.select_stage(second.id)
     controller.import_stage_primary(
         second.id,
@@ -958,11 +964,9 @@ def test_first_primary_import_inherits_previous_stage_configuration(
         str(synthetic_video_factory(name="inherit-stage-three", beep_ms=400)),
     )
 
-    assert third.overlay.font_size == 32
-    assert third.overlay.show_score is True
-    assert third.merge.layout == MergeLayout.PIP
-    assert third.export.target_width == 1920
-    assert third.export.target_height == 1080
+    assert third.overlay == third_overlay
+    assert third.merge == third_merge
+    assert third.export == third_export
     assert third.scoring.imported_stage is not None
     assert third.scoring.imported_stage.stage_number == 3
     assert third.primary_media.path

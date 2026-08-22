@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-import re
 from statistics import fmean, median
 from tempfile import TemporaryDirectory
 
@@ -19,14 +19,13 @@ from splitshot.analysis.detection import (
     _media_timeline_metadata,
     _ms_to_sample,
     _predict_audio_events,
-    _refine_shot_times,
     _refine_beep_time,
+    _refine_shot_times,
     _rms_series,
 )
 from splitshot.analysis.ml_runtime import ModelPredictions, pick_event_peaks
 from splitshot.domain.models import ShotEvent, ShotSource
 from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
-
 
 DEFAULT_THRESHOLD_GRID = (0.25, 0.35, 0.45, 0.55, 0.65)
 VIDEO_SUFFIXES = {".avi", ".m4v", ".mkv", ".mov", ".mp4"}
@@ -219,7 +218,7 @@ def _load_aligned_audio(video_path: str | Path) -> tuple[np.ndarray, int, int]:
     )
     duration_ms = media_duration_ms
     if duration_ms <= 0:
-        duration_ms = int(round((aligned.size / float(sample_rate)) * 1000.0))
+        duration_ms = round((aligned.size / float(sample_rate)) * 1000.0)
     return aligned, sample_rate, duration_ms
 
 
@@ -327,7 +326,7 @@ def summarize_shot_multipass(
     detection: DetectionResult,
 ) -> ShotMultipassSummary:
     start_ms = 0 if detection.beep_time_ms is None else max(0, detection.beep_time_ms + 100)
-    end_ms = int(round((samples.size / float(sample_rate)) * 1000.0))
+    end_ms = round((samples.size / float(sample_rate)) * 1000.0)
     centers_ms, envelope = _rms_series(
         samples, sample_rate, start_ms, end_ms, window_ms=6, hop_ms=2
     )

@@ -40,7 +40,9 @@ def test_project_metadata_detection_accepts_normalized_project_json_path(tmp_pat
     assert project_has_metadata(normalize_project_path(project_path)) is True
 
 
-def test_save_project_persists_project_local_practiscore_path_without_copying(tmp_path: Path) -> None:
+def test_save_project_persists_project_local_practiscore_path_without_copying(
+    tmp_path: Path,
+) -> None:
     project_path = tmp_path / "practiscore-bundle.ssproj"
     source_csv = tmp_path / "IDPA.csv"
     source_csv.write_text("stage data", encoding="utf-8")

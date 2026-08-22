@@ -309,6 +309,7 @@ def main():
         result = subprocess.run(
             ["node", str(pw_script)],
             capture_output=True,
+            check=False,
             encoding="utf-8",
             errors="replace",
             timeout=300,
@@ -336,7 +337,7 @@ def main():
                     print("E2E FAILURES:", flush=True)
                     for item in failures:
                         print(f"  - {item}", flush=True)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - cleanup is best-effort.
                 pass
 
         captured = list(pw_log_dir.glob("*"))
@@ -374,7 +375,7 @@ def main():
         print("PASS: full E2E test completed", flush=True)
         return 0
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - audit entrypoint reports all failures.
         print(f"FAIL: {exc}", file=sys.stderr, flush=True)
         if proc.poll() is not None:
             print(f"FAIL: exit code {proc.returncode}", file=sys.stderr, flush=True)

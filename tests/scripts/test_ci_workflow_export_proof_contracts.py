@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 E2E_SCRIPT = ROOT / "scripts" / "testing" / "e2e-playwright.cjs"
 TEST_WORKFLOWS = [
@@ -88,12 +87,8 @@ def test_packaged_build_and_release_workflows_use_compact_e2e_fixture() -> None:
 
 
 def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
-    test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(
-        encoding="utf-8"
-    )
-    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
+    test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(encoding="utf-8")
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow
     assert "Prepare macOS signing certificate" in test_workflow

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "testing" / "test_packaged_app_e2e.py"
 SPEC = importlib.util.spec_from_file_location("test_packaged_app_e2e_module", MODULE_PATH)

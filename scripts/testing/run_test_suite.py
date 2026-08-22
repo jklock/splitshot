@@ -11,7 +11,6 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -206,7 +205,7 @@ def planned_runs(
                 suite_names=tuple(suite.name for suite in suites),
                 suite_labels=tuple(suite.label for suite in suites),
                 targets=tuple(combined_targets),
-                command=tuple([python_cmd, "-m", "pytest", *combined_targets, *pytest_args]),
+                command=(python_cmd, "-m", "pytest", *combined_targets, *pytest_args),
             )
         )
         return runs
@@ -221,7 +220,7 @@ def planned_runs(
                     suite_names=(suite.name,),
                     suite_labels=(suite.label,),
                     targets=(target,),
-                    command=tuple([python_cmd, "-m", "pytest", target, *pytest_args]),
+                    command=(python_cmd, "-m", "pytest", target, *pytest_args),
                 )
             )
             run_number += 1

@@ -27,7 +27,7 @@ def main():
         resp = urllib.request.urlopen(f"{base_url}/api/state", timeout=10)
         state = json.loads(resp.read().decode())
         print(f"PW: API state OK, project={bool(state.get('project'))}", flush=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - subprocess entrypoint must report all failures.
         print(f"PW: API state FAILED: {e}", file=sys.stderr, flush=True)
         return 1
 
@@ -108,7 +108,7 @@ def main():
 
             context.close()
             browser.close()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - subprocess entrypoint must report all failures.
         print(f"PW: Playwright error: {e}", file=sys.stderr, flush=True)
         return 1
 
@@ -130,7 +130,7 @@ def main():
         shots = len(final.get("project", {}).get("analysis", {}).get("shots", []))
         popups = len(final.get("project", {}).get("popups", []))
         print(f"PW: final state shots={shots} popups={popups}", flush=True)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - final diagnostics are best-effort.
         pass
 
     print("PW: E2E test passed", flush=True)

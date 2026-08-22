@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 
-
 WINDOWS_UI_FONT_FAMILY = "Segoe UI"
 LEGACY_MAC_FONT_FAMILY = "Helvetica Neue"
 WINDOWS_SANS_FONT_FAMILIES = (

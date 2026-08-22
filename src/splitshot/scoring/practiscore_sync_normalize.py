@@ -8,14 +8,13 @@ from splitshot.scoring.practiscore import (
     PractiScoreOptions,
     PractiScoreStageImport,
     describe_practiscore_file,
-    infer_practiscore_context,
     import_practiscore_stage,
+    infer_practiscore_context,
 )
 from splitshot.scoring.practiscore_web_extract import (
     NORMALIZATION_IMPORT_FAILURE_ERROR,
     PractiScoreSyncError,
 )
-
 
 _SUPPORTED_SOURCE_SUFFIXES = {".csv", ".txt"}
 

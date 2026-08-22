@@ -5,6 +5,7 @@ import shutil
 import urllib.request
 from pathlib import Path
 
+import splitshot.ui.controller as controller_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.domain.models import ImportedStageScore
 from splitshot.scoring.practiscore_web_extract import (
@@ -13,9 +14,7 @@ from splitshot.scoring.practiscore_web_extract import (
     RemotePractiScoreMatch,
     SelectedRemoteMatchArtifacts,
 )
-import splitshot.ui.controller as controller_module
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"

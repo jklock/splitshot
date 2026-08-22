@@ -358,7 +358,9 @@ def capture_release_surface_screenshots(
         "#metrics-workbench-stage-tree details.metrics-stage-tree-item"
     ).first
     if first_metric_stage.count() and not first_metric_stage.evaluate("item => item.open"):
-        first_metric_stage.evaluate("item => { item.open = true; item.dispatchEvent(new Event('toggle')); }")
+        first_metric_stage.evaluate(
+            "item => { item.open = true; item.dispatchEvent(new Event('toggle')); }"
+        )
     _capture_surface_screenshot(page, artifact_root, "expanded-metrics")
     metric_charts = page.locator(
         "#metrics-workbench-stage-tree .metrics-stage-tree-body .metrics-graph-list"
@@ -469,8 +471,7 @@ def audit_release_output_profile_review_truth(
 
     _write_artifact_json(artifact_root, "release-output-profile-review-truth.json", result)
     return expect(
-        all(result["profile_fields_enabled"].values())
-        and result["review_controls_present"],
+        all(result["profile_fields_enabled"].values()) and result["review_controls_present"],
         "release_output_profile_review_truth",
         "Output-profile fields should enable immediately and current Review text-box controls should render.",
         result,

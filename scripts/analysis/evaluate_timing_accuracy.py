@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 from collections import Counter
 from dataclasses import dataclass
@@ -230,7 +231,7 @@ def _split_times(beep_time_ms: int | None, shots: list[int]) -> list[int]:
     if beep_time_ms is None or not shots:
         return []
     splits = [shots[0] - beep_time_ms]
-    for previous, current in zip(shots, shots[1:], strict=False):
+    for previous, current in itertools.pairwise(shots):
         splits.append(current - previous)
     return splits
 
@@ -491,8 +492,8 @@ def render_table(payload: dict[str, object]) -> str:
         summary = threshold_summary["summary"]
         assert isinstance(summary, dict)
 
-        def mean_abs(name: str) -> str:
-            stats = summary.get(name, {})
+        def mean_abs(name: str, current_summary: dict[str, object] = summary) -> str:
+            stats = current_summary.get(name, {})
             if not isinstance(stats, dict) or stats.get("mean_abs_ms") is None:
                 return "--".rjust(10)
             return f"{float(stats['mean_abs_ms']):.1f}".rjust(10)
@@ -555,7 +556,7 @@ def evaluate_manifest(
     manifest = load_manifest(manifest_path)
     videos = manifest.get("videos", [])
     if not isinstance(videos, list):
-        raise ValueError(f"Manifest videos must be a list: {manifest_path}")
+        raise TypeError(f"Manifest videos must be a list: {manifest_path}")
 
     rows_by_threshold: dict[float, list[dict[str, object]]] = {
         threshold: [] for threshold in thresholds

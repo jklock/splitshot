@@ -4,7 +4,6 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "testing" / "check_tracked_tree_hygiene.py"
 SPEC = importlib.util.spec_from_file_location("check_tracked_tree_hygiene", SCRIPT)

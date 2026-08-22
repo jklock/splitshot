@@ -253,13 +253,21 @@ def validate_showcase_state(page: Page) -> None:
         raise RuntimeError(f"Screenshot showcase state is incomplete: {result}")
     if result["markerCount"] < 1 or result["textBoxCount"] < 2:
         raise RuntimeError(f"Screenshot overlays are incomplete: {result}")
-    if result["previewVisible"] and result["activeTool"] == "intro-outro" and result["visibleBoundaryBoxes"] < 2:
+    if (
+        result["previewVisible"]
+        and result["activeTool"] == "intro-outro"
+        and result["visibleBoundaryBoxes"] < 2
+    ):
         raise RuntimeError(f"Intro / Outro preview is missing configured text boxes: {result}")
-    if result["previewVisible"] and result["activeTool"] != "intro-outro" and (
-        result["visibleBadges"] < 2
-        or result["visibleMarkers"] < 1
-        or result["visibleTextBoxes"] < 2
-        or result["visiblePip"] < 1
+    if (
+        result["previewVisible"]
+        and result["activeTool"] != "intro-outro"
+        and (
+            result["visibleBadges"] < 2
+            or result["visibleMarkers"] < 1
+            or result["visibleTextBoxes"] < 2
+            or result["visiblePip"] < 1
+        )
     ):
         raise RuntimeError(f"Visible preview is missing showcase features: {result}")
 
@@ -488,9 +496,7 @@ def import_boundary_media(page: Page, primary_video: Path, secondary_video: Path
     wait_for_app_idle(page)
 
 
-def prewarm_boundary_media(
-    server: BrowserControlServer, controller: ProjectController
-) -> None:
+def prewarm_boundary_media(server: BrowserControlServer, controller: ProjectController) -> None:
     """Prepare browser-compatible copies before the In / Out preview is opened."""
     paths = tuple(
         Path(clip.asset.path)
@@ -700,9 +706,7 @@ def validate_dynamic_standings(page: Page) -> None:
         "controls => controls.map((control) => control.closest('label')?.textContent?.trim() || '')"
     )
     if selector_labels != ["Division", "Class", "Overall"]:
-        raise RuntimeError(
-            f"Summary metric selectors must remain generic: {selector_labels}"
-        )
+        raise RuntimeError(f"Summary metric selectors must remain generic: {selector_labels}")
     page.wait_for_function(
         r"""
         () => {

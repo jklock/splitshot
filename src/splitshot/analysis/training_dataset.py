@@ -10,7 +10,6 @@ from splitshot.analysis.auto_labeling import load_manifest
 from splitshot.analysis.corpus import _load_aligned_audio
 from splitshot.analysis.model_bundle import WINDOW_SIZE
 
-
 CLASS_NAMES = ("background", "beep", "shot")
 CLASS_TO_INDEX = {name: index for index, name in enumerate(CLASS_NAMES)}
 LABEL_STATUS_VERIFIED = "verified"
@@ -89,10 +88,8 @@ class DatasetSummary:
         }
 
 
-
-
 def _extract_window(samples: np.ndarray, sample_rate: int, center_ms: int) -> np.ndarray:
-    center_sample = int(round((center_ms / 1000.0) * sample_rate))
+    center_sample = round((center_ms / 1000.0) * sample_rate)
     half_window = WINDOW_SIZE // 2
     start = center_sample - half_window
     end = start + WINDOW_SIZE
@@ -252,7 +249,7 @@ def extract_training_dataset(
     manifest = load_manifest(path)
     videos = manifest.get("videos", [])
     if not isinstance(videos, list):
-        raise ValueError(f"Manifest videos must be a list: {path}")
+        raise TypeError(f"Manifest videos must be a list: {path}")
 
     if config.detector_draft_policy not in DETECTOR_DRAFT_POLICIES:
         raise ValueError(

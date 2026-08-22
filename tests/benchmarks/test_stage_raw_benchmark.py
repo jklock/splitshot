@@ -6,7 +6,6 @@ import pytest
 
 from splitshot.benchmarks.stage_suite import analyze_stage
 
-
 EXPECTED_RAW_MS = {
     "Stage1.MP4": 13550,
     "Stage2.MP4": 19830,

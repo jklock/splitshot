@@ -68,6 +68,7 @@ def test_headless_check_flag():
         ["uv", "run", "splitshot", "--check"],
         cwd=str(REPO),
         capture_output=True,
+        check=False,
         text=True,
         timeout=60,
     )

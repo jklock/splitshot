@@ -3,15 +3,15 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
     navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 
 
 def test_toggle_overlay_on_video(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -71,7 +71,7 @@ def test_drag_overlay_badge(synthetic_video_factory) -> None:
 
 
 def test_change_overlay_size(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)

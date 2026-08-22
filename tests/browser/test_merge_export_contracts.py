@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import re
 import urllib.request
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
-from splitshot.browser.state import browser_state
 from splitshot.browser.server import BrowserControlServer
+from splitshot.browser.state import browser_state
 from splitshot.domain.models import (
     MergeLayout,
     MergeSource,
@@ -17,7 +17,6 @@ from splitshot.domain.models import (
 )
 from splitshot.media.probe import probe_video
 from splitshot.ui.controller import ProjectController
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "app.js"
@@ -83,7 +82,10 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     )
     assert 'callApi("/api/merge/source"' not in drag_body
     assert '$("export-video").addEventListener("click"' not in shell_runtime_source
-    assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' not in shell_runtime_source
+    assert (
+        '$("show-export-log")?.addEventListener("click", openExportLogModal);'
+        not in shell_runtime_source
+    )
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
     assert "state.project.export.last_error = null;" in _function_body(
         source, "clearCurrentExportLogState"

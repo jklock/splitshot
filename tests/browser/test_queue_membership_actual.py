@@ -40,9 +40,7 @@ def test_queue_add_logs_event(synthetic_video_factory) -> None:
             try:
                 stage_id = _prepare_queueable_stage(page, primary_path, "queue-add.ssproj")
                 navigate_to_tool(page, "queue")
-                queue_btn = page.locator(
-                    f'button.queue-membership-btn[data-stage-id="{stage_id}"]'
-                )
+                queue_btn = page.locator(f'button.queue-membership-btn[data-stage-id="{stage_id}"]')
                 queue_btn.click()
                 page.wait_for_function(
                     "stageId => (state?.project?.queue || []).some((entry) => entry.stage_id === stageId)",

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import itertools
 import math
 
 import numpy as np
-
 
 BAND_EDGES_HZ = np.asarray(
     [0.0, 180.0, 400.0, 800.0, 1400.0, 2200.0, 3400.0, 5200.0, 8000.0, 11025.0]
@@ -101,7 +101,7 @@ def extract_window_features(window: np.ndarray, sample_rate: int) -> np.ndarray:
     flatness = geometric / arithmetic
 
     band_ratios: list[float] = []
-    for start_hz, end_hz in zip(BAND_EDGES_HZ[:-1], BAND_EDGES_HZ[1:]):
+    for start_hz, end_hz in itertools.pairwise(BAND_EDGES_HZ):
         mask = (freqs >= start_hz) & (freqs < end_hz)
         band_ratios.append(float(np.sum(power[mask]) / total_power))
 

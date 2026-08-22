@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "testing" / "test_packaged_artifact.py"
 SPEC = importlib.util.spec_from_file_location("test_packaged_artifact_module", MODULE_PATH)
@@ -20,7 +19,7 @@ def test_install_windows_artifact_rejects_empty_locator_output(monkeypatch, tmp_
 
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], *, env=None, cwd=None):  # noqa: ANN001
+    def fake_run(command: list[str], *, env=None, cwd=None):
         calls.append(command)
 
         class Result:

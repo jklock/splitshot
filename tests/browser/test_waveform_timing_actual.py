@@ -3,9 +3,9 @@ from __future__ import annotations
 from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
     navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 

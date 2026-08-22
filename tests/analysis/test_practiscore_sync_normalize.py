@@ -4,7 +4,6 @@ from pathlib import Path
 
 from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_practiscore_artifact
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 

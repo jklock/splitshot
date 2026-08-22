@@ -190,7 +190,9 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
     assert result.imported_stage.total_points == 101.0
     assert result.imported_stage.shot_penalties == 0.0
     assert result.imported_stage.hit_factor == 4.346
-    report_competitor_count = len(describe_practiscore_file(EXAMPLES_DIR / "USPSA" / "report.txt").competitors)
+    report_competitor_count = len(
+        describe_practiscore_file(EXAMPLES_DIR / "USPSA" / "report.txt").competitors
+    )
     assert len(result.comparison_competitors) == report_competitor_count - 1
     assert result.imported_stage.stage_points == 125.0
     assert result.imported_stage.stage_place == 1

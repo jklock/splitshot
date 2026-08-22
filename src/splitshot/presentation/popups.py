@@ -8,7 +8,6 @@ from splitshot.scoring.logic import (
 )
 from splitshot.timeline.model import sort_shots
 
-
 POPUP_BUBBLE_QUADRANT_POINTS = {
     "top_left": (0.125, 0.125),
     "top_middle": (0.5, 0.125),
@@ -75,7 +74,7 @@ def popup_bubble_time_ms(project: Project, popup: object) -> int:
         if shot is not None:
             return shot.time_ms
     try:
-        return max(0, int(round(float(_field(popup, "time_ms", 0) or 0))))
+        return max(0, round(float(_field(popup, "time_ms", 0) or 0)))
     except (TypeError, ValueError):
         return 0
 
@@ -83,7 +82,7 @@ def popup_bubble_time_ms(project: Project, popup: object) -> int:
 def popup_bubble_visible_window(project: Project, popup: object) -> tuple[int, int]:
     start_ms = popup_bubble_time_ms(project, popup)
     try:
-        duration_ms = max(1, int(round(float(_field(popup, "duration_ms", 1000) or 1000))))
+        duration_ms = max(1, round(float(_field(popup, "duration_ms", 1000) or 1000)))
     except (TypeError, ValueError):
         duration_ms = 1000
     return start_ms, start_ms + duration_ms
@@ -149,7 +148,7 @@ def popup_bubble_motion_path(popup: object) -> list[tuple[int, float, float, str
     for item in raw_path:
         try:
             offset_ms = max(
-                0, int(round(float(_field(item, "offset_ms", _field(item, "time_ms", 0)) or 0)))
+                0, round(float(_field(item, "offset_ms", _field(item, "time_ms", 0)) or 0))
             )
         except (TypeError, ValueError):
             offset_ms = 0

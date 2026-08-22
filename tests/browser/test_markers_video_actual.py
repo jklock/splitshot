@@ -4,16 +4,16 @@ from playwright.sync_api import sync_playwright
 
 from tests.browser.helpers.activity_tracker import assert_status
 from tests.browser.helpers.video_test_helpers import (
-    open_page,
     ensure_project_with_primary_and_merge,
     ensure_stage_in_project,
     navigate_to_tool,
+    open_page,
     setup_server_and_browser,
 )
 
 
 def test_enable_markers_toggle(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -44,7 +44,7 @@ def test_enable_markers_toggle(synthetic_video_factory) -> None:
 
 
 def test_add_time_marker_logs_event(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -77,7 +77,7 @@ def test_add_time_marker_logs_event(synthetic_video_factory) -> None:
 
 
 def test_open_selected_marker_editor(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -116,7 +116,7 @@ def test_open_selected_marker_editor(synthetic_video_factory) -> None:
 
 
 def test_workbench_add_time_marker(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)
@@ -152,7 +152,7 @@ def test_workbench_add_time_marker(synthetic_video_factory) -> None:
 
 
 def test_marker_filter_navigation(synthetic_video_factory) -> None:
-    server, tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
+    server, _tracker, primary_path, merge_path = setup_server_and_browser(synthetic_video_factory)
     try:
         with sync_playwright() as playwright:
             browser, page = open_page(playwright, server)

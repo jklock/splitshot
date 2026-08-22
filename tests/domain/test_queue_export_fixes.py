@@ -111,16 +111,18 @@ def test_queue_renders_immutable_stage_views_with_distinct_analysis_and_scoring(
     controller.project.analysis = first.analysis
     controller.project.scoring = first.scoring
     for stage in (first, second):
-        controller.project.queue.append(
-            QueueEntry(stage_id=stage.id, status=QueueStatus.QUEUED)
-        )
+        controller.project.queue.append(QueueEntry(stage_id=stage.id, status=QueueStatus.QUEUED))
         stage.queue_status = QueueStatus.QUEUED
 
     rendered: list[tuple[str, int, int]] = []
 
     def fake_export(project, output_path, **_kwargs):
         rendered.append(
-            (Path(project.primary_video.path).name, len(project.analysis.shots), project.scoring.stage_number)
+            (
+                Path(project.primary_video.path).name,
+                len(project.analysis.shots),
+                project.scoring.stage_number,
+            )
         )
         Path(output_path).write_bytes(b"rendered")
 
@@ -250,9 +252,7 @@ def test_match_results_overlay_uses_final_spreadsheet_match_values() -> None:
     ]
 
 
-def test_intro_outro_clip_fades_drive_video_and_audio_filters(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_intro_outro_clip_fades_drive_video_and_audio_filters(tmp_path: Path, monkeypatch) -> None:
     controller = ProjectController()
     controller.project.intro_clip.fade_in_s = 0.7
     controller.project.intro_clip.fade_out_s = 0.9
@@ -349,9 +349,7 @@ def test_intro_overlay_uses_export_overlay_renderer_with_match_text(
     )
     monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
 
-    rendered = controller._render_queue_boundary_overlay(
-        "intro", tmp_path / "intro.mp4", tmp_path
-    )
+    rendered = controller._render_queue_boundary_overlay("intro", tmp_path / "intro.mp4", tmp_path)
 
     boundary_project = captured["project"]
     assert boundary_project.primary_video.path == str(tmp_path / "intro.mp4")
@@ -361,9 +359,7 @@ def test_intro_overlay_uses_export_overlay_renderer_with_match_text(
     assert rendered.is_file()
 
 
-def test_combined_queue_includes_only_enabled_boundary_media(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, monkeypatch) -> None:
     controller = ProjectController()
     controller.project_path = tmp_path / "match.ssproj"
     controller.project_path.mkdir()

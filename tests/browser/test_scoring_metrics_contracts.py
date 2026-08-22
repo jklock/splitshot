@@ -12,8 +12,8 @@ from splitshot.domain.models import (
     ScoreMark,
     ShotEvent,
 )
-from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.persistence.projects import save_project
+from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.ui.controller import ProjectController
 
 STATIC_ROOT = Path("src/splitshot/browser/static")
@@ -134,8 +134,20 @@ def test_browser_state_exposes_official_stage_metrics_and_stage_placements() -> 
         score_counts={"Points Down": 3.0, "Non-Threat": 1.0},
     )
     project.scoring.comparison_competitors = [
-        {"name": "CO Peer", "place": 1, "division": "CO", "classification": "MA", "final_time": 31.0},
-        {"name": "SS Peer", "place": 2, "division": "PCC", "classification": "SS", "final_time": 33.0},
+        {
+            "name": "CO Peer",
+            "place": 1,
+            "division": "CO",
+            "classification": "MA",
+            "final_time": 31.0,
+        },
+        {
+            "name": "SS Peer",
+            "place": 2,
+            "division": "PCC",
+            "classification": "SS",
+            "final_time": 33.0,
+        },
     ]
     stage = ProjectStage(
         id="stage-2",

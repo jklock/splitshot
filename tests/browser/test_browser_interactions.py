@@ -308,7 +308,7 @@ def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypa
         server.shutdown()
 
 
-def test_reordered_cross_domain_response_cannot_overwrite_newer_single_click(
+def _duplicate_test_reordered_cross_domain_response_cannot_overwrite_newer_single_click(
     tmp_path: Path,
 ) -> None:
     project_path = tmp_path / "reordered-response.ssproj"
@@ -496,9 +496,7 @@ def test_open_project_button_opens_existing_project_from_folder_picker(
             try:
                 _open_tool(page, "project")
                 page.get_by_role("button", name="Open Project", exact=True).click()
-                page.wait_for_function(
-                    "() => state?.project?.name === 'Existing Project'"
-                )
+                page.wait_for_function("() => state?.project?.name === 'Existing Project'")
                 assert page.locator("#project-path").input_value() == project_path.name
             finally:
                 browser.close()
@@ -511,9 +509,7 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
 ) -> None:
     selected_roots: list[str] = []
 
-    def choose_practiscore(
-        kind: str, current: str | None, default_root: str | None = None
-    ) -> str:
+    def choose_practiscore(kind: str, current: str | None, default_root: str | None = None) -> str:
         assert kind == "practiscore"
         selected_roots.append(str(default_root or ""))
         return str(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
@@ -535,9 +531,7 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
 
-                assert selected_roots == [
-                    str(tmp_path / "manual-import.ssproj" / "CSV")
-                ]
+                assert selected_roots == [str(tmp_path / "manual-import.ssproj" / "CSV")]
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip() == "IDPA imported"
                 assert page.locator("#practiscore-import-summary").is_hidden() is True
@@ -599,8 +593,7 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
                 assert (project_path / "Output").is_dir()
                 assert page.locator("#project-path").input_value() == "partial.ssproj"
                 assert any(
-                    "missing CSV, Markers, IntroOutro, Output" in message
-                    for message in dialogs
+                    "missing CSV, Markers, IntroOutro, Output" in message for message in dialogs
                 )
             finally:
                 browser.close()
@@ -1919,8 +1912,7 @@ def test_marker_badge_drag_survives_api_render_and_release_outside_element(
                 mutations = [
                     entry
                     for entry in entries
-                    if entry.get("event") == "api.success"
-                    and entry.get("path") == "/api/popups"
+                    if entry.get("event") == "api.success" and entry.get("path") == "/api/popups"
                 ]
                 assert len(starts) == 1
                 assert len(commits) == 1
@@ -3988,7 +3980,9 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
         server.shutdown()
 
 
-def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp_path: Path) -> None:
+def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     controller.project.export.last_log = "Encoder command:\nffmpeg -i input"
     server = BrowserControlServer(controller=controller, port=0)
@@ -4014,7 +4008,10 @@ def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(tmp
                     }"""
                 )
                 assert page.locator("#queue-show-log").text_content() == "Show Log"
-                assert page.locator("#export-log-summary").text_content() == "Processing in progress • 37%"
+                assert (
+                    page.locator("#export-log-summary").text_content()
+                    == "Processing in progress • 37%"
+                )
                 page.evaluate(
                     """() => {
                       state.project.export.last_log = 'Encoder command:\\nffmpeg -i input\\nQueue complete';
@@ -4073,7 +4070,9 @@ def test_processing_job_progress_and_log_rehydrate_across_navigation() -> None:
                         "phase": "render",
                     }
                 )
-                page.wait_for_function("() => activeProcessingPath === '/api/project/queue/process'")
+                page.wait_for_function(
+                    "() => activeProcessingPath === '/api/project/queue/process'"
+                )
                 page.wait_for_function("() => processingProgressPercent === 25")
                 _open_tool(page, "queue")
                 page.locator("#queue-show-log").click(force=True)
@@ -4093,11 +4092,15 @@ def test_processing_job_progress_and_log_rehydrate_across_navigation() -> None:
                     }
                 )
                 page.wait_for_function("() => processingProgressPercent === 75")
-                assert page.locator("[data-tool-pane='media']").get_attribute("class").endswith(
-                    "active"
+                assert (
+                    page.locator("[data-tool-pane='media']")
+                    .get_attribute("class")
+                    .endswith("active")
                 )
                 page.reload(wait_until="domcontentloaded")
-                page.wait_for_function("() => activeProcessingPath === '/api/project/queue/process'")
+                page.wait_for_function(
+                    "() => activeProcessingPath === '/api/project/queue/process'"
+                )
                 page.wait_for_function("() => processingProgressPercent === 75")
                 _open_tool(page, "queue")
                 page.locator("#queue-show-log").click(force=True)
@@ -4106,9 +4109,10 @@ def test_processing_job_progress_and_log_rehydrate_across_navigation() -> None:
                 )
                 server._finish_processing_job(status="Combined export complete")
                 page.wait_for_function("() => activeProcessingPath === null")
-                assert "Stage 2 continued while hidden" in page.locator(
-                    "#export-log-output"
-                ).text_content()
+                assert (
+                    "Stage 2 continued while hidden"
+                    in page.locator("#export-log-output").text_content()
+                )
             finally:
                 browser.close()
     finally:

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from splitshot.scoring.practiscore_web_extract import (
     RemotePractiScoreMatch,
-    download_remote_match_artifacts,
     discover_remote_matches,
+    download_remote_match_artifacts,
 )
 
 

@@ -6,6 +6,8 @@ import numpy as np
 
 from splitshot.analysis.audio_features import extract_feature_matrix
 from splitshot.analysis.model_bundle import (
+    B1,
+    B2,
     CLASS_LABELS,
     FEATURE_NAMES,
     HOP_SIZE,
@@ -15,8 +17,6 @@ from splitshot.analysis.model_bundle import (
     W1,
     W2,
     WINDOW_SIZE,
-    B1,
-    B2,
 )
 
 

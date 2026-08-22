@@ -9,7 +9,6 @@ from splitshot.domain.models import VideoAsset
 from splitshot.media.ffmpeg import run_ffprobe_json
 from splitshot.utils.time import seconds_to_ms
 
-
 _STILL_IMAGE_CODEC_NAMES = {
     "apng",
     "bmp",

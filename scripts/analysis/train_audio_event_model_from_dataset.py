@@ -357,7 +357,7 @@ def per_class_recall_from_predictions(
 def macro_recall(recalls: dict[str, float], labels: np.ndarray) -> float | None:
     if labels.size == 0:
         return None
-    present_indices = sorted(set(int(value) for value in labels.tolist()))
+    present_indices = sorted({int(value) for value in labels.tolist()})
     if not present_indices:
         return None
     return float(np.mean([recalls[CLASS_NAMES[index]] for index in present_indices]))
@@ -391,7 +391,7 @@ def split_indices(
         unique_sources = np.asarray(sorted(set(eligible_sources.tolist())))
         if unique_sources.size >= 2:
             shuffled_sources = unique_sources[rng.permutation(unique_sources.size)]
-            target_validation_count = max(1, int(round(unique_sources.size * validation_ratio)))
+            target_validation_count = max(1, round(unique_sources.size * validation_ratio))
             validation_sources = set(shuffled_sources[:target_validation_count].tolist())
             source_validation_mask = np.asarray(
                 [path in validation_sources for path in source_paths], dtype=bool
@@ -414,7 +414,7 @@ def split_indices(
         1, min(permutation.size - 1, int(permutation.size * (1.0 - validation_ratio)))
     )
     validation_indices = permutation[split_index:]
-    validation_index_set = set(int(index) for index in validation_indices.tolist())
+    validation_index_set = {int(index) for index in validation_indices.tolist()}
     train_indices = np.asarray(
         [index for index in range(features.shape[0]) if index not in validation_index_set],
         dtype=np.int64,
@@ -559,7 +559,7 @@ def main() -> int:
     archive = np.load(dataset_path)
     features = archive["features"].astype(np.float32)
     labels = archive["labels"].astype(np.int64)
-    source_paths = archive["source_paths"] if "source_paths" in archive else None
+    source_paths = archive.get("source_paths", None)
     label_sources = (
         np.asarray(archive["label_sources"], dtype=str) if "label_sources" in archive else None
     )

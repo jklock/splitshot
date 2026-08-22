@@ -18,7 +18,7 @@ class ScoringPreset:
     penalty_label: str
     score_penalty_map: dict[str, float] = field(default_factory=dict)
     score_options: tuple[str, ...] = field(default_factory=tuple)
-    penalty_fields: tuple["PenaltyField", ...] = field(default_factory=tuple)
+    penalty_fields: tuple[PenaltyField, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -469,9 +469,13 @@ def format_imported_stage_overlay_text(
     lines.append(f"Points {_format_overlay_stat(points_value)}")
 
     hit_factor_value = imported_stage.hit_factor
-    if hit_factor_value is None and imported_stage.total_points is not None and display_raw_seconds:
-        if display_raw_seconds > 0:
-            hit_factor_value = max(0.0, float(imported_stage.total_points)) / display_raw_seconds
+    if (
+        hit_factor_value is None
+        and imported_stage.total_points is not None
+        and display_raw_seconds
+        and display_raw_seconds > 0
+    ):
+        hit_factor_value = max(0.0, float(imported_stage.total_points)) / display_raw_seconds
     if hit_factor_value is not None:
         lines.append(f"HF {float(hit_factor_value):.4f}")
     return "\n".join(lines)
@@ -546,9 +550,7 @@ def competition_placement(
     imported = project.scoring.imported_stage
     if imported is None:
         return ""
-    selected_name = str(
-        project.scoring.competitor_name or imported.competitor_name or ""
-    ).strip()
+    selected_name = str(project.scoring.competitor_name or imported.competitor_name or "").strip()
     if not selected_name:
         return ""
     selected = {
@@ -599,9 +601,7 @@ def stage_competition_placement(
     imported = project.scoring.imported_stage
     if imported is None:
         return ""
-    selected_name = str(
-        project.scoring.competitor_name or imported.competitor_name or ""
-    ).strip()
+    selected_name = str(project.scoring.competitor_name or imported.competitor_name or "").strip()
     if not selected_name:
         return ""
     match_type = str(project.scoring.match_type or imported.match_type).casefold()
@@ -628,8 +628,7 @@ def stage_competition_placement(
         cohort = [
             competitor
             for competitor in cohort
-            if _competition_code(competitor.get(dimension), aliases).casefold()
-            == selected_value
+            if _competition_code(competitor.get(dimension), aliases).casefold() == selected_value
         ]
     ranked = []
     for competitor in cohort:
@@ -698,8 +697,7 @@ def format_review_summary_overlay_text(
         _DIVISION_CODES,
     )
     class_label = _competition_code(
-        project.scoring.classification
-        or (imported.classification if imported is not None else ""),
+        project.scoring.classification or (imported.classification if imported is not None else ""),
         _class_codes(project),
     )
     raw_seconds = summary.get("raw_seconds")

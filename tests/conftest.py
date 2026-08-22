@@ -12,7 +12,6 @@ import pytest
 
 import splitshot.config as splitshot_config
 
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("TMPDIR", str(Path(__file__).resolve().parents[1] / ".tmp_tests"))
 tempfile.tempdir = None  # force re-evaluation after setting TMPDIR

@@ -23,23 +23,23 @@ class MergeCanvas:
 
 def _scale_to_height(width: int, height: int, target_height: int) -> tuple[int, int]:
     ratio = target_height / float(height)
-    return int(round(width * ratio)), target_height
+    return round(width * ratio), target_height
 
 
 def _scale_to_width(width: int, height: int, target_width: int) -> tuple[int, int]:
     ratio = target_width / max(1, width)
-    return target_width, int(round(height * ratio))
+    return target_width, round(height * ratio)
 
 
 def _portrait_width_for_height(target_height: int) -> int:
-    return max(2, int(round(target_height * (9 / 16))))
+    return max(2, round(target_height * (9 / 16)))
 
 
 def _hud_band_size(target_extent: int) -> int:
-    return max(72, int(round(target_extent * 0.18)))
+    return max(72, round(target_extent * 0.18))
 
 
-def _pip_scale(size: PipSize | int | float) -> float:
+def _pip_scale(size: PipSize | float) -> float:
     if isinstance(size, PipSize):
         return {
             PipSize.SMALL: 0.25,
@@ -58,22 +58,22 @@ def _clamp_unit(value: float | None, default: float = 1.0) -> float:
 def calculate_pip_rect(
     primary: VideoAsset,
     secondary: VideoAsset,
-    pip_size: PipSize | int | float,
+    pip_size: PipSize | float,
     pip_x: float | None = 1.0,
     pip_y: float | None = 1.0,
 ) -> Rect:
     inset_scale = _pip_scale(pip_size)
-    inset_width = max(2, int(round(primary.width * inset_scale)))
-    inset_height = max(2, int(round((secondary.height / secondary.width) * inset_width)))
+    inset_width = max(2, round(primary.width * inset_scale))
+    inset_height = max(2, round((secondary.height / secondary.width) * inset_width))
     max_width = max(2, primary.width)
     max_height = max(2, primary.height)
     fit_scale = min(1.0, max_width / inset_width, max_height / inset_height)
-    inset_width = max(2, int(round(inset_width * fit_scale)))
-    inset_height = max(2, int(round(inset_height * fit_scale)))
+    inset_width = max(2, round(inset_width * fit_scale))
+    inset_height = max(2, round(inset_height * fit_scale))
     travel_x = max(0, primary.width - inset_width)
     travel_y = max(0, primary.height - inset_height)
-    inset_x = int(round(_clamp_unit(pip_x, 1.0) * travel_x))
-    inset_y = int(round(_clamp_unit(pip_y, 1.0) * travel_y))
+    inset_x = round(_clamp_unit(pip_x, 1.0) * travel_x)
+    inset_y = round(_clamp_unit(pip_y, 1.0) * travel_y)
     return Rect(inset_x, inset_y, inset_width, inset_height)
 
 
@@ -81,7 +81,7 @@ def calculate_merge_canvas(
     primary: VideoAsset,
     secondary: VideoAsset | None,
     layout: MergeLayout,
-    pip_size: PipSize | int | float,
+    pip_size: PipSize | float,
     pip_x: float | None = 1.0,
     pip_y: float | None = 1.0,
 ) -> MergeCanvas:

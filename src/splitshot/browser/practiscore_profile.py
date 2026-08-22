@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 
 import splitshot.config as splitshot_config
-
 
 _PRACTISCORE_ROOT_DIRNAME = "practiscore"
 _PRACTISCORE_PROFILE_DIRNAME = "browser-profile"

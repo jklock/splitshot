@@ -7,20 +7,19 @@ import json
 import os
 import shutil
 import subprocess
-from datetime import datetime, UTC
-from statistics import median
+from datetime import UTC, datetime
 from pathlib import Path
+from statistics import median
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from splitshot.browser.server import BrowserControlServer
 from splitshot import __version__ as APP_VERSION
+from splitshot.browser.server import BrowserControlServer
 from splitshot.domain.models import MergeSource, QueueStatus
 from splitshot.media.probe import probe_video
 from splitshot.ui.controller import ProjectController
-
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PROJECT = ROOT / "05072026"
@@ -334,7 +333,7 @@ def _prepare_review_capture(page: Page) -> None:
         first_card = page.locator("#review-text-box-list .text-box-card").first
         if first_card.count() > 0:
             first_card.scroll_into_view_if_needed()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - capture preparation is best-effort.
         pass
     page.wait_for_timeout(250)
 
@@ -1007,10 +1006,9 @@ def main() -> int:
     server = BrowserControlServer(controller=controller, port=0, log_level="off")
     _warm_source_browser_media(server, controller)
     server.start_background(open_browser=False)
-    browser: Browser | None = None
     try:
         with sync_playwright() as playwright:
-            browser, page = _open_page(playwright, server.url)
+            _browser, page = _open_page(playwright, server.url)
             _refresh(page)
             _wait_for_project_ready(page, len(added_videos))
             captures, responsive = _capture_panes(page, artifact_root)

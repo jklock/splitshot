@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.domain.models import Project, ShotEvent

@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "testing" / "run_electron_iterate.py"
 SPEC = importlib.util.spec_from_file_location("run_electron_iterate_module", MODULE_PATH)
@@ -128,7 +127,7 @@ def test_run_packaged_full_aggregates_subslices(monkeypatch, tmp_path: Path) -> 
     calls: list[tuple[str, Path]] = []
     original = MODULE._run_packaged_slice
 
-    def fake_run_packaged_slice(app_path, slice_name, artifact_root, project_path, env):  # noqa: ANN001
+    def fake_run_packaged_slice(app_path, slice_name, artifact_root, project_path, env):
         if slice_name == "full":
             return original(app_path, slice_name, artifact_root, project_path, env)
         calls.append((slice_name, artifact_root))

@@ -4,7 +4,6 @@ from dataclasses import dataclass, field, replace
 
 from splitshot.domain.models import Project, ShotEvent, TimingEvent
 
-
 RESETTING_EVENT_KINDS = {"reload", "malfunction"}
 
 
@@ -271,7 +270,7 @@ def average_split_ms(project: Project) -> int | None:
     ]
     if not splits:
         return None
-    return int(round(sum(splits) / len(splits)))
+    return round(sum(splits) / len(splits))
 
 
 def total_time_ms(project: Project) -> int | None:

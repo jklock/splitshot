@@ -51,8 +51,9 @@ def _check(description, condition, detail=""):
 
 
 def _create_synthetic_video(out_dir, name="primary.mp4"):
-    import numpy as np
     import wave
+
+    import numpy as np
 
     path = out_dir / name
     audio_path = out_dir / f"{name}.wav"
@@ -193,6 +194,7 @@ def main():
         pw_result = subprocess.run(
             ["node", str(PW_SCRIPT)],
             capture_output=True,
+            check=False,
             text=True,
             timeout=300,
             cwd=REPO,
@@ -223,7 +225,7 @@ def main():
             _check(f"merge sources: {merged}", merged > 0)
             _check(f"timing events: {events}", events > 0)
             _check(f"PractiScore imported: {ps}", ps)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - comprehensive audit records failures uniformly.
             _check("API state verification", False, str(e))
 
         # Export verification - check if Node.js script created the export
@@ -246,6 +248,7 @@ def main():
                         str(export_file),
                     ],
                     capture_output=True,
+                    check=False,
                     text=True,
                     timeout=15,
                 )
@@ -253,7 +256,7 @@ def main():
                 streams = info.get("streams", [])
                 _check("export has video", any(s.get("codec_type") == "video" for s in streams))
                 _check("export has audio", any(s.get("codec_type") == "audio" for s in streams))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - comprehensive audit records failures uniformly.
                 _check("export ffprobe", False, str(e))
         else:
             _check("export file found on disk", False)
@@ -272,7 +275,7 @@ def main():
         )
         return 0 if FAIL == 0 else 1
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - comprehensive audit records failures uniformly.
         print(f"\nFATAL: {exc}", file=sys.stderr)
         return 1
     finally:

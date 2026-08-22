@@ -310,7 +310,7 @@ def _idpa_stage_numbers(rows: list[dict[str, str]]) -> list[int]:
     if not rows:
         raise ValueError("No competitor results were found in the PractiScore export.")
     stage_numbers = sorted(
-        {int(match.group(1)) for key in rows[0].keys() if (match := re.match(r"Stage (\d+) ", key))}
+        {int(match.group(1)) for key in rows[0] if (match := re.match(r"Stage (\d+) ", key))}
     )
     if not stage_numbers:
         raise ValueError("No stage columns were found in the PractiScore export.")
@@ -344,7 +344,7 @@ def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dic
         if stage_numbers:
             return stage_numbers[0]
     stage_numbers = sorted(
-        {int(stage) for stage in report.stage_rows.keys() if _int_or_none(stage) is not None}
+        {int(stage) for stage in report.stage_rows if _int_or_none(stage) is not None}
     )
     if stage_numbers:
         return stage_numbers[0]
@@ -362,9 +362,7 @@ def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dic
 
 
 def _hit_factor_stage_numbers(report: _HitFactorReport) -> list[int]:
-    stage_numbers = {
-        int(stage) for stage in report.stage_rows.keys() if _int_or_none(stage) is not None
-    }
+    stage_numbers = {int(stage) for stage in report.stage_rows if _int_or_none(stage) is not None}
     stage_numbers.update(
         int(stage)
         for row in report.stage_results

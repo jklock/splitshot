@@ -77,11 +77,27 @@ EXCLUDED_IDS: dict[str, str] = {
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PRIMARY_MEDIA_PANES = {
-    "media", "merge", "trim-sync", "timing", "scoring", "markers", "overlay",
-    "review", "export", "intro-outro", "queue", "metrics",
+    "media",
+    "merge",
+    "trim-sync",
+    "timing",
+    "scoring",
+    "markers",
+    "overlay",
+    "review",
+    "export",
+    "intro-outro",
+    "queue",
+    "metrics",
 }
 PRACTISCORE_PANES = {
-    "project", "scoring", "timing", "markers", "overlay", "review", "metrics",
+    "project",
+    "scoring",
+    "timing",
+    "markers",
+    "overlay",
+    "review",
+    "metrics",
     "intro-outro",
 }
 
@@ -89,7 +105,7 @@ _INTERACTIVE_LITERAL_RE = re.compile(
     r"<(button|input|select|textarea|video)\b([^>]*)>", re.IGNORECASE | re.DOTALL
 )
 _QUOTED_ATTRIBUTE_RE = re.compile(
-    r'''([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(["'])(.*?)\2''', re.DOTALL
+    r"""([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(["'])(.*?)\2""", re.DOTALL
 )
 
 
@@ -161,7 +177,8 @@ def build_source_inventory(path: Path = DEFAULT_INVENTORY) -> list[dict[str, Any
         for match in _INTERACTIVE_LITERAL_RE.finditer(text):
             raw_attributes = match.group(2)
             attributes = {
-                item.group(1): item.group(3) for item in _QUOTED_ATTRIBUTE_RE.finditer(raw_attributes)
+                item.group(1): item.group(3)
+                for item in _QUOTED_ATTRIBUTE_RE.finditer(raw_attributes)
             }
             if attributes.get("type", "").lower() == "hidden" or re.search(
                 r"\breadonly(?:\s|/|$)", raw_attributes, re.IGNORECASE
@@ -183,8 +200,7 @@ def build_source_inventory(path: Path = DEFAULT_INVENTORY) -> list[dict[str, Any
             )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"count": len(controls), "controls": controls}, indent=2, sort_keys=True)
-        + "\n",
+        json.dumps({"count": len(controls), "controls": controls}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return controls
@@ -481,7 +497,7 @@ def _mutating_requests(page: Page) -> list[dict[str, Any]]:
 
 def _source_identity_for_runtime(case: dict[str, Any], rows: list[dict[str, Any]]) -> str | None:
     def normalized(selector: str) -> str:
-        return re.sub(r'''(\[[^=\]]+=)["']([^"']+)["']\]''', r"\1\2]", selector)
+        return re.sub(r"""(\[[^=\]]+=)["']([^"']+)["']\]""", r"\1\2]", selector)
 
     selector = normalized(case["selector"])
     for row in rows:
@@ -592,9 +608,7 @@ def _exercise_pair(
                 pane=pane,
                 status="pass" if passed else "fail",
                 reason=(
-                    "all one-action persistence assertions passed"
-                    if passed
-                    else "; ".join(reasons)
+                    "all one-action persistence assertions passed" if passed else "; ".join(reasons)
                 ),
                 before=result["before"],
                 intended_after=intended,
@@ -626,8 +640,7 @@ def _initial_gap(row: dict[str, Any]) -> Proof:
         reason = "native file picker requires a dedicated picker audit"
     elif not _ordinary_value_row(row):
         reason = (
-            f"{tag or 'unknown'} {input_type or 'control'} is outside the "
-            "ordinary-value harness"
+            f"{tag or 'unknown'} {input_type or 'control'} is outside the ordinary-value harness"
         )
     else:
         reason = (
@@ -653,7 +666,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         server.start_background(open_browser=False)
         try:
             with sync_playwright() as playwright:
-                browser_type = playwright.chromium if args.browser == "chrome" else getattr(playwright, args.browser)
+                browser_type = (
+                    playwright.chromium
+                    if args.browser == "chrome"
+                    else getattr(playwright, args.browser)
+                )
                 launch_options = {"headless": not args.headed}
                 if args.browser == "chrome":
                     launch_options["channel"] = "chrome"
@@ -815,8 +832,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "panes": list(panes),
         "inventory_path": str(args.inventory_json),
         "scope": (
-            "ordinary rendered value controls only; buttons/drags/pickers/dialogs are "
-            "explicit gaps"
+            "ordinary rendered value controls only; buttons/drags/pickers/dialogs are explicit gaps"
         ),
         "counts": counts,
         "cases": [asdict(item) for item in proofs],

@@ -105,7 +105,9 @@ def _write_report(
     inventory_rows: list[dict[str, Any]],
     browser_name: str,
 ) -> None:
-    action_rows = [row for row in inventory_rows if row.get("tag") in {"button", "details", "video"}]
+    action_rows = [
+        row for row in inventory_rows if row.get("tag") in {"button", "details", "video"}
+    ]
     covered = {result["inventory_identity"] for result in results}
     gaps = [
         {
@@ -118,9 +120,7 @@ def _write_report(
         for row in action_rows
         if row["identity"] not in covered
     ]
-    report_path = REPORT_PATH.with_name(
-        f"{REPORT_PATH.stem}-{browser_name}{REPORT_PATH.suffix}"
-    )
+    report_path = REPORT_PATH.with_name(f"{REPORT_PATH.stem}-{browser_name}{REPORT_PATH.suffix}")
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(
@@ -166,7 +166,11 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
     results: list[dict[str, Any]] = []
     try:
         with sync_playwright() as playwright:
-            browser_type = playwright.chromium if browser_name == "chrome" else getattr(playwright, browser_name)
+            browser_type = (
+                playwright.chromium
+                if browser_name == "chrome"
+                else getattr(playwright, browser_name)
+            )
             launch_options = {"headless": True}
             if browser_name == "chrome":
                 launch_options["channel"] = "chrome"
@@ -178,20 +182,53 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
             try:
                 # Every user-visible pane gets an independent, exactly-once rail proof.
                 for tool in (
-                    "project", "media", "merge", "trim-sync", "scoring", "timing", "markers",
-                    "overlay", "review", "export", "intro-outro", "queue", "metrics", "shotml", "settings",
+                    "project",
+                    "media",
+                    "merge",
+                    "trim-sync",
+                    "scoring",
+                    "timing",
+                    "markers",
+                    "overlay",
+                    "review",
+                    "export",
+                    "intro-outro",
+                    "queue",
+                    "metrics",
+                    "shotml",
+                    "settings",
                 ):
                     proof = _open_tool_once(page, tool)
-                    results.append({"case": f"rail:{tool}", "pane": tool, "inventory_identity": f"[data-tool={tool}]", "status": "PASS", **proof})
+                    results.append(
+                        {
+                            "case": f"rail:{tool}",
+                            "pane": tool,
+                            "inventory_identity": f"[data-tool={tool}]",
+                            "status": "PASS",
+                            **proof,
+                        }
+                    )
 
                 # Keyboard focus/activation is proved separately from pointer clicks.
                 page.locator('[data-tool="project"]').focus()
                 before_tool = page.evaluate("activeTool")
                 page.keyboard.press("Enter")
-                keyboard_after = page.evaluate("() => ({ activeTool, focused: document.activeElement?.dataset?.tool })")
+                keyboard_after = page.evaluate(
+                    "() => ({ activeTool, focused: document.activeElement?.dataset?.tool })"
+                )
                 assert before_tool != "project"
                 assert keyboard_after == {"activeTool": "project", "focused": "project"}
-                results.append({"case": "keyboard:rail-enter", "pane": "project", "inventory_identity": "[data-tool=project]", "status": "PASS", "before": before_tool, "after": keyboard_after, "event_counts": {"keyboard": 1}})
+                results.append(
+                    {
+                        "case": "keyboard:rail-enter",
+                        "pane": "project",
+                        "inventory_identity": "[data-tool=project]",
+                        "status": "PASS",
+                        "before": before_tool,
+                        "after": keyboard_after,
+                        "event_counts": {"keyboard": 1},
+                    }
+                )
 
                 # Media stage tree/select and its component-only expanders.
                 _open_tool_once(page, "media")
@@ -214,31 +251,90 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     # A stage switch is an intentional structural pane rebuild; unlike an
                     # ordinary save, replacing this selector is allowed.
                     assert stage_event == {"value": next_stage, "changes": 1, "connected": False}
-                    page.wait_for_function("id => state.project.active_stage_id === id", arg=next_stage)
+                    page.wait_for_function(
+                        "id => state.project.active_stage_id === id", arg=next_stage
+                    )
                     immediate_stage = page.evaluate("state.project.active_stage_id")
                     assert immediate_stage == next_stage and immediate_stage != before_stage
                     request_after = _request_count(page, "/api/project/select-stage")
                     assert request_after - request_before == 1
-                    results.append({"case": "media:stage-selection", "pane": "media", "inventory_identity": "id:media-active-stage-select", "status": "PASS", "before": before_stage, "immediate_visible": stage_event["value"], "intentional_structural_rebuild": True, "after": immediate_stage, "event_counts": {"change": 1}, "mutating_requests": 1})
+                    results.append(
+                        {
+                            "case": "media:stage-selection",
+                            "pane": "media",
+                            "inventory_identity": "id:media-active-stage-select",
+                            "status": "PASS",
+                            "before": before_stage,
+                            "immediate_visible": stage_event["value"],
+                            "intentional_structural_rebuild": True,
+                            "after": immediate_stage,
+                            "event_counts": {"change": 1},
+                            "mutating_requests": 1,
+                        }
+                    )
                 for section in ("primary", "added"):
                     selector = f'[data-media-section="{section}"]'
-                    before_hidden = page.locator(selector).locator("xpath=ancestor::section[1]").locator(".media-pane-section-body").get_attribute("hidden") is not None
+                    before_hidden = (
+                        page.locator(selector)
+                        .locator("xpath=ancestor::section[1]")
+                        .locator(".media-pane-section-body")
+                        .get_attribute("hidden")
+                        is not None
+                    )
                     proof = _click_once(page, selector, expect_same_node=False)
-                    after_hidden = page.locator(selector).locator("xpath=ancestor::section[1]").locator(".media-pane-section-body").get_attribute("hidden") is not None
+                    after_hidden = (
+                        page.locator(selector)
+                        .locator("xpath=ancestor::section[1]")
+                        .locator(".media-pane-section-body")
+                        .get_attribute("hidden")
+                        is not None
+                    )
                     assert after_hidden is not before_hidden
-                    results.append({"case": f"media:toggle-{section}", "pane": "media", "inventory_identity": f"[data-media-section={section}]", "status": "PASS", "before": before_hidden, "after": after_hidden, **proof})
+                    results.append(
+                        {
+                            "case": f"media:toggle-{section}",
+                            "pane": "media",
+                            "inventory_identity": f"[data-media-section={section}]",
+                            "status": "PASS",
+                            "before": before_hidden,
+                            "after": after_hidden,
+                            **proof,
+                        }
+                    )
 
                 # Queue membership is a single click and exactly one server mutation.
                 _open_tool_once(page, "queue")
                 queue_selector = f'.queue-membership-btn[data-stage-id="{stage.id}"]'
-                before_queued = page.evaluate("(id) => state.project.queue.some((item) => item.stage_id === id)", stage.id)
-                request_before = _request_count(page, "/api/project/queue/add") + _request_count(page, "/api/project/queue/remove")
+                before_queued = page.evaluate(
+                    "(id) => state.project.queue.some((item) => item.stage_id === id)", stage.id
+                )
+                request_before = _request_count(page, "/api/project/queue/add") + _request_count(
+                    page, "/api/project/queue/remove"
+                )
                 proof = _click_once(page, queue_selector)
-                page.wait_for_function("([id, before]) => state.project.queue.some((item) => item.stage_id === id) !== before", arg=[stage.id, before_queued])
-                after_queued = page.evaluate("(id) => state.project.queue.some((item) => item.stage_id === id)", stage.id)
-                request_after = _request_count(page, "/api/project/queue/add") + _request_count(page, "/api/project/queue/remove")
+                page.wait_for_function(
+                    "([id, before]) => state.project.queue.some((item) => item.stage_id === id) !== before",
+                    arg=[stage.id, before_queued],
+                )
+                after_queued = page.evaluate(
+                    "(id) => state.project.queue.some((item) => item.stage_id === id)", stage.id
+                )
+                request_after = _request_count(page, "/api/project/queue/add") + _request_count(
+                    page, "/api/project/queue/remove"
+                )
                 assert request_after - request_before == 1
-                results.append({"case": "queue:membership", "pane": "queue", "inventory_identity": "[data-stage-id=${stageId}]", "status": "PASS", "before": before_queued, "after": after_queued, "mutating_requests": 1, **proof})
+                results.append(
+                    {
+                        "case": "queue:membership",
+                        "pane": "queue",
+                        "inventory_identity": "[data-stage-id=${stageId}]",
+                        "status": "PASS",
+                        "before": before_queued,
+                        "after": after_queued,
+                        "mutating_requests": 1,
+                        **proof,
+                    }
+                )
 
                 # Two rapid scalar changes keep both live nodes and coalesce to
                 # no more than one mutation per user action.
@@ -282,7 +378,15 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     "secondValue": "0.7",
                     "events": {"first": 1, "second": 1},
                 }
-                results.append({"case": "queue:rapid-fades", "pane": "queue", "inventory_identity": "id:queue-fade-in+id:queue-fade-out", "status": "PASS", **settled_fades})
+                results.append(
+                    {
+                        "case": "queue:rapid-fades",
+                        "pane": "queue",
+                        "inventory_identity": "id:queue-fade-in+id:queue-fade-out",
+                        "status": "PASS",
+                        **settled_fades,
+                    }
+                )
 
                 page.evaluate(
                     "id => callApi('/api/project/select-stage', { stage_id: id })",
@@ -342,7 +446,16 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                 }
                 merge_request_after = _request_count(page, "/api/merge/source")
                 assert 1 <= merge_request_after - merge_request_before <= 2
-                results.append({"case": "merge:rapid-source-scalars", "pane": "merge", "inventory_identity": "data-merge-source-field:size+opacity", "status": "PASS", "mutating_requests": merge_request_after - merge_request_before, **settled_merge})
+                results.append(
+                    {
+                        "case": "merge:rapid-source-scalars",
+                        "pane": "merge",
+                        "inventory_identity": "data-merge-source-field:size+opacity",
+                        "status": "PASS",
+                        "mutating_requests": merge_request_after - merge_request_before,
+                        **settled_merge,
+                    }
+                )
 
                 _open_tool_once(page, "scoring")
                 scoring_before = page.evaluate("state.project.scoring.enabled")
@@ -367,12 +480,33 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     (controller.project_path / "project.json").read_text(encoding="utf-8")
                 )
                 assert stored_after_scoring["scoring"]["enabled"] is (not scoring_before)
-                results.append({"case": "scoring:enable-without-profile-reapply", "pane": "scoring", "inventory_identity": "id:scoring-enabled", "status": "PASS", "before": scoring_before, "after": not scoring_before, "mutating_requests": 1, **scoring_proof})
+                results.append(
+                    {
+                        "case": "scoring:enable-without-profile-reapply",
+                        "pane": "scoring",
+                        "inventory_identity": "id:scoring-enabled",
+                        "status": "PASS",
+                        "before": scoring_before,
+                        "after": not scoring_before,
+                        "mutating_requests": 1,
+                        **scoring_proof,
+                    }
+                )
 
                 # Additive actions prove one click creates exactly one object.
                 for tool, selector, identity, state_expr in (
-                    ("review", "#review-add-text-box", "id:review-add-text-box", "(state.project.overlay.text_boxes || []).length"),
-                    ("intro-outro", "#intro-outro-add-text", "intro-outro-add-text", "(state.project.intro_clip.overlay.text_boxes || []).length"),
+                    (
+                        "review",
+                        "#review-add-text-box",
+                        "id:review-add-text-box",
+                        "(state.project.overlay.text_boxes || []).length",
+                    ),
+                    (
+                        "intro-outro",
+                        "#intro-outro-add-text",
+                        "intro-outro-add-text",
+                        "(state.project.intro_clip.overlay.text_boxes || []).length",
+                    ),
                 ):
                     _open_tool_once(page, tool)
                     before = page.evaluate(state_expr)
@@ -384,13 +518,41 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     page.wait_for_function(f"before => {state_expr} === before + 1", arg=before)
                     after = page.evaluate(state_expr)
                     assert after == before + 1
-                    results.append({"case": f"{tool}:add-one", "pane": tool, "inventory_identity": identity, "status": "PASS", "before": before, "after": after, **proof})
+                    results.append(
+                        {
+                            "case": f"{tool}:add-one",
+                            "pane": tool,
+                            "inventory_identity": identity,
+                            "status": "PASS",
+                            "before": before,
+                            "after": after,
+                            **proof,
+                        }
+                    )
 
                 # Workbench and shell expanders are synchronous, preserve their node, and toggle once.
                 for tool, selector, identity, before_expr, after_expr in (
-                    ("timing", "#expand-timing", "id:expand-timing", "state.project.ui_state.timing_expanded === true", "state.project.ui_state.timing_expanded === true"),
-                    ("scoring", "#expand-scoring", "id:expand-scoring", "scoringWorkbenchExpanded === true", "scoringWorkbenchExpanded === true"),
-                    ("metrics", "#expand-metrics", "id:expand-metrics", "state.project.ui_state.metrics_expanded === true", "state.project.ui_state.metrics_expanded === true"),
+                    (
+                        "timing",
+                        "#expand-timing",
+                        "id:expand-timing",
+                        "state.project.ui_state.timing_expanded === true",
+                        "state.project.ui_state.timing_expanded === true",
+                    ),
+                    (
+                        "scoring",
+                        "#expand-scoring",
+                        "id:expand-scoring",
+                        "scoringWorkbenchExpanded === true",
+                        "scoringWorkbenchExpanded === true",
+                    ),
+                    (
+                        "metrics",
+                        "#expand-metrics",
+                        "id:expand-metrics",
+                        "state.project.ui_state.metrics_expanded === true",
+                        "state.project.ui_state.metrics_expanded === true",
+                    ),
                 ):
                     _open_tool_once(page, tool)
                     before = page.evaluate(before_expr)
@@ -398,7 +560,17 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     proof = _click_once(page, selector)
                     after = page.evaluate(after_expr)
                     assert after is True
-                    results.append({"case": f"{tool}:expand", "pane": tool, "inventory_identity": identity, "status": "PASS", "before": before, "after": after, **proof})
+                    results.append(
+                        {
+                            "case": f"{tool}:expand",
+                            "pane": tool,
+                            "inventory_identity": identity,
+                            "status": "PASS",
+                            "before": before,
+                            "after": after,
+                            **proof,
+                        }
+                    )
             finally:
                 browser.close()
     finally:

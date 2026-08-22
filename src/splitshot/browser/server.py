@@ -792,8 +792,8 @@ class BrowserControlServer:
                 return
             self._processing_job["active"] = False
             self._processing_job["status"] = "failed" if error else "complete"
-            self._processing_job["progress"] = 1.0 if not error else self._processing_job.get(
-                "progress", 0.0
+            self._processing_job["progress"] = (
+                1.0 if not error else self._processing_job.get("progress", 0.0)
             )
             self._processing_job["message"] = status
             self._processing_job["detail"] = "Ready" if not error else "Processing failed"
@@ -824,9 +824,7 @@ class BrowserControlServer:
                 )
             } | {
                 "logs": [
-                    deepcopy(item)
-                    for item in job["logs"]
-                    if int(item.get("seq", 0)) > after_log
+                    deepcopy(item) for item in job["logs"] if int(item.get("seq", 0)) > after_log
                 ]
             }
 

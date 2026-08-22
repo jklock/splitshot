@@ -70,7 +70,9 @@ def test_screenshot_capture_rejects_test_fixtures_and_duplicate_sources(tmp_path
     real_secondary.write_bytes(b"secondary")
 
     assert module.validated_real_video(real_primary, label="Primary") == real_primary.resolve()
-    assert module.validated_real_video(real_secondary, label="Secondary") == real_secondary.resolve()
+    assert (
+        module.validated_real_video(real_secondary, label="Secondary") == real_secondary.resolve()
+    )
     assert module.validated_video_pair(real_primary, real_secondary) == (
         real_primary.resolve(),
         real_secondary.resolve(),
@@ -95,7 +97,7 @@ def test_screenshot_capture_rejects_test_fixtures_and_duplicate_sources(tmp_path
 def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> None:
     source = (ROOT / "scripts/docs/capture_browser_screenshots.py").read_text()
     assert "stabilize_visible_video_frames(page)" in source
-    assert 'document.querySelectorAll(\'#merge-preview-layer video\')' in source
+    assert "document.querySelectorAll('#merge-preview-layer video')" in source
     assert 'result["primaryReady"]' in source
     assert 'result["secondaryReady"]' in source
     assert 'result["activeToolName"] != "intro-outro"' in source
