@@ -82,6 +82,33 @@ def test_compute_visual_findings_uses_project_score_splits_baseline() -> None:
     assert findings[1]["category"] == "markup/copy"
 
 
+def test_compute_visual_findings_allows_settings_persistence_hint() -> None:
+    metrics = {
+        "title_font_size_px": 20.0,
+        "summary_font_size_px": 12.0,
+        "label_font_size_px": [12.0],
+        "card_padding_px": [12.0],
+        "input_height_px": [36.0],
+        "toggle_right_offsets_px": [10.0],
+        "has_hint_text": [],
+    }
+    dom_summary = {
+        "pane_metrics": {
+            "project": metrics,
+            "scoring": metrics,
+            "timing": metrics,
+            "settings": {
+                **metrics,
+                "has_hint_text": [
+                    "Saved in application settings.json. Existing splitshot.conf files are preserved but ignored."
+                ],
+            },
+        }
+    }
+
+    assert MODULE._compute_visual_findings(dom_summary) == []
+
+
 def test_prepare_project_copy_copies_mutable_files(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "05072026"
     artifact_root = tmp_path / "artifacts"

@@ -1373,7 +1373,7 @@ def _compute_visual_findings(dom_summary: dict[str, Any]) -> list[dict[str, Any]
             issues.append(
                 f"toggle alignment {toggle_offset:.2f}px drifts from Project/Score/Splits baseline {baseline['toggle_right_offset_px']:.2f}px"
             )
-        if hint_text and tool not in {"project", "scoring", "timing"}:
+        if hint_text and tool not in {"project", "scoring", "timing", "settings"}:
             issues.append(f"unexpected helper/explanatory text present: {hint_text}")
         for issue in issues:
             category, code_change_needed = _categorize_failure(issue)
