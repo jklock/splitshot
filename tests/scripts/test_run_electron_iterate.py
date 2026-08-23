@@ -16,6 +16,17 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+def test_environment_isolates_temp_and_application_settings() -> None:
+    env = MODULE._env()
+
+    assert env["TMPDIR"] == str(MODULE.TMP_ROOT)
+    assert env["TMP"] == str(MODULE.TMP_ROOT)
+    assert env["TEMP"] == str(MODULE.TMP_ROOT)
+    assert env["SPLITSHOT_SETTINGS_PATH"] == str(
+        MODULE.TMP_ROOT / "electron-iterate-settings.json"
+    )
+
+
 def test_default_scenarios_follow_tier() -> None:
     assert MODULE._default_scenarios("source") == ["startup"]
     assert MODULE._default_scenarios("unpacked") == ["launch"]

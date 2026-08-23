@@ -72,6 +72,7 @@ def _env() -> dict[str, str]:
             "TMPDIR": str(TMP_ROOT),
             "TMP": str(TMP_ROOT),
             "TEMP": str(TMP_ROOT),
+            "SPLITSHOT_SETTINGS_PATH": str(TMP_ROOT / "electron-iterate-settings.json"),
         }
     )
     return env
