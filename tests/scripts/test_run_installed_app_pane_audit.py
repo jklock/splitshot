@@ -205,6 +205,22 @@ def test_api_post_raises_when_browser_runtime_reports_failure() -> None:
         MODULE._api_post(FakePage(), "/api/project/queue/add", {"stage_id": "stage-1"})
 
 
+def test_set_active_stage_does_not_reselect_current_stage(monkeypatch) -> None:
+    class FakePage:
+        def evaluate(self, _script):
+            return "stage-1"
+
+    api_calls: list[tuple[str, dict[str, str]]] = []
+    monkeypatch.setattr(
+        MODULE, "_api_post", lambda _page, path, payload: api_calls.append((path, payload))
+    )
+    monkeypatch.setattr(MODULE, "_wait_for_processing_bar", lambda _page: None)
+
+    MODULE._set_active_stage(FakePage(), "stage-1")
+
+    assert api_calls == []
+
+
 def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_path: Path) -> None:
     combined_path = tmp_path / "Output" / "proof-combined.mp4"
     combined_path.parent.mkdir(parents=True, exist_ok=True)
