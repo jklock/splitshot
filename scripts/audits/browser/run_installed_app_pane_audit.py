@@ -1052,7 +1052,7 @@ def _run_individual_exports(
 def _run_combined_export(
     page: Page, artifact_root: Path, project_copy_root: Path
 ) -> dict[str, Any]:
-    before = {item.name for item in _queue_output_dir(project_copy_root).glob("*-combined.mp4")}
+    before = {item.name for item in _queue_output_dir(project_copy_root).glob("Combined-*.mp4")}
     _requeue_all_stages(page)
     _set_tool(page, "queue")
     page.locator("#queue-combined-btn").click(force=True)
@@ -1071,10 +1071,15 @@ def _run_combined_export(
         """,
         timeout=QUEUE_EXPORT_TIMEOUT_MS,
     )
+    page.wait_for_function(
+        "() => Boolean(state?.project?.last_combined_output_path)",
+        timeout=QUEUE_EXPORT_TIMEOUT_MS,
+    )
+    _wait_for_processing_bar(page, timeout_ms=QUEUE_EXPORT_TIMEOUT_MS)
     combined_output_path = str(
         page.evaluate("() => state?.project?.last_combined_output_path || ''") or ""
     ).strip()
-    after_candidates = sorted(_queue_output_dir(project_copy_root).glob("*-combined.mp4"))
+    after_candidates = sorted(_queue_output_dir(project_copy_root).glob("Combined-*.mp4"))
     created = [path for path in after_candidates if path.name not in before]
     combined_path = (
         Path(combined_output_path)

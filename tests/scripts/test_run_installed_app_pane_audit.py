@@ -276,6 +276,12 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
 
     monkeypatch.setattr(MODULE, "_requeue_all_stages", lambda page: None)
     monkeypatch.setattr(MODULE, "_set_tool", lambda page, tool: None)
+    processing_waits: list[int] = []
+    monkeypatch.setattr(
+        MODULE,
+        "_wait_for_processing_bar",
+        lambda page, timeout_ms=30_000: processing_waits.append(timeout_ms),
+    )
     monkeypatch.setattr(
         MODULE,
         "_capture_export_log",
@@ -290,6 +296,7 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
     assert result["output_path"] == str(combined_path)
     assert result["verification"]["exists"] is True
     assert result["error"] is None
+    assert processing_waits == [MODULE.QUEUE_EXPORT_TIMEOUT_MS]
 
 
 def test_requeue_all_stages_clears_existing_queue_before_readding(monkeypatch) -> None:
