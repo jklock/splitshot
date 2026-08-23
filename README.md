@@ -41,6 +41,14 @@ If you just forked the repo and want maintainer context, use the developer secti
 1. Install SplitShot using the platform section below.
 2. Launch SplitShot from source with `uv run splitshot` or from the Electron shell with `npm start` inside `electron/`.
 3. In `Project`, select an empty folder and create the project, or select a folder containing `project.json` to open it. SplitShot creates `Input`, `CSV`, `Markers`, and `Output` inside that folder.
+
+If an older multi-stage project has a stage with missing live media while its Queue row still has a valid snapshot, preview the non-destructive recovery first:
+
+```bash
+uv run python scripts/repair/recover_stage_state_from_queue.py --project /path/to/project
+```
+
+Add `--apply` only after reviewing the listed stages. Apply mode creates a timestamped `project.pre-stage-state-recovery-*.json` backup, restores only missing media/analysis from the same stage ID, preserves current scoring and presentation data, and marks the rebuilt queue snapshot stale.
 4. Use `Media` to add stages and import their primary and added media. Imported files are copied into the project's `Input` folder; later pickers open in the relevant project-owned location (`Input`, `CSV`, `Markers`, or `Output`) so assets stay together.
 5. If the first pass is off, adjust detection in `ShotML`, rerun analysis, and only then move into manual cleanup in `Splits`.
 6. Use `Splits` to correct timing, add or remove shots, review timing events, and make the final timeline match the footage before deeper presentation work.

@@ -250,7 +250,7 @@ export function createTimingPane({
   function restoreOriginalSplit(shotId) {
     setSelectedShotIdValue(shotId);
     timingAdjustmentDrafts().delete(shotId);
-    callApi("/api/shots/restore", { shot_id: shotId, preserve_following_splits: true });
+    callApi("/api/shots/restore", { shot_id: shotId, preserve_following_splits: false });
   }
 
   function deleteShotById(shotId, source = "selected") {
@@ -283,7 +283,7 @@ export function createTimingPane({
       callApi("/api/shots/move", {
         shot_id: shotId,
         time_ms: baseTimeMs + splitMs,
-        preserve_following_splits: true,
+        preserve_following_splits: false,
       });
     }
   }

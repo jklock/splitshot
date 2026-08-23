@@ -1340,7 +1340,7 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     """({ shotId, deltaMs }) => {
                         const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
                         if (!shot) return;
-                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: false });
                     }""",
                     {"shotId": target_shot_id, "deltaMs": 10},
                 )
@@ -1382,7 +1382,7 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     """({ shotId, deltaMs }) => {
                         const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
                         if (!shot) return;
-                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: false });
                     }""",
                     {"shotId": target_shot_id, "deltaMs": 10},
                 )

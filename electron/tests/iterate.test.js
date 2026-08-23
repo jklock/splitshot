@@ -690,26 +690,28 @@ async function scenarioShotML(page) {
 async function scenarioSettings(page) {
   await setTool(page, 'settings');
   const section = page.locator('[data-settings-section="global-template"]');
-  const scopeSelect = page.locator('#settings-scope');
-  if (!(await scopeSelect.isVisible())) {
+  const defaultTool = page.locator('#settings-default-tool');
+  if (!(await defaultTool.isVisible())) {
     await section.locator('[data-section-toggle]').click({ force: true });
-    await scopeSelect.waitFor({ state: 'visible', timeout: 30_000 });
+    await defaultTool.waitFor({ state: 'visible', timeout: 30_000 });
   }
-  await page.locator('#settings-scope').selectOption('folder');
-  await page.locator('#settings-default-tool').selectOption('metrics');
+  assert.equal(await page.locator('#settings-scope').count(), 0);
+  await defaultTool.selectOption('metrics');
   await page.locator('#settings-import-current').click({ force: true });
   await waitForState(
     page,
-    (state) => String(state.settings_layers?.folder?.default_tool || '') === 'metrics',
+    (state) => String(state.settings_layers?.app?.default_tool || '') === 'metrics'
+      && Number(state.settings_layers?.app?.project_defaults?.schema_version || 0) === 1,
     30_000,
   );
   const summary = await page.evaluate(() => ({
-    scope: document.getElementById('settings-scope')?.value || '',
+    hasScopeControl: Boolean(document.getElementById('settings-scope')),
     defaultTool: document.getElementById('settings-default-tool')?.value || '',
     status: document.getElementById('settings-scope-status')?.textContent?.trim() || '',
   }));
-  assert.equal(summary.scope, 'folder');
+  assert.equal(summary.hasScopeControl, false);
   assert.equal(summary.defaultTool, 'metrics');
+  assert.match(summary.status, /application settings\.json/i);
   return summary;
 }
 
@@ -733,6 +735,9 @@ const SCENARIOS = {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (!fs.existsSync(args.projectPath)) {
+    throw new Error(`Project path does not exist; pass --project-path explicitly: ${args.projectPath}`);
+  }
   fs.mkdirSync(args.artifacts, { recursive: true });
   fs.mkdirSync(TMP_ROOT, { recursive: true });
   const readyFile = path.join(fs.mkdtempSync(path.join(TMP_ROOT, 'splitshot-electron-iterate-ready-')), 'events.jsonl');
@@ -743,6 +748,7 @@ async function main() {
     SPLITSHOT_ELECTRON_TEST: '1',
     SPLITSHOT_ELECTRON_READY_FILE: readyFile,
     SPLITSHOT_TEST_PORT: String(port),
+    SPLITSHOT_SETTINGS_PATH: path.join(TMP_ROOT, `electron-settings-${port}.json`),
   };
 
   const electronApp = await playwrightElectron.launch({

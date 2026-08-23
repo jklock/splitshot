@@ -199,7 +199,9 @@ def test_export_queue_process_combined_surfaces_concat_failure(
     monkeypatch.setattr(
         controller,
         "_concat_outputs",
-        lambda results, output_dir: (_ for _ in ()).throw(RuntimeError("combined output missing")),
+        lambda results, output_dir, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("combined output missing")
+        ),
     )
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)

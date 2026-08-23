@@ -4,6 +4,23 @@
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
+## v1.1.0
+
+SplitShot 1.1.0 completes the application-default and multi-stage repair work that follows the feature-frozen 1.0.7 line.
+
+### What Changed
+
+- **Made application defaults reusable and application-only.** Settings can capture the current project presentation as versioned defaults for future projects and stages without copying media, results, marker instances, runtime paths, or logs.
+- **Completed stage workflow controls.** Media exposes explicit Stage Name, Save Stage, Delete Stage, Global Settings Primary, and Ignore Global Settings controls while keeping stage-owned media, analysis, competitor, and spreadsheet scoring isolated.
+- **Corrected stage preview and export truth.** Dynamic Stage Name text and match summaries use the active stage and selected competitor, imported spreadsheet times remain authoritative, and queue renders use immutable per-stage snapshots.
+- **Repaired editing and processing continuity.** Waveform edits move only the selected marker, Input / Output playback survives inspector changes in a contained viewport, Queue All is grouped with process actions, and processing logs rehydrate across navigation.
+- **Added recoverable project repair.** A dry-run/apply repair command can restore missing live stage media and analysis from matching queue snapshots after creating a timestamped backup.
+- **Closed validation gaps.** The canonical runner now includes domain and Electron tests, local-only integration fixtures were replaced, Electron settings tests use isolated storage, and failed canonical runs retain raw traceback output.
+
+### Release Proof
+
+Release proof requires the corrected canonical suite, browser ownership and interaction audits, Electron source proof, and package-native validation. This branch is not published or tagged until those gates pass.
+
 ## v1.0.7
 
 SplitShot 1.0.7 completes the current editing and release workflow. This release is feature-frozen: further work on the 1.0.7 line is limited to validation, documentation, packaging, and defect fixes.

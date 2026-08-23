@@ -59,6 +59,18 @@ SUITES: tuple[SuiteDefinition, ...] = (
         targets=(ROOT / "tests" / "browser",),
     ),
     SuiteDefinition(
+        name="domain",
+        label="Domain",
+        description="Project models, stage lifecycle, queue snapshots, and migrations.",
+        targets=(ROOT / "tests" / "domain",),
+    ),
+    SuiteDefinition(
+        name="electron",
+        label="Electron",
+        description="Electron packaging and desktop integration tests.",
+        targets=(ROOT / "tests" / "electron",),
+    ),
+    SuiteDefinition(
         name="cli",
         label="CLI",
         description="Runtime entrypoint and command-line behavior tests.",
@@ -410,6 +422,13 @@ def main() -> int:
     results = execute_runs(runs, dry_run=args.dry_run, stop_on_failure=args.stop_on_failure)
     rendered = format_results(results, args.dry_run, args.format)
     print(rendered)
+
+    failed_results = [result for result in results if result.status == "failed"]
+    failure_output_path = args.raw_output
+    if failed_results and failure_output_path is None:
+        failure_output_path = ROOT / "artifacts" / "test-run-failures.raw.txt"
+        write_output(failure_output_path, raw_report(failed_results, args.dry_run))
+        print(f"\nFailure details: {failure_output_path.relative_to(ROOT)}")
 
     write_output(args.raw_output, raw_report(results, args.dry_run))
     write_output(

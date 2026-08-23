@@ -7,7 +7,7 @@ from pathlib import Path
 
 import splitshot.ui.controller as controller_module
 from splitshot.browser.server import BrowserControlServer
-from splitshot.domain.models import ImportedStageScore
+from splitshot.domain.models import ImportedStageScore, ShotEvent, VideoAsset
 from splitshot.scoring.practiscore_web_extract import (
     MISSING_REQUIRED_REMOTE_ARTIFACT_ERROR,
     PractiScoreSyncError,
@@ -18,6 +18,26 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
+
+
+def test_practiscore_refresh_cannot_clear_existing_stage_media_or_analysis() -> None:
+    source = EXAMPLES_DIR / "IDPA" / "IDPA.csv"
+    controller = ProjectController()
+    controller.import_practiscore_file(str(source), source.name)
+    stage = controller.project.stages[1]
+    stage.primary_media = VideoAsset(path="Stage2.mp4", duration_ms=12_000)
+    stage.analysis.shots = [ShotEvent(time_ms=4321)]
+    controller.project.active_stage_id = stage.id
+    controller.project.primary_video = VideoAsset()
+    controller.project.analysis.shots = []
+
+    controller.import_practiscore_file(str(source), source.name)
+
+    restored = next(item for item in controller.project.stages if item.id == stage.id)
+    assert restored.primary_media.path == "Stage2.mp4"
+    assert [shot.time_ms for shot in restored.analysis.shots] == [4321]
+    assert restored.scoring.imported_stage is not None
+    assert restored.scoring.imported_stage.stage_number == 2
 
 
 def test_practiscore_identity_fields_can_clear_and_survive_stage_override_restore() -> None:

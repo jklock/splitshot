@@ -1,8 +1,8 @@
 """Multi-stage v107 workflow integration test with real IDPA match data.
 
-Uses 05072026/ data (not checked into git):
-- CSV/IDPA.csv — 4-stage IDPA match, 30 shooters
-- Stage2.MP4, Stage3.MP4, Stage4.MP4 — primary media
+Uses tracked example data and generated media:
+- example_data/IDPA/IDPA.csv — 4-stage IDPA match
+- deterministic synthetic videos — primary media
 - Stage1 has no media (tests missing-media handling)
 
 Verifies:
@@ -22,8 +22,6 @@ import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import pytest
-
 from splitshot.domain.models import (
     Project,
     ProjectStage,
@@ -34,13 +32,17 @@ from splitshot.domain.models import (
 from splitshot.persistence.projects import load_project, save_project
 from splitshot.ui.controller import ProjectController
 
-DATA_ROOT = Path("05072026")
-CSV_PATH = DATA_ROOT / "CSV" / "IDPA.csv"
-STAGE_VIDEOS = {
-    2: DATA_ROOT / "Stage2.MP4",
-    3: DATA_ROOT / "Stage3.MP4",
-    4: DATA_ROOT / "Stage4.MP4",
-}
+ROOT = Path(__file__).resolve().parents[2]
+CSV_PATH = ROOT / "example_data" / "IDPA" / "IDPA.csv"
+
+
+def _stage_videos(synthetic_video_factory) -> dict[int, Path]:
+    return {
+        stage_number: synthetic_video_factory(
+            f"stage-{stage_number}", duration_ms=1800, shot_times_ms=[800, 1200]
+        )
+        for stage_number in (2, 3, 4)
+    }
 
 
 def _parse_idpa_stages(csv_path: Path) -> list[dict]:
@@ -77,10 +79,6 @@ def _get_first_shooter_stage_data(csv_path: Path, stage_number: int) -> dict | N
     return None
 
 
-_fixture_missing = not CSV_PATH.exists()
-
-
-@pytest.mark.skipif(_fixture_missing, reason="Local fixture 05072026/ not present")
 class TestV107MultiStageWorkflow:
     """Integration test for v107 multi-stage workflow with real media."""
 
@@ -126,7 +124,7 @@ class TestV107MultiStageWorkflow:
             "Stage 4",
         ]
 
-    def test_import_primary_media_per_stage(self):
+    def test_import_primary_media_per_stage(self, synthetic_video_factory):
         """Phase 02: Import primary media for stages 2-4. Stage 1 has no media."""
         stages_def = _parse_idpa_stages(CSV_PATH)
         project = Project()
@@ -147,7 +145,7 @@ class TestV107MultiStageWorkflow:
         controller.project = project
 
         imported_count = 0
-        for stage_num, video_path in STAGE_VIDEOS.items():
+        for stage_num, video_path in _stage_videos(synthetic_video_factory).items():
             if video_path.exists():
                 stage = project.stages[stage_num - 1]
                 controller.select_stage(stage.id)
@@ -167,7 +165,7 @@ class TestV107MultiStageWorkflow:
         stage1 = project.stages[0]
         assert stage1.primary_media.path == "", "Stage 1 should have empty primary media"
 
-    def test_per_stage_merge_layouts(self):
+    def test_per_stage_merge_layouts(self, synthetic_video_factory):
         """Phase 04: Configure per-stage merge layouts (PIP, SBS, ABOVE_BELOW)."""
         stages_def = _parse_idpa_stages(CSV_PATH)
         project = Project()
@@ -187,7 +185,8 @@ class TestV107MultiStageWorkflow:
         from splitshot.domain.models import MergeLayout, MergeSource, VideoAsset
 
         # Import primary media for stages 2-4
-        for stage_num, video_path in STAGE_VIDEOS.items():
+        stage_videos = _stage_videos(synthetic_video_factory)
+        for stage_num, video_path in stage_videos.items():
             if video_path.exists():
                 stage = project.stages[stage_num - 1]
                 stage.primary_media = VideoAsset(path=str(video_path.resolve()))
@@ -204,8 +203,8 @@ class TestV107MultiStageWorkflow:
             stage.merge.layout = layout
             stage.merge.enabled = True
             # Add the next stage's video as added media for PIP/SBS
-            if stage_num < 4 and (stage_num + 1) in STAGE_VIDEOS:
-                added_path = STAGE_VIDEOS[stage_num + 1]
+            if stage_num < 4 and (stage_num + 1) in stage_videos:
+                added_path = stage_videos[stage_num + 1]
                 if added_path.exists():
                     stage.added_media.append(
                         MergeSource(asset=VideoAsset(path=str(added_path.resolve())))
@@ -288,7 +287,7 @@ class TestV107MultiStageWorkflow:
 
         print(f"  Stage switching verified: {len(project.stages)} stages, bidirectional sync works")
 
-    def test_queue_add_and_apply_all(self):
+    def test_queue_add_and_apply_all(self, synthetic_video_factory):
         """Phase 05: Add stages to queue, apply settings to all."""
         stages_def = _parse_idpa_stages(CSV_PATH)
         project = Project()
@@ -309,7 +308,7 @@ class TestV107MultiStageWorkflow:
         # Import primary media for stages 2-4 so they can be queued
         from splitshot.domain.models import VideoAsset
 
-        for stage_num, video_path in STAGE_VIDEOS.items():
+        for stage_num, video_path in _stage_videos(synthetic_video_factory).items():
             if video_path.exists():
                 project.stages[stage_num - 1].primary_media = VideoAsset(
                     path=str(video_path.resolve()),
@@ -337,7 +336,7 @@ class TestV107MultiStageWorkflow:
 
         # Apply settings from stage 2 to all stages
         controller.select_stage(project.stages[1].id)
-        project.stages[1].overlay.font_size = 18
+        controller.project.overlay.font_size = 18
         controller.apply_settings_to_all_stages()
 
         # Only queued stages (3, 4) receive settings from stage 2 via apply-all.
@@ -363,12 +362,12 @@ class TestV107MultiStageWorkflow:
                 f"Stage {stage_num} should be STALE after apply-all"
             )
 
-        # Stage 2 should still be queued (it's the template source)
-        assert project.stages[1].queue_status == QueueStatus.QUEUED
+        # Stage 2 changed after it was queued, so its own snapshot is stale too.
+        assert project.stages[1].queue_status == QueueStatus.STALE
 
         print("  Apply-all verified: 3 queued, template applied, markers excluded")
 
-    def test_full_workflow_save_and_load(self):
+    def test_full_workflow_save_and_load(self, synthetic_video_factory):
         """Phase 07: Full workflow — create, configure, save, reload, verify."""
         with TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -400,7 +399,7 @@ class TestV107MultiStageWorkflow:
             from splitshot.domain.models import VideoAsset
 
             project_input = project_dir / "Input"
-            for stage_num, video_path in STAGE_VIDEOS.items():
+            for stage_num, video_path in _stage_videos(synthetic_video_factory).items():
                 if video_path.exists():
                     stage = project.stages[stage_num - 1]
                     stage_dir = (
@@ -460,7 +459,9 @@ class TestV107MultiStageWorkflow:
             assert (project_dir / "CSV" / "IDPA.csv").exists()
             assert (project_dir / "Input").exists()
             for stage_num in [2, 3, 4]:
-                assert any((project_dir / "Input").rglob(f"Stage{stage_num}*"))
+                media_path = Path(project.stages[stage_num - 1].primary_media.path)
+                assert media_path.is_file()
+                assert media_path.is_relative_to(project_dir / "Input")
             print("  Project directory structure verified")
 
             # Reload and verify

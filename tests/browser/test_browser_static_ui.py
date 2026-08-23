@@ -884,7 +884,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function endTimingColumnResize(event) {" in js
     assert "timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs)" in js
     assert "function buildTimingRowControlCell(row, editing) {" in js
-    assert "preserve_following_splits: true" in timing_pane
+    assert "preserve_following_splits: false" in timing_pane
     assert 'handle.className = "timing-column-resize";' in js
     assert "openProjectWithDialog" not in js
     assert "resetMediaElement" in js

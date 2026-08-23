@@ -83,6 +83,7 @@ from splitshot.domain.models import (
     _queue_settings_from_dict,
     _serialize_output_profiles,
     _shotml_settings_from_dict,
+    _stage_from_dict,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
@@ -1347,13 +1348,37 @@ class ProjectController(QObject):
         seeded_merge = deepcopy(self.project.merge)
         seeded_export = deepcopy(self.project.export)
         default_project = self._new_project_with_settings_defaults()
+        active_before_sync = self.project.active_stage
+        active_stage_owned_state = None
+        if active_before_sync is not None and active_before_sync.primary_media.path:
+            active_stage_owned_state = (
+                deepcopy(active_before_sync.primary_media),
+                deepcopy(active_before_sync.primary_trim_derivative),
+                deepcopy(active_before_sync.added_media),
+                deepcopy(active_before_sync.analysis),
+            )
         self._sync_project_to_active_stage()
+        if (
+            active_before_sync is not None
+            and active_stage_owned_state is not None
+            and not active_before_sync.primary_media.path
+        ):
+            (
+                active_before_sync.primary_media,
+                active_before_sync.primary_trim_derivative,
+                active_before_sync.added_media,
+                active_before_sync.analysis,
+            ) = active_stage_owned_state
 
-        existing_by_number = {
-            stage.imported_stage_number: stage
-            for stage in self.project.stages
-            if stage.imported_stage_number is not None
-        }
+        existing_by_number: dict[int, ProjectStage] = {}
+        for stage in self.project.stages:
+            if stage.imported_stage_number is None:
+                continue
+            if stage.imported_stage_number in existing_by_number:
+                raise ValueError(
+                    f"Duplicate imported stage number {stage.imported_stage_number}; refusing to replace stage data."
+                )
+            existing_by_number[stage.imported_stage_number] = stage
         manual_stages = sorted(
             (stage for stage in self.project.stages if stage.imported_stage_number is None),
             key=lambda stage: stage.order_index,
@@ -3386,6 +3411,10 @@ class ProjectController(QObject):
                 ):
                     continue
                 self._copy_stage_presentation_settings(global_source, target)
+        for entry in queued:
+            stage = self._stage_by_id(entry.stage_id)
+            if stage is not None and (entry.status == QueueStatus.STALE or not entry.snapshot):
+                entry.snapshot = deepcopy(stage_to_dict(stage))
         output_dir = self._ensure_output_dir()
         results: list[Path] = []
         self.project.last_combined_output_path = ""
@@ -3455,7 +3484,8 @@ class ProjectController(QObject):
                         phase="failed",
                     )
                     continue
-                if not stage.primary_media.path:
+                render_stage = _stage_from_dict(deepcopy(entry.snapshot))
+                if not render_stage.primary_media.path:
                     entry.status = QueueStatus.FAILED
                     entry.error_message = "No primary media"
                     stage.queue_status = QueueStatus.FAILED
@@ -3475,17 +3505,19 @@ class ProjectController(QObject):
                     from splitshot.export.pipeline import export_project
 
                     render_project = deepcopy(self.project)
-                    render_project.active_stage_id = stage.id
-                    render_project.primary_video = deepcopy(stage.primary_media)
-                    render_project.primary_trim_derivative = deepcopy(stage.primary_trim_derivative)
-                    render_project.merge_sources = deepcopy(stage.added_media)
-                    render_project.analysis = deepcopy(stage.analysis)
-                    render_project.scoring = deepcopy(stage.scoring)
-                    render_project.overlay = deepcopy(stage.overlay)
-                    render_project.popups = deepcopy(stage.popups)
-                    render_project.popup_template = deepcopy(stage.popup_template)
-                    render_project.merge = deepcopy(stage.merge)
-                    render_project.export = deepcopy(stage.export)
+                    render_project.active_stage_id = render_stage.id
+                    render_project.primary_video = deepcopy(render_stage.primary_media)
+                    render_project.primary_trim_derivative = deepcopy(
+                        render_stage.primary_trim_derivative
+                    )
+                    render_project.merge_sources = deepcopy(render_stage.added_media)
+                    render_project.analysis = deepcopy(render_stage.analysis)
+                    render_project.scoring = deepcopy(render_stage.scoring)
+                    render_project.overlay = deepcopy(render_stage.overlay)
+                    render_project.popups = deepcopy(render_stage.popups)
+                    render_project.popup_template = deepcopy(render_stage.popup_template)
+                    render_project.merge = deepcopy(render_stage.merge)
+                    render_project.export = deepcopy(render_stage.export)
                     _sync_secondary_video_from_merge_sources(render_project)
                     export_project(
                         render_project,
@@ -3612,7 +3644,9 @@ class ProjectController(QObject):
                         stage_label="Combined output",
                         phase="combine",
                     )
-                    combined_path = self._concat_outputs(sequence_results, output_dir)
+                    combined_path = self._concat_outputs(
+                        sequence_results, output_dir, log_callback=log_callback
+                    )
                     report_progress(
                         stage_progress=0.55,
                         stage_index=len(queued),
@@ -3696,7 +3730,13 @@ class ProjectController(QObject):
         output_dir = self._ensure_output_dir()
         return output_dir / f"{target_stage.order_index}-{self._stage_slug(target_stage)}.mp4"
 
-    def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
+    def _concat_outputs(
+        self,
+        results: list[Path],
+        output_dir: Path,
+        *,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> Path:
         output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
         combined_path = output_dir / f"Combined-{output_date}.mp4"
         temp_combined_path = self._temporary_output_path(combined_path)
@@ -3704,9 +3744,17 @@ class ProjectController(QObject):
 
         try:
             if not ces.separator_enabled:
-                self._plain_concat(results, output_dir, temp_combined_path)
+                self._plain_concat(
+                    results, output_dir, temp_combined_path, log_callback=log_callback
+                )
             else:
-                self._separator_concat(results, output_dir, temp_combined_path, ces)
+                self._separator_concat(
+                    results,
+                    output_dir,
+                    temp_combined_path,
+                    ces,
+                    log_callback=log_callback,
+                )
             self._validate_rendered_output(temp_combined_path)
             temp_combined_path.replace(combined_path)
             return combined_path
@@ -4074,37 +4122,95 @@ class ProjectController(QObject):
     def _temporary_output_path(self, output_path: Path) -> Path:
         return output_path.with_name(f"{output_path.stem}.tmp-{uuid4().hex}{output_path.suffix}")
 
-    def _plain_concat(self, results: list[Path], output_dir: Path, combined_path: Path) -> Path:
-        import subprocess
-
-        list_path = output_dir / "concat-list.txt"
-        with open(list_path, "w") as f:
-            f.writelines(f"file '{result.resolve()}'\n" for result in results)
-        try:
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(list_path),
-                    "-c",
-                    "copy",
-                    str(combined_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Concat failed: {e.stderr}") from e
-        finally:
-            if list_path.exists():
-                list_path.unlink()
+    def _plain_concat(
+        self,
+        results: list[Path],
+        _output_dir: Path,
+        combined_path: Path,
+        *,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> Path:
+        self._normalized_concat(
+            results, combined_path, error_label="Concat", log_callback=log_callback
+        )
         return combined_path
+
+    def _normalized_concat(
+        self,
+        results: list[Path],
+        combined_path: Path,
+        *,
+        error_label: str,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        """Concatenate independently encoded clips after resetting each clip timeline."""
+        if not results:
+            raise ValueError("At least one rendered clip is required for combined output.")
+        command: list[str] = []
+        filters: list[str] = []
+        concat_inputs: list[str] = []
+        sample_rate = self.project.export.audio_sample_rate
+        for index, result in enumerate(results):
+            metadata = run_ffprobe_json(result)
+            duration_s = float((metadata.get("format") or {}).get("duration") or 0.0)
+            has_audio = any(
+                stream.get("codec_type") == "audio" for stream in metadata.get("streams", [])
+            )
+            command.extend(["-i", str(result.resolve())])
+            filters.append(f"[{index}:v:0]setpts=PTS-STARTPTS[v{index}]")
+            if has_audio:
+                filters.append(
+                    f"[{index}:a:0]aresample={sample_rate},asetpts=PTS-STARTPTS[a{index}]"
+                )
+            else:
+                filters.append(
+                    f"anullsrc=r={sample_rate}:cl=stereo,atrim=duration={duration_s:.6f},"
+                    f"asetpts=PTS-STARTPTS[a{index}]"
+                )
+            concat_inputs.extend([f"[v{index}]", f"[a{index}]"])
+        filters.append(
+            f"{''.join(concat_inputs)}concat=n={len(results)}:v=1:a=1[outv][outa]"
+        )
+        codec = "libx265" if self.project.export.video_codec == ExportVideoCodec.HEVC else "libx264"
+        command.extend(
+            [
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                "[outv]",
+                "-map",
+                "[outa]",
+                "-c:v",
+                codec,
+                "-preset",
+                self.project.export.ffmpeg_preset,
+                "-threads",
+                "4",
+                "-b:v",
+                f"{self.project.export.video_bitrate_mbps:g}M",
+                "-pix_fmt",
+                "yuv420p",
+                "-colorspace",
+                "bt709",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-c:a",
+                self.project.export.audio_codec.value,
+                "-ar",
+                str(sample_rate),
+                "-b:a",
+                f"{self.project.export.audio_bitrate_kbps}k",
+                "-movflags",
+                "+faststart",
+                str(combined_path),
+            ]
+        )
+        try:
+            run_ffmpeg(command, log_callback=log_callback)
+        except MediaError as exc:
+            raise RuntimeError(f"{error_label} failed: {exc}") from exc
 
     def _separator_concat(
         self,
@@ -4112,9 +4218,9 @@ class ProjectController(QObject):
         output_dir: Path,
         combined_path: Path,
         ces: CombinedExportSettings,
+        *,
+        log_callback: Callable[[str], None] | None = None,
     ) -> Path:
-        import subprocess
-
         duration = max(0.5, min(1.0, ces.separator_duration_s))
         separator_paths: list[Path] = []
 
@@ -4128,36 +4234,19 @@ class ProjectController(QObject):
             self._render_separator(sep_path, duration, ces)
 
         # Build concat with separators between stages
-        list_path = output_dir / "concat-list.txt"
-        with open(list_path, "w") as f:
-            for i, result in enumerate(results):
-                f.write(f"file '{result}'\n")
-                if i < len(results) - 1:
-                    f.write(f"file '{separator_paths[i]}'\n")
+        concat_results: list[Path] = []
+        for i, result in enumerate(results):
+            concat_results.append(result)
+            if i < len(results) - 1:
+                concat_results.append(separator_paths[i])
         try:
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(list_path),
-                    "-c",
-                    "copy",
-                    str(combined_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
+            self._normalized_concat(
+                concat_results,
+                combined_path,
+                error_label="Separator concat",
+                log_callback=log_callback,
             )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Separator concat failed: {e.stderr}") from e
         finally:
-            if list_path.exists():
-                list_path.unlink()
             for sp in separator_paths:
                 if sp.exists():
                     sp.unlink()

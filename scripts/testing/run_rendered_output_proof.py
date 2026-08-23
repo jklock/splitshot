@@ -25,7 +25,7 @@ from splitshot.ui.controller import ProjectController
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = REPO / "artifacts" / "v107-release-proof" / "source-rendered-output"
 PRIMARY_CLIP = REPO / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
-PRACTISCORE_CSV = REPO / "05072026" / "CSV" / "IDPA.csv"
+PRACTISCORE_CSV = REPO / "example_data" / "IDPA" / "IDPA.csv"
 
 
 def _write_json(path: Path, payload: object) -> None:

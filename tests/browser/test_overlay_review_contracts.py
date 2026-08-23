@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import sync_playwright
 from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
@@ -103,6 +104,41 @@ def test_stage_name_box_renames_dynamically_and_queue_snapshot_keeps_source() ->
     snapshot_box = controller.project.queue[0].snapshot["overlay"]["text_boxes"][0]
     assert snapshot_box["source"] == "stage_name"
     assert snapshot_box["text"] == ""
+
+
+def test_stage_name_browser_preview_updates_immediately_after_rename() -> None:
+    controller = ProjectController()
+    stage = controller.create_stage("Stage 2")
+    stage.imported_stage_number = 2
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+    controller.set_overlay_display_options(
+        {"text_boxes": [{"source": "stage_name", "enabled": True, "text": ""}]}
+    )
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                page.locator("button[data-tool='review']").click(force=True)
+                preview = page.locator("[data-text-box-preview]")
+                assert preview.input_value() == "Stage 2"
+
+                page.evaluate(
+                    "payload => callApi('/api/project/stage/update', payload)",
+                    {"stage_id": stage.id, "label": "Moving Targets"},
+                )
+                page.wait_for_function(
+                    "() => document.querySelector('[data-text-box-preview]')?.value === 'Stage 2 - Moving Targets'"
+                )
+                assert preview.input_value() == "Stage 2 - Moving Targets"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def _post_json(url: str, payload: dict) -> dict:

@@ -15,6 +15,7 @@ from splitshot.domain.models import (
     project_from_dict,
     project_to_dict,
 )
+from splitshot.media.ffmpeg import run_ffmpeg, run_ffprobe_json
 from splitshot.ui.controller import ProjectController
 
 
@@ -135,6 +136,37 @@ def test_queue_renders_immutable_stage_views_with_distinct_analysis_and_scoring(
     assert controller.project.active_stage_id == first.id
     assert controller.project.primary_video.path == "one.mp4"
     assert len(controller.project.analysis.shots) == 1
+
+
+def test_queued_snapshot_remains_render_source_until_stage_is_marked_stale(
+    monkeypatch, tmp_path: Path
+) -> None:
+    controller = ProjectController()
+    controller.project_path = tmp_path / "snapshot-render.ssproj"
+    controller.project_path.mkdir()
+    stage = ProjectStage(label="Stage 1", primary_media=VideoAsset(path="queued.mp4"))
+    stage.analysis.shots = [ShotEvent(time_ms=1000)]
+    stage.scoring.stage_number = 1
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller._sync_active_stage_to_project()
+    controller.add_stage_to_queue(stage.id)
+    stage.primary_media = VideoAsset(path="uncommitted-live-change.mp4")
+    stage.analysis.shots = [ShotEvent(time_ms=9000), ShotEvent(time_ms=9500)]
+    rendered: list[tuple[str, list[int]]] = []
+
+    def fake_export(project, output_path, **_kwargs):
+        rendered.append(
+            (Path(project.primary_video.path).name, [shot.time_ms for shot in project.analysis.shots])
+        )
+        Path(output_path).write_bytes(b"rendered")
+
+    monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
+    monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
+
+    controller.process_queue("individual")
+
+    assert rendered == [("queued.mp4", [1000])]
 
 
 def test_applying_saved_export_profile_restores_settings_and_stales_queue(
@@ -405,7 +437,7 @@ def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, mon
         path.touch()
         return path
 
-    def fake_concat(paths, output_dir) -> Path:
+    def fake_concat(paths, output_dir, **_kwargs) -> Path:
         concatenated.extend(path.name for path in paths)
         combined = output_dir / "combined.mp4"
         combined.touch()
@@ -442,7 +474,7 @@ def test_combined_output_uses_dated_name_in_output_directory(tmp_path: Path, mon
     controller.project.name = "08/16/2026 IDPA @ WSRC"
     output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
 
-    def fake_concat(_results, _output_dir, output_path: Path) -> Path:
+    def fake_concat(_results, _output_dir, output_path: Path, **_kwargs) -> Path:
         assert output_path.parent == tmp_path
         output_path.touch()
         return output_path
@@ -454,3 +486,41 @@ def test_combined_output_uses_dated_name_in_output_directory(tmp_path: Path, mon
 
     assert combined_path == tmp_path / f"Combined-{output_date}.mp4"
     assert combined_path.is_file()
+
+
+def test_plain_concat_normalizes_mixed_frame_rate_timelines(tmp_path: Path) -> None:
+    controller = ProjectController()
+    clips: list[Path] = []
+    for frame_rate in (30, 60):
+        clip = tmp_path / f"clip-{frame_rate}.mp4"
+        run_ffmpeg(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c=black:s=320x180:r={frame_rate}:d=0.6",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:sample_rate=48000:duration=0.6",
+                "-shortest",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                str(clip),
+            ]
+        )
+        clips.append(clip)
+
+    combined = tmp_path / "Combined-2026-08-23.mp4"
+    controller._plain_concat(clips, tmp_path, combined)
+
+    metadata = run_ffprobe_json(combined)
+    video = next(stream for stream in metadata["streams"] if stream["codec_type"] == "video")
+    audio = next(stream for stream in metadata["streams"] if stream["codec_type"] == "audio")
+    assert 1.1 <= float(video["duration"]) <= 1.4
+    assert 1.1 <= float(audio["duration"]) <= 1.4
+    assert abs(float(video["duration"]) - float(audio["duration"])) < 0.1

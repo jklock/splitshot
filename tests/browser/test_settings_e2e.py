@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -18,6 +21,26 @@ SETTINGS_SECTION_IDS = [
     "export",
     "shotml",
 ]
+
+
+def test_settings_path_override_isolated_from_user_profile(tmp_path: Path) -> None:
+    settings_path = tmp_path / "isolated" / "settings.json"
+    env = {**os.environ, "SPLITSHOT_SETTINGS_PATH": str(settings_path)}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from splitshot.config import SETTINGS_PATH, load_settings; load_settings(); print(SETTINGS_PATH)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(settings_path)
+    assert settings_path.is_file()
 
 
 def _open_test_page(playwright, server: BrowserControlServer):

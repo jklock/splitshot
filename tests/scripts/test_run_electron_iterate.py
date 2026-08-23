@@ -48,6 +48,14 @@ def test_resolve_scenarios_rejects_invalid_packaged_choice() -> None:
         MODULE._resolve_scenarios("unpacked", ["compose"])
 
 
+def test_workflow_proof_requires_explicit_project_when_local_fixture_is_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(MODULE, "DEFAULT_WORKFLOW_PROJECT", ROOT / "missing-workflow-project")
+    with pytest.raises(SystemExit, match="requires --project-path"):
+        MODULE._resolve_project_path(None, "source", ["settings"])
+
+
 def test_should_rebuild_unpacked_app_when_missing(tmp_path: Path) -> None:
     assert MODULE._should_rebuild_unpacked_app(tmp_path / "SplitShot.app") is True
 

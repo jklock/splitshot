@@ -21,7 +21,7 @@ export function createKeyRuntime({
     if (shot) {
       emitBackbone(backbone, "keys.shot.nudge", { shot_id: shot.id, delta_ms: deltaMs });
       activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
-      callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+      callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: false });
       return;
     }
     const beep = selectedBeep();

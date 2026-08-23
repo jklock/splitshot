@@ -9,7 +9,7 @@ import splitshot.ui.controller as controller_module
 from splitshot.analysis.detection import DetectionResult
 from splitshot.browser.server import BrowserControlServer
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import ShotEvent, ShotSource, VideoAsset
+from splitshot.domain.models import ImportedStageScore, ShotEvent, ShotSource, VideoAsset
 from splitshot.ui.controller import ProjectController
 
 
@@ -164,6 +164,36 @@ def test_split_adjustment_preserves_shotml_split_baseline_and_following_splits()
         ShotSource.AUTO,
     ]
     assert [shot.confidence for shot in controller.project.analysis.shots] == [0.9, 0.9, 0.9]
+
+
+def test_single_marker_move_does_not_move_other_waveform_markers() -> None:
+    controller = ProjectController()
+    first, second, third = _shots(250, 480, 720)
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [first, second, third]
+
+    controller.move_shot(second.id, 500, preserve_following_splits=False)
+
+    assert [shot.time_ms for shot in controller.project.analysis.shots] == [250, 500, 720]
+
+
+def test_marker_move_does_not_rewrite_imported_spreadsheet_times() -> None:
+    controller = ProjectController()
+    first, second = _shots(250, 480)
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [first, second]
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=5.53,
+        final_time=7.53,
+    )
+
+    controller.move_shot(first.id, 275, preserve_following_splits=False)
+
+    imported = controller.project.scoring.imported_stage
+    assert imported is not None
+    assert imported.raw_seconds == 5.53
+    assert imported.final_time == 7.53
 
 
 def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:

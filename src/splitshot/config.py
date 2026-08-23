@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from copy import deepcopy
 from dataclasses import dataclass, field, fields
@@ -24,8 +25,13 @@ from splitshot.domain.models import (
     _popup_template_from_dict,
 )
 
-APP_DIR = Path.home() / ".splitshot"
-SETTINGS_PATH = APP_DIR / "settings.json"
+_SETTINGS_PATH_OVERRIDE = str(os.environ.get("SPLITSHOT_SETTINGS_PATH", "")).strip()
+SETTINGS_PATH = (
+    Path(_SETTINGS_PATH_OVERRIDE).expanduser().resolve()
+    if _SETTINGS_PATH_OVERRIDE
+    else Path.home() / ".splitshot" / "settings.json"
+)
+APP_DIR = SETTINGS_PATH.parent
 FOLDER_SETTINGS_FILENAME = "splitshot.conf"
 APPLICATION_DEFAULTS_SCHEMA_VERSION = 1
 

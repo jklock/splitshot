@@ -149,6 +149,11 @@ def _resolve_project_path(project_path: Path | None, tier: str, scenarios: list[
         return _create_quick_project_bundle(_quick_project_name(tier, scenarios)).resolve()
     if tier in {"unpacked", "installed"} and scenarios == ["launch"]:
         return _create_quick_project_bundle(_quick_project_name(tier, scenarios)).resolve()
+    if not DEFAULT_WORKFLOW_PROJECT.is_dir():
+        raise SystemExit(
+            "Workflow proof requires --project-path pointing to a real project; "
+            f"the former local-only fixture is unavailable: {DEFAULT_WORKFLOW_PROJECT}"
+        )
     return _materialize_project_bundle(
         DEFAULT_WORKFLOW_PROJECT,
         slug=f"{tier}-workflow-{'-'.join(scenarios)}",

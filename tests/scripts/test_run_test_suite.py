@@ -27,7 +27,19 @@ def test_runner_lists_available_suites_as_json() -> None:
     suite_names = [suite["name"] for suite in payload["suites"]]
     assert "analysis" in suite_names
     assert "browser" in suite_names
+    assert "domain" in suite_names
+    assert "electron" in suite_names
     assert "scripts" in suite_names
+
+
+def test_runner_default_plan_includes_domain_and_electron() -> None:
+    result = run_runner("--mode", "all-together", "--format", "json", "--dry-run")
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    targets = set(payload["runs"][0]["targets"])
+    assert "tests/domain" in targets
+    assert "tests/electron" in targets
 
 
 def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
