@@ -971,6 +971,15 @@ def _capture_export_log(page: Page, artifact_root: Path, suffix: str) -> dict[st
     }
 
 
+def _dismiss_auto_open_processing_log(page: Page) -> None:
+    page.wait_for_selector("#export-log-modal:not([hidden])", timeout=15_000)
+    page.locator("#close-export-log").click(force=True)
+    page.wait_for_function(
+        "() => document.getElementById('export-log-modal')?.hidden === true",
+        timeout=15_000,
+    )
+
+
 def _verify_video_file(path: Path) -> dict[str, Any]:
     result = subprocess.run(
         [
@@ -1016,6 +1025,8 @@ def _run_individual_exports(
 ) -> dict[str, Any]:
     _set_tool(page, "queue")
     page.locator("#queue-process-btn").click(force=True)
+    _dismiss_auto_open_processing_log(page)
+    _set_tool(page, "media")
     entries = _wait_for_queue_statuses(
         page,
         ("complete", "failed"),
@@ -1056,6 +1067,8 @@ def _run_combined_export(
     _requeue_all_stages(page)
     _set_tool(page, "queue")
     page.locator("#queue-combined-btn").click(force=True)
+    _dismiss_auto_open_processing_log(page)
+    _set_tool(page, "media")
     _wait_for_queue_statuses(
         page,
         ("complete", "failed"),

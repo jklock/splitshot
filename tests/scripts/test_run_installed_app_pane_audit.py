@@ -275,7 +275,9 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
             raise AssertionError(script)
 
     monkeypatch.setattr(MODULE, "_requeue_all_stages", lambda page: None)
-    monkeypatch.setattr(MODULE, "_set_tool", lambda page, tool: None)
+    monkeypatch.setattr(MODULE, "_dismiss_auto_open_processing_log", lambda page: None)
+    selected_tools: list[str] = []
+    monkeypatch.setattr(MODULE, "_set_tool", lambda page, tool: selected_tools.append(tool))
     processing_waits: list[int] = []
     monkeypatch.setattr(
         MODULE,
@@ -297,6 +299,7 @@ def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_pa
     assert result["verification"]["exists"] is True
     assert result["error"] is None
     assert processing_waits == [MODULE.QUEUE_EXPORT_TIMEOUT_MS]
+    assert selected_tools == ["queue", "media"]
 
 
 def test_requeue_all_stages_clears_existing_queue_before_readding(monkeypatch) -> None:
