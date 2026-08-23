@@ -248,6 +248,43 @@ def test_set_active_stage_does_not_reselect_current_stage(monkeypatch) -> None:
     assert api_calls == []
 
 
+def test_capture_export_log_opens_log_from_queue_pane(monkeypatch, tmp_path: Path) -> None:
+    class FakeLocator:
+        def click(self, force=False):
+            assert force is True
+
+        def inner_text(self):
+            return "Queue complete"
+
+        def count(self):
+            return 1
+
+    class FakePage:
+        def locator(self, selector):
+            assert selector in {
+                "#queue-show-log",
+                "#export-log-output",
+                "#close-export-log",
+            }
+            return FakeLocator()
+
+        def wait_for_selector(self, selector, timeout=None):
+            assert selector == "#export-log-modal:not([hidden])"
+
+        def wait_for_timeout(self, _timeout):
+            return None
+
+    selected_tools: list[str] = []
+    monkeypatch.setattr(MODULE, "_set_tool", lambda page, tool: selected_tools.append(tool))
+    monkeypatch.setattr(MODULE, "_capture_pane", lambda *args: "export-log.png")
+
+    result = MODULE._capture_export_log(FakePage(), tmp_path, "-combined")
+
+    assert selected_tools == ["queue"]
+    assert result["line_count"] == 1
+    assert (tmp_path / "export-log-combined.txt").read_text() == "Queue complete"
+
+
 def test_run_combined_export_uses_state_combined_output_path(monkeypatch, tmp_path: Path) -> None:
     combined_path = tmp_path / "Output" / "proof-combined.mp4"
     combined_path.parent.mkdir(parents=True, exist_ok=True)

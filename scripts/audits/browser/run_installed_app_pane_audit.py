@@ -954,8 +954,8 @@ def _read_export_log(page: Page) -> str:
 
 
 def _capture_export_log(page: Page, artifact_root: Path, suffix: str) -> dict[str, Any]:
-    _set_tool(page, "export")
-    page.locator("#show-export-log").click(force=True)
+    _set_tool(page, "queue")
+    page.locator("#queue-show-log").click(force=True)
     page.wait_for_selector("#export-log-modal:not([hidden])", timeout=15_000)
     page.wait_for_timeout(200)
     file_name = _capture_pane(page, artifact_root, "export-log", suffix)
