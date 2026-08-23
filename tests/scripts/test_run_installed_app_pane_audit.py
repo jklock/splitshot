@@ -109,6 +109,32 @@ def test_prepare_project_copy_copies_mutable_files(monkeypatch, tmp_path: Path) 
     assert source_csv.stat().st_ino != copy_csv.stat().st_ino
 
 
+def test_prepare_project_copy_supports_project_input_media_layout(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "project"
+    artifact_root = tmp_path / "artifacts"
+    (source / "CSV").mkdir(parents=True)
+    (source / "Input").mkdir()
+    (source / "project.json").write_text("{}", encoding="utf-8")
+    (source / "CSV" / "IDPA.csv").write_text("stage,data\n", encoding="utf-8")
+    for name in ("Stage2.MP4", "Stage3.MP4", "Stage4.MP4"):
+        (source / "Input" / name).write_bytes(b"video")
+
+    monkeypatch.setattr(
+        MODULE,
+        "_normalize_project_for_audit",
+        lambda project_root: {
+            "media": str(MODULE._project_media_path(project_root, "Stage2.MP4"))
+        },
+    )
+
+    copy_root, normalized = MODULE._prepare_project_copy(source, artifact_root)
+
+    assert (copy_root / "Input" / "Stage2.MP4").exists()
+    assert normalized["media"] == str(copy_root / "Input" / "Stage2.MP4")
+
+
 def test_build_parser_defaults_slice_to_full() -> None:
     parser = MODULE.build_parser()
     args = parser.parse_args([])

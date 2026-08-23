@@ -383,6 +383,8 @@ def _project_copy_root(project_path: Path, artifact_root: Path) -> Path:
 def _project_media_path(project_root: Path, name: str) -> Path:
     candidate = project_root / name
     if not candidate.exists():
+        candidate = project_root / "Input" / name
+    if not candidate.exists():
         raise FileNotFoundError(f"Required project media missing: {candidate}")
     return candidate
 
@@ -536,6 +538,9 @@ def _prepare_project_copy(
         Path("Stage2.MP4"),
         Path("Stage3.MP4"),
         Path("Stage4.MP4"),
+        Path("Input") / "Stage2.MP4",
+        Path("Input") / "Stage3.MP4",
+        Path("Input") / "Stage4.MP4",
     ):
         source = project_root / relative_path
         if not source.exists():
