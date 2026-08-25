@@ -493,7 +493,7 @@
 }
 
 .media-pane-actions-split {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .media-global-settings-actions {
@@ -618,14 +618,6 @@
   border-color: var(--green);
   color: #111;
   font-weight: var(--weight-bold);
-}
-
-.media-add-stage-full {
-  display: flex;
-  justify-content: center;
-  justify-self: stretch;
-  margin-top: 0.1rem;
-  width: 100%;
 }
 
 .media-stage-card-list {

@@ -72,8 +72,9 @@ def _build_stage_metrics(project: Project) -> list[dict[str, Any]]:
         result.append(
             {
                 "stage_id": stage.id,
+                "order_index": stage.order_index,
                 "stage_number": stage.imported_stage_number or stage.order_index,
-                "stage_name": stage.imported_stage_name or stage.label,
+                "stage_name": stage.label or stage.imported_stage_name,
                 "metrics": asdict(presentation.metrics),
                 "scoring_summary": scoring_summary,
                 "official_metrics": official_metrics,

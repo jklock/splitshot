@@ -130,7 +130,7 @@ def test_browser_state_filters_stale_timing_selection_references() -> None:
     assert payload["project"]["ui_state"]["timing_edit_shot_ids"] == [surviving.id]
 
 
-def test_split_adjustment_preserves_shotml_split_baseline_and_following_splits() -> None:
+def test_split_adjustment_preserves_shotml_baseline_without_moving_other_markers() -> None:
     controller = ProjectController()
     first, second, third = _shots(250, 480, 720)
     controller.project.analysis.beep_time_ms_primary = 100
@@ -139,21 +139,21 @@ def test_split_adjustment_preserves_shotml_split_baseline_and_following_splits()
 
     controller.move_shot(first.id, 220, preserve_following_splits=True)
 
-    assert [shot.time_ms for shot in controller.project.analysis.shots] == [220, 450, 690]
+    assert [shot.time_ms for shot in controller.project.analysis.shots] == [220, 480, 720]
     assert [shot.source for shot in controller.project.analysis.shots] == [
-        ShotSource.AUTO,
+        ShotSource.MANUAL,
         ShotSource.AUTO,
         ShotSource.AUTO,
     ]
-    assert [shot.confidence for shot in controller.project.analysis.shots] == [0.9, 0.9, 0.9]
+    assert [shot.confidence for shot in controller.project.analysis.shots] == [None, 0.9, 0.9]
     payload = browser_state(controller.project, controller.status_message)
-    assert [row["split_ms"] for row in payload["split_rows"]] == [120, 230, 240]
-    assert [row["cumulative_ms"] for row in payload["split_rows"]] == [120, 350, 590]
+    assert [row["split_ms"] for row in payload["split_rows"]] == [120, 260, 240]
+    assert [row["cumulative_ms"] for row in payload["split_rows"]] == [120, 380, 620]
     assert [row["shotml_split_ms"] for row in payload["split_rows"]] == [150, 230, 240]
     assert [row["shotml_cumulative_ms"] for row in payload["split_rows"]] == [150, 380, 620]
     assert [row["shotml_confidence"] for row in payload["split_rows"]] == [0.9, 0.9, 0.9]
     assert [row["adjustment_ms"] for row in payload["split_rows"]] == [-30, 0, 0]
-    assert [row["final_time_ms"] for row in payload["split_rows"]] == [120, 350, 590]
+    assert [row["final_time_ms"] for row in payload["split_rows"]] == [120, 380, 620]
 
     controller.restore_original_shot_timing(first.id, preserve_following_splits=True)
 

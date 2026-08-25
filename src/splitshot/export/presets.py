@@ -189,6 +189,7 @@ def export_settings_summary(settings: ExportSettings) -> dict[str, object]:
         "audio_codec": settings.audio_codec.value,
         "audio_sample_rate": settings.audio_sample_rate,
         "audio_bitrate_kbps": settings.audio_bitrate_kbps,
+        "audio_output_level_percent": settings.audio_output_level_percent,
         "color_space": settings.color_space.value,
         "two_pass": settings.two_pass,
         "multi_track": settings.multi_track,

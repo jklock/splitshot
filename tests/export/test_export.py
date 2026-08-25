@@ -81,9 +81,59 @@ def test_output_fades_scale_to_short_clip_and_emit_video_audio_filters(tmp_path:
         "fade=t=in:st=0:d=0.500:color=black,fade=t=out:st=9.500:d=0.500:color=black"
     )
     assert command[command.index("-af") + 1] == (
-        "afade=t=in:st=0:d=0.500,afade=t=out:st=9.500:d=0.500"
+        "volume=1.000,afade=t=in:st=0:d=0.500,afade=t=out:st=9.500:d=0.500,alimiter=limit=0.95"
     )
     assert command[command.index("-threads") + 1] == "4"
+
+
+def test_encoder_applies_configured_output_audio_level_and_limiter(tmp_path: Path) -> None:
+    project = Project()
+    project.primary_video.path = "source.mp4"
+    project.export.audio_output_level_percent = 225
+
+    command = _encoder_command(
+        project,
+        1920,
+        1080,
+        30.0,
+        tmp_path / "output.mp4",
+        duration_s=10.0,
+    )
+
+    assert command[command.index("-af") + 1] == "volume=2.250,alimiter=limit=0.95"
+
+
+def test_encoder_omits_audio_filter_for_silent_source(tmp_path: Path) -> None:
+    project = Project()
+    project.primary_video.path = "silent-source.mp4"
+
+    command = _encoder_command(
+        project,
+        1920,
+        1080,
+        30.0,
+        tmp_path / "output.mp4",
+        has_audio=False,
+    )
+
+    assert "-af" not in command
+    assert "-an" in command
+
+
+def test_encoder_supports_muted_output_level(tmp_path: Path) -> None:
+    project = Project()
+    project.primary_video.path = "source.mp4"
+    project.export.audio_output_level_percent = 0
+
+    command = _encoder_command(
+        project,
+        1920,
+        1080,
+        30.0,
+        tmp_path / "output.mp4",
+    )
+
+    assert command[command.index("-af") + 1] == "volume=0.000,alimiter=limit=0.95"
 
 
 def test_export_with_audio_fade_enabled_handles_silent_video(

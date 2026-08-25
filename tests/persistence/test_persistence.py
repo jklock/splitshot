@@ -187,6 +187,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.export.target_height = 1920
     project.export.frame_rate = ExportFrameRate.FPS_60
     project.export.video_bitrate_mbps = 20.0
+    project.export.audio_output_level_percent = 225
     project.export.last_log = "Encoder command: ffmpeg"
     project.ui_state.selected_shot_id = selected_shot_id
     project.ui_state.timeline_zoom = 12.5
@@ -322,6 +323,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.export.target_height == 1920
     assert loaded.export.frame_rate == ExportFrameRate.FPS_60
     assert loaded.export.video_bitrate_mbps == 20.0
+    assert loaded.export.audio_output_level_percent == 225
     assert loaded.export.last_log == "Encoder command: ffmpeg"
     assert loaded.ui_state.selected_shot_id == selected_shot_id
     assert loaded.ui_state.timeline_zoom == 12.5

@@ -4047,6 +4047,11 @@ def test_export_controls_update_preset_and_settings_state(
                 page.locator("#audio-bitrate").fill("256")
                 page.wait_for_function("() => state?.project?.export?.audio_bitrate_kbps === 256")
 
+                page.locator("#audio-output-level").fill("150")
+                page.wait_for_function(
+                    "() => state?.project?.export?.audio_output_level_percent === 150"
+                )
+
                 page.locator("#color-space").select_option("bt709_sdr")
                 page.wait_for_function("() => state?.project?.export?.color_space === 'bt709_sdr'")
 

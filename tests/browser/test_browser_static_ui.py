@@ -168,10 +168,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="video-status"' not in html
     assert "No video open" not in html
     assert 'id="apply-threshold"' in html
-    assert ">Re-run ShotML<" in html
+    assert ">Run ShotML<" in html
     assert 'data-tool-pane="shotml"' in html
     assert 'id="shotml-confidence-summary"' in html
-    assert "Avg auto confidence --" in html
+    assert "No automatic confidence data" in html
     assert 'id="generate-shotml-proposals"' in html
     assert 'id="reset-shotml-defaults"' in html
     assert "Apply Scoring" not in html
@@ -734,6 +734,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="audio-codec"' in html
     assert 'id="audio-sample-rate"' in html
     assert 'id="audio-bitrate"' in html
+    assert 'id="audio-output-level"' in html
     assert 'id="color-space"' in html
     assert 'id="ffmpeg-preset"' in html
     assert 'id="show-export-log"' not in html
@@ -2490,6 +2491,19 @@ def test_every_opacity_number_control_uses_the_spinnerless_class() -> None:
     ]
     assert 'input.type = "number";' in opacity_builder
     assert 'input.className = "opacity-percent-input";' in opacity_builder
+
+
+def test_intro_outro_preview_uses_asset_geometry_and_preserves_playback_time() -> None:
+    pane = (STATIC_ROOT / "panes" / "intro-outro-pane.js").read_text()
+    player = (STATIC_ROOT / "components" / "video-player.js").read_text()
+
+    assert "const playbackTimes = { intro: 0, outro: 0 };" in pane
+    assert "width: Math.max(1, Number(media.width || 1920))" in pane
+    assert "height: Math.max(1, Number(media.height || 1080))" in pane
+    assert "restorePlaybackTime(kind);" in pane
+    assert (
+        "const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);" in player
+    )
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

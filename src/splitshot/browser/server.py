@@ -534,6 +534,7 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
         "audio_codec": export.audio_codec.value,
         "audio_sample_rate": export.audio_sample_rate,
         "audio_bitrate_kbps": export.audio_bitrate_kbps,
+        "audio_output_level_percent": export.audio_output_level_percent,
         "color_space": export.color_space.value,
         "two_pass": export.two_pass,
         "multi_track": export.multi_track,
@@ -551,6 +552,8 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
             normalized = max(8000, int(value))
         elif key == "audio_bitrate_kbps":
             normalized = max(32, int(value))
+        elif key == "audio_output_level_percent":
+            normalized = max(0, min(300, int(value)))
         elif key in {"two_pass", "multi_track"}:
             normalized = bool(value)
         else:

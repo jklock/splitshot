@@ -506,11 +506,13 @@ def test_media_add_stage_lives_inside_active_stage_controls(synthetic_video_fact
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.project?.primary_video?.path)")
 
-                add_stage = page.locator("#media-pane .media-add-stage-full")
+                add_stage = page.locator(
+                    "#media-pane .media-active-stage-actions .media-add-stage-btn"
+                )
                 add_stage.wait_for(state="visible")
                 active_stage_section = page.locator("#media-pane .media-pane-section-static").first
-                assert active_stage_section.locator(".media-add-stage-full").count() == 1
-                assert page.locator("#media-pane > .media-add-stage-full").count() == 0
+                actions = active_stage_section.locator(".media-active-stage-actions button")
+                assert actions.all_text_contents() == ["Add Stage", "Save Stage", "Delete Stage"]
             finally:
                 browser.close()
     finally:
@@ -554,8 +556,8 @@ def test_media_save_stage_updates_active_stage_label_visibly(synthetic_video_fac
         server.shutdown()
 
 
-def test_stage_rename_resorts_every_stage_order_consumer_and_persists(tmp_path: Path) -> None:
-    project_path = tmp_path / "stage-natural-order.ssproj"
+def test_stage_rename_preserves_explicit_order_for_every_consumer(tmp_path: Path) -> None:
+    project_path = tmp_path / "stage-explicit-order.ssproj"
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -571,39 +573,39 @@ def test_stage_rename_resorts_every_stage_order_consumer_and_persists(tmp_path: 
                     )
 
                 page.locator("button[data-tool='media']").click(force=True)
-                page.locator("#media-active-stage-label").fill("Stage 1")
+                page.locator("#media-active-stage-label").fill("Final Bay")
                 page.locator(".media-save-stage-btn").click()
                 page.wait_for_function(
                     """() => (state?.project?.stages || [])
-                        .map((stage) => stage.label).join('|') === 'Stage 1|Stage 2|Stage 3'"""
+                        .map((stage) => stage.label).join('|') === 'Stage 2|Stage 3|Final Bay'"""
                 )
 
                 assert page.locator("#media-active-stage-select option").all_text_contents() == [
-                    "Stage 1",
                     "Stage 2",
                     "Stage 3",
+                    "Final Bay",
                 ]
                 assert page.evaluate(
                     "() => state.project.stages.map((stage) => stage.order_index)"
                 ) == [1, 2, 3]
                 assert page.evaluate(
                     "() => state.stage_metrics.map((entry) => entry.stage_name)"
-                ) == ["Stage 1", "Stage 2", "Stage 3"]
+                ) == ["Stage 2", "Stage 3", "Final Bay"]
 
                 page.locator("button[data-tool='queue']").click(force=True)
                 assert page.locator(".queue-stage-copy > strong").all_text_contents() == [
-                    "Stage 1",
                     "Stage 2",
                     "Stage 3",
+                    "Final Bay",
                 ]
 
                 controller.autosave_project_if_needed()
                 reopened = ProjectController()
                 reopened.open_project(str(project_path))
                 assert [stage.label for stage in reopened.project.stages] == [
-                    "Stage 1",
                     "Stage 2",
                     "Stage 3",
+                    "Final Bay",
                 ]
                 assert [stage.order_index for stage in reopened.project.stages] == [1, 2, 3]
             finally:

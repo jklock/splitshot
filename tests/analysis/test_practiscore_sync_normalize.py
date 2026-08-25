@@ -37,8 +37,8 @@ def test_normalize_downloaded_idpa_artifact_matches_existing_import_semantics() 
     assert normalized.resolved_context.stage_number == 2
     assert normalized.resolved_context.competitor_name == "John Klockenkemper"
     assert normalized.stage_import.imported_stage.source_name == "remote-idpa.csv"
-    assert normalized.stage_import.imported_stage.final_time == 39.83
-    assert normalized.stage_import.imported_stage.raw_seconds == 29.83
+    assert normalized.stage_import.imported_stage.final_time == 29.83
+    assert normalized.stage_import.imported_stage.raw_seconds == 19.83
     assert normalized.stage_import.imported_stage.score_counts == {
         "Points Down": 5.0,
         "Non-Threat": 1.0,

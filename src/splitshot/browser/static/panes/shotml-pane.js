@@ -142,8 +142,18 @@ export function createShotMLPane({
     syncShotMLControls();
     renderCollapsibleInspectorSections();
     const summary = $("shotml-run-summary");
+    const confidenceSummary = $("shotml-confidence-summary");
+    const runSummary = currentState()?.project?.analysis?.last_shotml_run_summary || {};
     if (summary) {
-      summary.textContent = "";
+      const shotCount = Number(runSummary.shot_count || 0);
+      summary.textContent = shotCount ? `${shotCount} automatic shot${shotCount === 1 ? "" : "s"}` : "";
+    }
+    if (confidenceSummary) {
+      const average = Number(runSummary.average_auto_confidence);
+      const count = Number(runSummary.auto_confidence_shot_count || 0);
+      confidenceSummary.textContent = count > 0 && Number.isFinite(average)
+        ? `Average confidence ${formatConfidenceValue(average)}`
+        : "No automatic confidence data";
     }
     renderShotMLProposals();
   }

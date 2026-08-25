@@ -638,6 +638,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     )
     _set_input_value(page.locator("#audio-sample-rate"), "48000")
     _set_input_value(page.locator("#audio-bitrate"), "256")
+    _set_input_value(page.locator("#audio-output-level"), "150")
     page.locator("#color-space").select_option(
         _alternate_select_value(page.locator("#color-space"))
     )

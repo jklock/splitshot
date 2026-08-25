@@ -317,14 +317,14 @@
               <div class="section-header pane-title-row">
                 <h3>ShotML</h3>
                 <div class="section-header-actions">
-                  <span id="shotml-confidence-summary">Avg auto confidence --</span>
-                  <button id="apply-threshold" type="button">Re-run ShotML</button>
+                  <span id="shotml-confidence-summary">No automatic confidence data</span>
+                  <button id="apply-threshold" type="button">Run ShotML</button>
                   <button id="reset-shotml-defaults" type="button">Reset Defaults</button>
                 </div>
               </div>
               <section class="shotml-section" data-shotml-section="threshold">
                 <div class="section-header sub-section-header">
-                  <h3>Threshold</h3>
+                  <h3>Detection</h3>
                   <span id="shotml-run-summary"></span>
                 </div>
                 <div class="threshold-control">
@@ -344,7 +344,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="beep_detection">
                 <div class="section-header sub-section-header">
-                  <h3>Beep Detection</h3>
+                  <h3>Beep</h3>
                   <span></span>
                 </div>
                 <div class="control-grid">
@@ -372,7 +372,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="shot_candidate_detection">
                 <div class="section-header sub-section-header">
-                  <h3>Shot Candidate Detection</h3>
+                  <h3>Shots</h3>
                   <span></span>
                 </div>
                 <div class="control-grid">
@@ -389,7 +389,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="shot_refinement">
                 <div class="section-header sub-section-header">
-                  <h3>Shot Refinement</h3>
+                  <h3>Refinement</h3>
                   <span></span>
                 </div>
                 <div class="control-grid">
@@ -404,7 +404,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="false_positive_suppression">
                 <div class="section-header sub-section-header">
-                  <h3>False Positive Suppression</h3>
+                  <h3>False Positives</h3>
                   <span></span>
                 </div>
                 <div class="control-grid">
@@ -419,7 +419,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="confidence_review">
                 <div class="section-header sub-section-header">
-                  <h3>Confidence And Review</h3>
+                  <h3>Confidence</h3>
                   <span></span>
                 </div>
                 <div class="control-grid">
@@ -437,7 +437,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="timing_changer">
                 <div class="section-header sub-section-header">
-                  <h3>Timing Changer</h3>
+                  <h3>Timing Review</h3>
                   <span id="shotml-proposal-summary">No pending proposals.</span>
                 </div>
                 <div class="button-grid two-up">
@@ -447,7 +447,7 @@
               </section>
               <section class="shotml-section" data-shotml-section="advanced_runtime">
                 <div class="section-header sub-section-header">
-                  <h3>Advanced Runtime</h3>
+                  <h3>Advanced</h3>
                 </div>
                 <div class="control-grid">
                   <label>Window size <input data-shotml-setting="window_size" type="number" min="128" max="16384" step="1" /></label>
@@ -773,6 +773,11 @@
                 <label>Audio kbps
                   <input id="audio-bitrate" type="number" min="32" step="32" value="320" />
                 </label>
+                <label>Output audio level (%)
+                  <input id="audio-output-level" type="number" min="0" max="300" step="5" value="100" />
+                </label>
+              </div>
+              <div class="control-grid">
                 <label>Color
                   <select id="color-space">
                     <option value="bt709_sdr">Rec.709 SDR</option>

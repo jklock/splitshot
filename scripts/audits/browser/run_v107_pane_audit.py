@@ -669,7 +669,8 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
           const activeStageBody = activeStageSection?.querySelector('.media-pane-section-body');
           const activeStageToggle = activeStageHeader?.querySelector('.pane-toggle');
           const activeStageHeaderButtons = Array.from(activeStageHeader?.querySelectorAll('button') || []).map((button) => button.textContent?.trim() || '');
-          const addStageActionButton = activeStageSection?.querySelector('.media-add-stage-full');
+          const stageActionRow = activeStageSection?.querySelector('.media-active-stage-actions');
+          const addStageActionButton = stageActionRow?.querySelector('.media-add-stage-btn');
           const addStageWidth = addStageActionButton instanceof HTMLElement
             ? (addStageActionButton.offsetWidth || addStageActionButton.getBoundingClientRect().width || 0)
             : 0;
@@ -723,7 +724,7 @@ def _collect_dom_summary(page: Page) -> dict[str, object]:
             media_queue_action_present: /Queue Stage|Requeue/.test(pane('media')),
             media_active_stage_add_stage_present: Boolean(addStageActionButton),
             media_active_stage_add_stage_width_ratio: addStageWidth / Math.max(1, mediaPaneWidth),
-            media_active_stage_add_stage_is_last: activeStageBody?.lastElementChild === addStageActionButton,
+            media_active_stage_add_stage_is_first: stageActionRow?.firstElementChild === addStageActionButton,
             queue_header_text: text('#queue-pane .pane-title-row h3'),
             queue_header_summary: headerSummaryToken('#queue-pane .pane-title-row .pane-summary-token'),
             queue_section_labels: sectionLabels('#queue-pane > .pane-section > .settings-section > .section-header strong'),
@@ -926,9 +927,9 @@ def _compute_visual_parity(dom_summary: dict[str, object]) -> dict[str, object]:
         failures.append({"pane": "media", "failure": "Queue membership still appears in Media"})
     if not bool(dom_summary.get("media_active_stage_add_stage_present")):
         failures.append({"pane": "media", "failure": "missing Add Stage action in Active Stage"})
-    if not bool(dom_summary.get("media_active_stage_add_stage_is_last")):
+    if not bool(dom_summary.get("media_active_stage_add_stage_is_first")):
         failures.append(
-            {"pane": "media", "failure": "Add Stage is not the final Active Stage action"}
+            {"pane": "media", "failure": "Add Stage is not first in the stage action row"}
         )
     if list(dom_summary.get("queue_section_labels") or []) != ["Queue Controls", "Queued Stages"]:
         failures.append(

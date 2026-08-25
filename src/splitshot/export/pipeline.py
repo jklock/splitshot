@@ -715,6 +715,7 @@ def _encoder_command(
     fade_out_s: float = 0.0,
     duration_s: float = 0.0,
     fade_audio: bool = False,
+    has_audio: bool = True,
 ) -> list[str]:
     video_bitrate = f"{project.export.video_bitrate_mbps:g}M"
     audio_bitrate = f"{project.export.audio_bitrate_kbps}k"
@@ -734,7 +735,7 @@ def _encoder_command(
     ]
     audio_args = (
         []
-        if first_pass
+        if first_pass or not has_audio
         else [
             "-i",
             project.primary_video.path,
@@ -748,16 +749,21 @@ def _encoder_command(
         fade_in_s, fade_out_s, duration_s
     )
     video_filters: list[str] = []
-    audio_filters: list[str] = []
+    audio_filters: list[str] = [
+        f"volume={max(0, min(300, project.export.audio_output_level_percent)) / 100:.3f}"
+    ]
     if normalized_fade_in > 0:
         video_filters.append(f"fade=t=in:st=0:d={normalized_fade_in:.3f}:color=black")
-        audio_filters.append(f"afade=t=in:st=0:d={normalized_fade_in:.3f}")
+        if fade_audio:
+            audio_filters.append(f"afade=t=in:st=0:d={normalized_fade_in:.3f}")
     if normalized_fade_out > 0:
         fade_out_start = max(0.0, duration_s - normalized_fade_out)
         video_filters.append(
             f"fade=t=out:st={fade_out_start:.3f}:d={normalized_fade_out:.3f}:color=black"
         )
-        audio_filters.append(f"afade=t=out:st={fade_out_start:.3f}:d={normalized_fade_out:.3f}")
+        if fade_audio:
+            audio_filters.append(f"afade=t=out:st={fade_out_start:.3f}:d={normalized_fade_out:.3f}")
+    audio_filters.append("alimiter=limit=0.95")
     encode_args = [
         *([] if not video_filters else ["-vf", ",".join(video_filters)]),
         "-c:v",
@@ -784,9 +790,10 @@ def _encoder_command(
         encode_args.extend(["-pass", str(pass_number), "-passlogfile", str(passlogfile)])
     audio_encode_args = (
         ["-an"]
-        if first_pass
+        if first_pass or not has_audio
         else [
-            *([] if not fade_audio or not audio_filters else ["-af", ",".join(audio_filters)]),
+            "-af",
+            ",".join(audio_filters),
             "-c:a",
             project.export.audio_codec.value,
             "-ar",
@@ -1043,7 +1050,8 @@ def export_project(
     )
     output_width, output_height = _target_dimensions(project, crop_width, crop_height)
     duration_s = max(0.0, plan.duration_ms / 1000.0)
-    fade_audio = fade_audio and _input_has_audio(project.primary_video.path)
+    has_audio = _input_has_audio(project.primary_video.path)
+    fade_audio = fade_audio and has_audio
 
     output_target = _normalize_output_target(output_path)
     output_target.parent.mkdir(parents=True, exist_ok=True)
@@ -1082,6 +1090,7 @@ def export_project(
                     fade_in_s=fade_in_s,
                     fade_out_s=fade_out_s,
                     duration_s=duration_s,
+                    has_audio=has_audio,
                 )
                 pass_two_command = _encoder_command(
                     project,
@@ -1096,6 +1105,7 @@ def export_project(
                     fade_out_s=fade_out_s,
                     duration_s=duration_s,
                     fade_audio=fade_audio,
+                    has_audio=has_audio,
                 )
                 log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
                 log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
@@ -1137,6 +1147,7 @@ def export_project(
                 fade_out_s=fade_out_s,
                 duration_s=duration_s,
                 fade_audio=fade_audio,
+                has_audio=has_audio,
             )
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
             project.export.last_log = "\n".join(log_lines[-400:])

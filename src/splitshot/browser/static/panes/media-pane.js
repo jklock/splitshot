@@ -350,6 +350,7 @@ export function createMediaPane({
             </label>
           </div>
           <div class="media-active-stage-actions media-pane-actions media-pane-actions-split">
+            <button class="btn-sm media-add-stage-btn" type="button" ${mediaMutationPending ? "disabled" : ""}>Add Stage</button>
             <button class="btn-sm btn-primary media-save-stage-btn" type="button" ${stage && !mediaMutationPending ? "" : "disabled"}>Save Stage</button>
             <button class="btn-sm btn-danger media-delete-stage-btn" type="button" data-stage-id="${stage?.id || ""}" ${stages().length > 1 && !mediaMutationPending ? "" : "disabled"}>Delete Stage</button>
           </div>
@@ -363,7 +364,6 @@ export function createMediaPane({
               <span><strong>Ignore Global Settings</strong><small>Use project or application defaults for this stage.</small></span>
             </label>
           </div>
-          <button class="primary-button media-add-stage-btn media-add-stage-full" type="button" ${mediaMutationPending ? "disabled" : ""}>Add Stage</button>
         </div>
       </section>
     `;

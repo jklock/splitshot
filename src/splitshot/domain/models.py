@@ -437,6 +437,7 @@ def _normalize_output_profile_export_settings(value: Any) -> dict[str, Any]:
         "audio_codec": settings.audio_codec.value,
         "audio_sample_rate": settings.audio_sample_rate,
         "audio_bitrate_kbps": settings.audio_bitrate_kbps,
+        "audio_output_level_percent": settings.audio_output_level_percent,
         "color_space": settings.color_space.value,
         "two_pass": settings.two_pass,
         "multi_track": settings.multi_track,
@@ -680,6 +681,10 @@ class ImportedStageScore:
     match_penalties: float | None = None
     match_stage_count: int | None = None
     match_penalty_counts: dict[str, float] = field(default_factory=dict)
+    match_metadata: dict[str, str] = field(default_factory=dict)
+    stage_metadata: dict[str, str] = field(default_factory=dict)
+    competitor_metadata: dict[str, str] = field(default_factory=dict)
+    result_metadata: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -905,6 +910,7 @@ class ExportSettings:
     audio_codec: ExportAudioCodec = ExportAudioCodec.AAC
     audio_sample_rate: int = 48000
     audio_bitrate_kbps: int = 320
+    audio_output_level_percent: int = 100
     color_space: ExportColorSpace = ExportColorSpace.BT709_SDR
     two_pass: bool = False
     multi_track: bool = False
@@ -1100,10 +1106,10 @@ def project_stage_name_overlay_text(project: Project) -> str:
                 or (imported.stage_number if imported is not None else None)
                 or stage.scoring.stage_number
             ),
-            imported_stage_name=(
+            imported_stage_name=stage.label,
+            stage_label=(
                 stage.imported_stage_name or (imported.stage_name if imported is not None else "")
             ),
-            stage_label=stage.label,
             fallback_order=stage.order_index,
         )
     return format_stage_name_overlay_text(
@@ -1333,6 +1339,9 @@ def _export_from_dict(data: dict[str, Any]) -> ExportSettings:
         audio_codec=ExportAudioCodec(data.get("audio_codec", ExportAudioCodec.AAC.value)),
         audio_sample_rate=int(data.get("audio_sample_rate", 48000)),
         audio_bitrate_kbps=int(data.get("audio_bitrate_kbps", 320)),
+        audio_output_level_percent=max(
+            0, min(300, int(data.get("audio_output_level_percent", 100)))
+        ),
         color_space=ExportColorSpace(data.get("color_space", ExportColorSpace.BT709_SDR.value)),
         two_pass=bool(data.get("two_pass", False)),
         multi_track=bool(data.get("multi_track", False)),
@@ -2005,6 +2014,18 @@ def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore
         match_stage_count=(None if match_stage_count in {None, ""} else int(match_stage_count)),
         match_penalty_counts={
             str(key): float(value) for key, value in data.get("match_penalty_counts", {}).items()
+        },
+        match_metadata={
+            str(key): str(value) for key, value in data.get("match_metadata", {}).items()
+        },
+        stage_metadata={
+            str(key): str(value) for key, value in data.get("stage_metadata", {}).items()
+        },
+        competitor_metadata={
+            str(key): str(value) for key, value in data.get("competitor_metadata", {}).items()
+        },
+        result_metadata={
+            str(key): str(value) for key, value in data.get("result_metadata", {}).items()
         },
     )
 
@@ -2799,6 +2820,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             audio_sample_rate=int(export_data.get("audio_sample_rate", 48000)),
             audio_bitrate_kbps=int(export_data.get("audio_bitrate_kbps", 320)),
+            audio_output_level_percent=max(
+                0, min(300, int(export_data.get("audio_output_level_percent", 100)))
+            ),
             color_space=ExportColorSpace(
                 export_data.get("color_space", ExportColorSpace.BT709_SDR.value)
             ),
@@ -2963,4 +2987,43 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     for stage in project.stages:
         _finalize_primary_trim_derivative(stage.primary_media, stage.primary_trim_derivative)
 
+    _migrate_generated_review_summary_text(project)
+
     return project
+
+
+def _migrate_generated_review_summary_text(project: Project) -> None:
+    """Clear legacy cached auto-summary text while retaining real user overrides."""
+    from copy import deepcopy
+
+    from splitshot.scoring.logic import (
+        format_imported_stage_overlay_text,
+        format_review_summary_overlay_text,
+    )
+
+    stage_views: list[Project] = []
+    for stage in project.stages:
+        view = deepcopy(project)
+        view.active_stage_id = stage.id
+        view.primary_video = deepcopy(stage.primary_media)
+        view.analysis = deepcopy(stage.analysis)
+        view.scoring = deepcopy(stage.scoring)
+        view.overlay = deepcopy(stage.overlay)
+        stage_views.append(view)
+
+    overlays = [project.overlay, *(stage.overlay for stage in project.stages)]
+    for overlay in overlays:
+        for box in overlay.text_boxes:
+            cached = box.text.strip()
+            if box.source != "imported_summary" or not cached:
+                continue
+            generated = {
+                format_review_summary_overlay_text(view, box.summary_metric_ids).strip()
+                for view in stage_views
+            }
+            generated.update(
+                format_imported_stage_overlay_text(view.scoring.imported_stage).strip()
+                for view in stage_views
+            )
+            if cached in generated:
+                box.text = ""

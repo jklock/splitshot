@@ -102,11 +102,11 @@ The ShotML pane is plain HTML plus the pane module and shared shell state synchr
 | --- | --- |
 | Left rail includes ShotML after Metrics and before Settings. | `src/splitshot/browser/static/index.html`. |
 | Splits no longer contains the threshold control. | `src/splitshot/browser/static/index.html:178` through `src/splitshot/browser/static/index.html:199` contains selected-shot controls and table only. |
-| The ShotML pane contains threshold, all settings groups, Timing Changer, and Advanced Runtime. | `src/splitshot/browser/static/index.html:201` through `src/splitshot/browser/static/index.html:342`. |
+| The ShotML pane contains Detection, Beep, Shots, Refinement, False Positives, Confidence, Timing Review, and Advanced groups. | `src/splitshot/browser/static/index.html:201` through `src/splitshot/browser/static/index.html:342`. |
 | Controls use `data-shotml-setting`, so one generic JS reader/writer handles all settings fields. | `src/splitshot/browser/static/app.js:4955` through `src/splitshot/browser/static/app.js:4986`. |
 | Proposal rows render from `analysis.timing_change_proposals` and call apply/discard endpoints. | `src/splitshot/browser/static/app.js:5014` through `src/splitshot/browser/static/app.js:5058`. |
 | Settings autosave without rerunning detection. | `src/splitshot/browser/static/app.js:7249` through `src/splitshot/browser/static/app.js:7252` and `src/splitshot/browser/static/app.js:7544` through `src/splitshot/browser/static/app.js:7555`. |
-| Reanalysis is only triggered by the Re-run ShotML button. | `src/splitshot/browser/static/app.js:7299` through `src/splitshot/browser/static/app.js:7302` and `src/splitshot/browser/static/app.js:7551`. |
+| Reanalysis is only triggered by the Run ShotML button. | `src/splitshot/browser/static/app.js:7299` through `src/splitshot/browser/static/app.js:7302` and `src/splitshot/browser/static/app.js:7551`. |
 | The processing banner only says ShotML is rerunning when the settings payload has `rerun: true`. | `src/splitshot/browser/static/app.js:2494` through `src/splitshot/browser/static/app.js:2504`. |
 
 The threshold input keeps its `id="threshold"` for compatibility with existing browser tests and shortcut code, but it now lives in ShotML.

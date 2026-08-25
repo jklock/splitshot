@@ -177,7 +177,7 @@ def test_media_pane_has_add_more_and_create_stage():
     source = (STATIC_ROOT / "panes" / "media-pane.js").read_text()
     assert "media-add-more-btn" in source
     assert "media-add-stage-btn" in source
-    assert "media-add-stage-full" in source
+    assert 'class="btn-sm media-add-stage-btn"' in source
     assert "Add Media" in source
     assert 'callApi("/api/project/stage/create"' in source
 

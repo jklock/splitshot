@@ -823,6 +823,7 @@ function normalizeExportDraftValue(key, value) {
     "audio_codec",
     "audio_sample_rate",
     "audio_bitrate_kbps",
+    "audio_output_level_percent",
     "color_space",
     "two_pass",
     "ffmpeg_preset",
@@ -841,6 +842,9 @@ function normalizeExportDraftValue(key, value) {
   }
   if (key === "audio_bitrate_kbps") {
     return Math.max(32, Number(value));
+  }
+  if (key === "audio_output_level_percent") {
+    return Math.max(0, Math.min(300, Number(value)));
   }
   if (key === "two_pass") {
     return Boolean(value);

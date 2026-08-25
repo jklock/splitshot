@@ -1078,6 +1078,15 @@ class ProjectController(QObject):
             self.project.analysis.shotml_settings.detection_threshold
         )
         self.project.analysis.timing_change_proposals = []
+        automatic_confidences = [
+            confidence
+            for shot in self.project.analysis.shots
+            if shot.source == ShotSource.AUTO and not shot.user_added
+            for confidence in [
+                shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence
+            ]
+            if confidence is not None
+        ]
         self.project.analysis.last_shotml_run_summary = {
             "video_path": active_primary_path,
             "threshold": self.project.analysis.shotml_settings.detection_threshold,
@@ -1085,6 +1094,12 @@ class ProjectController(QObject):
             "beep_time_ms": result.beep_time_ms,
             "shot_count": len(result.shots),
             "review_suggestion_count": len(result.review_suggestions),
+            "average_auto_confidence": (
+                None
+                if not automatic_confidences
+                else sum(automatic_confidences) / len(automatic_confidences)
+            ),
+            "auto_confidence_shot_count": len(automatic_confidences),
         }
         ensure_default_shot_scores(self.project)
         normalize_project_timing_events(self.project)
@@ -1321,6 +1336,38 @@ class ProjectController(QObject):
     ) -> None:
         options = describe_practiscore_file(path, source_name=source_name)
         excluded_stage_numbers = set(self.project.excluded_imported_stage_numbers)
+        source_stage_numbers = set(options.stage_numbers or [])
+        live_imported_stage_numbers = {
+            stage.imported_stage_number
+            for stage in self.project.stages
+            if stage.imported_stage_number is not None
+        }
+        excluded_stage_numbers.difference_update(live_imported_stage_numbers)
+        self.project.excluded_imported_stage_numbers = sorted(excluded_stage_numbers)
+        source_stage_names = {stage.number: stage.name for stage in options.stages}
+        orphan_candidates = [
+            stage
+            for stage in self.project.stages
+            if self._guarded_practiscore_orphan_stage_number(
+                stage,
+                source_stage_numbers=source_stage_numbers,
+                excluded_stage_numbers=excluded_stage_numbers,
+            )
+            is not None
+        ]
+        if len(orphan_candidates) > 1:
+            raise ValueError(
+                "Multiple orphaned imported stages were found; refusing automatic repair."
+            )
+        if orphan_candidates:
+            orphan = orphan_candidates[0]
+            repaired_number = int(orphan.scoring.stage_number)
+            repaired_name = source_stage_names.get(repaired_number) or f"Stage {repaired_number}"
+            orphan.imported_stage_number = repaired_number
+            orphan.imported_stage_name = repaired_name
+            orphan.label = repaired_name
+            excluded_stage_numbers.discard(repaired_number)
+            self.project.excluded_imported_stage_numbers = sorted(excluded_stage_numbers)
         stage_numbers = [
             stage_number
             for stage_number in (options.stage_numbers or [])
@@ -1329,12 +1376,36 @@ class ProjectController(QObject):
         if not stage_numbers:
             return
 
-        current_match_type = self.project.scoring.match_type
+        selection_scoring = self.project.scoring
+        if not selection_scoring.competitor_name:
+            selection_stage = next(
+                (
+                    stage
+                    for stage in self.project.stages
+                    if stage.scoring.competitor_name
+                    or (
+                        stage.scoring.imported_stage is not None
+                        and stage.scoring.imported_stage.competitor_name
+                    )
+                ),
+                None,
+            )
+            if selection_stage is not None:
+                selection_scoring = selection_stage.scoring
+        current_match_type = selection_scoring.match_type
         current_stage_number = self.project.scoring.stage_number
-        current_competitor_name = self.project.scoring.competitor_name
-        current_competitor_place = self.project.scoring.competitor_place
-        current_classification = self.project.scoring.classification
-        current_division = self.project.scoring.division
+        current_competitor_name = selection_scoring.competitor_name or (
+            selection_scoring.imported_stage.competitor_name
+            if selection_scoring.imported_stage is not None
+            else ""
+        )
+        current_competitor_place = selection_scoring.competitor_place or (
+            selection_scoring.imported_stage.competitor_place
+            if selection_scoring.imported_stage is not None
+            else None
+        )
+        current_classification = selection_scoring.classification
+        current_division = selection_scoring.division
         current_source_path = self.project.scoring.practiscore_source_path
         current_source_name = self.project.scoring.practiscore_source_name
         seed_project_state = not bool(self.project.stages)
@@ -1383,14 +1454,16 @@ class ProjectController(QObject):
             (stage for stage in self.project.stages if stage.imported_stage_number is None),
             key=lambda stage: stage.order_index,
         )
+        next_order_index = max((stage.order_index for stage in self.project.stages), default=0)
         new_stages: list[ProjectStage] = []
-        for order_index, stage_number in enumerate(stage_numbers, start=1):
-            stage_name = f"Stage {stage_number}"
+        for stage_number in stage_numbers:
+            stage_name = source_stage_names.get(stage_number) or f"Stage {stage_number}"
             stage = existing_by_number.get(stage_number)
             if stage is None:
+                next_order_index += 1
                 stage = ProjectStage(
                     label=stage_name,
-                    order_index=order_index,
+                    order_index=next_order_index,
                     imported_stage_number=stage_number,
                     imported_stage_name=stage_name,
                     analysis=AnalysisState(
@@ -1413,17 +1486,13 @@ class ProjectController(QObject):
                 stage.export.last_log = ""
                 stage.export.last_error = None
             else:
-                stage.order_index = order_index
                 stage.imported_stage_number = stage_number
-                if not stage.imported_stage_name:
-                    stage.imported_stage_name = stage_name
-                if not stage.label or re.fullmatch(r"Stage\s+\d+", stage.label):
-                    stage.label = stage.imported_stage_name or stage_name
+                stage.imported_stage_name = stage_name
+                stage.label = stage_name
             new_stages.append(stage)
 
         new_stages.extend(manual_stages)
-        for order_index, stage in enumerate(new_stages, start=1):
-            stage.order_index = order_index
+        new_stages.sort(key=lambda stage: (stage.order_index, stage.id))
         stage_ids = {stage.id for stage in new_stages}
         self.project.stages = new_stages
         self._normalize_stage_order()
@@ -1491,6 +1560,19 @@ class ProjectController(QObject):
             "source_name": self._practiscore_source_name,
             "detected_match_type": "" if options is None else options.match_type,
             "stage_numbers": [] if options is None else list(options.stage_numbers),
+            "stages": (
+                []
+                if options is None
+                else [
+                    {
+                        "number": stage.number,
+                        "name": stage.name,
+                        "metadata": dict(stage.metadata),
+                    }
+                    for stage in options.stages
+                ]
+            ),
+            "match_metadata": {} if options is None else dict(options.match_metadata),
             "competitors": competitors,
         }
 
@@ -2142,9 +2224,30 @@ class ProjectController(QObject):
             for stage in self.project.stages
             if stage.imported_stage_number is not None
         }
+        source_stage_numbers = set(options.stage_numbers or [])
+        stale_live_exclusions = set(self.project.excluded_imported_stage_numbers).intersection(
+            actual_stage_numbers
+        )
+        if stale_live_exclusions:
+            self.project.excluded_imported_stage_numbers = sorted(
+                set(self.project.excluded_imported_stage_numbers).difference(stale_live_exclusions)
+            )
+            expected_stage_numbers = set(options.stage_numbers or []).difference(
+                self.project.excluded_imported_stage_numbers
+            )
+            changed = True
+        has_guarded_orphan = any(
+            self._guarded_practiscore_orphan_stage_number(
+                stage,
+                source_stage_numbers=source_stage_numbers,
+                excluded_stage_numbers=set(self.project.excluded_imported_stage_numbers),
+            )
+            is not None
+            for stage in self.project.stages
+        )
         imported_stage_structure_needs_refresh = (
             bool(expected_stage_numbers) and actual_stage_numbers != expected_stage_numbers
-        )
+        ) or has_guarded_orphan
         imported_stages_need_refresh = any(
             stage.imported_stage_number is not None
             and (
@@ -2501,8 +2604,7 @@ class ProjectController(QObject):
                 imported.imported_stage.stage_name
                 or f"Stage {imported.imported_stage.stage_number}"
             )
-            if not active_stage.label or re.fullmatch(r"Stage\s+\d+", active_stage.label):
-                active_stage.label = active_stage.imported_stage_name
+            active_stage.label = active_stage.imported_stage_name
         imported_box = next(
             (box for box in self.project.overlay.text_boxes if box.source == "imported_summary"),
             None,
@@ -2581,12 +2683,19 @@ class ProjectController(QObject):
             self.project.active_stage_id = stage.id
             self._sync_active_stage_to_project()
             scoring = self.project.scoring
+            stage_selection = deepcopy(scoring)
             scoring.match_type = detected_match_type
             scoring.stage_number = stage.imported_stage_number
-            scoring.competitor_name = selected_scoring.competitor_name
-            scoring.competitor_place = selected_scoring.competitor_place
-            scoring.classification = selected_scoring.classification
-            scoring.division = selected_scoring.division
+            scoring.competitor_name = (
+                stage_selection.competitor_name or selected_scoring.competitor_name
+            )
+            scoring.competitor_place = (
+                stage_selection.competitor_place or selected_scoring.competitor_place
+            )
+            scoring.classification = (
+                stage_selection.classification or selected_scoring.classification
+            )
+            scoring.division = stage_selection.division or selected_scoring.division
             scoring.practiscore_source_path = path
             scoring.practiscore_source_name = source_name or Path(path).name
             self._import_practiscore_source(
@@ -2612,6 +2721,13 @@ class ProjectController(QObject):
                 preserve_active_overrides=False,
             )
             self._sync_project_to_active_stage()
+        for stage in imported_stages:
+            entry = next((item for item in self.project.queue if item.stage_id == stage.id), None)
+            if entry is None:
+                continue
+            stage.queue_status = QueueStatus.STALE
+            entry.status = QueueStatus.STALE
+            entry.snapshot = deepcopy(stage_to_dict(stage))
         if emit_change:
             self.project.touch()
             self.project_changed.emit()
@@ -2966,29 +3082,55 @@ class ProjectController(QObject):
     def _stage_by_id(self, stage_id: str) -> ProjectStage | None:
         return next((stage for stage in self.project.stages if stage.id == stage_id), None)
 
+    def _stage_has_recoverable_primary_media(self, stage: ProjectStage) -> bool:
+        candidates = {
+            str(stage.primary_media.path or ""),
+            str(stage.primary_trim_derivative.original_path or ""),
+            str(stage.primary_trim_derivative.derivative_path or ""),
+            str(stage.primary_trim_derivative.derivative_asset.path or ""),
+        }
+        for value in candidates:
+            if not value:
+                continue
+            candidate = Path(value).expanduser()
+            if not candidate.is_absolute() and self.project_path is not None:
+                candidate = self.project_path / candidate
+            if candidate.is_file():
+                return True
+        return False
+
     @staticmethod
     def _stage_number_from_label(label: str) -> int | None:
         match = re.match(r"^\s*stage\s*#?\s*(\d+)\b", str(label), flags=re.IGNORECASE)
         return int(match.group(1)) if match else None
 
+    def _guarded_practiscore_orphan_stage_number(
+        self,
+        stage: ProjectStage,
+        *,
+        source_stage_numbers: set[int],
+        excluded_stage_numbers: set[int],
+    ) -> int | None:
+        """Identify an excluded imported stage that was recreated without its import link."""
+        if stage.imported_stage_number is not None or stage.scoring.imported_stage is not None:
+            return None
+        stage_number = int(stage.scoring.stage_number or 0)
+        if (
+            stage_number <= 0
+            or stage_number not in source_stage_numbers
+            or stage_number not in excluded_stage_numbers
+            or not self._stage_has_recoverable_primary_media(stage)
+        ):
+            return None
+        label_number = self._stage_number_from_label(stage.label)
+        if label_number not in {0, stage_number}:
+            return None
+        return stage_number
+
     def _normalize_stage_order(self) -> bool:
-        """Keep every stage consumer on the natural stage-number order."""
+        """Keep every stage consumer on the explicit persisted display order."""
         before = [(stage.id, stage.order_index) for stage in self.project.stages]
-
-        def sort_key(stage: ProjectStage) -> tuple[int, int, str, str]:
-            label_number = self._stage_number_from_label(stage.label)
-            stage_number = (
-                label_number
-                if label_number is not None
-                else stage.imported_stage_number
-                if stage.imported_stage_number is not None
-                else stage.scoring.stage_number
-                if stage.scoring.stage_number is not None
-                else stage.order_index
-            )
-            return (int(stage_number), stage.order_index, stage.label.casefold(), stage.id)
-
-        self.project.stages.sort(key=sort_key)
+        self.project.stages.sort(key=lambda stage: (stage.order_index, stage.id))
         for order_index, stage in enumerate(self.project.stages, start=1):
             stage.order_index = order_index
         return before != [(stage.id, stage.order_index) for stage in self.project.stages]
@@ -3023,6 +3165,8 @@ class ProjectController(QObject):
         changed = False
         if label is not None:
             next_label = str(label).strip()
+            if self._stage_number_from_label(next_label) == 0:
+                raise ValueError("Stage number must be 1 or greater.")
             if next_label and stage.label != next_label:
                 if any(
                     item.id != stage_id and item.label.strip().casefold() == next_label.casefold()
@@ -3925,6 +4069,9 @@ class ProjectController(QObject):
         boundary_project.stages = []
         boundary_project.active_stage_id = ""
         boundary_project.primary_video = probe_video(source_path)
+        boundary_project.export.aspect_ratio = AspectRatio.ORIGINAL
+        boundary_project.export.target_width = boundary_project.primary_video.width
+        boundary_project.export.target_height = boundary_project.primary_video.height
         boundary_project.primary_trim_derivative = MergeSourceTrimDerivative()
         boundary_project.secondary_video = None
         boundary_project.merge_sources = []
@@ -4057,7 +4204,9 @@ class ProjectController(QObject):
             normalized_audio_filters = [
                 f"aresample={sample_rate}",
                 f"aformat=sample_rates={sample_rate}:channel_layouts={channel_layout}",
+                f"volume={max(0, min(300, self.project.export.audio_output_level_percent)) / 100:.3f}",
                 *audio_filters,
+                "alimiter=limit=0.95",
             ]
             command.extend(
                 [
@@ -4168,9 +4317,7 @@ class ProjectController(QObject):
                     f"asetpts=PTS-STARTPTS[a{index}]"
                 )
             concat_inputs.extend([f"[v{index}]", f"[a{index}]"])
-        filters.append(
-            f"{''.join(concat_inputs)}concat=n={len(results)}:v=1:a=1[outv][outa]"
-        )
+        filters.append(f"{''.join(concat_inputs)}concat=n={len(results)}:v=1:a=1[outv][outa]")
         codec = "libx265" if self.project.export.video_codec == ExportVideoCodec.HEVC else "libx264"
         command.extend(
             [
@@ -5045,14 +5192,10 @@ class ProjectController(QObject):
     def move_shot(
         self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False
     ) -> None:
-        if preserve_following_splits:
-            shots = sort_shots(self.project.analysis.shots)
-            shot_index = next(
-                (index for index, shot in enumerate(shots) if shot.id == shot_id), None
-            )
-            if shot_index is None:
-                raise ValueError("Shot not found")
-            shot = shots[shot_index]
+        del preserve_following_splits  # Retained for API compatibility; movement is per marker.
+        for shot in self.project.analysis.shots:
+            if shot.id != shot_id:
+                continue
             if shot.shotml_time_ms is None:
                 shot.shotml_time_ms = shot.time_ms
             if shot.shotml_confidence is None:
@@ -5060,38 +5203,13 @@ class ProjectController(QObject):
                 shot.shotml_confidence = (
                     original.confidence if original is not None else shot.confidence
                 )
-            lower_bound_ms = (
-                self.project.analysis.beep_time_ms_primary
-                if shot_index == 0 and self.project.analysis.beep_time_ms_primary is not None
-                else (shots[shot_index - 1].time_ms if shot_index > 0 else 0)
-            )
-            target_time_ms = max(lower_bound_ms, time_ms)
-            delta_ms = target_time_ms - shot.time_ms
-            if delta_ms:
-                for shifted_shot in shots[shot_index:]:
-                    if shifted_shot.shotml_time_ms is None:
-                        shifted_shot.shotml_time_ms = shifted_shot.time_ms
-                    if shifted_shot.shotml_confidence is None:
-                        original = self._original_shot_state_by_id.get(shifted_shot.id)
-                        shifted_shot.shotml_confidence = (
-                            original.confidence if original is not None else shifted_shot.confidence
-                        )
-                    shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
+            shot.time_ms = max(0, time_ms)
+            if shot.source == ShotSource.AUTO:
+                shot.source = ShotSource.MANUAL
+                shot.confidence = None
+            break
         else:
-            for shot in self.project.analysis.shots:
-                if shot.id == shot_id:
-                    if shot.shotml_time_ms is None:
-                        shot.shotml_time_ms = shot.time_ms
-                    if shot.shotml_confidence is None:
-                        original = self._original_shot_state_by_id.get(shot.id)
-                        shot.shotml_confidence = (
-                            original.confidence if original is not None else shot.confidence
-                        )
-                    shot.time_ms = max(0, time_ms)
-                    if shot.source == ShotSource.AUTO:
-                        shot.source = ShotSource.MANUAL
-                        shot.confidence = None
-                    break
+            raise ValueError("Shot not found")
         self.project.sort_shots()
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project)
@@ -5458,28 +5576,14 @@ class ProjectController(QObject):
         if original is None:
             raise ValueError("Original split not found")
         shots = sort_shots(self.project.analysis.shots)
-        for shot_index, shot in enumerate(shots):
+        for shot in shots:
             if shot.id != shot_id:
                 continue
             restored_time_ms = max(
                 0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms
             )
-            if preserve_following_splits:
-                delta_ms = restored_time_ms - shot.time_ms
-                if delta_ms:
-                    for shifted_shot in shots[shot_index:]:
-                        if shifted_shot.shotml_time_ms is None:
-                            shifted_shot.shotml_time_ms = shifted_shot.time_ms
-                        if shifted_shot.shotml_confidence is None:
-                            original_shifted = self._original_shot_state_by_id.get(shifted_shot.id)
-                            shifted_shot.shotml_confidence = (
-                                original_shifted.confidence
-                                if original_shifted is not None
-                                else shifted_shot.confidence
-                            )
-                        shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
-            else:
-                shot.time_ms = restored_time_ms
+            del preserve_following_splits  # Retained for API compatibility; restore is per marker.
+            shot.time_ms = restored_time_ms
             shot.source = original.source
             shot.confidence = (
                 shot.shotml_confidence
@@ -5998,6 +6102,7 @@ class ProjectController(QObject):
             "audio_codec",
             "audio_sample_rate",
             "audio_bitrate_kbps",
+            "audio_output_level_percent",
             "color_space",
             "two_pass",
             "multi_track",
@@ -6032,6 +6137,10 @@ class ProjectController(QObject):
             export.audio_sample_rate = max(8000, int(payload["audio_sample_rate"]))
         if "audio_bitrate_kbps" in payload:
             export.audio_bitrate_kbps = max(32, int(payload["audio_bitrate_kbps"]))
+        if "audio_output_level_percent" in payload:
+            export.audio_output_level_percent = max(
+                0, min(300, int(payload["audio_output_level_percent"]))
+            )
         if "color_space" in payload:
             export.color_space = ExportColorSpace(str(payload["color_space"]))
         if "two_pass" in payload:

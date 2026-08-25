@@ -24,14 +24,14 @@ The ShotML pane controls automatic beep and shot detection. It is where you tune
 
 | Control | What it does |
 | --- | --- |
-| `Avg auto confidence` | Shows the current average confidence for automatically detected shots, so you can see at a glance whether the latest run looks strong or shaky before drilling into individual rows. |
-| `Re-run ShotML` | Replaces the automatic beep and shot detections using the current settings. Manual timing edits remain available in Splits. |
+| `Average confidence` | Shows the latest run's average confidence and excludes manually added or edited shots. |
+| `Run ShotML` | Replaces the automatic beep and shot detections using the current settings. Manual timing edits remain available in Splits. |
 | `Reset Defaults` | Restores the current project to the factory detector profile. |
 | Section chevrons | Expand or collapse each detector group. |
 | `Generate Proposals` | Converts ShotML review suggestions into pending timing changes. |
 | Proposal `Apply` / `Discard` | Applies or rejects one proposed timing change. |
 
-## Threshold
+## Detection
 
 | Control | What it changes |
 | --- | --- |
@@ -41,7 +41,7 @@ The ShotML pane controls automatic beep and shot detection. It is where you tune
 
 Start here first. Most videos should need only threshold changes plus a rerun.
 
-## Beep Detection
+## Beep
 
 | Control group | What it changes |
 | --- | --- |
@@ -53,7 +53,7 @@ Start here first. Most videos should need only threshold changes plus a rerun.
 
 Use this section when the shot count looks good but all times are shifted because the beep marker is wrong.
 
-## Shot Candidate Detection
+## Shots
 
 | Control | What it changes |
 | --- | --- |
@@ -63,7 +63,7 @@ Use this section when the shot count looks good but all times are shifted becaus
 
 Use this section when the detector finds too many close pairs or suppresses legitimate fast pairs.
 
-## Shot Refinement
+## Refinement
 
 | Control group | What it changes |
 | --- | --- |
@@ -74,7 +74,7 @@ Use this section when the detector finds too many close pairs or suppresses legi
 
 Use this when the shot count is right but markers consistently land early or late.
 
-## False Positive Suppression
+## False Positives
 
 | Control | What it changes |
 | --- | --- |
@@ -87,7 +87,7 @@ Use this when the shot count is right but markers consistently land early or lat
 
 Turn suppression off only when you can see and hear real shots being removed.
 
-## Confidence And Review
+## Confidence
 
 This section controls the confidence and review pressure shown in timing/metrics context. It is useful when proposals are too aggressive or too quiet.
 
@@ -97,7 +97,7 @@ This section controls the confidence and review pressure shown in timing/metrics
 | Alignment fields | Penalty for support that is far from the marker. |
 | Profile fields | How sound-profile outliers are searched and protected. |
 
-## Timing Changer And Runtime
+## Timing Review And Advanced
 
 - `Generate Proposals` creates pending rows for move-beep, move-shot, suppress-shot, restore-shot, or close-pair decisions.
 - Proposals do not edit the timeline until applied.
@@ -111,12 +111,12 @@ ShotML controls automatic detection. Splits controls the final timeline. Rerun S
 
 | Problem | First thing to try |
 | --- | --- |
-| Quiet shots are missing. | Lower `Detection threshold`, then `Re-run ShotML`. |
+| Quiet shots are missing. | Lower `Detection threshold`, then `Run ShotML`. |
 | Echoes became shots. | Raise `Detection threshold`, then rerun. |
 | Fast pairs are removed. | Lower `Minimum shot interval ms` or disable close-pair suppression. |
-| All shots are shifted. | Tune Beep Detection, then rerun. |
-| Count is right but markers are late. | Lower Shot Refinement `Onset fraction`. |
-| Count is right but markers are early. | Raise Shot Refinement `Onset fraction`. |
+| All shots are shifted. | Tune Beep, then rerun. |
+| Count is right but markers are late. | Lower Refinement `Onset fraction`. |
+| Count is right but markers are early. | Raise Refinement `Onset fraction`. |
 | Proposal list is empty. | Rerun ShotML, then click `Generate Proposals`. |
 
 ## Related Guides

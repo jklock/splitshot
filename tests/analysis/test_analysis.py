@@ -703,13 +703,13 @@ def test_open_project_repairs_missing_practiscore_stage_records(tmp_path: Path) 
     reopened = ProjectController()
     reopened.open_project(str(project_path))
 
-    assert [stage.imported_stage_number for stage in reopened.project.stages] == [1, 2, 3, 4]
-    assert [stage.label for stage in reopened.project.stages] == [
-        "Stage 1",
-        "Stage 2",
-        "Stage 3",
-        "Stage 4",
-    ]
+    assert sorted(stage.imported_stage_number for stage in reopened.project.stages) == [1, 2, 3, 4]
+    assert {stage.imported_stage_number: stage.label for stage in reopened.project.stages} == {
+        1: "Stage 1",
+        2: "Stage 2",
+        3: "Stage 3",
+        4: "Stage 4",
+    }
     assert all(stage.scoring.imported_stage is not None for stage in reopened.project.stages)
 
 
@@ -752,7 +752,12 @@ def test_explicit_practiscore_reimport_restores_deleted_imported_stage(
 
     controller.import_practiscore_file(str(source), source_name="IDPA.csv")
 
-    assert [stage.imported_stage_number for stage in controller.project.stages] == [1, 2, 3, 4]
+    assert sorted(stage.imported_stage_number for stage in controller.project.stages) == [
+        1,
+        2,
+        3,
+        4,
+    ]
     assert controller.project.excluded_imported_stage_numbers == []
 
 
@@ -1395,6 +1400,10 @@ def test_shotml_settings_update_reanalyzes_with_full_settings_object(monkeypatch
     assert controller.project.analysis.shotml_settings.min_shot_interval_ms == 125
     assert controller.project.analysis.shotml_settings.shot_peak_min_spacing_ms == 225
     assert controller.project.analysis.last_shotml_run_summary["shot_count"] == 1
+    assert controller.project.analysis.last_shotml_run_summary[
+        "average_auto_confidence"
+    ] == pytest.approx(0.9)
+    assert controller.project.analysis.last_shotml_run_summary["auto_confidence_shot_count"] == 1
 
 
 def test_timing_change_proposals_can_be_generated_applied_and_discarded() -> None:

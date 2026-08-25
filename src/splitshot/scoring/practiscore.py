@@ -42,11 +42,20 @@ class PractiScoreCompetitorOption:
 
 
 @dataclass(frozen=True, slots=True)
+class PractiScoreStageOption:
+    number: int
+    name: str
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class PractiScoreOptions:
     source_name: str
     match_type: str
     stage_numbers: list[int]
     competitors: list[PractiScoreCompetitorOption]
+    stages: list[PractiScoreStageOption] = field(default_factory=list)
+    match_metadata: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +63,7 @@ class _HitFactorReport:
     competitor_rows: list[dict[str, str]]
     stage_rows: dict[str, dict[str, str]]
     stage_results: list[dict[str, str]]
+    match_info: dict[str, str]
 
 
 IDPA_PENALTY_SECONDS = {
@@ -101,13 +111,18 @@ def describe_practiscore_file(
                 division_key="Division",
                 class_key="Class",
             ),
+            stages=[
+                PractiScoreStageOption(number=number, name=f"Stage {number}")
+                for number in stage_numbers
+            ],
         )
 
     report = _load_hit_factor_report(results_path)
+    stage_numbers = _hit_factor_stage_numbers(report)
     return PractiScoreOptions(
         source_name=display_name,
         match_type=normalized_match_type,
-        stage_numbers=_hit_factor_stage_numbers(report),
+        stage_numbers=stage_numbers,
         competitors=_competitor_options(
             report.competitor_rows,
             place_key="Place Overall",
@@ -118,6 +133,16 @@ def describe_practiscore_file(
             class_key="Class",
             power_factor_key="Power Factor",
         ),
+        stages=[
+            PractiScoreStageOption(
+                number=number,
+                name=str(report.stage_rows.get(str(number), {}).get("Stage_name", "")).strip()
+                or f"Stage {number}",
+                metadata=_clean_metadata(report.stage_rows.get(str(number), {})),
+            )
+            for number in stage_numbers
+        ],
+        match_metadata=dict(report.match_info),
     )
 
 
@@ -133,7 +158,9 @@ def infer_practiscore_context(
         normalize_match_type(match_type) if match_type else _infer_match_type(results_path)
     )
     clean_name = (competitor_name or "").strip()
-    resolved_stage_number = None if stage_number is None else max(1, int(stage_number))
+    resolved_stage_number = None if stage_number is None else int(stage_number)
+    if resolved_stage_number is not None and resolved_stage_number < 1:
+        raise ValueError("Stage number must be 1 or greater.")
 
     if normalized_match_type == "idpa":
         rows = _load_idpa_rows(results_path)
@@ -210,17 +237,32 @@ def _load_hit_factor_report(path: Path) -> _HitFactorReport:
     competitor_rows: list[dict[str, str]] = []
     stage_rows: dict[str, dict[str, str]] = {}
     stage_results: list[dict[str, str]] = []
+    match_info: dict[str, str] = {}
 
     with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
         for raw_line in handle:
             line = raw_line.strip()
-            if not line or line.startswith("$"):
+            if not line:
+                continue
+            if line.startswith("$INFO"):
+                info = line[len("$INFO") :].strip()
+                key, separator, value = info.partition(":")
+                if separator and key.strip():
+                    match_info[key.strip()] = value.strip()
+                continue
+            if line.startswith("$"):
                 continue
             if len(line) < 2 or line[1] != " ":
                 continue
             prefix = line[0]
             values = next(csv.reader([line[2:]]))
-            if prefix == "D":
+            if prefix == "A":
+                for key, value in zip(
+                    ("Match name", "Club Name", "Match date"), values, strict=False
+                ):
+                    if value.strip():
+                        match_info.setdefault(key, value.strip())
+            elif prefix == "D":
                 competitor_headers = values
             elif prefix == "E" and competitor_headers:
                 competitor_rows.append(dict(zip(competitor_headers, values, strict=False)))
@@ -238,6 +280,7 @@ def _load_hit_factor_report(path: Path) -> _HitFactorReport:
         competitor_rows=competitor_rows,
         stage_rows=stage_rows,
         stage_results=stage_results,
+        match_info=match_info,
     )
 
 
@@ -312,6 +355,8 @@ def _idpa_stage_numbers(rows: list[dict[str, str]]) -> list[int]:
     stage_numbers = sorted(
         {int(match.group(1)) for key in rows[0] if (match := re.match(r"Stage (\d+) ", key))}
     )
+    if any(number < 1 for number in stage_numbers):
+        raise ValueError("Stage number must be 1 or greater.")
     if not stage_numbers:
         raise ValueError("No stage columns were found in the PractiScore export.")
     return stage_numbers
@@ -369,6 +414,8 @@ def _hit_factor_stage_numbers(report: _HitFactorReport) -> list[int]:
         if _int_or_none(row.get("Stage")) is not None
         for stage in [row.get("Stage")]
     )
+    if any(number < 1 for number in stage_numbers):
+        raise ValueError("Stage number must be 1 or greater.")
     if not stage_numbers:
         raise ValueError("No stage results were found in the PractiScore export.")
     return sorted(stage_numbers)
@@ -458,7 +505,8 @@ def _import_idpa(
     other_penalties = sum(
         IDPA_PENALTY_SECONDS[key] * value for key, value in penalty_counts.items()
     )
-    final_time = stage_time + points_down + other_penalties
+    final_time = stage_time
+    raw_time = max(0.0, final_time - points_down - other_penalties)
     score_counts = {}
     if points_down:
         score_counts["Points Down"] = points_down
@@ -482,7 +530,7 @@ def _import_idpa(
         stage_name=stage_prefix,
         division=str(row.get("Division", "")).strip(),
         classification=str(row.get("Class", "")).strip(),
-        raw_seconds=stage_time,
+        raw_seconds=raw_time,
         aggregate_points=points_down,
         shot_penalties=0.0,
         final_time=final_time,
@@ -492,6 +540,25 @@ def _import_idpa(
         match_penalties=sum(match_penalty_counts.values()),
         match_stage_count=match_stage_count or None,
         match_penalty_counts=match_penalty_counts,
+        stage_metadata={"Number": str(stage_number), "Stage_name": stage_prefix},
+        competitor_metadata=_clean_metadata(
+            row,
+            keys=(
+                "IDPA ID",
+                "Shooter Number",
+                "Squad",
+                "Completed",
+                "DNF",
+                "Categories",
+                "Division",
+                "Class",
+                "Place",
+            ),
+        ),
+        result_metadata=_clean_metadata(
+            row,
+            prefix=f"{stage_prefix} ",
+        ),
     )
     comparison_competitors = []
     for other_row in rows:
@@ -516,16 +583,20 @@ def _import_idpa(
             }.items()
             if v
         )
+        other_final_time = other_time
+        other_raw_time = (
+            None
+            if other_final_time is None
+            else max(0.0, other_final_time - other_pd - other_penalty_sum)
+        )
         comparison_competitors.append(
             PractiScoreCompetitorOption(
                 name=other_name,
                 place=_int_or_none(other_row.get("Place")),
                 division=str(other_row.get("Division", "")).strip(),
                 classification=str(other_row.get("Class", "")).strip(),
-                raw_seconds=other_time,
-                final_time=other_time + other_pd + other_penalty_sum
-                if other_time is not None
-                else None,
+                raw_seconds=other_raw_time,
+                final_time=other_final_time,
             )
         )
     return PractiScoreStageImport(
@@ -618,6 +689,10 @@ def _import_hit_factor_report(
         stage_points=_float_or_none(stage_result.get("Stage Points")),
         stage_place=_int_or_none(stage_result.get("Stage Place")),
         score_counts=score_counts,
+        match_metadata=dict(report.match_info),
+        stage_metadata=_clean_metadata(stage_info),
+        competitor_metadata=_clean_metadata(competitor_row),
+        result_metadata=_clean_metadata(stage_result),
     )
     penalty_counts = {"procedural_errors": procedural_errors} if procedural_errors else {}
     comparison_competitors = []
@@ -773,6 +848,23 @@ def _normalize_name(value: str) -> str:
 
 def _row_name(row: dict[str, str], first_name_key: str, last_name_key: str) -> str:
     return f"{str(row.get(first_name_key, '')).strip()} {str(row.get(last_name_key, '')).strip()}".strip()
+
+
+def _clean_metadata(
+    row: dict[str, str],
+    *,
+    keys: tuple[str, ...] | None = None,
+    prefix: str | None = None,
+) -> dict[str, str]:
+    selected = keys if keys is not None else tuple(row)
+    result: dict[str, str] = {}
+    for key in selected:
+        if prefix is not None and not key.startswith(prefix):
+            continue
+        value = str(row.get(key, "") or "").strip()
+        if value:
+            result[key] = value
+    return result
 
 
 def _float_or_zero(value: str | None) -> float:

@@ -136,7 +136,7 @@ export function createVideoPlayerComponent({
     stage.classList.toggle("merge-above-below", mergePreview && previewMode === "above_below");
     stage.classList.toggle("merge-pip", mergePreview && previewMode === "pip");
 
-    const frameGeometry = mergePreview || boundaryKind ? null : previewFrameGeometry(video, stage);
+    const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
     const pipSizeValue = currentPipSizePercent();
     stage.style.setProperty("--pip-size", `${pipSizeValue}%`);
     if (frameGeometry) {

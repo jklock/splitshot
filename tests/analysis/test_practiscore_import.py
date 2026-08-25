@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
+
 from splitshot.scoring.practiscore import (
     describe_practiscore_file,
     import_practiscore_stage,
@@ -46,12 +48,23 @@ def test_infer_practiscore_context_from_uspsa_report_text() -> None:
     assert result.competitor_place == 1
 
 
+def test_infer_practiscore_context_rejects_stage_zero() -> None:
+    with pytest.raises(ValueError, match="Stage number must be 1 or greater"):
+        infer_practiscore_context(EXAMPLES_DIR / "IDPA" / "IDPA.csv", stage_number=0)
+
+
 def test_describe_practiscore_file_lists_idpa_stage_and_competitor_options() -> None:
     result = describe_practiscore_file(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
 
     assert result.source_name == "IDPA.csv"
     assert result.match_type == "idpa"
     assert result.stage_numbers == [1, 2, 3, 4]
+    assert [stage.name for stage in result.stages] == [
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4",
+    ]
     assert result.competitors[0].name == "Jeff Graff"
     assert result.competitors[0].place == 1
     assert any(
@@ -65,6 +78,9 @@ def test_describe_practiscore_file_lists_hit_factor_stage_and_competitor_options
     assert result.source_name == "report.txt"
     assert result.match_type == "uspsa"
     assert result.stage_numbers == [1, 2, 3, 4, 5, 6]
+    assert result.stages[0].name == "Stage 1 Swangin’"
+    assert result.stages[0].metadata["Minimum Rounds"] == "25"
+    assert result.match_metadata["Match name"] == "WSRC USPSA Apr 15, 2023"
     assert result.competitors[0].name == "Ben Rice"
     assert result.competitors[0].place == 1
     assert any(
@@ -92,9 +108,9 @@ def test_import_idpa_stage_results_from_csv() -> None:
     assert result.imported_stage.stage_number == 2
     assert result.imported_stage.classification == "UN"
     assert result.imported_stage.division == "CO"
-    assert result.imported_stage.raw_seconds == 29.83
+    assert result.imported_stage.raw_seconds == 19.83
     assert result.imported_stage.aggregate_points == 5.0
-    assert result.imported_stage.final_time == 39.83
+    assert result.imported_stage.final_time == 29.83
     assert result.imported_stage.score_counts == {"Points Down": 5.0, "Non-Threat": 1.0}
     assert result.imported_stage.match_final_time == 83.01
     assert result.imported_stage.match_points_down == 11.0
@@ -104,9 +120,11 @@ def test_import_idpa_stage_results_from_csv() -> None:
         "non_threats": 1.0,
         "procedural_errors": 1.0,
     }
+    assert result.imported_stage.competitor_metadata["IDPA ID"] == "A1035577"
+    assert result.imported_stage.result_metadata["Stage 2 Time"] == "29.83"
 
 
-def test_import_idpa_stage_time_is_treated_as_raw_time() -> None:
+def test_import_idpa_stage_time_is_authoritative_final_time() -> None:
     result = import_practiscore_stage(
         EXAMPLES_DIR / "IDPA" / "IDPA.csv",
         match_type="idpa",
@@ -117,8 +135,8 @@ def test_import_idpa_stage_time_is_treated_as_raw_time() -> None:
     )
 
     assert result.imported_stage.stage_number == 1
-    assert result.imported_stage.raw_seconds == 14.55
-    assert result.imported_stage.final_time == 15.55
+    assert result.imported_stage.raw_seconds == 13.55
+    assert result.imported_stage.final_time == 14.55
     assert result.imported_stage.aggregate_points == 1.0
     assert result.penalty_counts == {}
     assert result.imported_stage.score_counts == {"Points Down": 1.0}
@@ -159,8 +177,8 @@ def test_idpa_stage_comparison_includes_every_spreadsheet_penalty_type(tmp_path:
     )
 
     comparison = next(row for row in result.comparison_competitors if row.name == "Jeff Graff")
-    assert comparison.raw_seconds == 10.0
-    assert comparison.final_time == 44.0
+    assert comparison.raw_seconds == 0.0
+    assert comparison.final_time == 10.0
 
 
 def test_import_uspsa_stage_results_from_report_text() -> None:
@@ -197,6 +215,10 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
     assert result.imported_stage.stage_points == 125.0
     assert result.imported_stage.stage_place == 1
     assert result.imported_stage.score_counts == {"A": 15.0, "C": 8.0, "D": 2.0}
+    assert result.imported_stage.match_metadata["Club Code"] == "IL13"
+    assert result.imported_stage.stage_metadata["ScoringType"] == "Comstock"
+    assert result.imported_stage.competitor_metadata["USPSA"] == "A78694"
+    assert result.imported_stage.result_metadata["Stage Place"] == "1"
 
 
 def test_describe_practiscore_file_handles_idpa_dnf_place_rows(tmp_path: Path) -> None:

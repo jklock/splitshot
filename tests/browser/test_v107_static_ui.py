@@ -33,7 +33,7 @@ def test_media_pane_js_exists():
     assert "renderStagesSection" in source
     assert "createStage" in source
     assert "renderInventoryFileRow" in source
-    assert "media-add-stage-full" in source
+    assert 'class="btn-sm media-add-stage-btn"' in source
 
 
 def test_queue_pane_js_exists():

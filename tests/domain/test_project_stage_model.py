@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from splitshot.domain.models import (
     CombinedExportMode,
     CombinedExportSettings,
@@ -19,6 +21,9 @@ from splitshot.domain.models import (
     project_to_dict,
     stage_to_dict,
 )
+from splitshot.ui.controller import ProjectController
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_project_has_stages_and_queue_fields():
@@ -187,6 +192,130 @@ def test_stage_to_dict_and_back():
     assert s2.primary_media.path == "/tmp/test.mp4"
     assert s2.queue_status == QueueStatus.QUEUED
     assert s2.presentation_overridden is True
+
+
+def test_stage_order_normalization_uses_persisted_order_not_label_number() -> None:
+    controller = ProjectController()
+    controller.project.stages = [
+        ProjectStage(id="later", label="Stage 1", order_index=2),
+        ProjectStage(id="first", label="Stage 99", order_index=1),
+    ]
+
+    controller._normalize_stage_order()
+
+    assert [stage.id for stage in controller.project.stages] == ["first", "later"]
+    assert [stage.order_index for stage in controller.project.stages] == [1, 2]
+
+
+def test_practiscore_rebuild_repairs_single_guarded_stage_zero_orphan() -> None:
+    controller = ProjectController()
+    media_path = REPO_ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
+    orphan = ProjectStage(
+        id="orphan-stage-four",
+        label="Stage 0",
+        order_index=1,
+        primary_media=VideoAsset(path=str(media_path)),
+    )
+    orphan.scoring.stage_number = 4
+    existing = ProjectStage(
+        id="existing-stage-one",
+        label="Stage 1",
+        order_index=2,
+        imported_stage_number=1,
+        imported_stage_name="Stage 1",
+    )
+    existing.scoring.stage_number = 1
+    existing.scoring.competitor_name = "John Klockenkemper"
+    existing.scoring.competitor_place = 4
+    controller.project.stages = [orphan, existing]
+    controller.project.active_stage_id = orphan.id
+    controller.project.excluded_imported_stage_numbers = [4]
+    controller.project.queue = [
+        QueueEntry(
+            stage_id=orphan.id,
+            status=QueueStatus.STALE,
+            snapshot={"id": orphan.id, "label": "Stage 0"},
+        )
+    ]
+
+    source = str(REPO_ROOT / "example_data" / "IDPA" / "IDPA.csv")
+    controller._rebuild_stages_from_practiscore_source(source)
+    controller._import_practiscore_source_for_all_stages(source, emit_change=False)
+
+    repaired = next(stage for stage in controller.project.stages if stage.id == orphan.id)
+    assert repaired.imported_stage_number == 4
+    assert repaired.label == "Stage 4"
+    assert repaired.primary_media.path == str(media_path)
+    assert 4 not in controller.project.excluded_imported_stage_numbers
+    assert controller.project.scoring.competitor_name == "John Klockenkemper"
+    assert controller.project.queue[0].snapshot["label"] == "Stage 4"
+    assert controller.project.queue[0].snapshot["imported_stage_number"] == 4
+    assert (
+        controller.project.queue[0].snapshot["scoring"]["imported_stage"]["competitor_name"]
+        == "John Klockenkemper"
+    )
+
+
+def test_practiscore_rebuild_repairs_recreated_canonical_stage() -> None:
+    controller = ProjectController()
+    media_path = REPO_ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
+    orphan = ProjectStage(
+        id="recreated-stage-four",
+        label="Stage 4",
+        order_index=4,
+        primary_media=VideoAsset(path=str(media_path)),
+    )
+    orphan.scoring.stage_number = 4
+    existing = ProjectStage(
+        id="existing-stage-one",
+        label="Stage 1",
+        order_index=1,
+        imported_stage_number=1,
+        imported_stage_name="Stage 1",
+    )
+    existing.scoring.stage_number = 1
+    existing.scoring.competitor_name = "John Klockenkemper"
+    existing.scoring.competitor_place = 4
+    controller.project.stages = [existing, orphan]
+    controller.project.active_stage_id = orphan.id
+    controller.project.excluded_imported_stage_numbers = [4]
+    controller.project.queue = [
+        QueueEntry(
+            stage_id=orphan.id,
+            status=QueueStatus.COMPLETE,
+            snapshot={"id": orphan.id, "label": "Stage 4"},
+        )
+    ]
+
+    source = str(REPO_ROOT / "example_data" / "IDPA" / "IDPA.csv")
+    controller._rebuild_stages_from_practiscore_source(source)
+    controller._import_practiscore_source_for_all_stages(source, emit_change=False)
+
+    repaired = next(stage for stage in controller.project.stages if stage.id == orphan.id)
+    assert repaired.imported_stage_number == 4
+    assert repaired.imported_stage_name == "Stage 4"
+    assert repaired.primary_media.path == str(media_path)
+    assert repaired.scoring.imported_stage is not None
+    assert repaired.scoring.imported_stage.stage_number == 4
+    assert repaired.scoring.imported_stage.competitor_name == "John Klockenkemper"
+    assert controller.project.excluded_imported_stage_numbers == []
+    assert controller.project.queue[0].status == QueueStatus.STALE
+    assert controller.project.queue[0].snapshot["scoring"]["imported_stage"] is not None
+
+
+def test_practiscore_rebuild_clears_exclusion_for_live_imported_stage() -> None:
+    controller = ProjectController()
+    source = str(REPO_ROOT / "example_data" / "IDPA" / "IDPA.csv")
+    controller.import_practiscore_file(source, source_name="IDPA.csv")
+    stage_four = next(
+        stage for stage in controller.project.stages if stage.imported_stage_number == 4
+    )
+    controller.project.excluded_imported_stage_numbers = [4]
+
+    controller._rebuild_stages_from_practiscore_source(source, source_name="IDPA.csv")
+
+    assert controller.project.excluded_imported_stage_numbers == []
+    assert any(stage.id == stage_four.id for stage in controller.project.stages)
 
 
 def test_review_comparison_context_round_trips_for_export() -> None:

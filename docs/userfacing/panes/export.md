@@ -26,6 +26,7 @@ The Export pane configures ffmpeg export settings for the active stage. It does 
 | `Quality` / `Aspect ratio` / `Output Width` / `Output Height` | Set the output frame. |
 | `Frame rate` / `Video codec` / `Audio codec` | Set render codecs and playback rate. |
 | `Video bitrate (Mbps)` / `Audio kbps` | Set target bitrate values. |
+| `Output audio level (%)` | Sets final audio from 0% to 300%; output is peak-limited after gain. |
 | `Color` / `Ffmpeg preset` / `2-pass` | Set encoding behavior for the active stage. |
 
 ## Workflow

@@ -1033,6 +1033,7 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                         setControl('audio-codec', alternateAudioCodec);
                         setControl('audio-sample-rate', '44100');
                         setControl('audio-bitrate', '256');
+                        setControl('audio-output-level', '150');
                         setControl('color-space', 'bt709_sdr');
                         setControl('ffmpeg-preset', 'slow');
                         setControl('two-pass', true);
@@ -1058,6 +1059,7 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                             && String(exportState.frame_rate) === '60'
                             && String(exportState.video_codec) === 'hevc'
                             && Number(exportState.video_bitrate_mbps) === 20
+                            && Number(exportState.audio_output_level_percent) === 150
                             && Number(exportState.audio_sample_rate) === 44100
                             && Number(exportState.audio_bitrate_kbps) === 256
                             && String(exportState.color_space) === 'bt709_sdr'
@@ -1092,6 +1094,7 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                     "audio_codec": expected_audio_codec,
                     "audio_sample_rate": 44100,
                     "audio_bitrate_kbps": 256,
+                    "audio_output_level_percent": 150,
                     "color_space": "bt709_sdr",
                     "ffmpeg_preset": "slow",
                     "two_pass": True,

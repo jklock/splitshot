@@ -507,7 +507,7 @@ export function createReviewPane({
           ...nextBoxes[existingIndex],
           summary_metric_ids: summaryMetricIdsForBox(nextBoxes[existingIndex], currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {}),
         }, existingIndex);
-        nextBox.text = summaryTextForBox(nextBox, currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {});
+        nextBox.text = "";
         nextBoxes[existingIndex] = nextBox;
         applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
         return;
@@ -515,7 +515,7 @@ export function createReviewPane({
     }
     const nextBox = buildOverlayTextBox(source);
     if (source === "imported_summary") {
-      nextBox.text = summaryTextForBox(nextBox, currentState()?.scoring_summary || {}, currentState()?.scoring_summary?.imported_stage || {});
+      nextBox.text = "";
     }
     boxes.push(nextBox);
     applyOverlayTextBoxUpdate(boxes, { commit: true, rerender: true });

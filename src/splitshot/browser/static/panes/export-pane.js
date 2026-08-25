@@ -146,6 +146,7 @@ export function createExportPane({
       audio_codec: $("audio-codec").value,
       audio_sample_rate: Number($("audio-sample-rate").value || 48000),
       audio_bitrate_kbps: Number($("audio-bitrate").value || 320),
+      audio_output_level_percent: Number($("audio-output-level").value || 0),
       color_space: $("color-space").value,
       two_pass: $("two-pass").checked,
       ffmpeg_preset: $("ffmpeg-preset").value,

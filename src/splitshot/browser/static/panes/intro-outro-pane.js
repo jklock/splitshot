@@ -50,6 +50,7 @@ export function createIntroOutroPane({
   const draftVersions = { intro: 0, outro: 0 };
   const saveRevisions = { intro: 0, outro: 0 };
   const saveChains = { intro: Promise.resolve(), outro: Promise.resolve() };
+  const playbackTimes = { intro: 0, outro: 0 };
   let boundaryDrag = null;
 
   function state() {
@@ -121,12 +122,10 @@ export function createIntroOutroPane({
   }
 
   function previewOutputSize() {
-    const activeStage = (project().stages || []).find((stage) => stage.id === project().active_stage_id);
-    const media = activeStage?.primary_media || project().primary_video || {};
-    const exportSettings = activeStage?.export || project().export || {};
+    const media = clip()?.asset || {};
     return {
-      width: Math.max(1, Number(exportSettings.target_width || media.width || 1920)),
-      height: Math.max(1, Number(exportSettings.target_height || media.height || 1080)),
+      width: Math.max(1, Number(media.width || 1920)),
+      height: Math.max(1, Number(media.height || 1080)),
     };
   }
 
@@ -186,6 +185,10 @@ export function createIntroOutroPane({
   }
 
   function queueSave(kind, path, payload) {
+    const video = $("primary-video");
+    if (kind === selectedKind && video && Number.isFinite(video.currentTime)) {
+      playbackTimes[kind] = video.currentTime;
+    }
     const revision = ++saveRevisions[kind];
     const draftVersion = draftVersions[kind];
     saveChains[kind] = saveChains[kind]
@@ -195,9 +198,22 @@ export function createIntroOutroPane({
       if (saveRevisions[kind] === revision && draftVersions[kind] === draftVersion) {
         draftClips.delete(kind);
         render();
+        restorePlaybackTime(kind);
       }
       return result;
     });
+  }
+
+  function restorePlaybackTime(kind = selectedKind) {
+    if (kind !== selectedKind) return;
+    const video = $("primary-video");
+    const target = Number(playbackTimes[kind] || 0);
+    if (!video || target <= 0) return;
+    const apply = () => {
+      if (Number.isFinite(video.duration)) video.currentTime = Math.min(target, video.duration);
+    };
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) apply();
+    else video.addEventListener("loadedmetadata", apply, { once: true });
   }
 
   async function saveBoxes(nextBoxes, kind = selectedKind) {
@@ -404,7 +420,14 @@ export function createIntroOutroPane({
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return;
       const kindButton = target.closest("[data-boundary-kind]");
-      if (kindButton) { selectedKind = kindButton.dataset.boundaryKind || "intro"; render({ force: true }); return; }
+      if (kindButton) {
+        const video = $("primary-video");
+        if (video && Number.isFinite(video.currentTime)) playbackTimes[selectedKind] = video.currentTime;
+        selectedKind = kindButton.dataset.boundaryKind || "intro";
+        render({ force: true });
+        restorePlaybackTime(selectedKind);
+        return;
+      }
       if (target.closest("#intro-outro-select-video")) { await selectVideo(selectedKind); return; }
       if (target.closest("#intro-outro-add-text")) { await saveBoxes([...boxes(), normalizedBox({ source: "manual", text: "Title" })]); return; }
       if (target.closest("#intro-outro-add-match")) { await saveBoxes([...boxes(), normalizedBox({ source: "match_summary", summary_metric_ids: [...DEFAULT_MATCH_METRICS], quadrant: "top_right" })]); return; }

@@ -49,6 +49,7 @@ The selected directory is the root for the rest of the workflow. Media pickers s
 ## Downstream Effects
 
 - Imported PractiScore data infers the match type and hydrates every imported stage with its own stage result, competitor standings context, and Review summary metrics.
+- USPSA/IPSC TXT stage names replace the editable Stage Name on each import. IDPA CSV files without stage-name records use `Stage N`. IDPA `Stage N Time` is treated as the official final stage result; raw time is derived only by subtracting the recorded points-down and penalty seconds.
 - Stage media intake, file rows, primary designation, file removal, and active-stage selection live in Media.
 - Queue and export processing live downstream in Queue, not here.
 - Autosave updates `project.json`; it does not copy or relocate project files.

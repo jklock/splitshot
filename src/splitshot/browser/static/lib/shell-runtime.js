@@ -411,6 +411,7 @@ export function createShellRuntime({
     syncControlValue($("audio-codec"), project.export.audio_codec);
     syncControlValue($("audio-sample-rate"), project.export.audio_sample_rate);
     syncControlValue($("audio-bitrate"), project.export.audio_bitrate_kbps);
+    syncControlValue($("audio-output-level"), project.export.audio_output_level_percent ?? 100);
     syncControlValue($("color-space"), project.export.color_space);
     syncControlChecked($("two-pass"), project.export.two_pass);
     syncControlValue($("ffmpeg-preset"), project.export.ffmpeg_preset);
@@ -576,6 +577,7 @@ export function createShellRuntime({
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {
       $("primary-video").addEventListener(eventName, () => {
         logPrimaryVideoState(eventName);
+        renderVideo();
         scheduleSecondaryPreviewSync();
         renderLiveOverlay();
       });
@@ -1080,6 +1082,7 @@ export function createShellRuntime({
       "video-bitrate",
       "audio-sample-rate",
       "audio-bitrate",
+      "audio-output-level",
     ].forEach((id) => {
       $(id).addEventListener("input", scheduleExportSettingsApply);
     });
