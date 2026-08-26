@@ -2493,16 +2493,17 @@ def test_every_opacity_number_control_uses_the_spinnerless_class() -> None:
     assert 'input.className = "opacity-percent-input";' in opacity_builder
 
 
-def test_intro_outro_preview_uses_asset_geometry_and_preserves_playback_time() -> None:
+def test_intro_outro_preview_uses_final_output_geometry_and_preserves_playback_time() -> None:
     pane = (STATIC_ROOT / "panes" / "intro-outro-pane.js").read_text()
     player = (STATIC_ROOT / "components" / "video-player.js").read_text()
 
     assert "const playbackTimes = { intro: 0, outro: 0 };" in pane
-    assert "width: Math.max(1, Number(media.width || 1920))" in pane
-    assert "height: Math.max(1, Number(media.height || 1080))" in pane
+    assert "geometry?.outputWidth || media.width || 1920" in pane
+    assert "geometry?.outputHeight || media.height || 1080" in pane
     assert "restorePlaybackTime(kind);" in pane
-    assert "const frameGeometry = mergePreview || boundaryKind" in player
-    assert "containedMediaFrameClientRect(" in pane
+    assert "previewFrameGeometry(boundaryKind ? null : video, stage)" in player
+    assert 'video.style.objectFit = boundaryKind ? "contain" : "cover";' in player
+    assert "return previewFrameGeometry(null, stage);" in pane
     assert 'video.addEventListener("loadedmetadata", updatePreview, { once: true });' in pane
 
 

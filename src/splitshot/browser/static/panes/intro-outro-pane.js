@@ -43,7 +43,7 @@ export function createIntroOutroPane({
   activity = () => {},
   fileName = (value) => String(value || ""),
   buildMediaUrl = (url) => url,
-  containedMediaFrameClientRect = () => null,
+  previewFrameGeometry = () => null,
 } = {}) {
   let selectedKind = "intro";
   const draftClips = new Map();
@@ -122,10 +122,11 @@ export function createIntroOutroPane({
   }
 
   function previewOutputSize() {
+    const geometry = boundaryFrameGeometry();
     const media = clip()?.asset || {};
     return {
-      width: Math.max(1, Number(media.width || 1920)),
-      height: Math.max(1, Number(media.height || 1080)),
+      width: Math.max(1, Number(geometry?.outputWidth || media.width || 1920)),
+      height: Math.max(1, Number(geometry?.outputHeight || media.height || 1080)),
     };
   }
 
@@ -483,13 +484,24 @@ export function createIntroOutroPane({
   function frameRect() {
     const stage = $("video-stage");
     if (!stage) return null;
-    const media = clip()?.asset || {};
-    return containedMediaFrameClientRect(
-      $("primary-video"),
-      stage,
-      media.width,
-      media.height,
-    ) || stage.getBoundingClientRect();
+    const geometry = boundaryFrameGeometry();
+    const stageRect = stage.getBoundingClientRect();
+    if (!geometry?.frameRect) return stageRect;
+    return {
+      left: stageRect.left + geometry.frameRect.left,
+      top: stageRect.top + geometry.frameRect.top,
+      width: geometry.frameRect.width,
+      height: geometry.frameRect.height,
+    };
+  }
+
+  function boundaryFrameGeometry() {
+    const stage = $("video-stage");
+    if (!stage) return null;
+    // Passing no video intentionally selects the active stage/export geometry.
+    // The queue pipeline first normalizes Intro/Outro into that exact frame and
+    // only then renders its overlay.
+    return previewFrameGeometry(null, stage);
   }
 
   function beginBoundaryDrag(event) {

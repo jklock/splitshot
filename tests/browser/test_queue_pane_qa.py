@@ -448,19 +448,19 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                         objectFit: getComputedStyle(video).objectFit,
                         inlinePosition: video.style.position,
                         inlineWidth: video.style.width,
+                        inlineHeight: video.style.height,
                         videoWidth: video.videoWidth,
                         videoHeight: video.videoHeight,
                         stageClasses: document.getElementById('video-stage').className,
                     })"""
                 )
-                assert video_fit == {
-                    "objectFit": "contain",
-                    "inlinePosition": "",
-                    "inlineWidth": "",
-                    "videoWidth": 640,
-                    "videoHeight": 640,
-                    "stageClasses": "video-stage",
-                }
+                assert video_fit["objectFit"] == "contain"
+                assert video_fit["inlinePosition"] == "absolute"
+                assert video_fit["inlineWidth"]
+                assert video_fit["inlineHeight"]
+                assert video_fit["videoWidth"] == 640
+                assert video_fit["videoHeight"] == 640
+                assert video_fit["stageClasses"] == "video-stage"
                 page.locator("#primary-video").evaluate("video => { video.currentTime = 1.25; }")
                 page.wait_for_function(
                     "() => Math.abs(document.querySelector('#primary-video').currentTime - 1.25) < 0.05"
@@ -494,29 +494,27 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     """video => {
                         const stage = document.getElementById('video-stage').getBoundingClientRect();
                         const overlay = document.getElementById('custom-overlay').getBoundingClientRect();
-                        const sourceAspect = video.videoWidth / video.videoHeight;
-                        const expectedWidth = Math.min(stage.width, stage.height * sourceAspect);
-                        const expectedHeight = expectedWidth / sourceAspect;
+                        const videoFrame = video.getBoundingClientRect();
                         return {
                             objectFit: getComputedStyle(video).objectFit,
                             inlinePosition: video.style.position,
                             inlineWidth: video.style.width,
                             videoWidth: video.videoWidth,
                             videoHeight: video.videoHeight,
-                            overlayWidthDelta: Math.abs(overlay.width - expectedWidth),
-                            overlayHeightDelta: Math.abs(overlay.height - expectedHeight),
+                            overlayWidthDelta: Math.abs(overlay.width - videoFrame.width),
+                            overlayHeightDelta: Math.abs(overlay.height - videoFrame.height),
                             overlayCenterXDelta: Math.abs(
-                                (overlay.left + (overlay.width / 2)) - (stage.left + (stage.width / 2))
+                                (overlay.left + (overlay.width / 2)) - (videoFrame.left + (videoFrame.width / 2))
                             ),
                             overlayCenterYDelta: Math.abs(
-                                (overlay.top + (overlay.height / 2)) - (stage.top + (stage.height / 2))
+                                (overlay.top + (overlay.height / 2)) - (videoFrame.top + (videoFrame.height / 2))
                             ),
                         };
                     }"""
                 )
                 assert outro_fit["objectFit"] == "contain"
-                assert outro_fit["inlinePosition"] == ""
-                assert outro_fit["inlineWidth"] == ""
+                assert outro_fit["inlinePosition"] == "absolute"
+                assert outro_fit["inlineWidth"]
                 assert outro_fit["videoWidth"] == 360
                 assert outro_fit["videoHeight"] == 640
                 assert outro_fit["overlayWidthDelta"] < 2
@@ -618,14 +616,17 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     """() => {
                         const badge = document.querySelector('.intro-outro-preview-badge');
                         const overlay = document.getElementById('custom-overlay');
-                            const media = state.project.intro_clip.asset;
+                            const outputWidth = state.project.export.target_width
+                                || state.project.primary_video.width;
+                            const outputHeight = state.project.export.target_height
+                                || state.project.primary_video.height;
                         const rect = badge.getBoundingClientRect();
                         const frame = overlay.getBoundingClientRect();
                         return {
                             width: rect.width,
                             height: rect.height,
-                            expectedWidth: 320 * (frame.width / media.width),
-                            expectedHeight: 96 * (frame.height / media.height),
+                                expectedWidth: 320 * (frame.width / outputWidth),
+                                expectedHeight: 96 * (frame.height / outputHeight),
                             opacity: getComputedStyle(badge).opacity,
                             background: getComputedStyle(badge).backgroundColor,
                         };

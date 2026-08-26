@@ -136,11 +136,12 @@ export function createVideoPlayerComponent({
     stage.classList.toggle("merge-above-below", mergePreview && previewMode === "above_below");
     stage.classList.toggle("merge-pip", mergePreview && previewMode === "pip");
 
-    // Intro and Outro are standalone boundary assets. Their editor must show the
-    // complete asset with CSS `contain`, independent of the stage export crop.
-    const frameGeometry = mergePreview || boundaryKind
+    // Queue boundary media is normalized into the stage output frame before its
+    // overlay is painted. Use that same output frame here, then contain the
+    // boundary asset inside it so preview geometry matches the encoded clip.
+    const frameGeometry = mergePreview
       ? null
-      : previewFrameGeometry(video, stage);
+      : previewFrameGeometry(boundaryKind ? null : video, stage);
     const pipSizeValue = currentPipSizePercent();
     stage.style.setProperty("--pip-size", `${pipSizeValue}%`);
     if (frameGeometry) {
@@ -156,8 +157,10 @@ export function createVideoPlayerComponent({
       video.style.maxHeight = "none";
       video.style.right = "";
       video.style.bottom = "";
-      video.style.objectFit = "cover";
-      video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;
+      video.style.objectFit = boundaryKind ? "contain" : "cover";
+      video.style.objectPosition = boundaryKind
+        ? "center center"
+        : `${cropCenterX * 100}% ${cropCenterY * 100}%`;
       video.style.zIndex = "0";
     } else {
       video.style.position = "";
