@@ -2501,9 +2501,9 @@ def test_intro_outro_preview_uses_asset_geometry_and_preserves_playback_time() -
     assert "width: Math.max(1, Number(media.width || 1920))" in pane
     assert "height: Math.max(1, Number(media.height || 1080))" in pane
     assert "restorePlaybackTime(kind);" in pane
-    assert (
-        "const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);" in player
-    )
+    assert "const frameGeometry = mergePreview || boundaryKind" in player
+    assert "containedMediaFrameClientRect(" in pane
+    assert 'video.addEventListener("loadedmetadata", updatePreview, { once: true });' in pane
 
 
 def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:

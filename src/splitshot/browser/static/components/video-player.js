@@ -136,7 +136,11 @@ export function createVideoPlayerComponent({
     stage.classList.toggle("merge-above-below", mergePreview && previewMode === "above_below");
     stage.classList.toggle("merge-pip", mergePreview && previewMode === "pip");
 
-    const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
+    // Intro and Outro are standalone boundary assets. Their editor must show the
+    // complete asset with CSS `contain`, independent of the stage export crop.
+    const frameGeometry = mergePreview || boundaryKind
+      ? null
+      : previewFrameGeometry(video, stage);
     const pipSizeValue = currentPipSizePercent();
     stage.style.setProperty("--pip-size", `${pipSizeValue}%`);
     if (frameGeometry) {

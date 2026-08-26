@@ -43,7 +43,7 @@ export function createIntroOutroPane({
   activity = () => {},
   fileName = (value) => String(value || ""),
   buildMediaUrl = (url) => url,
-  previewFrameClientRect = () => null,
+  containedMediaFrameClientRect = () => null,
 } = {}) {
   let selectedKind = "intro";
   const draftClips = new Map();
@@ -278,6 +278,7 @@ export function createIntroOutroPane({
         video.dataset.sourcePath = path;
         video.dataset.mediaUrl = mediaUrl;
         video.src = mediaUrl;
+        video.addEventListener("loadedmetadata", updatePreview, { once: true });
         video.load();
       }
     }
@@ -482,7 +483,13 @@ export function createIntroOutroPane({
   function frameRect() {
     const stage = $("video-stage");
     if (!stage) return null;
-    return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+    const media = clip()?.asset || {};
+    return containedMediaFrameClientRect(
+      $("primary-video"),
+      stage,
+      media.width,
+      media.height,
+    ) || stage.getBoundingClientRect();
   }
 
   function beginBoundaryDrag(event) {

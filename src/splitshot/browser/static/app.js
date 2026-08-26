@@ -8252,6 +8252,27 @@ function previewFrameClientRect(video, container) {
   };
 }
 
+function containedMediaFrameClientRect(
+  video,
+  container,
+  fallbackWidth = null,
+  fallbackHeight = null,
+) {
+  if (!container) return null;
+  const containerRect = container.getBoundingClientRect();
+  const containerWidth = Math.max(1, Number(containerRect.width || container.clientWidth || 1));
+  const containerHeight = Math.max(1, Number(containerRect.height || container.clientHeight || 1));
+  const sourceWidth = Math.max(1, Number(video?.videoWidth || fallbackWidth || containerWidth));
+  const sourceHeight = Math.max(1, Number(video?.videoHeight || fallbackHeight || containerHeight));
+  const frameRect = fitAspectRect(containerWidth, containerHeight, sourceWidth / sourceHeight);
+  return {
+    left: containerRect.left + frameRect.left,
+    top: containerRect.top + frameRect.top,
+    width: frameRect.width,
+    height: frameRect.height,
+  };
+}
+
 function overlayDisplayScale(video, frameRect, outputWidth = null) {
   if (!video || !frameRect) return 1;
   const sourceWidth = Number(outputWidth) || Number(video.videoWidth) || 0;
@@ -9978,7 +9999,7 @@ introOutroPane = createIntroOutroPane({
   activity,
   fileName,
   buildMediaUrl,
-  previewFrameClientRect,
+  containedMediaFrameClientRect,
 });
 
 queuePane = createQueuePane({

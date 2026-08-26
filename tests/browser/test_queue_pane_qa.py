@@ -389,6 +389,14 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
             resolution=(640, 640),
         )
     )
+    outro = Path(
+        synthetic_video_factory(
+            name="outro-pane-preview",
+            beep_ms=300,
+            duration_ms=5_000,
+            resolution=(360, 640),
+        )
+    )
     primary = Path(synthetic_video_factory(name="intro-pane-primary", beep_ms=400))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -405,6 +413,13 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 )
                 page.evaluate(
                     "() => callApi('/api/project/intro-outro/overlay', { kind: 'intro', text_boxes: [{ enabled: true, source: 'match_summary', summary_metric_ids: ['stage_count'], quadrant: 'top_right', text: '', background_color: '#000000', text_color: '#ffffff', opacity: 0.9, font_size: 28, font_bold: true }] })"
+                )
+                page.evaluate(
+                    "(path) => callApi('/api/project/in-out/media', { kind: 'outro', path })",
+                    str(outro),
+                )
+                page.evaluate(
+                    "() => callApi('/api/project/intro-outro/overlay', { kind: 'outro', text_boxes: [{ enabled: true, source: 'match_summary', summary_metric_ids: ['stage_count'], quadrant: 'top_right', text: '', background_color: '#000000', text_color: '#ffffff', opacity: 0.9, font_size: 28, font_bold: true }] })"
                 )
                 intro_nav = page.locator("button[data-tool='intro-outro']")
                 queue_nav = page.locator("button[data-tool='queue']")
@@ -468,9 +483,47 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 page.locator("#intro-outro-fade-out").dispatch_event("change")
                 page.wait_for_function("() => state.project.intro_clip.fade_out_s === 0.9")
                 page.get_by_role("button", name="Outro", exact=True).click()
-                assert page.locator("#primary-video").is_hidden()
-                assert page.locator("#primary-video").get_attribute("src") in {None, ""}
-                assert page.locator("#primary-video").get_attribute("data-source-path") is None
+                page.wait_for_function(
+                    "() => document.querySelector('#primary-video')?.src.includes('/media/outro')"
+                )
+                page.wait_for_function(
+                    "() => document.querySelector('#primary-video')?.readyState >= HTMLMediaElement.HAVE_METADATA"
+                )
+                assert page.locator("#primary-video").is_visible()
+                outro_fit = page.locator("#primary-video").evaluate(
+                    """video => {
+                        const stage = document.getElementById('video-stage').getBoundingClientRect();
+                        const overlay = document.getElementById('custom-overlay').getBoundingClientRect();
+                        const sourceAspect = video.videoWidth / video.videoHeight;
+                        const expectedWidth = Math.min(stage.width, stage.height * sourceAspect);
+                        const expectedHeight = expectedWidth / sourceAspect;
+                        return {
+                            objectFit: getComputedStyle(video).objectFit,
+                            inlinePosition: video.style.position,
+                            inlineWidth: video.style.width,
+                            videoWidth: video.videoWidth,
+                            videoHeight: video.videoHeight,
+                            overlayWidthDelta: Math.abs(overlay.width - expectedWidth),
+                            overlayHeightDelta: Math.abs(overlay.height - expectedHeight),
+                            overlayCenterXDelta: Math.abs(
+                                (overlay.left + (overlay.width / 2)) - (stage.left + (stage.width / 2))
+                            ),
+                            overlayCenterYDelta: Math.abs(
+                                (overlay.top + (overlay.height / 2)) - (stage.top + (stage.height / 2))
+                            ),
+                        };
+                    }"""
+                )
+                assert outro_fit["objectFit"] == "contain"
+                assert outro_fit["inlinePosition"] == ""
+                assert outro_fit["inlineWidth"] == ""
+                assert outro_fit["videoWidth"] == 360
+                assert outro_fit["videoHeight"] == 640
+                assert outro_fit["overlayWidthDelta"] < 2
+                assert outro_fit["overlayHeightDelta"] < 2
+                assert outro_fit["overlayCenterXDelta"] < 2
+                assert outro_fit["overlayCenterYDelta"] < 2
+                assert page.locator(".intro-outro-preview-badge").inner_text() == "Stages 1"
                 assert page.locator("#intro-outro-fade-in").input_value() == "0.5"
                 assert page.locator("#intro-outro-fade-out").input_value() == "0.5"
                 page.locator("#intro-outro-fade-in").fill("1.1")
@@ -565,7 +618,7 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                     """() => {
                         const badge = document.querySelector('.intro-outro-preview-badge');
                         const overlay = document.getElementById('custom-overlay');
-                        const media = state.project.primary_video;
+                            const media = state.project.intro_clip.asset;
                         const rect = badge.getBoundingClientRect();
                         const frame = overlay.getBoundingClientRect();
                         return {
@@ -621,7 +674,8 @@ def test_intro_outro_pane_previews_match_overlay_and_queue_include_choice(
                 queue_nav.click(force=True)
                 assert page.locator("#queue-include-intro").is_enabled()
                 assert page.locator("#queue-include-intro").is_checked()
-                assert page.locator("#queue-include-outro").is_disabled()
+                assert page.locator("#queue-include-outro").is_enabled()
+                assert page.locator("#queue-include-outro").is_checked()
             finally:
                 browser.close()
     finally:
