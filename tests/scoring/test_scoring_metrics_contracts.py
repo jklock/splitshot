@@ -239,3 +239,28 @@ def test_review_summary_overlay_falls_back_to_computed_stage_metrics_without_imp
         "Points Down 4",
         "Penalties 0",
     ]
+
+
+def test_review_summary_overlay_keeps_selected_zero_points_down() -> None:
+    project = Project()
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=12.34,
+        final_time=12.34,
+        aggregate_points=0.0,
+        shot_penalties=0.0,
+        score_counts={},
+    )
+
+    text = format_review_summary_overlay_text(
+        project,
+        ["score_time", "raw_time", "points_down", "penalties"],
+    )
+
+    assert text.splitlines() == [
+        "Score / Time 12.34",
+        "Raw Time 12.34s",
+        "Points Down 0",
+        "Penalties 0",
+    ]

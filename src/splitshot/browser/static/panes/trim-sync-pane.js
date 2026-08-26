@@ -224,7 +224,10 @@ export function createTrimSyncPane({
     const td = source?.trim_derivative;
     if (td?.start_s !== null && td?.start_s !== undefined) return td.start_s;
     const beep = sourceBeepTimeMs(source);
-    if (beep !== null) return Math.max(0, (beep / 1000) - 2);
+    initializeTrimDefaults();
+    if (beep !== null && (beep / 1000) >= keepBeforeBeepS) {
+      return (beep / 1000) - keepBeforeBeepS;
+    }
     return 0;
   }
 
@@ -233,9 +236,10 @@ export function createTrimSyncPane({
     if (td?.end_s !== null && td?.end_s !== undefined) return td.end_s;
     const lastShot = sourceLastShotTimeMs(source);
     const durMs = sourceDurationMs(source);
+    initializeTrimDefaults();
     if (lastShot !== null) {
-      const bufferedEnd = (lastShot / 1000) + 2;
-      return durMs ? Math.min(bufferedEnd, durMs / 1000) : bufferedEnd;
+      const bufferedEnd = (lastShot / 1000) + keepAfterLastShotS;
+      if (!durMs || bufferedEnd <= durMs / 1000) return bufferedEnd;
     }
     return durMs ? (durMs / 1000) : 0;
   }

@@ -1587,6 +1587,55 @@ def test_bulk_trim_applies_sync_offset_on_original_timeline() -> None:
     assert end_s == 9.5
 
 
+def test_bulk_trim_keeps_original_boundaries_when_requested_buffers_do_not_exist() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4", duration_ms=10_000)
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=8_500)]
+
+    start_s, end_s = controller._primary_trim_window_from_buffers(
+        keep_before_beep_s=3.0,
+        keep_after_last_shot_s=3.0,
+    )
+
+    assert start_s is None
+    assert end_s is None
+
+
+def test_bulk_trim_applies_each_buffer_only_when_that_side_has_enough_footage() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4", duration_ms=10_000)
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=5_000)]
+
+    start_s, end_s = controller._primary_trim_window_from_buffers(
+        keep_before_beep_s=3.0,
+        keep_after_last_shot_s=3.0,
+    )
+
+    assert start_s is None
+    assert end_s == 8.0
+
+
+def test_bulk_trim_secondary_keeps_original_boundaries_when_sync_removes_buffers() -> None:
+    controller = ProjectController()
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=8_000)]
+    source = MergeSource(
+        asset=VideoAsset(path="secondary.mp4", duration_ms=10_000),
+        sync_offset_ms=500,
+    )
+
+    start_s, end_s = controller._source_trim_window_from_buffers(
+        source,
+        keep_before_beep_s=3.0,
+        keep_after_last_shot_s=2.0,
+    )
+
+    assert start_s is None
+    assert end_s is None
+
+
 def test_per_source_trim_rejects_still_images() -> None:
     controller = ProjectController()
     source = MergeSource(

@@ -303,6 +303,50 @@ def test_overlay_api_does_not_persist_generated_review_text_as_an_override() -> 
     assert controller.project.overlay.text_boxes[0].text == ""
 
 
+def test_review_defaults_select_and_render_zero_points_down() -> None:
+    controller = ProjectController()
+    controller.create_stage("Stage 1")
+    apply_scoring_preset(controller.project, "idpa_time_plus")
+    controller.project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=12.34,
+        final_time=12.34,
+        aggregate_points=0.0,
+        shot_penalties=0.0,
+        score_counts={},
+    )
+    controller._sync_project_to_active_stage()
+    controller.set_overlay_display_options(
+        {
+            "text_boxes": [
+                {
+                    "id": "summary",
+                    "source": "imported_summary",
+                    "text": "",
+                    "summary_metric_ids": [],
+                }
+            ]
+        }
+    )
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                page.locator("button[data-tool='review']").click(force=True)
+                points_down = page.locator('[data-summary-metric="points_down"]')
+                assert points_down.count() == 1
+                assert points_down.is_checked()
+                assert "Points Down 0" in page.locator("[data-text-box-preview]").input_value()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_intro_outro_api_does_not_persist_generated_match_text_as_an_override() -> None:
     controller = ProjectController()
     controller.set_intro_outro_overlay(

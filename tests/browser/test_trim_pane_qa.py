@@ -286,14 +286,16 @@ def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> Non
                         const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
                         const syncOffsetMs = Number(source?.sync_offset_ms || 0);
                         const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        const beepS = (beepMs + syncOffsetMs) / 1000;
+                        const bufferedEndS = ((lastShotMs + syncOffsetMs) / 1000) + 1.0;
                         return {
-                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 0.5),
-                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 2.5),
+                            start_s: beepS >= 0.5 ? beepS - 0.5 : null,
+                            end_s: bufferedEndS <= durationS ? bufferedEndS : null,
                         };
                     }"""
                 )
                 page.locator("#trim-global-start").fill("0.50")
-                page.locator("#trim-global-end").fill("2.50")
+                page.locator("#trim-global-end").fill("1.00")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 _wait_for_first_merge_derivative(page, True)
@@ -303,7 +305,10 @@ def test_trim_apply_all_sets_derivative_and_file(synthetic_video_factory) -> Non
                 assert state is not None
                 assert state["has_derivative"] is True
                 assert state["active_path_kind"] == "local_derivative"
-                assert state["start_s"] == pytest.approx(expected["start_s"], abs=0.1)
+                if expected["start_s"] is None:
+                    assert state["start_s"] is None
+                else:
+                    assert state["start_s"] == pytest.approx(expected["start_s"], abs=0.1)
                 assert state["end_s"] == pytest.approx(expected["end_s"], abs=0.1)
 
                 deriv_path = state.get("derivative_path")
@@ -337,7 +342,7 @@ def test_trim_clear_all_removes_derivative(synthetic_video_factory) -> None:
                 _navigate_to_trim_pane(page)
 
                 page.locator("#trim-global-start").fill("0.50")
-                page.locator("#trim-global-end").fill("2.50")
+                page.locator("#trim-global-end").fill("1.00")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 _wait_for_first_merge_derivative(page, True)
@@ -461,14 +466,16 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                         const lastShotMs = shots.length ? Math.max(...shots.map((shot) => Number(shot.time_ms || 0))) : 0;
                         const syncOffsetMs = Number(source?.sync_offset_ms || 0);
                         const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        const beepS = (beepMs + syncOffsetMs) / 1000;
+                        const bufferedEndS = ((lastShotMs + syncOffsetMs) / 1000) + 1.0;
                         return {
-                            start_s: Math.max(0, ((beepMs + syncOffsetMs) / 1000) - 0.3),
-                            end_s: Math.min(durationS, ((lastShotMs + syncOffsetMs) / 1000) + 2.1),
+                            start_s: beepS >= 0.3 ? beepS - 0.3 : null,
+                            end_s: bufferedEndS <= durationS ? bufferedEndS : null,
                         };
                     }"""
                 )
                 page.locator("#trim-global-start").fill("0.30")
-                page.locator("#trim-global-end").fill("2.10")
+                page.locator("#trim-global-end").fill("1.00")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 _wait_for_first_merge_derivative(page, True)
@@ -487,14 +494,16 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                         const originalOffsetMs = Math.round(Number(state?.project?.primary_trim_derivative?.start_s || 0) * 1000);
                         const syncOffsetMs = Number(source?.sync_offset_ms || 0);
                         const durationS = Number(source?.asset?.duration_ms || 0) / 1000;
+                        const beepS = (beepMs + originalOffsetMs + syncOffsetMs) / 1000;
+                        const bufferedEndS = ((lastShotMs + originalOffsetMs + syncOffsetMs) / 1000) + 1.2;
                         return {
-                            start_s: Math.max(0, ((beepMs + originalOffsetMs + syncOffsetMs) / 1000) - 1.5),
-                            end_s: Math.min(durationS, ((lastShotMs + originalOffsetMs + syncOffsetMs) / 1000) + 1.8),
+                            start_s: beepS >= 0.4 ? beepS - 0.4 : null,
+                            end_s: bufferedEndS <= durationS ? bufferedEndS : null,
                         };
                     }"""
                 )
-                page.locator("#trim-global-start").fill("1.50")
-                page.locator("#trim-global-end").fill("1.80")
+                page.locator("#trim-global-start").fill("0.40")
+                page.locator("#trim-global-end").fill("1.20")
                 page.wait_for_timeout(100)
                 page.locator("#trim-global-apply").click()
                 page.wait_for_function(
@@ -505,7 +514,12 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
 
                 after_second = _get_first_merge_source_state(page)
                 page.locator("#close-export-log").click()
-                assert after_second["start_s"] == pytest.approx(expected_second["start_s"], abs=0.2)
+                if expected_second["start_s"] is None:
+                    assert after_second["start_s"] is None
+                else:
+                    assert after_second["start_s"] == pytest.approx(
+                        expected_second["start_s"], abs=0.2
+                    )
                 assert after_second["end_s"] == pytest.approx(expected_second["end_s"], abs=0.2)
                 second_derivative_path = after_second["derivative_path"]
 
@@ -517,7 +531,10 @@ def test_trim_undo_restores_previous_global_values(synthetic_video_factory) -> N
                 )
 
                 restored = _get_first_merge_source_state(page)
-                assert restored["start_s"] == pytest.approx(expected_first["start_s"], abs=0.2)
+                if expected_first["start_s"] is None:
+                    assert restored["start_s"] is None
+                else:
+                    assert restored["start_s"] == pytest.approx(expected_first["start_s"], abs=0.2)
                 assert restored["end_s"] == pytest.approx(expected_first["end_s"], abs=0.2)
             finally:
                 browser.close()

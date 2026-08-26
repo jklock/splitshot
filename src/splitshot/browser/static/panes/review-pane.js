@@ -147,7 +147,7 @@ export function createReviewPane({
     const requested = normalizedSummaryMetricIds(box?.summary_metric_ids);
     const filtered = requested.filter((metricId) => availableIds.includes(metricId));
     if (Array.isArray(box?.summary_metric_ids) && box.summary_metric_ids.length > 0) return filtered;
-    return DEFAULT_SUMMARY_METRIC_IDS.filter((metricId) => availableIds.includes(metricId));
+    return availableIds;
   }
 
   function summaryTextForBox(box, summary, imported) {
@@ -337,6 +337,11 @@ export function createReviewPane({
   }
 
   function buildOverlayTextBox(source = "manual") {
+    const summary = currentState()?.scoring_summary || {};
+    const imported = summary.imported_stage || {};
+    const defaultSummaryMetricIds = reviewMetricDefinitions(summary, imported)
+      .filter((def) => reviewMetricAvailable(def.id, summary, imported))
+      .map((def) => def.id);
     return normalizeOverlayTextBox({
       id: createOverlayTextBoxId(),
       enabled: true,
@@ -353,7 +358,9 @@ export function createReviewPane({
       opacity: 0.9,
       width: 0,
       height: 0,
-      summary_metric_ids: source === "imported_summary" ? [...DEFAULT_SUMMARY_METRIC_IDS] : [],
+      summary_metric_ids: source === "imported_summary"
+        ? defaultSummaryMetricIds
+        : [],
       style_type: "square",
       font_family: currentState()?.project?.overlay?.font_family || "Arial",
       font_size: currentState()?.project?.overlay?.font_size || 14,
@@ -863,9 +870,12 @@ export function createReviewPane({
         (summary.raw_seconds !== null && summary.raw_seconds !== undefined)
         || (imported.raw_seconds !== null && imported.raw_seconds !== undefined)
       );
-      case "points_down": return imported.match_type === "idpa"
-        ? imported.score_counts?.["Points Down"] !== null && imported.score_counts?.["Points Down"] !== undefined
-        : summary.shot_penalties !== null && summary.shot_penalties !== undefined;
+      case "points_down": {
+        const pointsDown = imported.score_counts?.["Points Down"] ?? imported.aggregate_points;
+        return imported.match_type === "idpa"
+          ? pointsDown !== null && pointsDown !== undefined
+          : summary.shot_penalties !== null && summary.shot_penalties !== undefined;
+      }
       case "penalties": return (
         (summary.total_penalties !== null && summary.total_penalties !== undefined)
         || (imported.shot_penalties !== null && imported.shot_penalties !== undefined)

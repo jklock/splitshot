@@ -4584,23 +4584,20 @@ class ProjectController(QObject):
         )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
-            start_s = max(
-                0.0,
-                (
-                    (int(primary_beep_ms) + primary_timeline_offset_ms + int(source.sync_offset_ms))
-                    / 1000
-                )
-                - keep_before_beep_s,
-            )
+            beep_s = (
+                int(primary_beep_ms) + primary_timeline_offset_ms + int(source.sync_offset_ms)
+            ) / 1000
+            if beep_s >= keep_before_beep_s:
+                start_s = beep_s - keep_before_beep_s
         shots = self.project.analysis.shots or []
         if shots and keep_after_last_shot_s is not None:
             last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
-            end_s = (
+            buffered_end_s = (
                 (last_shot_ms + primary_timeline_offset_ms + int(source.sync_offset_ms)) / 1000
             ) + keep_after_last_shot_s
             duration_ms = int(source.asset.duration_ms or 0)
-            if duration_ms > 0:
-                end_s = min(end_s, duration_ms / 1000)
+            if duration_ms <= 0 or buffered_end_s <= duration_ms / 1000:
+                end_s = buffered_end_s
         return start_s, end_s
 
     def _primary_trim_window_from_buffers(
@@ -4616,17 +4613,18 @@ class ProjectController(QObject):
         )
         primary_beep_ms = self.project.analysis.beep_time_ms_primary
         if primary_beep_ms is not None and keep_before_beep_s is not None:
-            start_s = max(
-                0.0,
-                ((int(primary_beep_ms) + primary_timeline_offset_ms) / 1000) - keep_before_beep_s,
-            )
+            beep_s = (int(primary_beep_ms) + primary_timeline_offset_ms) / 1000
+            if beep_s >= keep_before_beep_s:
+                start_s = beep_s - keep_before_beep_s
         shots = self.project.analysis.shots or []
         if shots and keep_after_last_shot_s is not None:
             last_shot_ms = max(int(shot.time_ms or 0) for shot in shots)
-            end_s = ((last_shot_ms + primary_timeline_offset_ms) / 1000) + keep_after_last_shot_s
+            buffered_end_s = (
+                (last_shot_ms + primary_timeline_offset_ms) / 1000
+            ) + keep_after_last_shot_s
             duration_ms = int(self.project.primary_video.duration_ms or 0)
-            if duration_ms > 0:
-                end_s = min(end_s, duration_ms / 1000)
+            if duration_ms <= 0 or buffered_end_s <= duration_ms / 1000:
+                end_s = buffered_end_s
         return start_s, end_s
 
     def trim_merge_source(

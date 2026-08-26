@@ -134,7 +134,7 @@ def test_clear_all_trims_logs_event(synthetic_video_factory) -> None:
                 )
                 navigate_to_tool(page, "trim-sync")
                 page.fill("#trim-global-start", "0.5")
-                page.fill("#trim-global-end", "3.0")
+                page.fill("#trim-global-end", "0.5")
                 page.click("#trim-global-apply")
                 page.wait_for_function(
                     "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)",
