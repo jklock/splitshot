@@ -1636,6 +1636,72 @@ def test_bulk_trim_secondary_keeps_original_boundaries_when_sync_removes_buffers
     assert end_s is None
 
 
+def test_bulk_trim_restores_original_when_neither_requested_buffer_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4", duration_ms=10_000)
+    controller.project.analysis.beep_time_ms_primary = 2_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=8_500)]
+    applied: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        controller,
+        "_apply_primary_trim",
+        lambda **kwargs: applied.append(kwargs),
+    )
+    monkeypatch.setattr(controller, "analyze_primary", lambda: None)
+
+    controller.trim_all_merge_sources(
+        keep_before_beep_s=3.0,
+        keep_after_last_shot_s=3.0,
+    )
+
+    assert len(applied) == 1
+    assert applied[0]["clear"] is True
+
+
+def test_bulk_trim_persists_derivative_before_analysis_can_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = ProjectController()
+    stage = controller.create_stage("Stage 1")
+    controller.project.primary_video = VideoAsset(path="primary.mp4", duration_ms=10_000)
+    controller.project.analysis.beep_time_ms_primary = 3_000
+    controller.project.analysis.shots = [ShotEvent(time_ms=5_000)]
+    controller._sync_project_to_active_stage()
+    project_path = tmp_path / "trim-persistence.ssproj"
+    controller.save_project(str(project_path))
+
+    def apply_trim(**_kwargs: object) -> None:
+        controller.project.primary_trim_derivative = MergeSourceTrimDerivative(
+            original_path="primary.mp4",
+            derivative_path="primary-trim.mp4",
+            active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+            start_s=2.0,
+            end_s=6.0,
+        )
+
+    monkeypatch.setattr(controller, "_apply_primary_trim", apply_trim)
+
+    def fail_analysis() -> None:
+        raise RuntimeError("analysis interrupted")
+
+    monkeypatch.setattr(controller, "analyze_primary", fail_analysis)
+
+    with pytest.raises(RuntimeError, match="analysis interrupted"):
+        controller.trim_all_merge_sources(
+            keep_before_beep_s=1.0,
+            keep_after_last_shot_s=1.0,
+        )
+
+    assert stage.primary_trim_derivative.derivative_path == "primary-trim.mp4"
+    saved = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+    saved_stage = next(item for item in saved["stages"] if item["id"] == stage.id)
+    assert saved_stage["primary_trim_derivative"]["derivative_path"] == "primary-trim.mp4"
+
+
 def test_per_source_trim_rejects_still_images() -> None:
     controller = ProjectController()
     source = MergeSource(

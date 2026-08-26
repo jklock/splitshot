@@ -4753,40 +4753,94 @@ class ProjectController(QObject):
             if clear
             else f"Trimming {total_source_count} stage media file{'s' if total_source_count != 1 else ''}."
         )
+        uses_buffer_windows = not clear and (
+            keep_before_beep_s is not None or keep_after_last_shot_s is not None
+        )
         primary_start_s = start_s
         primary_end_s = end_s
-        if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):
+        if uses_buffer_windows:
             primary_start_s, primary_end_s = self._primary_trim_window_from_buffers(
                 keep_before_beep_s=keep_before_beep_s,
                 keep_after_last_shot_s=keep_after_last_shot_s,
             )
         if primary_is_trimmable:
+            restore_primary_original = (
+                uses_buffer_windows and primary_start_s is None and primary_end_s is None
+            )
+            if log_callback is not None:
+                if restore_primary_original:
+                    log_callback(
+                        "Primary trim: requested buffers do not fit; using the original video."
+                    )
+                else:
+                    log_callback(
+                        "Primary trim window: "
+                        f"{_format_trim_boundary(primary_start_s)}s to "
+                        f"{_format_trim_boundary(primary_end_s)}s."
+                    )
             self._apply_primary_trim(
                 start_s=primary_start_s,
                 end_s=primary_end_s,
-                clear=clear,
+                clear=clear or restore_primary_original,
                 log_callback=log_callback,
             )
             report_file(self.project.primary_video.path)
         for source in trimmable_sources:
             next_start_s = start_s
             next_end_s = end_s
-            if not clear and (keep_before_beep_s is not None or keep_after_last_shot_s is not None):
+            if uses_buffer_windows:
                 next_start_s, next_end_s = self._source_trim_window_from_buffers(
                     source,
                     keep_before_beep_s=keep_before_beep_s,
                     keep_after_last_shot_s=keep_after_last_shot_s,
                 )
+            restore_source_original = (
+                uses_buffer_windows and next_start_s is None and next_end_s is None
+            )
+            if log_callback is not None:
+                source_label = Path(source.asset.path).name or source.id
+                if restore_source_original:
+                    log_callback(
+                        f"{source_label}: requested buffers do not fit; using the original video."
+                    )
+                else:
+                    log_callback(
+                        f"{source_label} trim window: "
+                        f"{_format_trim_boundary(next_start_s)}s to "
+                        f"{_format_trim_boundary(next_end_s)}s."
+                    )
             self._apply_merge_source_trim(
                 source,
                 start_s=next_start_s,
                 end_s=next_end_s,
-                clear=clear,
+                clear=clear or restore_source_original,
                 log_callback=log_callback,
             )
             report_file(source.asset.path)
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
+        # Persist completed derivatives before analysis. Audio analysis can take
+        # long enough for a user to navigate away or close the app; the trim
+        # result must not depend on that later work completing.
+        self._sync_project_to_active_stage()
+        self.project.touch()
+        self.project_changed.emit()
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "progress": 0.99,
+                    "file_index": completed_count,
+                    "file_count": total_source_count,
+                    "stage_index": 1,
+                    "stage_count": 1,
+                    "stage_label": stage_label,
+                    "media_label": "",
+                    "phase": "analysis",
+                    "action": "clear" if clear else "trim",
+                }
+            )
+        if log_callback is not None:
+            log_callback("Trim files saved. Refreshing waveform analysis.")
         if self.project.primary_video.path:
             self.analyze_primary()
         for source in self.project.merge_sources:
