@@ -3672,13 +3672,9 @@ class ProjectController(QObject):
                             stage_label=label,
                         ),
                         log_callback=log_callback,
-                        fade_in_s=(
-                            self.project.queue_settings.fade_in_s if mode == "individual" else 0.0
-                        ),
-                        fade_out_s=(
-                            self.project.queue_settings.fade_out_s if mode == "individual" else 0.0
-                        ),
-                        fade_audio=mode == "individual",
+                        fade_in_s=self.project.queue_settings.fade_in_s,
+                        fade_out_s=self.project.queue_settings.fade_out_s,
+                        fade_audio=True,
                     )
                     self._validate_rendered_output(render_path)
                     render_path.replace(output_path)
@@ -3796,22 +3792,6 @@ class ProjectController(QObject):
                         stage_index=len(queued),
                         stage_label="Combined output",
                         phase="combine",
-                    )
-                    self._apply_queue_fades_to_file(
-                        combined_path,
-                        fade_in_s=(
-                            0.0
-                            if self.project.queue_settings.include_intro
-                            and self.project.intro_clip.asset.path
-                            else None
-                        ),
-                        fade_out_s=(
-                            0.0
-                            if self.project.queue_settings.include_outro
-                            and self.project.outro_clip.asset.path
-                            else None
-                        ),
-                        log_callback=log_callback,
                     )
                 finally:
                     for prepared_path in prepared_boundary_paths:

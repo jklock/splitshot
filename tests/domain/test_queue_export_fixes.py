@@ -417,9 +417,14 @@ def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, mon
     rendered_boundaries: list[str] = []
     boundary_steps: list[tuple[str, bool | None]] = []
     concatenated: list[str] = []
-    fade_args: list[tuple[float | None, float | None]] = []
+    stage_fade_args: list[tuple[float | None, float | None, bool | None]] = []
+    controller.project.queue_settings.fade_in_s = 0.7
+    controller.project.queue_settings.fade_out_s = 0.9
 
-    def fake_export(_project, output_path, progress_callback=None, **_kwargs) -> None:
+    def fake_export(_project, output_path, progress_callback=None, **kwargs) -> None:
+        stage_fade_args.append(
+            (kwargs.get("fade_in_s"), kwargs.get("fade_out_s"), kwargs.get("fade_audio"))
+        )
         Path(output_path).touch()
         if progress_callback:
             progress_callback(1.0)
@@ -443,6 +448,9 @@ def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, mon
         combined.touch()
         return combined
 
+    def fail_if_combined_fade_is_applied(*_args, **_kwargs) -> None:
+        raise AssertionError("Combined output must not apply a second fade")
+
     monkeypatch.setattr("splitshot.export.pipeline.export_project", fake_export)
     monkeypatch.setattr(controller, "_validate_rendered_output", lambda _path: None)
     monkeypatch.setattr(controller, "_render_queue_boundary_overlay", fake_boundary)
@@ -451,9 +459,7 @@ def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, mon
     monkeypatch.setattr(
         controller,
         "_apply_queue_fades_to_file",
-        lambda _path, *, fade_in_s=None, fade_out_s=None, **_kwargs: fade_args.append(
-            (fade_in_s, fade_out_s)
-        ),
+        fail_if_combined_fade_is_applied,
     )
 
     controller.process_queue("combined")
@@ -466,7 +472,7 @@ def test_combined_queue_includes_only_enabled_boundary_media(tmp_path: Path, mon
     ]
     assert concatenated[0] == "intro-prepared.mp4"
     assert concatenated[1].endswith("1-stage-1.mp4")
-    assert fade_args == [(0.0, None)]
+    assert stage_fade_args == [(0.7, 0.9, True)]
 
 
 def test_combined_output_uses_dated_name_in_output_directory(tmp_path: Path, monkeypatch) -> None:
