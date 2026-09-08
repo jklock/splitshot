@@ -891,7 +891,7 @@ def main():
         "SPLITSHOT_ELECTRON_TEST": "1",
         "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
         "SPLITSHOT_TEST_PORT": str(port),
-        "SPLITSHOT_APP_DIR": str(artifact_root / "app-data"),
+        "SPLITSHOT_SETTINGS_PATH": str(artifact_root / "app-data" / "settings.json"),
         "SPLITSHOT_ELECTRON_USER_DATA_DIR": str(artifact_root / "electron-user-data"),
     }
     if scope == "release-proof" and secondary_video_path is not None:

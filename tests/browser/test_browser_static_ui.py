@@ -1790,11 +1790,9 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
         'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
         in js
     )
-    assert 'video.style.objectFit = "cover";' in video_player_js
-    assert (
-        "video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;"
-        in video_player_js
-    )
+    assert 'video.style.objectFit = boundaryKind ? "contain" : "cover";' in video_player_js
+    assert 'video.style.objectPosition = boundaryKind' in video_player_js
+    assert ': `${cropCenterX * 100}% ${cropCenterY * 100}%`;' in video_player_js
     assert (
         "positionOverlayContainer(overlay, currentState().project.overlay.shot_quadrant, frameRect, {"
         in overlay_pane

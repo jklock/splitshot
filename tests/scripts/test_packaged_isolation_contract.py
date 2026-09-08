@@ -8,11 +8,11 @@ def test_packaged_validation_isolates_python_and_electron_application_data() -> 
     electron_main = (ROOT / "electron/main.js").read_text(encoding="utf-8")
     config = (ROOT / "src/splitshot/config.py").read_text(encoding="utf-8")
 
-    assert '"SPLITSHOT_APP_DIR": str(artifact_root / "app-data")' in harness
+    assert '"SPLITSHOT_SETTINGS_PATH": str(artifact_root / "app-data" / "settings.json")' in harness
     assert '"SPLITSHOT_ELECTRON_USER_DATA_DIR"' in harness
     assert "SPLITSHOT_ELECTRON_USER_DATA_DIR" in electron_main
     assert "app.setPath('userData'" in electron_main
-    assert 'os.environ.get("SPLITSHOT_APP_DIR"' in config
+    assert 'os.environ.get("SPLITSHOT_SETTINGS_PATH"' in config
 
 
 def test_packaged_intro_outro_picker_accepts_an_ordered_test_sequence() -> None:

@@ -120,7 +120,7 @@ Use these GitHub Actions workflows on the intended release commit:
 
 The Test macOS workflow signs its validation DMG but explicitly disables notarization. This keeps ordinary clean-runner package proof independent of Apple agreement availability. The Build macOS and Release workflows retain mandatory notarization; publication is still blocked when Apple credentials or agreements are invalid.
 
-Run each with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. A package build or compact E2E pass is not a platform pass. `build_packaged_release_summary.py` requires explicit installed-package case results and per-identity disposition and reports every absent result as a gap. Copy the validation bundles into:
+Run each from the `v107` ref with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Each platform test runs the complete canonical source suite before package proof. The E2E upload must include `full-e2e-test.webm`, a recording of the complete packaged interaction run through the final state. A package build or compact E2E pass is not a platform pass. `build_packaged_release_summary.py` requires explicit installed-package case results, the full-session video, and per-identity disposition and reports every absent result as a gap. Copy the validation bundles into:
 
 ```text
 artifacts/v107-release-proof/github-review/macos/

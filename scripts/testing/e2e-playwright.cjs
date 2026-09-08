@@ -1125,6 +1125,9 @@ async function main() {
   ensureDir(logDir);
   ensureDir(artifactRoot);
   ensureDir(exportDir);
+  const recordingDir = path.join(logDir, '.recording');
+  const fullSessionVideo = path.join(artifactRoot, 'full-e2e-test.webm');
+  ensureDir(recordingDir);
   log(`=== E2E test start === port=${port} scope=${e2eScope || 'standard'}`);
 
   const browser = await chromium.launch({
@@ -1134,8 +1137,24 @@ async function main() {
   const consoleLogs = [];
   const pageErrors = [];
   const httpErrors = [];
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    recordVideo: { dir: recordingDir, size: { width: 1280, height: 900 } },
+  });
   const page = await context.newPage();
+  const pageVideo = page.video();
+  let recordingFinalized = false;
+
+  async function finalizeRecording() {
+    if (recordingFinalized) return;
+    await page.close();
+    await pageVideo.saveAs(fullSessionVideo);
+    artifacts.push(fullSessionVideo);
+    await context.close();
+    await browser.close();
+    fs.rmSync(recordingDir, { recursive: true, force: true });
+    recordingFinalized = true;
+  }
 
   page.on('console', (msg) => {
     const entry = { type: msg.type(), text: msg.text(), time: new Date().toISOString() };
@@ -1211,6 +1230,7 @@ async function main() {
     writeJson(path.join(artifactRoot, 'timings.json'), timings);
     await writeScreenshotManifest();
     await writeContactSheetHtml();
+    await finalizeRecording();
 
     const result = failures.length === 0 && pageErrors.length === 0 ? 'passed' : 'failed';
     const summary = {
@@ -1239,10 +1259,6 @@ async function main() {
       for (const error of pageErrors) warn(`  ${error.message}`);
     }
 
-    // This browser is the installed Electron process reached over CDP. Closing
-    // its context/browser can terminate the app before the Python harness reads
-    // final state and performs restart/audit proof. Process exit below safely
-    // disconnects the CDP client without owning the installed app lifecycle.
     if (result === 'failed') {
       log('=== E2E test failed ===');
       process.exit(1);
@@ -1252,6 +1268,9 @@ async function main() {
   } catch (err) {
     console.error('PW: FAILED -', err.message);
     console.error(err.stack);
+    try { await finalizeRecording(); } catch (videoErr) {
+      failures.push(`full E2E video finalization failed: ${videoErr.message}`);
+    }
     try {
       const summary = {
         result: 'failed',

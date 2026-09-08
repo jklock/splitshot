@@ -184,6 +184,7 @@ def _artifacts(artifact_root: Path, required: list[str]) -> dict[str, list[str]]
         "individual_output": [artifact_root / "exports" / "e2e-export-test.mp4"],
         "combined_output": [artifact_root / "exports" / "combined-output.mp4"],
         "rendered_output_analysis": [artifact_root / "rendered-output-proof.json"],
+        "full_session_video": [artifact_root / "full-e2e-test.webm"],
         "application_logs": [artifact_root / "e2e-logs" / "e2e.log"],
         "platform_summary": [artifact_root / "platform-summary.json"],
     }

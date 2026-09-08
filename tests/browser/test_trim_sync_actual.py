@@ -480,15 +480,13 @@ def test_start_at_beep_logs_and_sets_time(synthetic_video_factory) -> None:
                 beep_btn = page.locator(f'button.trim-beep-btn[data-source-id="{source_id}"]')
                 if beep_btn.count():
                     beep_btn.click()
-                    page.wait_for_timeout(500)
                     tracker.assert_activity("trim.set-beep")
-                    try:
-                        assert_status(page, "Set trim start to beep time")
-                    except AssertionError:
-                        try:
-                            assert_status(page, "analysis")
-                        except AssertionError:
-                            assert_status(page, "Trimming source")
+                    page.wait_for_function(
+                        """() => (document.getElementById('status')?.textContent || '')
+                          .includes('Set trim start to beep time')""",
+                        timeout=5_000,
+                    )
+                    assert_status(page, "Set trim start to beep time")
             finally:
                 browser.close()
     finally:
@@ -515,15 +513,13 @@ def test_end_after_last_shot_logs_and_sets_time(synthetic_video_factory) -> None
                 ls_btn = page.locator(f'button.trim-last-shot-btn[data-source-id="{source_id}"]')
                 if ls_btn.count():
                     ls_btn.click()
-                    page.wait_for_timeout(500)
                     tracker.assert_activity("trim.set-last-shot")
-                    try:
-                        assert_status(page, "Set trim end to last shot time")
-                    except AssertionError:
-                        try:
-                            assert_status(page, "analysis")
-                        except AssertionError:
-                            assert_status(page, "Trimming source")
+                    page.wait_for_function(
+                        """() => (document.getElementById('status')?.textContent || '')
+                          .includes('Set trim end to last shot time')""",
+                        timeout=5_000,
+                    )
+                    assert_status(page, "Set trim end to last shot time")
             finally:
                 browser.close()
     finally:

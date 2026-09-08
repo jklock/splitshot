@@ -45,7 +45,6 @@ def _create_project_bundle(name: str) -> Path:
     result = subprocess.run(
         [sys.executable, "-c", script, str(project_path), name],
         cwd=REPO,
-        check=False,
         capture_output=True,
         check=False,
         text=True,
@@ -85,7 +84,7 @@ def _spawn_app(
         "SPLITSHOT_ELECTRON_TEST": "1",
         "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
         "SPLITSHOT_TEST_PORT": str(port),
-        "SPLITSHOT_APP_DIR": str(app_data_root / "app-data"),
+        "SPLITSHOT_SETTINGS_PATH": str(app_data_root / "app-data" / "settings.json"),
         "SPLITSHOT_ELECTRON_USER_DATA_DIR": str(app_data_root / "electron-user-data"),
     }
     command = [str(executable)]

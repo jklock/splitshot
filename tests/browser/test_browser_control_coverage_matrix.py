@@ -11,11 +11,11 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | project details, project output root, create/select/open project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore file import, inferred match type, competitor/place/class/division selectors |"
+        "| Project / import | project details, project output root, create/select/open project, project-folder display, gated PractiScore dashboard opener, project-rooted PractiScore CSV/TXT import, inferred match type, competitor/place/class/division selectors |"
         in matrix
     )
     assert (
-        "| Media | active stage selector, `Stage Name`, `Save Stage`, `Delete Stage`, `Add Stage`, `Global Settings Primary` checkbox, `Ignore Global Settings` checkbox, persistent Primary Media/Secondary Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
+        "| Media | active stage selector, `Stage Name`, grouped `Add Stage` / `Save Stage` / `Delete Stage` actions, `Global Settings Primary` checkbox, `Ignore Global Settings` checkbox, persistent Primary Media/Secondary Media disclosures, `Add Primary`, primary asset `Replace`/`Clear`, `Set Primary`, `Remove`, `Add Media` |"
         in matrix
     )
     assert (

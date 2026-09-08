@@ -979,6 +979,7 @@ def test_export_remaining_encoding_controls_drive_export_payload(
                 ),
                 "audio_sample_rate": project.export.audio_sample_rate,
                 "audio_bitrate_kbps": project.export.audio_bitrate_kbps,
+                "audio_output_level_percent": project.export.audio_output_level_percent,
                 "color_space": getattr(
                     project.export.color_space, "value", project.export.color_space
                 ),

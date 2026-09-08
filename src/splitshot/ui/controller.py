@@ -1302,6 +1302,9 @@ class ProjectController(QObject):
                 self._import_practiscore_source_for_all_stages(
                     str(self._practiscore_source_path),
                     self._practiscore_source_name,
+                    apply_selected_competitor=(
+                        competitor_name is not None or competitor_place is not None
+                    ),
                 )
                 if explicit_overrides:
                     scoring = self.project.scoring
@@ -2654,6 +2657,7 @@ class ProjectController(QObject):
         source_name: str | None = None,
         *,
         emit_change: bool = True,
+        apply_selected_competitor: bool = False,
     ) -> None:
         imported_stages = [
             stage for stage in self.project.stages if stage.imported_stage_number is not None
@@ -2687,10 +2691,14 @@ class ProjectController(QObject):
             scoring.match_type = detected_match_type
             scoring.stage_number = stage.imported_stage_number
             scoring.competitor_name = (
-                stage_selection.competitor_name or selected_scoring.competitor_name
+                selected_scoring.competitor_name
+                if apply_selected_competitor
+                else stage_selection.competitor_name or selected_scoring.competitor_name
             )
             scoring.competitor_place = (
-                stage_selection.competitor_place or selected_scoring.competitor_place
+                selected_scoring.competitor_place
+                if apply_selected_competitor
+                else stage_selection.competitor_place or selected_scoring.competitor_place
             )
             scoring.classification = (
                 stage_selection.classification or selected_scoring.classification

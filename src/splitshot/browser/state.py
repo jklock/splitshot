@@ -509,8 +509,8 @@ def browser_state(
             row_payload["shotml_confidence"] = shotml_row.confidence
             row_payload["adjustment_ms"] = (
                 None
-                if row.split_ms is None or shotml_row.split_ms is None
-                else row.split_ms - shotml_row.split_ms
+                if row.absolute_time_ms is None or shotml_row.absolute_time_ms is None
+                else row.absolute_time_ms - shotml_row.absolute_time_ms
             )
             row_payload["final_time_ms"] = row.cumulative_ms
         split_rows_payload.append(row_payload)

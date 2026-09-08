@@ -27,6 +27,10 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert "const canonicalExportFile = path.join(exportDir, 'e2e-export-test.mp4');" in script
     assert "fs.copyFileSync(outputPath, canonicalExportFile);" in script
     assert "artifacts.push(canonicalExportFile);" in script
+    assert "recordVideo: { dir: recordingDir, size: { width: 1280, height: 900 } }" in script
+    assert "const fullSessionVideo = path.join(artifactRoot, 'full-e2e-test.webm');" in script
+    assert "await pageVideo.saveAs(fullSessionVideo);" in script
+    assert "artifacts.push(fullSessionVideo);" in script
     assert "const stopAfterExport = e2eScope === 'export-proof';" in script
     assert "String(payload?.status || '').includes('Processed ')" in script
     assert "outputPath.length > 0" not in script
@@ -60,6 +64,8 @@ def test_ci_test_workflows_use_real_corpus_for_packaged_e2e_validation() -> None
         _assert_real_corpus_contract(source, workflow.name)
         assert "scripts/testing/build_packaged_release_summary.py" in source, workflow.name
         assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
+        assert "      - v107" in source, workflow.name
+        assert "--suite" not in source, workflow.name
         if workflow.name == "test-windows.yml":
             assert "scripts/testing/validate_release_data.py" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name

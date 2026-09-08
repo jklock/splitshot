@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - v107
   workflow_dispatch:
 
 jobs:
@@ -33,7 +34,7 @@ jobs:
       - name: Run tests
         id: run_tests
         continue-on-error: true
-        run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table --raw-output artifacts/test-run.raw.txt --json-output artifacts/test-run.json --suite analysis --suite cli --suite export --suite media --suite persistence --suite presentation --suite scoring --suite benchmarks --suite scripts
+        run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table --raw-output artifacts/test-run.raw.txt --json-output artifacts/test-run.json
       - name: Print raw output on failure
         if: steps.run_tests.outcome == 'failure'
         run: python -c "from pathlib import Path; print(Path('artifacts/test-run.raw.txt').read_text(encoding='utf-8'))"

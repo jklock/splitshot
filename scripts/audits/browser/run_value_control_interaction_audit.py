@@ -324,7 +324,7 @@ def _install_request_probe(page: Page) -> None:
 
 def _install_identity_action_probe(page: Page) -> None:
     page.evaluate(
-        """() => {
+        r"""() => {
           window.__valueAuditIdentityActions = [];
           const preferred = [
             'data-tool', 'data-settings-section', 'data-shotml-section',
