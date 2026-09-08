@@ -298,7 +298,7 @@ def _upload_fixture(base_url: str, endpoint: str, path: Path) -> None:
 
 def _install_request_probe(page: Page) -> None:
     page.evaluate(
-        """() => {
+        r"""() => {
           if (window.__valueAuditFetchInstalled) return;
           window.__valueAuditFetchInstalled = true;
           window.__valueAuditRequests = [];
@@ -318,6 +318,44 @@ def _install_request_probe(page: Page) -> None:
               throw error;
             }
           };
+        }"""
+    )
+
+
+def _install_identity_action_probe(page: Page) -> None:
+    page.evaluate(
+        """() => {
+          window.__valueAuditIdentityActions = [];
+          const preferred = [
+            'data-tool', 'data-settings-section', 'data-shotml-section',
+            'data-shotml-setting', 'data-text-box-field', 'data-popup-field',
+            'data-merge-source-field', 'data-stage-field', 'data-intro-outro-field',
+            'data-field', 'data-boundary-kind', 'data-text-box-action',
+            'data-media-section', 'data-summary-metric', 'data-metric-id',
+            'data-remove-box', 'data-stage-id', 'data-popup-action', 'name',
+          ];
+          const identity = (node) => {
+            if (!(node instanceof Element)) return '';
+            if (node.id) return `id:${node.id}`;
+            for (const attribute of preferred) {
+              const value = node.getAttribute(attribute);
+              if (value) return `${attribute}:${value}`;
+            }
+            const label = node.getAttribute('aria-label') || node.getAttribute('title')
+              || node.getAttribute('placeholder') || node.textContent || '';
+            const normalized = label.replace(/\s+/g, ' ').trim().slice(0, 160);
+            return normalized ? `${node.tagName.toLowerCase()}:${normalized}` : '';
+          };
+          for (const eventName of ['click', 'input', 'change']) {
+            document.addEventListener(eventName, (event) => {
+              const key = identity(event.target);
+              if (key) window.__valueAuditIdentityActions.push({
+                event: eventName,
+                identity: key,
+                trusted: event.isTrusted,
+              });
+            }, true);
+          }
         }"""
     )
 
@@ -733,6 +771,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         str(row.get("identity") or ""): _initial_gap(row) for row in inventory_rows
     }
     runtime_extra: list[Proof] = []
+    identity_actions: list[dict[str, Any]] = []
     panes = tuple(args.panes or PANE_TOOLS)
 
     with tempfile.TemporaryDirectory(
@@ -790,6 +829,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 _upload_fixture(base_url, "/api/files/merge", args.merge_video)
                         if fixture_changed:
                             page.evaluate("async () => { await refresh(); }")
+                        _install_identity_action_probe(page)
                         _install_request_probe(page)
                         if not args.default_visible_only:
                             _reveal_pane_value_controls(page, pane)
@@ -884,6 +924,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                         proofs_by_identity[proof.inventory_identity] = proof
                                 else:
                                     runtime_extra.append(proof)
+                        identity_actions.extend(
+                            {
+                                **item,
+                                "pane": pane,
+                                "status": "passed",
+                            }
+                            for item in page.evaluate(
+                                "() => [...(window.__valueAuditIdentityActions || [])]"
+                            )
+                        )
                 finally:
                     browser.close()
         finally:
@@ -932,6 +982,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "counts": counts,
         "cases": [asdict(item) for item in proofs],
+        "actions": identity_actions,
         "source_definition_coverage": source_definition_coverage,
     }
 

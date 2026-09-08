@@ -629,28 +629,14 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    // Create profile via direct API call (bypasses button click + state polling)
-    const result = await page.evaluate(async () => {
-      const r = await fetch('/api/output-profiles/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_name: 'Release Proof Profile', profile_kind: 'stage_output' }),
-      });
-      const data = await r.json();
-      return { ok: r.ok, count: (data.output_profiles || []).length, error: data.error || '' };
-    });
-    if (!result.ok || result.count === 0) {
-      fail(`output profile create failed: ok=${result.ok} count=${result.count} error=${result.error}`);
-    }
-    // Reload page to pick up fresh state
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction('() => Boolean(state?.project?.path)', null, { timeout: 15000 });
+    const beforeCount = await page.evaluate(() => (state?.output_profiles || []).length);
+    await page.locator('#create-output-profile').click();
+    actionLedger.push({ action: 'click', target: '#create-output-profile', count: 1, status: 'passed' });
     await page.waitForFunction(
-      () => (state?.output_profiles || []).length > 0,
-      null,
-      { timeout: 10000 },
+      (count) => (state?.output_profiles || []).length === count + 1,
+      beforeCount,
+      { timeout: 30000 },
     );
-    await openTool(page, 'export');
     await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
@@ -676,6 +662,8 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
       },
       { profileId, profileKind, frameProfile },
     );
+    await page.locator('#save-output-profile').click();
+    actionLedger.push({ action: 'click', target: '#save-output-profile', count: 1, status: 'passed' });
   });
   await screenshot(page, 'export-profile-created');
 
@@ -747,6 +735,29 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   });
   await screenshot(page, 'overlay-badges-exported');
   return { profileId, badgeSize };
+}
+
+async function finishOutputProfileLifecycle(page, profileId) {
+  await openTool(page, 'export');
+  await page.locator('#output-profile-select').selectOption('');
+  await page.locator('#output-profile-select').selectOption(profileId);
+  actionLedger.push({ action: 'select-option', target: '#output-profile-select', count: 2, status: 'passed' });
+  await waitForCondition(
+    page,
+    (id) => (state?.output_profiles || []).some((profile) => profile.output_id === id),
+    profileId,
+  );
+  await page.locator('#delete-output-profile').click();
+  actionLedger.push({ action: 'click', target: '#delete-output-profile', count: 1, status: 'passed' });
+  await waitForCondition(
+    page,
+    (id) => !(state?.output_profiles || []).some((profile) => profile.output_id === id),
+    profileId,
+  );
+  passCases(
+    ['export.profile-create-select-rename-update-apply-save-delete'],
+    ['action-ledger.json', 'request-ledger.json', 'e2e-logs/screenshot-export-profile-created.png'],
+  );
 }
 
 async function configureIntroOutro(page) {
@@ -1063,6 +1074,7 @@ async function runReleaseProof(page) {
   );
 
   await writeStateSummary(page, path.join(artifactRoot, 'state-summary.json'));
+  await finishOutputProfileLifecycle(page, profile.profileId);
   passCases(
     ['compose.lifecycle-persistence', 'review.lifecycle-persistence', 'project.practiscore-persistence'],
     ['state-summary.json', 'e2e-logs/screenshot-release-15-reloaded-review.png'],

@@ -200,10 +200,24 @@ def _build_identity_results(artifact_root: Path) -> dict:
     actions = json.loads((artifact_root / "action-ledger.json").read_text(encoding="utf-8"))
     value_report_path = artifact_root / "browser-audits" / "value-controls.json"
     value_report = json.loads(value_report_path.read_text(encoding="utf-8"))
+    ui_surface_report = json.loads(
+        (artifact_root / "browser-audits" / "ui-surface.json").read_text(encoding="utf-8")
+    )
     passed_value_ids = {
         _normalized_control_identity(str(item.get("inventory_identity") or ""))
         for item in value_report.get("cases", [])
         if item.get("status") == "pass"
+    }
+    passed_value_action_ids = {
+        _normalized_control_identity(str(item.get("identity") or ""))
+        for item in value_report.get("actions", [])
+        if item.get("status") == "passed"
+    }
+    passed_ui_action_ids = {
+        _normalized_control_identity(str(item.get("identity") or ""))
+        for result in ui_surface_report.get("results", [])
+        for item in result.get("actions", [])
+        if result.get("passed") is True and item.get("status") == "passed"
     }
     action_ids: set[str] = set()
     tool_actions: set[str] = set()
@@ -246,9 +260,12 @@ def _build_identity_results(artifact_root: Path) -> dict:
         elif tag == "details" and item.get("visible"):
             status = "passed"
             evidence = ["runtime-inventory.json#expanded-details"]
-        elif identity in passed_value_ids:
+        elif identity in passed_value_ids or identity in passed_value_action_ids:
             status = "passed"
             evidence = ["browser-audits/value-controls.json"]
+        elif identity in passed_ui_action_ids:
+            status = "passed"
+            evidence = ["browser-audits/ui-surface.json"]
         elif identity in action_ids or (
             identity.startswith("data-tool:")
             and identity.split(":", 1)[1] in tool_actions
