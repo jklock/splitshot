@@ -98,6 +98,7 @@ jobs:
         run: |
           signing_identity="$(security find-identity -v -p codesigning "${MAC_CERT_KEYCHAIN}" | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1)"
           [ -n "${signing_identity}" ] || { echo "No code-signing identity found"; exit 1; }
+          signing_identity="${signing_identity#Developer ID Application: }"
           export CSC_NAME="${signing_identity}"
           unset CSC_LINK CSC_KEY_PASSWORD
           cd electron && npm run build:mac

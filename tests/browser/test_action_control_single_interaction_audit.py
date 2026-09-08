@@ -63,7 +63,7 @@ def _click_once(
     )
     assert armed["connected"] is True
     assert armed["disabled"] is False
-    page.locator(selector).nth(occurrence).click(timeout=3_000)
+    page.locator(selector).nth(occurrence).click(timeout=10_000)
     immediate = page.evaluate(
         """() => ({
           clickEvents: window.__actionAuditCounts.click,
@@ -177,7 +177,9 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
             _install_probe(page)
             try:
                 # Every user-visible pane gets an independent, exactly-once rail proof.

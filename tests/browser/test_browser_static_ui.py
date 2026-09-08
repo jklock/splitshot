@@ -51,22 +51,24 @@ def _read_split_css() -> str:
 
 
 def _read_shell_runtime_source() -> str:
-    return (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
+    return (STATIC_ROOT / "lib" / "shell-runtime.js").read_text(encoding="utf-8")
 
 
 def _read_app_shell_source() -> str:
     return (
-        "\n".join([(STATIC_ROOT / "app.js").read_text(), _read_shell_runtime_source()])
+        "\n".join(
+            [(STATIC_ROOT / "app.js").read_text(encoding="utf-8"), _read_shell_runtime_source()]
+        )
         .replace("documentObject.", "document.")
         .replace("windowObject.", "window.")
     )
 
 
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
-    html = (STATIC_ROOT / "index.html").read_text()
-    js = (STATIC_ROOT / "app.js").read_text()
+    html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
     shell_runtime = _read_shell_runtime_source()
-    markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
+    markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text(encoding="utf-8")
     css = _read_split_css()
 
     assert 'class="app-shell cockpit-shell"' in html

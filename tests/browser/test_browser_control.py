@@ -1832,7 +1832,7 @@ def test_choose_local_path_macos_falls_back_to_existing_parent_for_missing_media
     script = str(captured["script"])
     assert "choose file with prompt" in script
     assert "Choose secondary angle video" in script
-    assert str(tmp_path) in script
+    assert browser_server_module._applescript_string(str(tmp_path)) in script
 
 
 def test_browser_control_api_layout_route_is_not_available(synthetic_video_factory) -> None:

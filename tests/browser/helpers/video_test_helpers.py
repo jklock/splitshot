@@ -45,6 +45,7 @@ def open_page(playwright, server: BrowserControlServer, viewport: dict | None = 
     page.set_default_timeout(180000)
     page.on("dialog", lambda dialog: dialog.accept())
     page.goto(server.url, wait_until="domcontentloaded")
+    page.wait_for_function("() => typeof state !== 'undefined'")
     return browser, page
 
 

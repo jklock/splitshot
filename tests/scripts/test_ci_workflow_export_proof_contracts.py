@@ -67,7 +67,8 @@ def test_ci_test_workflows_use_real_corpus_for_packaged_e2e_validation() -> None
         assert "      - v107" in source, workflow.name
         assert "--suite" not in source, workflow.name
         source_test_job = source.split("- name: Run tests", 1)[0]
-        assert "uv run python -m playwright install chromium firefox webkit" in source_test_job, workflow.name
+        assert "uv run python -m playwright install" in source_test_job, workflow.name
+        assert "chromium firefox webkit" in source_test_job, workflow.name
         if workflow.name == "test-windows.yml":
             assert "scripts/testing/validate_release_data.py" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
@@ -106,5 +107,6 @@ def test_macos_test_package_is_signed_without_using_release_notarization() -> No
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' not in release_workflow
     for workflow in (test_workflow, build_workflow, release_workflow):
         assert "security set-key-partition-list" in workflow
+        assert 'signing_identity="${signing_identity#Developer ID Application: }"' in workflow
         assert 'export CSC_NAME="${signing_identity}"' in workflow
         assert 'export CSC_LINK="${MAC_CERT_FILE}"' not in workflow

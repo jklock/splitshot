@@ -23,6 +23,7 @@ def _open_test_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
+    page.wait_for_function("() => typeof state !== 'undefined'")
     return browser, page
 
 
@@ -410,7 +411,8 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
 
-                assert selected_roots == [str(tmp_path / "manual-import.ssproj" / "CSV")]
+                assert len(selected_roots) == 1
+                assert Path(selected_roots[0]) == tmp_path / "manual-import.ssproj" / "CSV"
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip() == "IDPA imported"
                 assert page.locator("#practiscore-import-summary").is_hidden() is True

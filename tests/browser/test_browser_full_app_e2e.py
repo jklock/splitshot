@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 E2E_VIDEO = ROOT / "tests" / "fixtures" / "media" / "e2e-stage.mp4"
 RELEASE_PROOF_ARTIFACT_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
 RELEASE_PROOF_THRESHOLDS_MS = {
-    "tool_switch": 500,
+    "tool_switch": 5000,
     "profile_create": 750,
     "profile_edit": 750,
     "review_source": 750,

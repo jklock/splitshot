@@ -388,6 +388,9 @@ def test_trim_start_at_beep_sets_input_to_beep_time(synthetic_video_factory) -> 
                 _ensure_project_with_primary_and_merge(
                     page, primary_path, merge_path, "trim-qa-beep.ssproj"
                 )
+                page.wait_for_function(
+                    "() => state?.project?.analysis?.beep_time_ms_primary != null"
+                )
                 _navigate_to_trim_pane(page)
 
                 before = page.locator("[data-trim-start]").first.input_value()
@@ -421,6 +424,9 @@ def test_trim_end_after_last_shot_sets_input_to_last_shot_time(synthetic_video_f
             try:
                 _ensure_project_with_primary_and_merge(
                     page, primary_path, merge_path, "trim-qa-lastshot.ssproj"
+                )
+                page.wait_for_function(
+                    "() => (state?.project?.analysis?.shots || []).length > 0"
                 )
                 _navigate_to_trim_pane(page)
 
@@ -743,7 +749,13 @@ def test_trim_computed_label_updates_after_source_apply(synthetic_video_factory)
                 page.locator("[data-trim-end]").first.fill("2.80")
                 page.wait_for_timeout(100)
                 page.locator(".trim-apply-btn").first.click()
-                page.wait_for_timeout(800)
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)"
+                )
+                page.wait_for_function(
+                    "(before) => document.querySelector('.trim-computed-label')?.textContent !== before",
+                    arg=before_label,
+                )
 
                 after_label = page.locator(".trim-computed-label").first.inner_text()
                 assert after_label != before_label

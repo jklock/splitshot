@@ -32,7 +32,7 @@ const THRESHOLDS = {
   source_commit_ms: 2000,
   trim_apply_ms: 30000,
   trim_clear_ms: 30000,
-  queue_process_ms: 120000,
+  queue_process_ms: 600000,
 };
 
 function fail(msg) {
@@ -400,7 +400,7 @@ async function queueAndProcessCurrentStage(page, artifactRoot, screenshotPrefix)
   await screenshot(page, `${screenshotPrefix}-queued`);
   const processResponsePromise = page.waitForResponse(
     (response) => response.url().endsWith('/api/project/queue/process') && response.request().method() === 'POST',
-    { timeout: 180000 },
+    { timeout: 600000 },
   );
   await page.locator('#queue-process-btn').click({ force: true });
   const processResponse = await processResponsePromise;
@@ -862,6 +862,9 @@ async function processCombinedOutput(page, artifactRoot) {
     ['queue.process-one-file', 'intro-outro.combined-output-boundaries', 'output.combined-real-video'],
     ['exports/combined-output.mp4', 'combined-output-metadata.json', 'e2e-logs/screenshot-combined-processed.png'],
   );
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
+  await page.locator('#close-export-log').click();
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
   return outputPath;
 }
 

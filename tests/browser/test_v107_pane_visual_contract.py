@@ -155,6 +155,7 @@ def test_four_panes_hold_og_spacing_at_supported_inspector_widths(
             page = browser.new_page(viewport={"width": 1500, "height": 1000})
             try:
                 page.goto(server.url, wait_until="domcontentloaded")
+                page.wait_for_function("() => typeof state !== 'undefined'")
                 _prepare_populated_project(
                     page, primary, added, primary.parent / "visual-contract.ssproj"
                 )

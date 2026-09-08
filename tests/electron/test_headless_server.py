@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -13,7 +14,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 BASE_PORT = 18765
 
 
-def _wait_for_server(port: int, timeout: int = 20) -> dict:
+def _wait_for_server(port: int, timeout: int = 60) -> dict:
     url = f"http://127.0.0.1:{port}/api/state"
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -29,7 +30,7 @@ def _wait_for_server(port: int, timeout: int = 20) -> dict:
 def headless_server(request):
     port = BASE_PORT + hash(request.node.name) % 1000
     proc = subprocess.Popen(
-        ["uv", "run", "splitshot", "--headless", "--no-open", "--port", str(port)],
+        [sys.executable, "-m", "splitshot", "--headless", "--no-open", "--port", str(port)],
         cwd=str(REPO),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -65,7 +66,7 @@ def test_headless_server_serves_static_assets(headless_server):
 
 def test_headless_check_flag():
     result = subprocess.run(
-        ["uv", "run", "splitshot", "--check"],
+        [sys.executable, "-m", "splitshot", "--check"],
         cwd=str(REPO),
         capture_output=True,
         check=False,

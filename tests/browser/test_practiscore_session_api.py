@@ -160,7 +160,10 @@ def test_practiscore_session_status_defaults_to_not_authenticated() -> None:
 
     assert payload["state"] == "not_authenticated"
     assert "browser session" in payload["message"]
-    assert payload["details"]["profile_path"].endswith("practiscore/browser-profile")
+    assert Path(payload["details"]["profile_path"]).parts[-2:] == (
+        "practiscore",
+        "browser-profile",
+    )
 
 
 def test_practiscore_session_start_route_returns_status_payload(monkeypatch) -> None:
@@ -194,7 +197,10 @@ def test_practiscore_session_start_route_returns_status_payload(monkeypatch) -> 
         payload["message"]
         == "Complete PractiScore login in your browser. SplitShot will continue in the background."
     )
-    assert payload["details"]["profile_path"].endswith("practiscore/browser-profile")
+    assert Path(payload["details"]["profile_path"]).parts[-2:] == (
+        "practiscore",
+        "browser-profile",
+    )
     assert open_calls == [practiscore_session_module.PRACTISCORE_ENTRY_URL]
 
 

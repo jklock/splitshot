@@ -457,7 +457,7 @@ def _dynamic_literal_control_counts() -> dict[str, int]:
                 f"{path}:{text.count(chr(10), 0, match.start()) + 1}"
             )
         if count:
-            counts[str(path.relative_to(STATIC_ROOT))] = count
+            counts[path.relative_to(STATIC_ROOT).as_posix()] = count
     return counts
 
 
@@ -474,7 +474,7 @@ def _programmatic_control_families() -> set[str]:
             key = (function_name, tag, variable)
             occurrences[key] = occurrences.get(key, 0) + 1
             families.add(
-                f"{path.relative_to(STATIC_ROOT)}:{function_name}:{tag}:{variable}:{occurrences[key]}"
+                f"{path.relative_to(STATIC_ROOT).as_posix()}:{function_name}:{tag}:{variable}:{occurrences[key]}"
             )
     return families
 

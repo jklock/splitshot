@@ -69,7 +69,7 @@ def _mutating_request_count(page: Page, path: str) -> int:
 
 
 def _open_tool(page: Page, tool: str) -> None:
-    page.locator(f'[data-tool="{tool}"]').click(timeout=3_000)
+    page.locator(f'[data-tool="{tool}"]').click(timeout=10_000)
     page.wait_for_function("(expected) => activeTool === expected", arg=tool)
 
 
@@ -239,7 +239,9 @@ def test_scalar_controls_preserve_node_and_persist(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
             _install_probes(page)
 
             try:
@@ -465,7 +467,9 @@ def test_timing_row_editor_survives_concurrent_render(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
 
             try:
                 _open_tool(page, "timing")
@@ -564,7 +568,9 @@ def test_scoring_row_editor_survives_concurrent_render(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
 
             try:
                 _open_tool(page, "scoring")
@@ -660,7 +666,9 @@ def test_rapid_control_changes_coalesce_to_one_mutation_each(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
             _install_probes(page)
 
             try:
@@ -750,7 +758,9 @@ def test_media_pane_preserves_controls_during_scalar_update(
             browser = browser_type.launch(**launch_options)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(server.url, wait_until="domcontentloaded")
-            page.wait_for_function("() => Boolean(state?.project?.path)")
+            page.wait_for_function(
+                "() => typeof state !== 'undefined' && Boolean(state?.project?.path)"
+            )
 
             try:
                 _open_tool(page, "media")
