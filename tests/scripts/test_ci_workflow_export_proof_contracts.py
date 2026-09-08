@@ -66,6 +66,8 @@ def test_ci_test_workflows_use_real_corpus_for_packaged_e2e_validation() -> None
         assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         assert "      - v107" in source, workflow.name
         assert "--suite" not in source, workflow.name
+        source_test_job = source.split("- name: Run tests", 1)[0]
+        assert "uv run python -m playwright install chromium firefox webkit" in source_test_job, workflow.name
         if workflow.name == "test-windows.yml":
             assert "scripts/testing/validate_release_data.py" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
@@ -92,6 +94,7 @@ def test_packaged_build_and_release_workflows_use_real_corpus() -> None:
 
 def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
     test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(encoding="utf-8")
+    build_workflow = (ROOT / ".github" / "workflows" / "build-macos.yml").read_text(encoding="utf-8")
     release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow
@@ -101,3 +104,7 @@ def test_macos_test_package_is_signed_without_using_release_notarization() -> No
     assert "spctl --assess" not in test_workflow
     assert "Prepare macOS notarization credentials" in release_workflow
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' not in release_workflow
+    for workflow in (test_workflow, build_workflow, release_workflow):
+        assert "security set-key-partition-list" in workflow
+        assert 'export CSC_NAME="${signing_identity}"' in workflow
+        assert 'export CSC_LINK="${MAC_CERT_FILE}"' not in workflow

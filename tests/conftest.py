@@ -13,7 +13,10 @@ import pytest
 import splitshot.config as splitshot_config
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("TMPDIR", str(Path(__file__).resolve().parents[1] / ".tmp_tests"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "codex" / "tests"
+TEST_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("TMPDIR", str(TEST_TEMP_ROOT))
 tempfile.tempdir = None  # force re-evaluation after setting TMPDIR
 
 
@@ -28,9 +31,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 def _cleanup_repo_temp_dirs() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    for name in (".tmp_tests", "pytest-of-klock"):
-        path = repo_root / name
+    for path in (TEST_TEMP_ROOT, REPO_ROOT / "pytest-of-klock"):
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
 

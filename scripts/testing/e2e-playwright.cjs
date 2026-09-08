@@ -984,6 +984,9 @@ async function runReleaseProof(page) {
     );
   });
   await screenshot(page, 'release-08-trim-active');
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
+  await page.locator('#close-export-log').click();
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
   passCases(
     ['trim.sync-analysis'],
     ['e2e-logs/screenshot-release-08-trim-active.png', 'request-ledger.json'],

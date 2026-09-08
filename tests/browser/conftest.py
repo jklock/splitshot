@@ -14,11 +14,13 @@ PLAYWRIGHT_COMMAND_MARKERS = (
 )
 PLAYWRIGHT_PROFILE_MARKERS = (
     str(REPO_ROOT / "tmp" / "codex" / "playwright_"),
-    str(REPO_ROOT / ".tmp_tests" / "playwright_"),
+    str(REPO_ROOT / "tmp" / "codex" / "tests" / "playwright_"),
 )
 
 
 def _kill_stray_playwright_processes() -> None:
+    if os.name == "nt":
+        return
     current_pid = os.getpid()
     result = subprocess.run(
         ["ps", "-Ao", "pid=,command="],

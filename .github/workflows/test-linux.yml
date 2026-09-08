@@ -25,6 +25,8 @@ jobs:
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Install dependencies
         run: uv sync --frozen --extra dev
+      - name: Install source-test browser
+        run: uv run python -m playwright install chromium firefox webkit
       - name: Runtime check
         run: uv run splitshot --check
       - name: Run tests

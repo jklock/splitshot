@@ -27,6 +27,8 @@ jobs:
         run: choco install tesseract -y
       - name: Install dependencies
         run: uv sync --frozen --extra dev
+      - name: Install source-test browser
+        run: uv run python -m playwright install chromium firefox webkit
       - name: Verify committed release corpus
         run: uv run python scripts/testing/validate_release_data.py
       - name: Runtime check
