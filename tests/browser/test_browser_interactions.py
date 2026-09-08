@@ -3269,6 +3269,15 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(
 
                 popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")
                 assert popup_id is not None
+                page.evaluate(
+                    """(timeMs) => {
+                      const video = document.getElementById('primary-video');
+                      video.currentTime = timeMs / 1000;
+                      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                      renderLiveOverlay();
+                    }""",
+                    900,
+                )
 
                 popup_badge = page.locator(
                     f'#popup-overlay .popup-overlay-badge[data-popup-id="{popup_id}"]'

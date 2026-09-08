@@ -29,6 +29,7 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert "artifacts.push(canonicalExportFile);" in script
     assert "recordVideo: { dir: recordingDir, size: { width: 1280, height: 900 } }" in script
     assert "const fullSessionVideo = path.join(artifactRoot, 'full-e2e-test.webm');" in script
+    assert "{ timeout: 1800000 }," in script
     assert "await pageVideo.saveAs(fullSessionVideo);" in script
     assert "artifacts.push(fullSessionVideo);" in script
     assert "const stopAfterExport = e2eScope === 'export-proof';" in script

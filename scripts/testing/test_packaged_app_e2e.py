@@ -628,42 +628,44 @@ def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:
         raise RuntimeError(f"Rendered output proof frames are not visually distinct: {export_file}")
 
     ocr_text = ""
-    tesseract = shutil.which(os.environ.get("SPLITSHOT_PACKAGED_TESSERACT", "tesseract"))
-    if tesseract:
-        proof_image = artifact_dir / f"{export_file.stem}-ocr.png"
-        subprocess.run(
-            [
-                ffmpeg,
-                "-y",
-                "-v",
-                "error",
-                "-ss",
-                f"{min(5.2, duration * 0.5):.6f}",
-                "-i",
-                str(export_file),
-                "-frames:v",
-                "1",
-                str(proof_image),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        ocr = subprocess.run(
-            [tesseract, str(proof_image), "stdout", "--psm", "11"],
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        ocr_text = ocr.stdout
-        (artifact_dir / f"{export_file.stem}-ocr.txt").write_text(ocr_text, encoding="utf-8")
-        if not _ocr_text_is_readable(ocr_text):
-            raise RuntimeError(
-                f"Rendered output OCR did not find expected overlay text: {export_file}"
-            )
-    else:
-        raise RuntimeError("Tesseract is required for packaged rendered-output text proof")
+    tesseract = _resolve_tool(
+        os.environ.get("SPLITSHOT_PACKAGED_TESSERACT", "tesseract"),
+        windows_fallbacks=(
+            r"%ProgramFiles%\\Tesseract-OCR\\tesseract.exe",
+            r"%ProgramFiles(x86)%\\Tesseract-OCR\\tesseract.exe",
+            r"%ChocolateyInstall%\\bin\\tesseract.exe",
+        ),
+    )
+    proof_image = artifact_dir / f"{export_file.stem}-ocr.png"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            f"{min(5.2, duration * 0.5):.6f}",
+            "-i",
+            str(export_file),
+            "-frames:v",
+            "1",
+            str(proof_image),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    ocr = subprocess.run(
+        [tesseract, str(proof_image), "stdout", "--psm", "11"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    ocr_text = ocr.stdout
+    (artifact_dir / f"{export_file.stem}-ocr.txt").write_text(ocr_text, encoding="utf-8")
+    if not _ocr_text_is_readable(ocr_text):
+        raise RuntimeError(f"Rendered output OCR did not find expected overlay text: {export_file}")
     return {
         "path": str(export_file),
         "sha256": _sha256(export_file),

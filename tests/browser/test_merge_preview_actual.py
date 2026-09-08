@@ -162,6 +162,7 @@ def test_merge_preview_drag_survives_pending_merge_auto_apply(
                 start_y = box["y"] + box["height"] / 2
                 page.mouse.move(start_x, start_y)
                 page.mouse.down()
+                page.wait_for_timeout(400)
                 page.mouse.move(start_x - 96, start_y - 72, steps=12)
                 page.mouse.up()
                 page.wait_for_timeout(700)

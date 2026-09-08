@@ -1664,6 +1664,18 @@ def test_export_accepts_expected_decoder_broken_pipe_after_successful_encode() -
     assert not _is_expected_decoder_pipe_shutdown(1, 1, log_lines)
 
 
+def test_export_accepts_windows_invalid_argument_pipe_shutdown_after_successful_encode() -> None:
+    log_lines = [
+        "decoder: [out#0/rawvideo @ 0x1] Error writing trailer: Invalid argument",
+        "decoder: [out#0/rawvideo @ 0x1] Error closing file: Invalid argument",
+        "decoder: Conversion failed!",
+        "encoder: frame=  51 fps= 23 q=-1.0 Lsize= 180000KiB",
+    ]
+
+    assert _is_expected_decoder_pipe_shutdown(4294967274, 0, log_lines)
+    assert not _is_expected_decoder_pipe_shutdown(4294967274, 1, log_lines)
+
+
 def test_export_prunes_expected_decoder_broken_pipe_lines_from_successful_log() -> None:
     log_lines = [
         "Export target: /tmp/example.mp4",

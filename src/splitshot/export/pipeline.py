@@ -972,7 +972,11 @@ def _is_expected_decoder_pipe_shutdown(
     if decoder_return == 0 or encoder_return != 0:
         return False
     decoder_log = "\n".join(line for line in log_lines if line.startswith("decoder:"))
-    return "Broken pipe" in decoder_log and "Conversion failed!" in decoder_log
+    pipe_closed = "Broken pipe" in decoder_log or (
+        "Error writing trailer: Invalid argument" in decoder_log
+        and "Error closing file: Invalid argument" in decoder_log
+    )
+    return pipe_closed and "Conversion failed!" in decoder_log
 
 
 def _frame_profile_to_aspect_ratio(frame_profile: str) -> AspectRatio:

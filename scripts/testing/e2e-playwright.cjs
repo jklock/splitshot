@@ -844,7 +844,7 @@ async function processCombinedOutput(page, artifactRoot) {
   const responsePromise = page.waitForResponse(
     (response) => response.url().endsWith('/api/project/queue/process')
       && response.request().method() === 'POST',
-    { timeout: 600000 },
+    { timeout: 1800000 },
   );
   await page.locator('#queue-combined-btn').click();
   const response = await responsePromise;

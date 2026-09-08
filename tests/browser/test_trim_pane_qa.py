@@ -393,14 +393,17 @@ def test_trim_start_at_beep_sets_input_to_beep_time(synthetic_video_factory) -> 
                 )
                 _navigate_to_trim_pane(page)
 
-                before = page.locator("[data-trim-start]").first.input_value()
+                expected = page.evaluate(
+                    "() => (Number(state.project.analysis.beep_time_ms_primary) / 1000).toFixed(2)"
+                )
 
                 page.locator(".trim-beep-btn").first.click()
-                page.wait_for_timeout(800)
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)"
+                )
 
                 after = page.locator("[data-trim-start]").first.input_value()
-                assert before != after
-                assert float(after) > 0
+                assert after == expected
             finally:
                 browser.close()
     finally:
@@ -430,14 +433,17 @@ def test_trim_end_after_last_shot_sets_input_to_last_shot_time(synthetic_video_f
                 )
                 _navigate_to_trim_pane(page)
 
-                before = page.locator("[data-trim-end]").first.input_value()
+                expected = page.evaluate(
+                    "() => (Math.max(...state.project.analysis.shots.map((shot) => shot.time_ms)) / 1000).toFixed(2)"
+                )
 
                 page.locator(".trim-last-shot-btn").first.click()
-                page.wait_for_timeout(800)
+                page.wait_for_function(
+                    "() => Boolean(state?.project?.primary_trim_derivative?.derivative_path)"
+                )
 
                 after = page.locator("[data-trim-end]").first.input_value()
-                assert before != after
-                assert float(after) > 0
+                assert after == expected
             finally:
                 browser.close()
     finally:
