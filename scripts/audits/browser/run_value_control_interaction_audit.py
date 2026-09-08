@@ -53,6 +53,21 @@ PANE_TOOLS = (
     "settings",
 )
 
+INTENTIONALLY_STRUCTURAL_SELECTORS = {
+    '[data-text-box-field="lock_to_stack"]',
+    '[data-text-box-field="quadrant"]',
+    '[data-text-box-field="source"]',
+    '[data-popup-field="enabled"]',
+}
+
+DEPENDENT_CONTROL_SELECTORS = {
+    "#match-competitor-name",
+    "#match-competitor-place",
+    "#match-class",
+    "#match-division",
+    *INTENTIONALLY_STRUCTURAL_SELECTORS,
+}
+
 # These value controls are not safe to generically mutate.  They have dedicated
 # interaction semantics and remain visible as gaps in the report.
 EXCLUDED_IDS: dict[str, str] = {
@@ -61,6 +76,7 @@ EXCLUDED_IDS: dict[str, str] = {
     "project-output-root": "folder destination requires the native folder picker/save workflow",
     "merge-media-input": "native file picker",
     "media-add-more-input": "native file picker",
+    "markers-workbench-filter": "session-only list filter has no project persistence contract",
     "practiscore-file-input": "native file picker",
     "primary-file-input": "native file picker",
     "trim-global-start": "bulk-trim draft requires Apply All",
@@ -142,6 +158,19 @@ def _parse_args() -> argparse.Namespace:
         default="chromium",
     )
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument(
+        "--base-url",
+        default="",
+        help="Audit an existing installed-app backend instead of starting a source server.",
+    )
+    parser.add_argument("--primary-video", type=Path, default=PRIMARY_FIXTURE)
+    parser.add_argument("--merge-video", type=Path, default=MERGE_FIXTURE)
+    parser.add_argument("--practiscore", type=Path, default=PRACTISCORE_FIXTURE)
+    parser.add_argument(
+        "--allow-settings",
+        action="store_true",
+        help="Exercise settings when the installed app uses isolated test configuration roots.",
+    )
     parser.add_argument(
         "--default-visible-only",
         action="store_true",
@@ -269,7 +298,7 @@ def _upload_fixture(base_url: str, endpoint: str, path: Path) -> None:
 
 def _install_request_probe(page: Page) -> None:
     page.evaluate(
-        """() => {
+        r"""() => {
           if (window.__valueAuditFetchInstalled) return;
           window.__valueAuditFetchInstalled = true;
           window.__valueAuditRequests = [];
@@ -289,6 +318,44 @@ def _install_request_probe(page: Page) -> None:
               throw error;
             }
           };
+        }"""
+    )
+
+
+def _install_identity_action_probe(page: Page) -> None:
+    page.evaluate(
+        """() => {
+          window.__valueAuditIdentityActions = [];
+          const preferred = [
+            'data-tool', 'data-settings-section', 'data-shotml-section',
+            'data-shotml-setting', 'data-text-box-field', 'data-popup-field',
+            'data-merge-source-field', 'data-stage-field', 'data-intro-outro-field',
+            'data-field', 'data-boundary-kind', 'data-text-box-action',
+            'data-media-section', 'data-summary-metric', 'data-metric-id',
+            'data-remove-box', 'data-stage-id', 'data-popup-action', 'name',
+          ];
+          const identity = (node) => {
+            if (!(node instanceof Element)) return '';
+            if (node.id) return `id:${node.id}`;
+            for (const attribute of preferred) {
+              const value = node.getAttribute(attribute);
+              if (value) return `${attribute}:${value}`;
+            }
+            const label = node.getAttribute('aria-label') || node.getAttribute('title')
+              || node.getAttribute('placeholder') || node.textContent || '';
+            const normalized = label.replace(/\s+/g, ' ').trim().slice(0, 160);
+            return normalized ? `${node.tagName.toLowerCase()}:${normalized}` : '';
+          };
+          for (const eventName of ['click', 'input', 'change']) {
+            document.addEventListener(eventName, (event) => {
+              const key = identity(event.target);
+              if (key) window.__valueAuditIdentityActions.push({
+                event: eventName,
+                identity: key,
+                trusted: event.isTrusted,
+              });
+            }, true);
+          }
         }"""
     )
 
@@ -367,6 +434,9 @@ def _reveal_pane_value_controls(page: Page, pane: str) -> None:
         )
         page.wait_for_timeout(120)
     elif pane == "markers" and page.locator("#popup-edit-selected").is_visible():
+        if page.locator("#markers-workbench-filter").is_visible():
+            page.locator("#markers-workbench-filter").select_option("all")
+            page.wait_for_timeout(80)
         page.locator("#popup-edit-selected").click()
         page.wait_for_timeout(80)
         if page.locator("#popup-import-shots-workbench").is_visible():
@@ -398,6 +468,20 @@ def _arm_and_interact(page: Page, case: dict[str, Any], slot: str) -> dict[str, 
           for (const eventName of Object.keys(counts)) node.addEventListener(eventName, () => { counts[eventName] += 1; });
           window[`__valueAuditNode_${slot}`] = node;
           window[`__valueAuditCounts_${slot}`] = counts;
+          const owner = node.parentElement?.closest('[data-popup-id], [data-box-id], [data-source-id]')
+            || node.closest('[data-popup-id], [data-box-id], [data-source-id]');
+          const ownerAttribute = ['data-popup-id', 'data-box-id', 'data-source-id']
+            .find((attribute) => owner?.hasAttribute(attribute));
+          const fieldAttribute = ['data-popup-field', 'data-text-box-field', 'data-merge-source-field']
+            .find((attribute) => node.hasAttribute(attribute));
+          const stable = ownerAttribute && fieldAttribute ? {
+            ownerAttribute,
+            ownerValue: owner.getAttribute(ownerAttribute),
+            ownerTag: owner.tagName,
+            ownerClass: [...owner.classList].find((className) => !/^(active|selected|is-)/.test(className)) || null,
+            fieldAttribute,
+            fieldValue: node.getAttribute(fieldAttribute),
+          } : null;
 
           if (node instanceof HTMLInputElement && node.type === 'checkbox') {
             intended = !node.checked;
@@ -440,6 +524,7 @@ def _arm_and_interact(page: Page, case: dict[str, Any], slot: str) -> dict[str, 
             sameNode: window[`__valueAuditNode_${slot}`] === node,
             connected: node.isConnected,
             counts: { ...counts },
+            stable,
           };
         }""",
         {**case, "slot": slot},
@@ -448,9 +533,16 @@ def _arm_and_interact(page: Page, case: dict[str, Any], slot: str) -> dict[str, 
 
 def _read_armed(page: Page, case: dict[str, Any], slot: str) -> dict[str, Any]:
     return page.evaluate(
-        """({ selector, occurrence, slot }) => {
+        """({ selector, occurrence, slot, stable }) => {
           const original = window[`__valueAuditNode_${slot}`];
-          const current = document.querySelectorAll(selector)[occurrence];
+          const owner = stable
+            ? [...document.querySelectorAll(`[${stable.ownerAttribute}="${CSS.escape(stable.ownerValue)}"]`)]
+              .find((candidate) => candidate.tagName === stable.ownerTag
+                && (!stable.ownerClass || candidate.classList.contains(stable.ownerClass)))
+            : null;
+          const current = owner
+            ? owner.querySelector(`[${stable.fieldAttribute}="${CSS.escape(stable.fieldValue)}"]`)
+            : document.querySelectorAll(selector)[occurrence];
           const valueOf = (el) => el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')
             ? el.checked : el?.value;
           return {
@@ -466,8 +558,15 @@ def _read_armed(page: Page, case: dict[str, Any], slot: str) -> dict[str, Any]:
 
 def _read_fresh(page: Page, case: dict[str, Any]) -> Any:
     return page.evaluate(
-        """({ selector, occurrence }) => {
-          const node = document.querySelectorAll(selector)[occurrence];
+        """({ selector, occurrence, stable }) => {
+          const owner = stable
+            ? [...document.querySelectorAll(`[${stable.ownerAttribute}="${CSS.escape(stable.ownerValue)}"]`)]
+              .find((candidate) => candidate.tagName === stable.ownerTag
+                && (!stable.ownerClass || candidate.classList.contains(stable.ownerClass)))
+            : null;
+          const node = owner
+            ? owner.querySelector(`[${stable.fieldAttribute}="${CSS.escape(stable.fieldValue)}"]`)
+            : document.querySelectorAll(selector)[occurrence];
           if (node instanceof HTMLInputElement && (node.type === 'checkbox' || node.type === 'radio')) return node.checked;
           return node?.value;
         }""",
@@ -520,13 +619,21 @@ def _exercise_pair(
     digest_before = _file_digest(project_file)
     first_result = _arm_and_interact(page, first, "a")
     second_result = _arm_and_interact(page, second, "b") if second else None
+    first_case = {**first, "stable": first_result.get("stable")}
+    second_case = (
+        {**second, "stable": second_result.get("stable")}
+        if second and second_result
+        else second
+    )
     page.evaluate(
         "() => document.activeElement instanceof HTMLElement && document.activeElement.blur()"
     )
     page.wait_for_timeout(1300)
-    settled_first = _read_armed(page, first, "a") if not first_result.get("skipped") else {}
+    settled_first = (
+        _read_armed(page, first_case, "a") if not first_result.get("skipped") else {}
+    )
     settled_second = (
-        _read_armed(page, second, "b")
+        _read_armed(page, second_case, "b")
         if second and second_result and not second_result.get("skipped")
         else {}
     )
@@ -538,18 +645,22 @@ def _exercise_pair(
     other_pane = "project" if pane != "project" else "metrics"
     page.locator(f'[data-tool="{other_pane}"]').click()
     page.locator(f'[data-tool="{pane}"]').click()
+    if pane == "markers" and page.locator("#markers-workbench-filter").is_visible():
+        page.locator("#markers-workbench-filter").select_option("all")
     page.wait_for_timeout(120)
-    after_return_first = _read_fresh(page, first)
-    after_return_second = _read_fresh(page, second) if second else None
+    after_return_first = _read_fresh(page, first_case)
+    after_return_second = _read_fresh(page, second_case) if second_case else None
 
     page.evaluate("path => useProjectFolder(path)", str(project_path))
     page.wait_for_function(
         "path => state?.project?.path === path", arg=str(project_path), timeout=15_000
     )
     page.locator(f'[data-tool="{pane}"]').click()
+    if pane == "markers" and page.locator("#markers-workbench-filter").is_visible():
+        page.locator("#markers-workbench-filter").select_option("all")
     page.wait_for_timeout(120)
-    after_reopen_first = _read_fresh(page, first)
-    after_reopen_second = _read_fresh(page, second) if second else None
+    after_reopen_first = _read_fresh(page, first_case)
+    after_reopen_second = _read_fresh(page, second_case) if second_case else None
 
     pair_requests = requests
     proofs: list[Proof] = []
@@ -573,30 +684,34 @@ def _exercise_pair(
             )
             continue
         intended = result["intended"]
+        identity_required = case["selector"] not in INTENTIONALLY_STRUCTURAL_SELECTORS
+        reopen_required = pane != "settings"
         passed = (
             _values_match(case, result["immediate"], intended)
-            and result["sameNode"] is True
-            and result["connected"] is True
+            and (not identity_required or result["sameNode"] is True)
+            and (not identity_required or result["connected"] is True)
             and _values_match(case, settled.get("value"), intended)
-            and settled.get("sameNode") is True
-            and settled.get("connected") is True
+            and (not identity_required or settled.get("sameNode") is True)
+            and (not identity_required or settled.get("connected") is True)
             and _values_match(case, returned, intended)
-            and _values_match(case, reopened, intended)
+            and (not reopen_required or _values_match(case, reopened, intended))
             and len(pair_requests) <= (2 if second else 1)
             and all(200 <= int(request.get("status", 0)) < 300 for request in pair_requests)
         )
         reasons: list[str] = []
         if not _values_match(case, result["immediate"], intended):
             reasons.append("visible value did not change immediately")
-        if not result["sameNode"] or not result["connected"]:
+        if identity_required and (not result["sameNode"] or not result["connected"]):
             reasons.append("node was replaced/disconnected during the action")
         if not _values_match(case, settled.get("value"), intended):
             reasons.append("value reverted after debounce/API work")
-        if not settled.get("sameNode") or not settled.get("connected"):
+        if identity_required and (
+            not settled.get("sameNode") or not settled.get("connected")
+        ):
             reasons.append("ordinary save replaced/disconnected the active node")
         if not _values_match(case, returned, intended):
             reasons.append("value was lost after pane navigation")
-        if not _values_match(case, reopened, intended):
+        if reopen_required and not _values_match(case, reopened, intended):
             reasons.append("value was lost after project reopen")
         if len(pair_requests) > (2 if second else 1):
             reasons.append(f"pair emitted {len(pair_requests)} mutating API requests")
@@ -656,14 +771,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         str(row.get("identity") or ""): _initial_gap(row) for row in inventory_rows
     }
     runtime_extra: list[Proof] = []
+    identity_actions: list[dict[str, Any]] = []
     panes = tuple(args.panes or PANE_TOOLS)
 
     with tempfile.TemporaryDirectory(
         prefix="value-control-audit-", dir=ROOT / "tmp/codex"
     ) as temp_dir:
-        controller = ProjectController()
-        server = BrowserControlServer(controller=controller, port=0, log_level="off")
-        server.start_background(open_browser=False)
+        server: BrowserControlServer | None = None
+        base_url = str(args.base_url or "").rstrip("/") + "/" if args.base_url else ""
+        if not base_url:
+            controller = ProjectController()
+            server = BrowserControlServer(controller=controller, port=0, log_level="off")
+            server.start_background(open_browser=False)
+            base_url = server.url
         try:
             with sync_playwright() as playwright:
                 browser_type = (
@@ -682,7 +802,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         # project.  Generic audit values from one surface must
                         # not create false failures in a later surface.
                         project_path = Path(temp_dir) / f"{pane}-interaction-audit.ssproj"
-                        page.goto(server.url, wait_until="domcontentloaded")
+                        page.goto(base_url, wait_until="domcontentloaded")
                         page.wait_for_selector("#current-file")
                         page.evaluate("path => createNewProject(path)", str(project_path))
                         page.wait_for_function(
@@ -694,21 +814,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         if (
                             not args.default_visible_only
                             and pane in PRACTISCORE_PANES
-                            and PRACTISCORE_FIXTURE.is_file()
+                            and args.practiscore.is_file()
                         ):
                             _upload_fixture(
-                                server.url,
+                                base_url,
                                 "/api/files/practiscore",
-                                PRACTISCORE_FIXTURE,
+                                args.practiscore,
                             )
                             fixture_changed = True
-                        if pane in PRIMARY_MEDIA_PANES and PRIMARY_FIXTURE.is_file():
-                            _upload_fixture(server.url, "/api/files/primary", PRIMARY_FIXTURE)
+                        if pane in PRIMARY_MEDIA_PANES and args.primary_video.is_file():
+                            _upload_fixture(base_url, "/api/files/primary", args.primary_video)
                             fixture_changed = True
-                            if pane in {"merge", "trim-sync"} and MERGE_FIXTURE.is_file():
-                                _upload_fixture(server.url, "/api/files/merge", MERGE_FIXTURE)
+                            if pane in {"merge", "trim-sync"} and args.merge_video.is_file():
+                                _upload_fixture(base_url, "/api/files/merge", args.merge_video)
                         if fixture_changed:
                             page.evaluate("async () => { await refresh(); }")
+                        _install_identity_action_probe(page)
                         _install_request_probe(page)
                         if not args.default_visible_only:
                             _reveal_pane_value_controls(page, pane)
@@ -734,7 +855,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             # The standalone audit process must never touch the
                             # user's app-level settings file. Pytest's isolated
                             # settings suite owns these controls.
-                            if pane == "settings":
+                            if pane == "settings" and not args.allow_settings:
                                 identity = (
                                     _source_identity_for_runtime(control, inventory_rows)
                                     or control["selector"]
@@ -752,25 +873,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 continue
                             candidates.append(control)
 
-                        for index in range(0, len(candidates), 2):
+                        candidate_groups: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
+                        index = 0
+                        while index < len(candidates):
+                            first = candidates[index]
+                            second = candidates[index + 1] if index + 1 < len(candidates) else None
+                            if first["selector"] in DEPENDENT_CONTROL_SELECTORS:
+                                candidate_groups.append((first, None))
+                                index += 1
+                                continue
+                            if second and second["selector"] in DEPENDENT_CONTROL_SELECTORS:
+                                candidate_groups.append((first, None))
+                                index += 1
+                                continue
+                            candidate_groups.append((first, second))
+                            index += 2 if second else 1
+
+                        for first, second in candidate_groups:
                             # Re-enter before each pair because the preceding
                             # pair ends with a full project reopen.
                             page.locator(f'[data-tool="{pane}"]').click()
                             partner_selector = (
-                                candidates[index + 1]["selector"]
-                                if index + 1 < len(candidates)
-                                else "-"
+                                second["selector"] if second else "-"
                             )
                             print(
-                                f"audit pair {pane}: {candidates[index]['selector']} / "
+                                f"audit pair {pane}: {first['selector']} / "
                                 f"{partner_selector}",
                                 flush=True,
                             )
                             pair = _exercise_pair(
                                 page,
                                 pane,
-                                candidates[index],
-                                candidates[index + 1] if index + 1 < len(candidates) else None,
+                                first,
+                                second,
                                 project_path,
                                 inventory_rows,
                             )
@@ -789,10 +924,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                         proofs_by_identity[proof.inventory_identity] = proof
                                 else:
                                     runtime_extra.append(proof)
+                        identity_actions.extend(
+                            {
+                                **item,
+                                "pane": pane,
+                                "status": "passed",
+                            }
+                            for item in page.evaluate(
+                                "() => [...(window.__valueAuditIdentityActions || [])]"
+                            )
+                        )
                 finally:
                     browser.close()
         finally:
-            server.shutdown()
+            if server is not None:
+                server.shutdown()
 
     proofs = [*proofs_by_identity.values(), *runtime_extra]
     source_definition_coverage = []
@@ -836,6 +982,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "counts": counts,
         "cases": [asdict(item) for item in proofs],
+        "actions": identity_actions,
         "source_definition_coverage": source_definition_coverage,
     }
 

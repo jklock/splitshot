@@ -230,6 +230,12 @@ The summary requires `discovered == mapped == exercised == passed`, `failed == 0
 11. Update the QA matrix, Electron release guide, contributor workflow, and release notes.
 12. Run all three release candidates, inspect every artifact, repair every gap, then mark this plan implemented.
 
+## Execution Status
+
+Execution began on 2026-08-12. The repository now contains the checksum/content preflight with rejection tests, immutable corpus manifest, 17-shard/159-case packaged scenario manifest, installed runtime identity collector and mapping artifact, action/request ledgers, installed-app quit/restart proof, per-OS fail-closed summary builder, cross-platform exact-commit aggregator, and workflow publication gate. Release workflows now use only the committed real corpus.
+
+The plan is not complete. Dedicated installed-package case executors and identity-level result records still must close every button, field, option, drag, lifecycle, accessibility, and rendered-output case. The three signed/native release candidates must then run on macOS, Windows, and Linux and their evidence must be manually inspected. Until those records exist, the new summary builder intentionally reports gaps and blocks publication.
+
 ## Completion Criteria
 
 For one exact release commit, the real corpus passes from a fresh checkout; every installed control/text identity is discovered and mapped; every case executes after installation on every OS; every applicable mutation passes immediate/API/model/disk/navigation/reopen/restart/output proof; every real-video output passes metadata/audio/frame/text/layout/geometry checks; every OS independently reports zero failures, skips, and gaps; every artifact is uploaded and manually reviewed; and Release refuses publication without all three summaries.

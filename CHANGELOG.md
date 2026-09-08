@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- Documentation reviewed: 2026-08-11 -->
+<!-- Documentation reviewed: 2026-08-12 -->
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
@@ -14,13 +14,13 @@ SplitShot 1.0.7 completes the current editing and release workflow. This release
 - **Made project files predictable.** Selecting or creating a project initializes its managed folders. Project content pickers start at the active project, and selected media, PractiScore data, and marker assets are copied into their matching project folders with portable project-relative paths.
 - **Aligned the 14-pane rail with the shipped workflow.** The current rail is Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, Queue, Metrics, ShotML, and Settings. Pane layout, labels, controls, preview behavior, and exported output were cleaned up for closer WYSIWYG parity.
 - **Corrected competition standings.** Imported PractiScore results now display independent sport-specific division and class cohorts plus Overall: `<division acronym> - <place>/<division total>`, `<class acronym> - <place>/<class total>`, and `Overall - <place>/<total competitors>`. There is no combined division-and-class standing.
-- **Hardened release proof.** Source and packaged proof use the compact tracked `tests/fixtures/media/e2e-stage.mp4` fixture, write review output under `artifacts/v107-release-proof/`, and validate the macOS DMG, Windows NSIS installer, and Linux AppImage on their native CI runners.
+- **Made packaged release proof fail closed.** Release validation uses the checksum-locked real `primary.MP4`, `secondary.MP4`, and authentic 27-competitor/four-stage PractiScore corpus. A versioned 17-shard manifest owns every required feature scenario, installed packages emit runtime inventory/action/request/restart evidence, and per-OS summaries reject failures, skips, gaps, missing artifacts, or commit/corpus/manifest drift.
 - **Repaired clean-runner package validation.** The packaged release proof targets the current Trim source-card and Queue output/log contracts on every platform, copies the Queue result to the canonical cross-platform proof filename, allows realistic shared-runner latency for profile persistence, and keeps mandatory notarization in Build macOS and the publishing Release workflow while Test macOS validates a signed non-notarized DMG.
 - **Cleaned developer and release tooling.** Obsolete release-specific scripts, generated audit projects, logs, duplicate test data, and stale documentation were removed or redirected to ignored artifact locations.
 
 ### Release Proof
 
-Release readiness is established by the source proof bundle, the local Electron preflight, and clean-runner packaged validation through the Test macOS, Test Windows, and Test Linux workflows. The Release workflow is the sole publisher for the three platform artifacts.
+Release readiness requires source gates plus zero-gap installed-package summaries from Test macOS, Test Windows, and Test Linux for the exact release commit and corpus revision. The Release workflow is the sole publisher and aggregates all three summaries before release creation. Until every explicit case and discovered runtime identity passes, publication remains blocked.
 
 ## v1.0.6
 

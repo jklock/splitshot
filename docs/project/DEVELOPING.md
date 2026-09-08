@@ -1,6 +1,6 @@
 # Developing SplitShot
 
-<!-- Documentation reviewed: 2026-08-11 -->
+<!-- Documentation reviewed: 2026-08-12 -->
 
 This guide is the day-1 path for a developer or fork owner working from source.
 
@@ -112,6 +112,15 @@ npm run build:linux
 ```
 
 The release artifacts are a macOS DMG, Windows NSIS installer, and Linux AppImage. Packaging is platform-specific; use the matching host or CI job. The normal macOS release path requires signing and notarization credentials. Unsigned local validation is distinct from a publishable macOS release; see [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md).
+
+Before package-native release work, validate the committed corpus and exhaustive manifest:
+
+```bash
+uv run python scripts/testing/validate_release_data.py
+uv run python scripts/testing/validate_packaged_release_evidence.py manifest
+```
+
+Release validation may use only the three tracked files under `tests/release_data/`. Every installed runtime identity and manifest case needs explicit evidence. `scripts/testing/build_packaged_release_summary.py` reports missing identity results, missing case records, skips, and gaps as failures; do not replace those records with a package-launch or pane-screenshot assertion.
 
 ## Read This Next
 

@@ -107,10 +107,50 @@ class CheckResult:
 class BrowserAudit:
     browser: str
     checks: list[CheckResult]
+    actions: list[dict[str, Any]]
 
     @property
     def passed(self) -> bool:
         return all(check.passed for check in self.checks)
+
+
+def install_identity_action_probe(page: Page) -> None:
+    page.evaluate(
+        r"""() => {
+          window.__uiSurfaceIdentityActions = [];
+          const preferred = [
+            'data-tool', 'data-settings-section', 'data-shotml-section',
+            'data-shotml-setting', 'data-text-box-field', 'data-popup-field',
+            'data-merge-source-field', 'data-stage-field', 'data-field',
+            'data-boundary-kind', 'data-text-box-action', 'data-media-section',
+            'data-summary-metric', 'data-metric-id', 'data-remove-box',
+            'data-stage-id', 'data-popup-action', 'name',
+          ];
+          const identity = (node) => {
+            if (!(node instanceof Element)) return '';
+            if (node.id) return `id:${node.id}`;
+            for (const attribute of preferred) {
+              const value = node.getAttribute(attribute);
+              if (value) return `${attribute}:${value}`;
+            }
+            const label = node.getAttribute('aria-label') || node.getAttribute('title')
+              || node.getAttribute('placeholder') || node.textContent || '';
+            const normalized = label.replace(/\s+/g, ' ').trim().slice(0, 160);
+            return normalized ? `${node.tagName.toLowerCase()}:${normalized}` : '';
+          };
+          for (const eventName of ['click', 'input', 'change']) {
+            document.addEventListener(eventName, (event) => {
+              const key = identity(event.target);
+              if (key) window.__uiSurfaceIdentityActions.push({
+                event: eventName,
+                identity: key,
+                trusted: event.isTrusted,
+                status: 'passed',
+              });
+            }, true);
+          }
+        }"""
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -433,19 +473,24 @@ def audit_release_output_profile_review_truth(
         )
         wait_for_processing_bar_to_settle(page)
     _set_active_tool(page, "export")
-    page.evaluate(
-        """
-        () => {
-          const button = document.getElementById('create-output-profile');
-          if (button instanceof HTMLElement) button.click();
-        }
-        """
-    )
+    profile_count_before = page.evaluate("() => (state?.output_profiles || []).length")
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/output-profiles/create")
+        and response.request.method == "POST",
+        timeout=30_000,
+    ) as response_info:
+        page.locator("#create-output-profile").click()
+    if not response_info.value.ok:
+        raise RuntimeError(
+            f"Output profile create returned HTTP {response_info.value.status}"
+        )
     page.wait_for_function(
-        """() => {
+        """(count) => {
           const select = document.getElementById('output-profile-select');
-          return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
-        }"""
+          return Boolean(select?.value) && (state?.output_profiles || []).length > count;
+        }""",
+        arg=profile_count_before,
+        timeout=30_000,
     )
     result = {
         "profile_fields_enabled": {
@@ -728,8 +773,14 @@ def audit_merge_file_input_change(
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='merge']").click()
     if base_url:
-        _multipart_upload(base_url, "api/files/merge", primary_video)
-        page.evaluate("async () => { await refresh(); }")
+        payload = _multipart_upload(base_url, "api/files/merge", primary_video)
+        page.evaluate(
+            """payload => {
+              applyRemoteState(payload);
+              requestRender();
+            }""",
+            payload,
+        )
     else:
         page.locator("#merge-media-input").set_input_files(str(primary_video))
     page.wait_for_function(
@@ -1832,8 +1883,10 @@ def run_browser_audit(
                         detail=f"{target.display_name} could not be launched: {error}",
                     )
                 ],
+                actions=[],
             )
 
+        install_identity_action_probe(page)
         import_primary_video(page, primary_video, audit_url, project_root)
         capture_release_surface_screenshots(page, artifact_root, primary_video)
         checks = [
@@ -1850,7 +1903,8 @@ def run_browser_audit(
             audit_all_panes_avoid_horizontal_overflow(page),
             audit_merge_file_input_change(page, primary_video, audit_url),
         ]
-        return BrowserAudit(browser=target_name, checks=checks)
+        actions = page.evaluate("() => [...(window.__uiSurfaceIdentityActions || [])]")
+        return BrowserAudit(browser=target_name, checks=checks, actions=actions)
     finally:
         if browser is not None:
             browser.close()
@@ -1897,6 +1951,7 @@ def main() -> int:
                 "browser": result.browser,
                 "passed": result.passed,
                 "checks": [asdict(check) for check in result.checks],
+                "actions": result.actions,
             }
             for result in results
         ],
