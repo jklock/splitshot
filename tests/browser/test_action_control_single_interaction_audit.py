@@ -432,7 +432,14 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                     }""",
                     arg=merge_source_id,
                 )
-                page.wait_for_timeout(180)
+                page.wait_for_function(
+                    """({ path, before }) => window.__actionAuditRequests.filter(
+                      (item) => item.method !== 'GET'
+                        && new URL(item.url, location.href).pathname === path
+                    ).length > before""",
+                    arg={"path": "/api/merge/source", "before": merge_request_before},
+                )
+                page.wait_for_timeout(250)
                 settled_merge = page.evaluate(
                     """() => ({
                       sizeConnected: window.__actionMergeProof.size.isConnected,
