@@ -120,7 +120,7 @@ Use these GitHub Actions workflows on the intended release commit:
 
 The Test macOS workflow signs its validation DMG but explicitly disables notarization. This keeps ordinary clean-runner package proof independent of Apple agreement availability. The Build macOS and Release workflows retain mandatory notarization; publication is still blocked when Apple credentials or agreements are invalid.
 
-Run each from the `v107` ref with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Each platform test runs the complete canonical source suite before package proof. The E2E upload must include `full-e2e-test.webm`, a recording of the complete packaged interaction run through the final state. A package build or compact E2E pass is not a platform pass. `build_packaged_release_summary.py` requires explicit installed-package case results, the full-session video, and per-identity disposition and reports every absent result as a gap. Copy the validation bundles into:
+Run each from the `v107` ref with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Each platform test runs the complete canonical source suite before package proof. The E2E upload must include `full-e2e-test.webm`, a recording of the complete packaged interaction run through the final state. A package build or compact E2E pass is not a platform pass. `build_v107_test_release_summary.py` requires the exact source commit, locked release corpus, all 30 v107 E2E cases, a fully mapped runtime inventory, reopen/restart and rendered-output proof, the platform package check, and the full-session video. Copy the validation bundles into:
 
 ```text
 artifacts/v107-release-proof/github-review/macos/
@@ -128,7 +128,7 @@ artifacts/v107-release-proof/github-review/windows/
 artifacts/v107-release-proof/github-review/linux/
 ```
 
-The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not release proof: the corresponding clean-runner Test workflow must install or mount the package, use the committed real corpus, collect the live identity inventory, execute every manifest case, prove reopen/restart and rendered outputs, and produce a zero-gap platform summary.
+The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not test-release proof: the corresponding clean-runner Test workflow must install or mount the package, use the committed real corpus, exercise every v107 test case, prove reopen/restart and rendered outputs, and produce a passing v107 test-release summary. The publishing Release workflow remains stricter: `build_packaged_release_summary.py` requires an explicit passing interaction for every installed runtime identity and every case in the exhaustive production manifest, including notarization, Gatekeeper, and stapling on macOS.
 
 For local package-native proof, pass the built artifact and canonical fixture to the packaged harness. On macOS, for example:
 

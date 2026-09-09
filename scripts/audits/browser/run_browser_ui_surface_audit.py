@@ -483,15 +483,15 @@ def audit_release_output_profile_review_truth(
     )
     profile_count_before = page.evaluate("() => (state?.output_profiles || []).length")
     with page.expect_response(
-        lambda response: response.url.endswith("/api/output-profiles/create")
-        and response.request.method == "POST",
+        lambda response: (
+            response.url.endswith("/api/output-profiles/create")
+            and response.request.method == "POST"
+        ),
         timeout=30_000,
     ) as response_info:
         page.locator("#create-output-profile").click()
     if not response_info.value.ok:
-        raise RuntimeError(
-            f"Output profile create returned HTTP {response_info.value.status}"
-        )
+        raise RuntimeError(f"Output profile create returned HTTP {response_info.value.status}")
     page.wait_for_function(
         """(count) => {
           const select = document.getElementById('output-profile-select');

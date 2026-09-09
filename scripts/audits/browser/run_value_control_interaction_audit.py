@@ -621,17 +621,13 @@ def _exercise_pair(
     second_result = _arm_and_interact(page, second, "b") if second else None
     first_case = {**first, "stable": first_result.get("stable")}
     second_case = (
-        {**second, "stable": second_result.get("stable")}
-        if second and second_result
-        else second
+        {**second, "stable": second_result.get("stable")} if second and second_result else second
     )
     page.evaluate(
         "() => document.activeElement instanceof HTMLElement && document.activeElement.blur()"
     )
     page.wait_for_timeout(1300)
-    settled_first = (
-        _read_armed(page, first_case, "a") if not first_result.get("skipped") else {}
-    )
+    settled_first = _read_armed(page, first_case, "a") if not first_result.get("skipped") else {}
     settled_second = (
         _read_armed(page, second_case, "b")
         if second and second_result and not second_result.get("skipped")
@@ -705,9 +701,7 @@ def _exercise_pair(
             reasons.append("node was replaced/disconnected during the action")
         if not _values_match(case, settled.get("value"), intended):
             reasons.append("value reverted after debounce/API work")
-        if identity_required and (
-            not settled.get("sameNode") or not settled.get("connected")
-        ):
+        if identity_required and (not settled.get("sameNode") or not settled.get("connected")):
             reasons.append("ordinary save replaced/disconnected the active node")
         if not _values_match(case, returned, intended):
             reasons.append("value was lost after pane navigation")
@@ -896,12 +890,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             # Re-enter before each pair because the preceding
                             # pair ends with a full project reopen.
                             page.locator(f'[data-tool="{pane}"]').click()
-                            partner_selector = (
-                                second["selector"] if second else "-"
-                            )
+                            partner_selector = second["selector"] if second else "-"
                             print(
-                                f"audit pair {pane}: {first['selector']} / "
-                                f"{partner_selector}",
+                                f"audit pair {pane}: {first['selector']} / {partner_selector}",
                                 flush=True,
                             )
                             pair = _exercise_pair(

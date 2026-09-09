@@ -11,8 +11,12 @@ from splitshot.repair import apply_stage_queue_recovery, recover_project_payload
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project", required=True, type=Path, help="Project directory or project.json")
-    parser.add_argument("--apply", action="store_true", help="Back up and write the repaired project")
+    parser.add_argument(
+        "--project", required=True, type=Path, help="Project directory or project.json"
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="Back up and write the repaired project"
+    )
     args = parser.parse_args()
     project_file = args.project / "project.json" if args.project.is_dir() else args.project
     payload = json.loads(project_file.read_text(encoding="utf-8"))

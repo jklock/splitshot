@@ -890,9 +890,7 @@ def _capture_pane(page: Page, artifact_root: Path, tool: str, suffix: str = "") 
 
 
 def _set_active_stage(page: Page, stage_id: str) -> None:
-    current_stage_id = str(
-        page.evaluate("() => state?.project?.active_stage_id || ''") or ""
-    )
+    current_stage_id = str(page.evaluate("() => state?.project?.active_stage_id || ''") or "")
     if current_stage_id == stage_id:
         _wait_for_processing_bar(page)
         return

@@ -181,8 +181,8 @@ jobs:
             --script-arg=--practiscore \
             --script-arg=tests/release_data/practiscore.csv
         timeout-minutes: 180
-      - name: Enforce exhaustive macOS evidence
-        run: uv run python scripts/testing/build_packaged_release_summary.py --platform macos --artifact-root artifacts/v107-release-proof/github-review/macos
+      - name: Enforce complete v107 macOS test-release evidence
+        run: uv run python scripts/testing/build_v107_test_release_summary.py --platform macos --expected-commit "${GITHUB_SHA}" --artifact-root artifacts/v107-release-proof/github-review/macos
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

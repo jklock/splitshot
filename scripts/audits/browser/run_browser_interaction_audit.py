@@ -1275,11 +1275,11 @@ def drag_merge_preview_persists(
     merge_video: Path,
 ) -> CheckResult:
     page.locator("[data-tool='merge']").click()
-    if page.evaluate("() => (state?.project?.merge_sources || []).length") < 2:
+    if page.evaluate("() => (state?.project?.merge_sources || []).length") < 1:
         import_cursor = activity_cursor(activity_source)
         page.locator("#merge-media-input").set_input_files(str(merge_video))
         page.wait_for_function(
-            "() => (state?.project?.merge_sources || []).length >= 2",
+            "() => (state?.project?.merge_sources || []).length >= 1",
             timeout=120_000,
         )
         page.locator("[data-tool='merge']").click()
@@ -1306,10 +1306,39 @@ def drag_merge_preview_persists(
         lambda items: has_api_success(items, "/api/merge"),
         timeout_s=5,
     )
+    source_id = page.evaluate("() => state.project.merge_sources.at(-1)?.id || ''")
+    placement_cursor = activity_cursor(activity_source)
+    page.locator(
+        f'[data-source-id="{source_id}"] [data-merge-source-field="placement_mode"]'
+    ).select_option("pip")
+    wait_for_activity(
+        activity_source,
+        placement_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
+    page.wait_for_function(
+        """sourceId => {
+          const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+          return state?.project?.merge?.enabled === true && source?.placement?.mode === 'pip';
+        }""",
+        arg=source_id,
+        timeout=30_000,
+    )
+    if page.locator("#show-pip").is_checked() is False:
+        visibility_cursor = activity_cursor(activity_source)
+        click_checkbox_once(page, "#show-pip")
+        wait_for_activity(
+            activity_source,
+            visibility_cursor,
+            lambda items: has_api_success(items, "/api/project/ui-state"),
+            timeout_s=5,
+        )
+        page.wait_for_function("() => state?.project?.ui_state?.review_show_pip === true")
     page.evaluate("() => { render(); renderVideo(); }")
     page.wait_for_function(
         """
-        () => (state?.project?.merge_sources || []).length >= 2 && Boolean(document.querySelector('.merge-preview-item[data-source-id]'))
+        () => (state?.project?.merge_sources || []).length >= 1 && Boolean(document.querySelector('.merge-preview-item[data-source-id]'))
         """,
         timeout=30_000,
     )

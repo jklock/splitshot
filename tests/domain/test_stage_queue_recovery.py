@@ -23,7 +23,9 @@ def _stage(stage_id: str, label: str, media_path: str = "") -> dict:
     }
 
 
-def test_recovery_fills_only_missing_stage_owned_state_and_rebuilds_snapshot(tmp_path: Path) -> None:
+def test_recovery_fills_only_missing_stage_owned_state_and_rebuilds_snapshot(
+    tmp_path: Path,
+) -> None:
     media = tmp_path / "Stage2.mp4"
     media.write_bytes(b"video")
     live = _stage("stage-2", "Stage 2")

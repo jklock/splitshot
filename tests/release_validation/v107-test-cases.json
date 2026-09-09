@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "release": "1.0.7",
+  "corpus_revision": "splitshot-release-corpus-v1",
+  "required_platforms": ["macos", "windows", "linux"],
+  "platform_checks": {
+    "macos": ["codesign"],
+    "windows": ["executable"],
+    "linux": ["executable"]
+  },
+  "cases": [
+    "compose.enablement",
+    "compose.lifecycle-persistence",
+    "compose.source-disclosures",
+    "export.profile-create-select-rename-update-apply-save-delete",
+    "export.queue-handoff",
+    "export.settings-only",
+    "intro-outro.combined-output-boundaries",
+    "intro-outro.independent-video-audio-fades",
+    "intro-outro.manual-match-summary-fields",
+    "media.preview-continuity",
+    "metrics.real-27-cohort",
+    "output.combined-real-video",
+    "output.individual-real-video",
+    "project.practiscore-27-competitors",
+    "project.practiscore-four-stages",
+    "project.practiscore-import-idpa",
+    "project.practiscore-persistence",
+    "project.practiscore-standings-penalties",
+    "queue.individual-processing",
+    "queue.live-final-aggregate-progress",
+    "queue.logs-success-validation-errors",
+    "queue.output-reveal-log-statuses",
+    "queue.owns-execution",
+    "queue.process-one-file",
+    "review.always-expanded-no-minimize",
+    "review.authentic-match-text",
+    "review.lifecycle-persistence",
+    "review.summary-custom-boxes",
+    "score.authentic-import-reference",
+    "trim.sync-analysis"
+  ]
+}

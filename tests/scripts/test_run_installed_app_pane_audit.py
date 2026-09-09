@@ -151,9 +151,7 @@ def test_prepare_project_copy_supports_project_input_media_layout(
     monkeypatch.setattr(
         MODULE,
         "_normalize_project_for_audit",
-        lambda project_root: {
-            "media": str(MODULE._project_media_path(project_root, "Stage2.MP4"))
-        },
+        lambda project_root: {"media": str(MODULE._project_media_path(project_root, "Stage2.MP4"))},
     )
 
     copy_root, normalized = MODULE._prepare_project_copy(source, artifact_root)

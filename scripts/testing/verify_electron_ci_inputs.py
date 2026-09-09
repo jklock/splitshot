@@ -15,6 +15,7 @@ FIXTURES = [
 SCANNED_FILES = [
     REPO / "scripts" / "testing" / "test_packaged_app_e2e.py",
     REPO / "scripts" / "testing" / "e2e-playwright.cjs",
+    REPO / "scripts" / "testing" / "build_v107_test_release_summary.py",
     REPO / "scripts" / "audits" / "browser" / "run_browser_av_audit.py",
     REPO / "scripts" / "audits" / "browser" / "run_browser_interaction_audit.py",
     REPO / "scripts" / "audits" / "browser" / "run_browser_ui_surface_audit.py",

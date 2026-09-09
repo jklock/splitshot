@@ -63,7 +63,8 @@ def test_ci_test_workflows_use_real_corpus_for_packaged_e2e_validation() -> None
     for workflow in TEST_WORKFLOWS:
         source = workflow.read_text(encoding="utf-8")
         _assert_real_corpus_contract(source, workflow.name)
-        assert "scripts/testing/build_packaged_release_summary.py" in source, workflow.name
+        assert "scripts/testing/build_v107_test_release_summary.py" in source, workflow.name
+        assert '--expected-commit "${GITHUB_SHA}"' in source, workflow.name
         assert "artifacts/v107-release-proof/github-review/" in source, workflow.name
         assert "      - v107" in source, workflow.name
         assert "--suite" not in source, workflow.name
@@ -90,13 +91,16 @@ def test_packaged_build_and_release_workflows_use_real_corpus() -> None:
         if workflow.name == "release.yml":
             assert 'SPLITSHOT_E2E_OCR_PROOF: "1"' in source, workflow.name
             assert "scripts/testing/build_packaged_release_summary.py" in source, workflow.name
+            assert "scripts/testing/build_v107_test_release_summary.py" not in source, workflow.name
             assert "validate_packaged_release_evidence.py aggregate" in source, workflow.name
             assert "--expected-commit" in source, workflow.name
 
 
 def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
     test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(encoding="utf-8")
-    build_workflow = (ROOT / ".github" / "workflows" / "build-macos.yml").read_text(encoding="utf-8")
+    build_workflow = (ROOT / ".github" / "workflows" / "build-macos.yml").read_text(
+        encoding="utf-8"
+    )
     release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow

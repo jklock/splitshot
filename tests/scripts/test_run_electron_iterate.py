@@ -22,9 +22,7 @@ def test_environment_isolates_temp_and_application_settings() -> None:
     assert env["TMPDIR"] == str(MODULE.TMP_ROOT)
     assert env["TMP"] == str(MODULE.TMP_ROOT)
     assert env["TEMP"] == str(MODULE.TMP_ROOT)
-    assert env["SPLITSHOT_SETTINGS_PATH"] == str(
-        MODULE.TMP_ROOT / "electron-iterate-settings.json"
-    )
+    assert env["SPLITSHOT_SETTINGS_PATH"] == str(MODULE.TMP_ROOT / "electron-iterate-settings.json")
 
 
 def test_default_scenarios_follow_tier() -> None:

@@ -358,7 +358,9 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                 )
                 page.wait_for_function(
                     """() => Number(state.project.queue_settings.fade_in_s) === 0.6
-                      && Number(state.project.queue_settings.fade_out_s) === 0.7"""
+                      && Number(state.project.queue_settings.fade_out_s) === 0.7
+                      && document.getElementById('queue-fade-in')?.value === '0.6'
+                      && document.getElementById('queue-fade-out')?.value === '0.7'"""
                 )
                 settled_fades = page.evaluate(
                     """() => ({
@@ -421,7 +423,12 @@ def test_action_controls_emit_one_click_and_make_one_intended_transition(
                 page.wait_for_function(
                     """sourceId => {
                       const source = state.project.merge_sources.find((item) => item.id === sourceId);
-                      return Number(source?.pip_size_percent) === 36 && Number(source?.opacity) === 0.99;
+                      const size = document.querySelector(`[data-source-id="${sourceId}"][data-merge-source-field="size"]`);
+                      const opacity = document.querySelector(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`);
+                      return Number(source?.pip_size_percent) === 36
+                        && Number(source?.opacity) === 0.99
+                        && size?.value === '36'
+                        && opacity?.value === '99';
                     }""",
                     arg=merge_source_id,
                 )

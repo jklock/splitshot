@@ -157,7 +157,10 @@ def test_queued_snapshot_remains_render_source_until_stage_is_marked_stale(
 
     def fake_export(project, output_path, **_kwargs):
         rendered.append(
-            (Path(project.primary_video.path).name, [shot.time_ms for shot in project.analysis.shots])
+            (
+                Path(project.primary_video.path).name,
+                [shot.time_ms for shot in project.analysis.shots],
+            )
         )
         Path(output_path).write_bytes(b"rendered")
 

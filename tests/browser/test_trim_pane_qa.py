@@ -428,9 +428,7 @@ def test_trim_end_after_last_shot_sets_input_to_last_shot_time(synthetic_video_f
                 _ensure_project_with_primary_and_merge(
                     page, primary_path, merge_path, "trim-qa-lastshot.ssproj"
                 )
-                page.wait_for_function(
-                    "() => (state?.project?.analysis?.shots || []).length > 0"
-                )
+                page.wait_for_function("() => (state?.project?.analysis?.shots || []).length > 0")
                 _navigate_to_trim_pane(page)
 
                 expected = page.evaluate(

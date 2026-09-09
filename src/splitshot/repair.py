@@ -68,7 +68,9 @@ def recover_project_payload(
         missing = [path for path in _media_paths(recovered, project_root) if not path.is_file()]
         if missing:
             rendered = ", ".join(str(path) for path in missing)
-            raise FileNotFoundError(f"Cannot recover {stage.get('label', stage.get('id'))}: {rendered}")
+            raise FileNotFoundError(
+                f"Cannot recover {stage.get('label', stage.get('id'))}: {rendered}"
+            )
         for field in RECOVERED_FIELDS:
             stage[field] = deepcopy(recovered.get(field))
         stage["queue_status"] = "stale"
@@ -88,7 +90,11 @@ def recover_project_payload(
         ),
         None,
     )
-    if isinstance(active, dict) and active_stage_id in queue_by_stage and active.get("primary_media"):
+    if (
+        isinstance(active, dict)
+        and active_stage_id in queue_by_stage
+        and active.get("primary_media")
+    ):
         repaired["primary_video"] = deepcopy(active["primary_media"])
         repaired["primary_trim_derivative"] = deepcopy(active["primary_trim_derivative"])
         repaired["merge_sources"] = deepcopy(active["added_media"])

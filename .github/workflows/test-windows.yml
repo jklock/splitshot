@@ -159,8 +159,8 @@ jobs:
             --script-arg=tests/release_data/practiscore.csv
         timeout-minutes: 180
         shell: bash
-      - name: Enforce exhaustive Windows evidence
-        run: uv run python scripts/testing/build_packaged_release_summary.py --platform windows --artifact-root artifacts/v107-release-proof/github-review/windows
+      - name: Enforce complete v107 Windows test-release evidence
+        run: uv run python scripts/testing/build_v107_test_release_summary.py --platform windows --expected-commit "${GITHUB_SHA}" --artifact-root artifacts/v107-release-proof/github-review/windows
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7

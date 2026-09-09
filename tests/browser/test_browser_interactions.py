@@ -23,7 +23,9 @@ def _open_test_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
-    page.wait_for_function("() => typeof state !== 'undefined'")
+    page.wait_for_function(
+        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    )
     return browser, page
 
 
