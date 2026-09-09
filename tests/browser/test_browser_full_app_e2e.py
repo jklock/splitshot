@@ -589,13 +589,6 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
             }""",
             arg=second_card.get_attribute("data-source-id"),
         )
-    second_card.locator('[data-merge-source-field="size"]').evaluate(
-        """(input) => {
-            input.value = '55';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-        }"""
-    )
     second_source_id = page.evaluate(
         """() => {
             const sources = state?.project?.merge_sources || [];
@@ -605,6 +598,26 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     active_stage_id = page.evaluate("() => state?.project?.active_stage_id || null")
     assert second_source_id
     assert active_stage_id
+    with page.expect_response(
+        lambda response: (
+            response.url.endswith("/api/merge/source") and response.request.method == "POST"
+        )
+    ) as source_update:
+        second_card.locator('[data-merge-source-field="size"]').evaluate(
+            """(input) => {
+                input.value = '55';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }"""
+        )
+    assert source_update.value.ok
+    page.wait_for_function(
+        """(sourceId) => {
+            const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+            return Number(source?.pip_size_percent) === 55;
+        }""",
+        arg=second_source_id,
+    )
     page.evaluate(
         """async ({ stageId, sourceId }) => {
             await callApi('/api/project/stage/remove-added', { stage_id: stageId, source_id: sourceId });
