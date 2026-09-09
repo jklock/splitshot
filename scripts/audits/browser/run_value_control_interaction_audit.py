@@ -797,13 +797,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 browser: Browser = browser_type.launch(**launch_options)
                 try:
                     page = browser.new_page(viewport={"width": 1440, "height": 1024})
+                    page.on("dialog", lambda dialog: dialog.accept())
                     for pane in panes:
                         # Each pane receives a clean browser document and clean
                         # project.  Generic audit values from one surface must
                         # not create false failures in a later surface.
                         project_path = Path(temp_dir) / f"{pane}-interaction-audit.ssproj"
                         page.goto(base_url, wait_until="domcontentloaded")
-                        page.wait_for_selector("#current-file")
+                        page.wait_for_function(
+                            "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+                        )
                         page.evaluate("path => createNewProject(path)", str(project_path))
                         page.wait_for_function(
                             "path => state?.project?.path === path",

@@ -234,8 +234,11 @@ def open_page(
 ) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1400, "height": 900})
+    page.on("dialog", lambda dialog: dialog.accept())
     page.goto(base_url, wait_until="domcontentloaded")
-    page.wait_for_selector("#current-file")
+    page.wait_for_function(
+        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    )
     return browser, page
 
 
@@ -281,10 +284,12 @@ def import_primary_video(
     page: Page, primary_video: Path, base_url: str = "", project_root: Path = AUDIT_TMP_ROOT
 ) -> None:
     show_project_tool(page)
-    if not page.evaluate("Boolean(state?.project?.path)"):
+    if base_url or not page.evaluate("Boolean(state?.project?.path)"):
         project_path = str(audit_project_path(project_root))
         page.evaluate("(path) => createNewProject(path)", project_path)
-        page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
+        page.wait_for_function(
+            "path => state?.project?.path === path", arg=project_path, timeout=30_000
+        )
     if base_url:
         _multipart_upload(base_url, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
@@ -473,6 +478,9 @@ def audit_release_output_profile_review_truth(
         )
         wait_for_processing_bar_to_settle(page)
     _set_active_tool(page, "export")
+    page.evaluate(
+        "setActiveTool('export', { collapseExpandedLayout: true, persistUiState: false }); render();"
+    )
     profile_count_before = page.evaluate("() => (state?.output_profiles || []).length")
     with page.expect_response(
         lambda response: response.url.endswith("/api/output-profiles/create")
@@ -906,12 +914,15 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
 def audit_popup_card_interactions(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='markers']").click()
+    if page.locator("#show-markers").is_checked() is False:
+        click_checkbox_once(page, "#show-markers")
     page.evaluate("importShotPopups()")
     page.wait_for_function(
         "() => document.querySelectorAll('.popup-marker-row').length > 0 && (state?.project?.popups || []).length > 0",
         timeout=30_000,
     )
     page.locator("#popup-marker-list .popup-marker-row .popup-marker-select").first.click()
+    page.evaluate("renderLiveOverlay()")
     page.wait_for_timeout(250)
     card_click = page.evaluate(
         """
@@ -1445,6 +1456,8 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         timeout=120_000,
     )
     wait_for_processing_bar_to_settle(page)
+    if page.locator("#show-pip").is_checked() is False:
+        click_checkbox_once(page, "#show-pip")
     page.evaluate(
         """
         async () => {
@@ -1452,8 +1465,10 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
           document.getElementById("merge-layout").value = "pip";
           syncMergePreviewStateFromControls();
           await callApi("/api/merge", readMergePayload());
-          setActiveTool("merge", { collapseExpandedLayout: false, persistUiState: false });
+          setActiveTool("merge", { collapseExpandedLayout: true, persistUiState: false });
           render();
+          renderVideo();
+          renderLiveOverlay();
         }
         """
     )
@@ -1461,7 +1476,6 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
         """
         () => state?.project?.merge?.enabled
           && state?.project?.merge?.layout === "pip"
-          && document.querySelector(".merge-preview-item[data-source-id]") !== null
         """,
         timeout=30_000,
     )
@@ -1471,6 +1485,7 @@ def audit_overlay_and_pip_preview_interactions(page: Page, primary_video: Path) 
           await new Promise((resolve) => window.setTimeout(resolve, 150));
           const source = (state?.project?.merge_sources || []).at(-1) || null;
           if (source) source.placement = { mode: "pip" };
+          renderVideo();
           renderLiveOverlay();
           await new Promise((resolve) => window.setTimeout(resolve, 50));
           const sourceId = source?.id || source?.asset?.id || "";

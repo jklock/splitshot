@@ -5782,14 +5782,15 @@ function exportBadges() {
   });
 }
 
-function createOutputProfile() {
+async function createOutputProfile() {
   const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
-  autoSelectNewestOutputProfile = true;
-  callApi("/api/output-profiles/create", {
+  await callApi("/api/output-profiles/create", {
     profile_name: baseName,
     profile_kind: "stage_output",
     export_settings: currentExportProfileSettings(),
   });
+  autoSelectNewestOutputProfile = true;
+  renderOutputProfiles();
 }
 
 function currentExportProfileSettings() {

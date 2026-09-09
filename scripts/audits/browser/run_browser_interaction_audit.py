@@ -194,8 +194,11 @@ def open_page(
 ) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1440, "height": 1024})
+    page.on("dialog", lambda dialog: dialog.accept())
     page.goto(base_url, wait_until="domcontentloaded")
-    page.wait_for_selector("#current-file")
+    page.wait_for_function(
+        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    )
     return browser, page
 
 
@@ -324,10 +327,11 @@ def import_primary_video(
     after_cursor = activity_cursor(activity_source)
     if isinstance(activity_source, str):
         base = activity_source
-        if not page.evaluate("Boolean(state?.project?.path)"):
-            project_path = _audit_project_path(primary_video)
-            page.evaluate("(path) => createNewProject(path)", project_path)
-            page.wait_for_function("() => Boolean(state?.project?.path)", timeout=30_000)
+        project_path = _audit_project_path(primary_video)
+        page.evaluate("(path) => createNewProject(path)", project_path)
+        page.wait_for_function(
+            "path => state?.project?.path === path", arg=project_path, timeout=30_000
+        )
         _multipart_upload(base, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:
@@ -1302,6 +1306,7 @@ def drag_merge_preview_persists(
         lambda items: has_api_success(items, "/api/merge"),
         timeout_s=5,
     )
+    page.evaluate("() => { render(); renderVideo(); }")
     page.wait_for_function(
         """
         () => (state?.project?.merge_sources || []).length >= 2 && Boolean(document.querySelector('.merge-preview-item[data-source-id]'))

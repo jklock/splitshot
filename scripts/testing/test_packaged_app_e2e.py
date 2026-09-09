@@ -166,6 +166,12 @@ def _run_packaged_browser_audits(
         ),
     ]
     failures: list[str] = []
+    audit_env = dict(os.environ)
+    audit_env["PYTHONFAULTHANDLER"] = "1"
+    audit_env["PYTHONUNBUFFERED"] = "1"
+    if sys.platform.startswith("linux"):
+        audit_env.pop("APPIMAGE_EXTRACT_AND_RUN", None)
+        audit_env.pop("LD_LIBRARY_PATH", None)
     for name, command in commands:
         log_path = audit_root / f"{name}.log"
         with log_path.open("w", encoding="utf-8") as log_handle:
@@ -177,6 +183,7 @@ def _run_packaged_browser_audits(
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=900,
+                env=audit_env,
             )
         if result.returncode != 0:
             failures.append(f"installed-package {name} audit exited {result.returncode}")

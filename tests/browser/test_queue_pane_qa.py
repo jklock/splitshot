@@ -17,6 +17,7 @@ def _open_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
+    page.wait_for_function("() => typeof state !== 'undefined'")
     return browser, page
 
 
@@ -342,6 +343,9 @@ def test_intro_outro_match_results_preview_uses_spreadsheet_match_totals() -> No
                     "Class UN - 1/7",
                     "Overall 4/26",
                 ]
+                page.wait_for_function(
+                    "() => document.querySelectorAll('.intro-outro-metrics .check-row').length === 7"
+                )
                 labels = page.locator(".intro-outro-metrics .check-row").all_inner_texts()
                 assert labels == [
                     "Score / Time",

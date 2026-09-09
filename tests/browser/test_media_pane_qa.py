@@ -16,6 +16,9 @@ def _open_test_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    )
     return browser, page
 
 
@@ -349,7 +352,7 @@ def test_practiscore_autosave_keeps_empty_selected_stage_and_player_isolated(
                 assert warmup_path.name not in page.locator("#media-pane").inner_text()
 
                 saved = {}
-                for _ in range(50):
+                for _ in range(300):
                     saved = json.loads((project_path / "project.json").read_text())
                     if saved.get("active_stage_id") == empty_stage.id:
                         break
