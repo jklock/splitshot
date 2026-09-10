@@ -11,6 +11,8 @@ export function createQueuePane({
   sendKeepaliveJson = () => false,
 } = {}) {
   let queueSettingsSavePromise = Promise.resolve();
+  let queueSettingsRevision = 0;
+  let queueSettingsDraft = null;
 
   function currentState() {
     return getState() || {};
@@ -90,13 +92,27 @@ export function createQueuePane({
   }
 
   function saveQueueSettings(payload) {
-    project().queue_settings = {
-      ...(project().queue_settings || {}),
+    const revision = ++queueSettingsRevision;
+    queueSettingsDraft = {
+      ...(queueSettingsDraft || project().queue_settings || {}),
       ...payload,
     };
+    project().queue_settings = { ...queueSettingsDraft };
     queueSettingsSavePromise = queueSettingsSavePromise
       .catch(() => null)
-      .then(() => callApi("/api/project/queue/settings", payload));
+      .then(async () => {
+        const result = await callApi("/api/project/queue/settings", payload);
+        if (revision !== queueSettingsRevision) {
+          project().queue_settings = {
+            ...(project().queue_settings || {}),
+            ...queueSettingsDraft,
+          };
+          render();
+        } else {
+          queueSettingsDraft = null;
+        }
+        return result;
+      });
     return queueSettingsSavePromise;
   }
 

@@ -15,6 +15,19 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
 
+def _post_json(base_url: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from urllib.request import Request, urlopen
+
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    with urlopen(request, timeout=120) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def _multipart_upload(
     base_url: str, endpoint: str, file_path: Path, field_name: str = "file"
 ) -> dict[str, Any]:
@@ -286,9 +299,14 @@ def import_primary_video(
     show_project_tool(page)
     if base_url or not page.evaluate("Boolean(state?.project?.path)"):
         project_path = str(audit_project_path(project_root))
-        created = page.evaluate("(path) => createNewProject(path)", project_path)
-        if not (created or {}).get("project", {}).get("path"):
-            raise RuntimeError(f"Could not create browser-audit project at {project_path}")
+        if base_url:
+            _post_json(base_url, "api/project/new", {})
+            _post_json(base_url, "api/project/save", {"path": project_path})
+            page.evaluate("async () => { await refresh(); }")
+        else:
+            created = page.evaluate("(path) => createNewProject(path)", project_path)
+            if not (created or {}).get("project", {}).get("path"):
+                raise RuntimeError(f"Could not create browser-audit project at {project_path}")
     if base_url:
         _multipart_upload(base_url, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")

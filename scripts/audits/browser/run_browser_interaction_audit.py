@@ -321,6 +321,17 @@ def _multipart_upload(
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _post_json(base_url: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    with urlopen(request, timeout=120) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def import_primary_video(
     page: Page, activity_source: BrowserControlServer | str, primary_video: Path
 ) -> CheckResult:
@@ -328,9 +339,9 @@ def import_primary_video(
     if isinstance(activity_source, str):
         base = activity_source
         project_path = _audit_project_path(primary_video)
-        created = page.evaluate("(path) => createNewProject(path)", project_path)
-        if not (created or {}).get("project", {}).get("path"):
-            raise RuntimeError(f"Could not create interaction-audit project at {project_path}")
+        _post_json(base, "api/project/new", {})
+        _post_json(base, "api/project/save", {"path": project_path})
+        page.evaluate("async () => { await refresh(); }")
         _multipart_upload(base, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:

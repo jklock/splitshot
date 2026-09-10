@@ -296,6 +296,16 @@ def _upload_fixture(base_url: str, endpoint: str, path: Path) -> None:
             raise RuntimeError(f"fixture upload failed: {endpoint} -> {response.status}")
 
 
+def _post_json(base_url: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    request = Request(
+        f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urlopen(request, timeout=120) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def _install_request_probe(page: Page) -> None:
     page.evaluate(
         r"""() => {
@@ -801,11 +811,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         page.wait_for_function(
                             "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
                         )
-                        created = page.evaluate("path => createNewProject(path)", str(project_path))
-                        if not (created or {}).get("project", {}).get("path"):
-                            raise RuntimeError(
-                                f"Could not create value-control project at {project_path}"
-                            )
+                        _post_json(base_url, "/api/project/new", {})
+                        _post_json(
+                            base_url,
+                            "/api/project/save",
+                            {"path": str(project_path)},
+                        )
+                        page.evaluate("async () => { await refresh(); }")
                         fixture_changed = False
                         if (
                             not args.default_visible_only

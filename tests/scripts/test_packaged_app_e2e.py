@@ -84,7 +84,12 @@ def test_stop_process_terminates_posix_process_group(monkeypatch) -> None:
             assert timeout == 10
 
     monkeypatch.setattr(MODULE.os, "name", "posix")
-    monkeypatch.setattr(MODULE.os, "killpg", lambda pid, value: signals.append((pid, value)))
+    monkeypatch.setattr(
+        MODULE.os,
+        "killpg",
+        lambda pid, value: signals.append((pid, value)),
+        raising=False,
+    )
 
     MODULE._stop_process(Process())
 
