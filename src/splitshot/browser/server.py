@@ -908,7 +908,7 @@ class BrowserControlServer:
                 audio_codec=audio_codec,
             )
         if previous and previous.preview_path and previous.preview_path != str(preview_path):
-            Path(previous.preview_path).unlink(missing_ok=True)
+            self._remove_browser_media_preview(previous.preview_path)
         self.activity.log(
             "media.compatibility.created",
             source_path=str(path),
@@ -919,6 +919,19 @@ class BrowserControlServer:
         )
         return preview_path, True, proxy_reason, audio_codec
 
+    def _remove_browser_media_preview(self, preview_path: str) -> None:
+        try:
+            Path(preview_path).unlink(missing_ok=True)
+        except OSError as exc:
+            # Windows can retain an open handle while Chromium finishes a media
+            # request. Cache cleanup must not make project lifecycle APIs fail.
+            self.activity.log(
+                "media.compatibility.cleanup_deferred",
+                level="warning",
+                path=preview_path,
+                error=str(exc),
+            )
+
     def _clear_browser_media_cache(self) -> None:
         with self._browser_media_prepare_lock, self._browser_media_lock:
             cached_paths = [
@@ -928,7 +941,7 @@ class BrowserControlServer:
             ]
             self._browser_media_cache.clear()
         for preview_path in cached_paths:
-            Path(preview_path).unlink(missing_ok=True)
+            self._remove_browser_media_preview(preview_path)
 
     def _active_browser_media_paths(self) -> tuple[Path, ...]:
         candidates: list[Path] = []

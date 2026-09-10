@@ -19,6 +19,7 @@ from splitshot.analysis.detection import DetectionResult
 from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.server import (
     BrowserControlServer,
+    BrowserMediaCacheEntry,
     QuietThreadingHTTPServer,
     display_name_for_path,
     find_free_port,
@@ -3732,6 +3733,41 @@ def test_browser_media_cache_token_changes_when_same_primary_path_is_reimported(
         assert first_state["media"]["cache_token"]
         assert second_state["media"]["cache_token"]
         assert second_state["media"]["cache_token"] != first_state["media"]["cache_token"]
+    finally:
+        server.shutdown()
+
+
+def test_browser_media_cache_cleanup_does_not_block_project_reset_when_proxy_is_locked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server = BrowserControlServer(port=0, log_dir=tmp_path)
+    server.start_background(open_browser=False)
+    preview_path = tmp_path / "locked-browser-preview.mp4"
+    preview_path.write_bytes(b"locked")
+    server._browser_media_cache["primary"] = BrowserMediaCacheEntry(
+        signature=(len(b"locked"), preview_path.stat().st_mtime_ns),
+        preview_path=str(preview_path),
+        proxy_reason="test",
+        audio_codec=None,
+    )
+    original_unlink = Path.unlink
+
+    def locked_unlink(path: Path, *args, **kwargs) -> None:
+        if path == preview_path:
+            raise PermissionError("file is open by Chromium")
+        original_unlink(path, *args, **kwargs)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "unlink", locked_unlink)
+            state = _post_json(f"{server.url}api/project/new", {})
+
+        assert state["project"]["path"] == ""
+        assert server._browser_media_cache == {}
+        assert preview_path.is_file()
+        assert "media.compatibility.cleanup_deferred" in server.activity.path.read_text(
+            encoding="utf-8"
+        )
     finally:
         server.shutdown()
 
