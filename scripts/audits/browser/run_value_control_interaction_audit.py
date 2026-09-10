@@ -801,12 +801,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         page.wait_for_function(
                             "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
                         )
-                        page.evaluate("path => createNewProject(path)", str(project_path))
-                        page.wait_for_function(
-                            "path => state?.project?.path === path",
-                            arg=str(project_path),
-                            timeout=15_000,
-                        )
+                        created = page.evaluate("path => createNewProject(path)", str(project_path))
+                        if not (created or {}).get("project", {}).get("path"):
+                            raise RuntimeError(
+                                f"Could not create value-control project at {project_path}"
+                            )
                         fixture_changed = False
                         if (
                             not args.default_visible_only

@@ -693,8 +693,14 @@ def test_rapid_control_changes_coalesce_to_one_mutation_each(
                 )
 
                 page.wait_for_function(
-                    """() => Number(state.project.queue_settings.fade_in_s) === 0.9
-                      && Number(state.project.queue_settings.fade_out_s) === 1.1""",
+                    """async () => {
+                      const response = await fetch('/api/state');
+                      const remote = await response.json();
+                      return Number(remote?.project?.queue_settings?.fade_in_s) === 0.9
+                        && Number(remote?.project?.queue_settings?.fade_out_s) === 1.1
+                        && document.getElementById('queue-fade-in')?.value === '0.9'
+                        && document.getElementById('queue-fade-out')?.value === '1.1';
+                    }""",
                     timeout=5_000,
                 )
 

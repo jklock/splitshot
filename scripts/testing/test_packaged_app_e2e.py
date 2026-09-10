@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -62,11 +63,22 @@ def _sha256(path: Path) -> str:
 def _stop_process(process: subprocess.Popen | None) -> None:
     if process is None or process.poll() is not None:
         return
-    process.terminate()
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
     try:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        process.kill()
+        if os.name == "nt":
+            process.kill()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=5)
 
 
@@ -912,7 +924,15 @@ def main():
 
     print(f"E2E port={port}", flush=True)
     with log_out.open("w") as o, log_err.open("w") as e:
-        proc = subprocess.Popen(cmd, cwd=executable.parent, env=env, stdout=o, stderr=e, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            cwd=executable.parent,
+            env=env,
+            stdout=o,
+            stderr=e,
+            text=True,
+            start_new_session=os.name != "nt",
+        )
 
     try:
         initial_state = _wait_for_state(proc, port)
@@ -1043,6 +1063,7 @@ def main():
                 stdout=o,
                 stderr=e,
                 text=True,
+                start_new_session=os.name != "nt",
             )
         restarted_state = _wait_for_state(restart_proc, restart_port)
         before_project = str((final_state.get("project") or {}).get("path") or "")

@@ -328,10 +328,9 @@ def import_primary_video(
     if isinstance(activity_source, str):
         base = activity_source
         project_path = _audit_project_path(primary_video)
-        page.evaluate("(path) => createNewProject(path)", project_path)
-        page.wait_for_function(
-            "path => state?.project?.path === path", arg=project_path, timeout=30_000
-        )
+        created = page.evaluate("(path) => createNewProject(path)", project_path)
+        if not (created or {}).get("project", {}).get("path"):
+            raise RuntimeError(f"Could not create interaction-audit project at {project_path}")
         _multipart_upload(base, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
     else:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import signal
 from pathlib import Path
 
 import pytest
@@ -66,3 +67,51 @@ def test_resolve_tool_raises_for_missing_binary(monkeypatch) -> None:
     monkeypatch.setattr(MODULE.sys, "platform", "darwin")
     with pytest.raises(FileNotFoundError, match="Required executable not found"):
         MODULE._resolve_tool("missing-binary")
+
+
+def test_stop_process_terminates_posix_process_group(monkeypatch) -> None:
+    signals: list[tuple[int, int]] = []
+
+    class Process:
+        pid = 42
+
+        @staticmethod
+        def poll():
+            return None
+
+        @staticmethod
+        def wait(timeout):
+            assert timeout == 10
+
+    monkeypatch.setattr(MODULE.os, "name", "posix")
+    monkeypatch.setattr(MODULE.os, "killpg", lambda pid, value: signals.append((pid, value)))
+
+    MODULE._stop_process(Process())
+
+    assert signals == [(42, signal.SIGTERM)]
+
+
+def test_stop_process_terminates_windows_process_tree(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    class Process:
+        pid = 84
+
+        @staticmethod
+        def poll():
+            return None
+
+        @staticmethod
+        def wait(timeout):
+            assert timeout == 10
+
+    monkeypatch.setattr(MODULE.os, "name", "nt")
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: commands.append(command),
+    )
+
+    MODULE._stop_process(Process())
+
+    assert commands == [["taskkill", "/PID", "84", "/T", "/F"]]

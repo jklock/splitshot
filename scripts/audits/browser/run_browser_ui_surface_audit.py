@@ -286,10 +286,9 @@ def import_primary_video(
     show_project_tool(page)
     if base_url or not page.evaluate("Boolean(state?.project?.path)"):
         project_path = str(audit_project_path(project_root))
-        page.evaluate("(path) => createNewProject(path)", project_path)
-        page.wait_for_function(
-            "path => state?.project?.path === path", arg=project_path, timeout=30_000
-        )
+        created = page.evaluate("(path) => createNewProject(path)", project_path)
+        if not (created or {}).get("project", {}).get("path"):
+            raise RuntimeError(f"Could not create browser-audit project at {project_path}")
     if base_url:
         _multipart_upload(base_url, "api/files/primary", primary_video)
         page.evaluate("async () => { await refresh(); }")
@@ -1642,6 +1641,16 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           setActiveTool("scoring", { collapseExpandedLayout: false, persistUiState: false });
           render();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
+          state.scoring_summary = {
+            ...state.scoring_summary,
+            imported_stage: {
+              source_name: "PractiScore",
+              stage_number: 4,
+              competitor_name: "John Klockenkemper",
+              competitor_place: 6,
+            },
+          };
+          state.metrics.scoring_summary = state.scoring_summary;
           renderPractiScoreSummaries();
           setScoringWorkbenchExpanded(true, { persistUiState: false });
           renderScoringTables();
