@@ -14,9 +14,12 @@ from tests.browser.helpers.video_test_helpers import (
 
 def _enable_merge(page) -> None:
     open_tool(page, "merge")
-    page.locator("#merge-enabled").check(force=True)
-    page.wait_for_timeout(300)
-    page.evaluate("() => render()")
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/merge"),
+        timeout=10000,
+    ) as response_info:
+        page.locator("#merge-enabled").check(force=True)
+    assert response_info.value.ok
     page.wait_for_function(
         "() => Boolean(state?.project?.merge?.enabled && (state?.project?.merge_sources || []).length > 0)",
         timeout=10000,
