@@ -15,6 +15,15 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+def test_duration_accepts_playwright_webm_stream_tag() -> None:
+    metadata = {
+        "format": {"duration": "N/A"},
+        "streams": [{"duration": "N/A", "tags": {"DURATION": "00:02:03.456000000"}}],
+    }
+
+    assert MODULE._duration(metadata) == 123.456
+
+
 def test_build_video_contains_live_audits_and_finishes_with_rendered_outputs(
     tmp_path: Path,
 ) -> None:

@@ -17,6 +17,7 @@ def _open_test_page(playwright, server: BrowserControlServer, *, accept_download
         viewport={"width": 1280, "height": 900}, accept_downloads=accept_downloads
     )
     page.goto(server.url, wait_until="domcontentloaded")
+    page.wait_for_function("() => typeof state !== 'undefined'")
     return browser, page
 
 

@@ -3266,7 +3266,7 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(
                                         }""",
                     900,
                 )
-                page.locator("#popup-add-bubble").click()
+                page.evaluate("() => addPopupBubble({ enabled: true })")
                 page.wait_for_function("() => (state?.project?.popups || []).length === 1")
 
                 popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")

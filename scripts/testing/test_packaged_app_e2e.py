@@ -1200,7 +1200,14 @@ def main():
                         capture_output=True,
                         text=True,
                         timeout=1800,
-                        env=env,
+                        env={
+                            key: value
+                            for key, value in env.items()
+                            if not (
+                                sys.platform.startswith("linux")
+                                and key in {"APPIMAGE_EXTRACT_AND_RUN", "LD_LIBRARY_PATH"}
+                            )
+                        },
                     )
                     if remaining.returncode != 0:
                         raise RuntimeError(

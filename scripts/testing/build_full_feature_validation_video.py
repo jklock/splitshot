@@ -52,7 +52,23 @@ def _probe(path: Path, ffprobe: str) -> dict[str, Any]:
 
 
 def _duration(metadata: dict[str, Any]) -> float:
-    return float((metadata.get("format") or {}).get("duration") or 0.0)
+    values = [(metadata.get("format") or {}).get("duration")]
+    values.extend(stream.get("duration") for stream in metadata.get("streams") or [])
+    for stream in metadata.get("streams") or []:
+        tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+        values.extend(value for key, value in tags.items() if str(key).lower() == "duration")
+    for value in values:
+        if value in {None, "", "N/A"}:
+            continue
+        text = str(value)
+        try:
+            if ":" not in text:
+                return float(text)
+            hours, minutes, seconds = text.split(":", 2)
+            return (float(hours) * 3600) + (float(minutes) * 60) + float(seconds)
+        except ValueError:
+            continue
+    return 0.0
 
 
 def _has_audio(metadata: dict[str, Any]) -> bool:
