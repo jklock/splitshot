@@ -311,6 +311,15 @@ def main() -> int:
             arg=str(args.project_path.resolve()),
             timeout=60_000,
         )
+        if not gaps:
+            _show_step(
+                page,
+                {
+                    "pane": "all panes",
+                    "identity": "all runtime controls covered by focused audits",
+                },
+            )
+            page.wait_for_timeout(1_000)
         for item in gaps:
             record = {**item, "status": "failed", "error": ""}
             try:

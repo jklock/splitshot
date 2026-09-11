@@ -1158,63 +1158,54 @@ def main():
                 playwright_failure = f"{playwright_failure}; {joined}".strip("; ")
             else:
                 identity_results = _build_identity_results(artifact_root)
-                if identity_results["counts"]["gaps"]:
-                    remaining_command = [
-                        sys.executable,
-                        str(
-                            REPO
-                            / "scripts"
-                            / "audits"
-                            / "browser"
-                            / "run_remaining_control_audit.py"
-                        ),
-                        "--base-url",
-                        f"http://127.0.0.1:{restart_port}",
-                        "--gaps-json",
-                        str(artifact_root / "identity-results.json"),
-                        "--report-json",
-                        str(
-                            artifact_root
-                            / "browser-audits"
-                            / "remaining-controls.json"
-                        ),
-                        "--video-output",
-                        str(
-                            artifact_root
-                            / "browser-audits"
-                            / "remaining-controls.webm"
-                        ),
-                        "--project-path",
-                        str(project_path),
-                        "--primary-video",
-                        str(video_path),
-                        "--secondary-video",
-                        str(secondary_video_path),
-                        "--practiscore",
-                        str(practiscore_path),
-                    ]
-                    remaining = subprocess.run(
-                        remaining_command,
-                        cwd=REPO,
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=1800,
-                        env={
-                            key: value
-                            for key, value in env.items()
-                            if not (
-                                sys.platform.startswith("linux")
-                                and key in {"APPIMAGE_EXTRACT_AND_RUN", "LD_LIBRARY_PATH"}
-                            )
-                        },
-                    )
-                    if remaining.returncode != 0:
-                        raise RuntimeError(
-                            "remaining installed control audit failed: "
-                            + (remaining.stderr or remaining.stdout).strip()
+                remaining_command = [
+                    sys.executable,
+                    str(
+                        REPO
+                        / "scripts"
+                        / "audits"
+                        / "browser"
+                        / "run_remaining_control_audit.py"
+                    ),
+                    "--base-url",
+                    f"http://127.0.0.1:{restart_port}",
+                    "--gaps-json",
+                    str(artifact_root / "identity-results.json"),
+                    "--report-json",
+                    str(artifact_root / "browser-audits" / "remaining-controls.json"),
+                    "--video-output",
+                    str(artifact_root / "browser-audits" / "remaining-controls.webm"),
+                    "--project-path",
+                    str(project_path),
+                    "--primary-video",
+                    str(video_path),
+                    "--secondary-video",
+                    str(secondary_video_path),
+                    "--practiscore",
+                    str(practiscore_path),
+                ]
+                remaining = subprocess.run(
+                    remaining_command,
+                    cwd=REPO,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,
+                    env={
+                        key: value
+                        for key, value in env.items()
+                        if not (
+                            sys.platform.startswith("linux")
+                            and key in {"APPIMAGE_EXTRACT_AND_RUN", "LD_LIBRARY_PATH"}
                         )
-                    identity_results = _build_identity_results(artifact_root)
+                    },
+                )
+                if remaining.returncode != 0:
+                    raise RuntimeError(
+                        "remaining installed control audit failed: "
+                        + (remaining.stderr or remaining.stdout).strip()
+                    )
+                identity_results = _build_identity_results(artifact_root)
                 if identity_results["counts"]["gaps"]:
                     raise RuntimeError(
                         "formal exhaustive release identity gaps remain after dedicated audit: "
