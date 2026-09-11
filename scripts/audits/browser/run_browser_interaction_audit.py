@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 import uuid
 from collections.abc import Callable
@@ -145,6 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path where the JSON report will be written.",
     )
     parser.add_argument(
+        "--video-output",
+        type=Path,
+        default=None,
+        help="Optional WebM recording of the complete live interaction audit.",
+    )
+    parser.add_argument(
         "--base-url",
         type=str,
         default="",
@@ -190,10 +197,20 @@ def launch_browser(playwright: Playwright, target: BrowserTarget, headed: bool) 
 
 
 def open_page(
-    playwright: Playwright, target: BrowserTarget, base_url: str, headed: bool
+    playwright: Playwright,
+    target: BrowserTarget,
+    base_url: str,
+    headed: bool,
+    recording_dir: Path | None = None,
 ) -> tuple[Browser, Page]:
     browser = launch_browser(playwright, target, headed)
-    page = browser.new_page(viewport={"width": 1440, "height": 1024})
+    page_options: dict[str, Any] = {"viewport": {"width": 1440, "height": 1024}}
+    if recording_dir is not None:
+        page_options.update(
+            record_video_dir=str(recording_dir),
+            record_video_size={"width": 1440, "height": 1024},
+        )
+    page = browser.new_page(**page_options)
     page.on("dialog", lambda dialog: dialog.accept())
     page.goto(base_url, wait_until="domcontentloaded")
     page.wait_for_function(
@@ -1729,6 +1746,7 @@ def run_browser_audit(
     practiscore_path: Path | None,
     headed: bool,
     base_url: str = "",
+    video_output: Path | None = None,
 ) -> BrowserInteractionAudit:
     target = BROWSER_TARGETS[target_name]
     server: BrowserControlServer | None = None
@@ -1741,9 +1759,18 @@ def run_browser_audit(
     activity_source: BrowserControlServer | str = server if server is not None else audit_url
     log_path = str(server.activity.path) if server is not None else f"external:{audit_url}"
     browser: Browser | None = None
+    recording_dir = None
+    if video_output is not None:
+        video_output = video_output.resolve()
+        video_output.parent.mkdir(parents=True, exist_ok=True)
+        recording_dir = video_output.parent / f".{video_output.stem}-recording"
+        shutil.rmtree(recording_dir, ignore_errors=True)
+        recording_dir.mkdir(parents=True)
     try:
         try:
-            browser, page = open_page(playwright, target, audit_url, headed)
+            browser, page = open_page(
+                playwright, target, audit_url, headed, recording_dir
+            )
         except Exception as error:  # noqa: BLE001
             return BrowserInteractionAudit(
                 browser=target_name,
@@ -1798,6 +1825,12 @@ def run_browser_audit(
     finally:
         if browser is not None:
             browser.close()
+        if recording_dir is not None and video_output is not None:
+            recordings = sorted(recording_dir.rglob("*.webm"))
+            if not recordings:
+                raise RuntimeError("interaction audit video was not created")
+            shutil.move(str(recordings[-1]), str(video_output))
+            shutil.rmtree(recording_dir, ignore_errors=True)
         if server is not None:
             server.shutdown()
 
@@ -1840,6 +1873,7 @@ def main() -> int:
                 practiscore_path,
                 args.headed,
                 args.base_url,
+                args.video_output,
             )
             for browser_name in browsers
         ]

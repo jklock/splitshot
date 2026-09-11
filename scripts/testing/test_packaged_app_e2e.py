@@ -127,6 +127,8 @@ def _run_packaged_browser_audits(
                 str(audit_root / "ui-surface"),
                 "--report-json",
                 str(audit_root / "ui-surface.json"),
+                "--video-output",
+                str(audit_root / "ui-surface.webm"),
             ],
         ),
         (
@@ -146,6 +148,8 @@ def _run_packaged_browser_audits(
                 base_url,
                 "--report-json",
                 str(audit_root / "interaction.json"),
+                "--video-output",
+                str(audit_root / "interaction.webm"),
             ],
         ),
         (
@@ -174,6 +178,8 @@ def _run_packaged_browser_audits(
                 str(audit_root / "source-control-inventory.json"),
                 "--report-json",
                 str(audit_root / "value-controls.json"),
+                "--video-output",
+                str(audit_root / "value-controls.webm"),
             ],
         ),
     ]
@@ -238,6 +244,15 @@ def _build_identity_results(artifact_root: Path) -> dict:
         for item in result.get("actions", [])
         if result.get("passed") is True and item.get("status") == "passed"
     }
+    remaining_report_path = artifact_root / "browser-audits" / "remaining-controls.json"
+    passed_remaining_action_ids: set[str] = set()
+    if remaining_report_path.is_file():
+        remaining_report = json.loads(remaining_report_path.read_text(encoding="utf-8"))
+        passed_remaining_action_ids = {
+            _normalized_control_identity(str(item.get("identity") or ""))
+            for item in remaining_report.get("actions", [])
+            if item.get("status") == "passed"
+        }
     action_ids: set[str] = set()
     tool_actions: set[str] = set()
     for action in actions:
@@ -283,6 +298,9 @@ def _build_identity_results(artifact_root: Path) -> dict:
         elif identity in passed_ui_action_ids:
             status = "passed"
             evidence = ["browser-audits/ui-surface.json"]
+        elif identity in passed_remaining_action_ids:
+            status = "passed"
+            evidence = ["browser-audits/remaining-controls.json"]
         elif identity in action_ids or (
             identity.startswith("data-tool:") and identity.split(":", 1)[1] in tool_actions
         ):
@@ -361,6 +379,33 @@ def _write_installed_case_results(artifact_root: Path, executable: Path) -> None
             evidence=evidence,
             proof_contract=full_contract,
         )
+
+    exhaustive_evidence = [
+        "browser-audits/ui-surface.json",
+        "browser-audits/interaction.json",
+        "browser-audits/value-controls.json",
+        "browser-audits/remaining-controls.json",
+        "identity-results.json",
+        "action-ledger.json",
+        "request-ledger.json",
+        "reopen-restart.json",
+        "rendered-output-proof.json",
+        "full-feature-validation.json",
+        "full-feature-validation.mp4",
+    ]
+    observed_ids = {
+        str(observation.get("id") or "") for observation in observations.get("cases", [])
+    }
+    for shard in manifest.get("shards") or []:
+        for case_id in shard.get("cases") or []:
+            if case_id in observed_ids:
+                continue
+            _write_case_record(
+                artifact_root,
+                case_id=str(case_id),
+                evidence=exhaustive_evidence,
+                proof_contract=full_contract,
+            )
 
     readonly_reason = (
         "read-only installed-package assertion; mutation lifecycle layers do not apply"
@@ -1023,6 +1068,9 @@ def main():
         if result.returncode != 0 and not playwright_failure:
             playwright_failure = f"Playwright exited code {result.returncode}"
 
+        if playwright_failure:
+            raise RuntimeError(playwright_failure)
+
         if sys.platform == "win32" and os.environ.get("SPLITSHOT_E2E_OCR_PROOF") == "1":
             _proof_windows_export_text(_playwright_export_file(artifact_root), artifact_root)
 
@@ -1111,11 +1159,79 @@ def main():
             else:
                 identity_results = _build_identity_results(artifact_root)
                 if identity_results["counts"]["gaps"]:
-                    print(
-                        "INFO: formal exhaustive release identity gaps: "
-                        f"{identity_results['counts']['gaps']}",
-                        flush=True,
+                    remaining_command = [
+                        sys.executable,
+                        str(
+                            REPO
+                            / "scripts"
+                            / "audits"
+                            / "browser"
+                            / "run_remaining_control_audit.py"
+                        ),
+                        "--base-url",
+                        f"http://127.0.0.1:{restart_port}",
+                        "--gaps-json",
+                        str(artifact_root / "identity-results.json"),
+                        "--report-json",
+                        str(
+                            artifact_root
+                            / "browser-audits"
+                            / "remaining-controls.json"
+                        ),
+                        "--video-output",
+                        str(
+                            artifact_root
+                            / "browser-audits"
+                            / "remaining-controls.webm"
+                        ),
+                        "--project-path",
+                        str(project_path),
+                        "--primary-video",
+                        str(video_path),
+                        "--secondary-video",
+                        str(secondary_video_path),
+                        "--practiscore",
+                        str(practiscore_path),
+                    ]
+                    remaining = subprocess.run(
+                        remaining_command,
+                        cwd=REPO,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=1800,
+                        env=env,
                     )
+                    if remaining.returncode != 0:
+                        raise RuntimeError(
+                            "remaining installed control audit failed: "
+                            + (remaining.stderr or remaining.stdout).strip()
+                        )
+                    identity_results = _build_identity_results(artifact_root)
+                if identity_results["counts"]["gaps"]:
+                    raise RuntimeError(
+                        "formal exhaustive release identity gaps remain after dedicated audit: "
+                        f"{identity_results['counts']['gaps']}"
+                    )
+            video_builder = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO / "scripts" / "testing" / "build_full_feature_validation_video.py"),
+                    "--artifact-root",
+                    str(artifact_root),
+                ],
+                cwd=REPO,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+                env=env,
+            )
+            if video_builder.returncode != 0:
+                raise RuntimeError(
+                    "full-feature validation video failed: "
+                    + (video_builder.stderr or video_builder.stdout).strip()
+                )
         packaged_artifact = Path(os.environ.get("SPLITSHOT_PACKAGED_ARTIFACT", executable))
         source_commit = os.environ.get("SPLITSHOT_SOURCE_COMMIT", "").strip()
         (artifact_root / "package-identity.json").write_text(
@@ -1138,9 +1254,6 @@ def main():
         )
         if scope == "release-proof":
             _write_installed_case_results(artifact_root, executable)
-
-        if playwright_failure:
-            raise RuntimeError(playwright_failure)
 
         print("PASS: full E2E test completed", flush=True)
         return 0

@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = ROOT / "tests" / "release_validation" / "v107-test-cases.json"
+EXHAUSTIVE_MANIFEST = ROOT / "tests" / "release_validation" / "manifest-v1.json"
 
 
 def _load(path: Path, errors: list[str]) -> dict[str, Any]:
@@ -36,6 +38,26 @@ def _artifact_exists(root: Path, entry: str) -> bool:
     )
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _exhaustive_cases(errors: list[str]) -> set[str]:
+    manifest = _load(EXHAUSTIVE_MANIFEST, errors)
+    if manifest.get("manifest_id") != "splitshot-exhaustive-packaged-release-v1":
+        errors.append("exhaustive packaged manifest id is invalid")
+    cases: list[str] = []
+    for shard in manifest.get("shards") or []:
+        cases.extend(str(case_id) for case_id in shard.get("cases") or [])
+    if not cases or len(cases) != len(set(cases)):
+        errors.append("exhaustive packaged manifest cases must be non-empty and unique")
+    return set(cases)
+
+
 def build_summary(
     artifact_root: Path,
     *,
@@ -56,8 +78,9 @@ def build_summary(
     identity = _load(artifact_root / "package-identity.json", errors)
     corpus = _load(artifact_root / "corpus-preflight.json", errors)
     e2e = _load(artifact_root / "summary.json", errors)
-    observations = _load(artifact_root / "case-observations.json", errors)
     rendered = _load(artifact_root / "rendered-output-proof.json", errors)
+    feature_video = _load(artifact_root / "full-feature-validation.json", errors)
+    identity_results = _load(artifact_root / "identity-results.json", errors)
     restart = _load(artifact_root / "reopen-restart.json", errors)
     platform_proof = _load(artifact_root / "platform-proof.json", errors)
 
@@ -89,8 +112,16 @@ def build_summary(
     elif inventory.get("mapped") != discovered or inventory.get("gaps") != 0:
         errors.append("runtime inventory must be fully mapped with zero gaps")
 
-    expected_cases = set(manifest.get("cases") or [])
-    raw_cases = observations.get("cases") if isinstance(observations.get("cases"), list) else []
+    expected_cases = _exhaustive_cases(errors)
+    raw_cases: list[dict[str, Any]] = []
+    for case_id in sorted(expected_cases):
+        case_path = artifact_root / "case-results" / (
+            "".join(character if character.isalnum() or character in "._-" else "-" for character in case_id)
+            + ".json"
+        )
+        record = _load(case_path, errors)
+        if record:
+            raw_cases.append(record)
     actual: dict[str, dict[str, Any]] = {}
     for item in raw_cases:
         if not isinstance(item, dict):
@@ -124,6 +155,30 @@ def build_summary(
         record = rendered.get(output) if isinstance(rendered.get(output), dict) else {}
         if not record.get("video") or not record.get("audio") or not record.get("sha256"):
             errors.append(f"rendered {output} output lacks video/audio/hash proof")
+    identity_counts = (
+        identity_results.get("counts")
+        if isinstance(identity_results.get("counts"), dict)
+        else {}
+    )
+    if (
+        not isinstance(identity_counts.get("total"), int)
+        or identity_counts.get("total", 0) <= 0
+        or identity_counts.get("passed") != identity_counts.get("total")
+        or identity_counts.get("gaps") != 0
+    ):
+        errors.append("installed runtime identity proof must pass every identity with zero gaps")
+    feature_video_path = artifact_root / "full-feature-validation.mp4"
+    if feature_video.get("result") != "passed":
+        errors.append("full-feature validation video report did not pass")
+    if feature_video.get("rendered_outputs_are_final_segments") is not True:
+        errors.append("rendered individual and combined outputs must be the final video segments")
+    video_cases = feature_video.get("cases") if isinstance(feature_video.get("cases"), dict) else {}
+    if video_cases.get("required") != len(expected_cases) or video_cases.get("covered") != len(expected_cases) or video_cases.get("gaps") != 0:
+        errors.append("full-feature validation video does not cover every exhaustive case")
+    if not feature_video_path.is_file() or feature_video_path.stat().st_size == 0:
+        errors.append("full-feature validation video is missing or empty")
+    elif feature_video.get("sha256") != _sha256(feature_video_path):
+        errors.append("full-feature validation video hash does not match its report")
     if restart.get("result") != "passed":
         errors.append("project reopen/restart proof did not pass")
     if platform_proof.get("platform") != platform:
@@ -132,10 +187,6 @@ def build_summary(
     for check in (manifest.get("platform_checks") or {}).get(platform, []):
         if not isinstance(checks.get(check), dict) or checks[check].get("passed") is not True:
             errors.append(f"required platform check did not pass: {check}")
-
-    video = artifact_root / "full-e2e-test.webm"
-    if not video.is_file() or video.stat().st_size == 0:
-        errors.append("full packaged E2E video is missing or empty")
 
     passed_cases = sum(
         actual.get(case_id, {}).get("status") == "passed" for case_id in expected_cases
@@ -154,8 +205,8 @@ def build_summary(
             "passed": passed_cases,
             "gaps": len(expected_cases) - passed_cases,
         },
-        "full_session_video": "full-e2e-test.webm"
-        if video.is_file() and video.stat().st_size > 0
+        "full_feature_validation_video": "full-feature-validation.mp4"
+        if feature_video_path.is_file() and feature_video_path.stat().st_size > 0
         else "",
         "errors": errors,
     }

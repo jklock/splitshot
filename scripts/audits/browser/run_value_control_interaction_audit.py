@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import tempfile
 import time
 import uuid
@@ -152,6 +153,12 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory-json", type=Path, default=DEFAULT_INVENTORY)
     parser.add_argument("--report-json", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument(
+        "--video-output",
+        type=Path,
+        default=None,
+        help="Optional WebM recording of every ordinary value-control interaction.",
+    )
     parser.add_argument(
         "--browser",
         choices=("chromium", "chrome", "firefox", "webkit"),
@@ -799,8 +806,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if args.browser == "chrome":
                     launch_options["channel"] = "chrome"
                 browser: Browser = browser_type.launch(**launch_options)
+                recording_dir = None
+                if args.video_output is not None:
+                    args.video_output = args.video_output.resolve()
+                    args.video_output.parent.mkdir(parents=True, exist_ok=True)
+                    recording_dir = (
+                        args.video_output.parent / f".{args.video_output.stem}-recording"
+                    )
+                    shutil.rmtree(recording_dir, ignore_errors=True)
+                    recording_dir.mkdir(parents=True)
                 try:
-                    page = browser.new_page(viewport={"width": 1440, "height": 1024})
+                    page_options: dict[str, Any] = {
+                        "viewport": {"width": 1440, "height": 1024}
+                    }
+                    if recording_dir is not None:
+                        page_options.update(
+                            record_video_dir=str(recording_dir),
+                            record_video_size={"width": 1440, "height": 1024},
+                        )
+                    page = browser.new_page(**page_options)
                     page.on("dialog", lambda dialog: dialog.accept())
                     for pane in panes:
                         # Each pane receives a clean browser document and clean
@@ -941,6 +965,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         )
                 finally:
                     browser.close()
+                    if recording_dir is not None and args.video_output is not None:
+                        recordings = sorted(recording_dir.rglob("*.webm"))
+                        if not recordings:
+                            raise RuntimeError("value-control audit video was not created")
+                        shutil.move(str(recordings[-1]), str(args.video_output))
+                        shutil.rmtree(recording_dir, ignore_errors=True)
         finally:
             if server is not None:
                 server.shutdown()

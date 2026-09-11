@@ -204,6 +204,8 @@ Test macOS, Test Windows, and Test Linux own their complete platform results. Bu
 
 Each OS uploads package/version/commit/corpus identity; live inventory; inventory-to-case map; action/event/request ledgers; API/model/disk evidence; viewport/zoom/drag/accessibility screenshots; reopen/restart evidence; individual/combined outputs; FFprobe/OCR/frame/geometry/audio results; console/backend/Queue/error logs; and a machine-readable summary.
 
+Each OS also uploads `full-feature-validation.mp4`. This is not a raw browser capture: it is the ordered video record of the live installed workflow and all three installed browser audits, with the actual individual and combined rendered outputs appended as the final two sections. `full-feature-validation.json` records every source segment, hash, time range, exhaustive case mapping, and final-output ordering. Missing audit recordings, unmapped cases, identity gaps, invalid media, a hash mismatch, or rendered outputs that are not last fail the platform release.
+
 The summary requires `discovered == mapped == exercised == passed`, `failed == 0`, `skipped == 0`, `gaps == 0`, all artifacts readable, and package/source/corpus identities matching the release candidate.
 
 ## Drift Prevention

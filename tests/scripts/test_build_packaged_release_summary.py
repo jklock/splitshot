@@ -62,7 +62,7 @@ def test_summary_builder_exposes_every_missing_case_and_identity_gap(tmp_path: P
     }
     assert len(summary["cases"]) > 120
     assert all(item["status"] == "gap" for item in summary["cases"])
-    assert summary["artifacts"]["full_session_video"] == []
+    assert summary["artifacts"]["full_feature_validation_video"] == []
 
 
 def test_case_contract_allows_only_explained_non_applicable_layers(tmp_path: Path) -> None:

@@ -135,6 +135,42 @@ async function waitForUiSettled(page, timeoutMs = 15000) {
   await page.waitForTimeout(150);
 }
 
+const activeMutatingApiRequests = new Map();
+let lastMutatingApiActivityAt = 0;
+
+function tracksMutatingApiRequest(request) {
+  return request.url().includes('/api/')
+    && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method());
+}
+
+function mutatingApiRequestKey(request) {
+  return `${request.method()} ${request.url()}`;
+}
+
+function startMutatingApiRequest(request) {
+  const key = mutatingApiRequestKey(request);
+  activeMutatingApiRequests.set(key, (activeMutatingApiRequests.get(key) || 0) + 1);
+  lastMutatingApiActivityAt = Date.now();
+}
+
+function finishMutatingApiRequest(request) {
+  const key = mutatingApiRequestKey(request);
+  const count = activeMutatingApiRequests.get(key) || 0;
+  if (count <= 1) activeMutatingApiRequests.delete(key);
+  else activeMutatingApiRequests.set(key, count - 1);
+  lastMutatingApiActivityAt = Date.now();
+}
+
+async function waitForMutatingApiIdle(page, timeoutMs = 30000, quietMs = 300) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (activeMutatingApiRequests.size === 0
+        && Date.now() - lastMutatingApiActivityAt >= quietMs) return;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`mutating API did not become idle (${activeMutatingApiRequests.size} pending)`);
+}
+
 async function openTool(page, tool, screenshotName = '') {
   const startedAt = new Date().toISOString();
   await measureStep(`tool-switch:${tool}`, THRESHOLDS.tool_switch_settled_ms, async () => {
@@ -624,20 +660,38 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await page.locator('#show-overlay').check();
   // Use XL badge size for reliable OCR in Windows CI
   const badgeSize = 'XL';
+  const badgeSave = page.waitForResponse(
+    (response) => response.url().endsWith('/api/overlay')
+      && response.request().method() === 'POST',
+    { timeout: 30000 },
+  );
   await page.locator('#badge-size').selectOption(badgeSize);
+  const badgeSaveResponse = await badgeSave;
+  if (!badgeSaveResponse.ok()) throw new Error(`overlay save failed: ${badgeSaveResponse.status()}`);
   await waitForCondition(page, (value) => state?.project?.overlay?.badge_size === value, badgeSize);
+  await waitForMutatingApiIdle(page);
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
     const beforeCount = await page.evaluate(() => (state?.output_profiles || []).length);
+    const createResponsePromise = page.waitForResponse(
+      (response) => response.url().endsWith('/api/output-profiles/create')
+        && response.request().method() === 'POST',
+      { timeout: 30000 },
+    );
     await page.locator('#create-output-profile').click();
     actionLedger.push({ action: 'click', target: '#create-output-profile', count: 1, status: 'passed' });
+    const createResponse = await createResponsePromise;
+    if (!createResponse.ok()) throw new Error(`output profile create failed: ${createResponse.status()}`);
     await page.waitForFunction(
-      (count) => (state?.output_profiles || []).length === count + 1,
+      (count) => (state?.output_profiles || []).length === count + 1
+        && Boolean(document.getElementById('output-profile-select')?.value)
+        && !document.getElementById('output-profile-name')?.disabled
+        && !document.getElementById('output-profile-type')?.disabled
+        && !document.getElementById('output-profile-frame')?.disabled,
       beforeCount,
       { timeout: 30000 },
     );
-    await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
   if (!profileId) fail('output profile was not auto-selected');
@@ -1132,7 +1186,7 @@ async function main() {
   ensureDir(artifactRoot);
   ensureDir(exportDir);
   const recordingDir = path.join(logDir, '.recording');
-  const fullSessionVideo = path.join(artifactRoot, 'full-e2e-test.webm');
+  const fullSessionVideo = path.join(artifactRoot, 'browser-workflow.webm');
   ensureDir(recordingDir);
   log(`=== E2E test start === port=${port} scope=${e2eScope || 'standard'}`);
 
@@ -1167,12 +1221,23 @@ async function main() {
     consoleLogs.push(entry);
     try { fs.appendFileSync(path.join(logDir, 'console.log'), `[${entry.time}] ${entry.type}: ${entry.text}\n`); } catch {}
   });
+  page.on('request', (request) => {
+    if (!tracksMutatingApiRequest(request)) return;
+    startMutatingApiRequest(request);
+  });
+  page.on('requestfailed', (request) => {
+    if (!tracksMutatingApiRequest(request)) return;
+    finishMutatingApiRequest(request);
+  });
   page.on('pageerror', (err) => {
     const entry = { message: err.message, stack: err.stack, time: new Date().toISOString() };
     pageErrors.push(entry);
     try { fs.appendFileSync(path.join(logDir, 'page-errors.log'), `[${entry.time}] ${entry.message}\n${entry.stack}\n---\n`); } catch {}
   });
   page.on('response', (resp) => {
+    if (tracksMutatingApiRequest(resp.request())) {
+      finishMutatingApiRequest(resp.request());
+    }
     if (resp.url().includes('/api/')) {
       requestLedger.push({
         method: resp.request().method(),

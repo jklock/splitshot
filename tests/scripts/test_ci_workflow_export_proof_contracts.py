@@ -28,10 +28,15 @@ def test_packaged_e2e_script_writes_export_artifact_under_artifacts_tree() -> No
     assert "fs.copyFileSync(outputPath, canonicalExportFile);" in script
     assert "artifacts.push(canonicalExportFile);" in script
     assert "recordVideo: { dir: recordingDir, size: { width: 1280, height: 900 } }" in script
-    assert "const fullSessionVideo = path.join(artifactRoot, 'full-e2e-test.webm');" in script
+    assert "const fullSessionVideo = path.join(artifactRoot, 'browser-workflow.webm');" in script
     assert "{ timeout: 1800000 }," in script
     assert "await pageVideo.saveAs(fullSessionVideo);" in script
     assert "artifacts.push(fullSessionVideo);" in script
+    packaged_runner = (
+        ROOT / "scripts" / "testing" / "test_packaged_app_e2e.py"
+    ).read_text(encoding="utf-8")
+    assert "build_full_feature_validation_video.py" in packaged_runner
+    assert packaged_runner.count('"--video-output"') == 4
     assert "const stopAfterExport = e2eScope === 'export-proof';" in script
     assert "String(payload?.status || '').includes('Processed ')" in script
     assert "outputPath.length > 0" not in script
