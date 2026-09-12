@@ -84,9 +84,6 @@ def _normalize_segment(
     ffprobe: str,
 ) -> float:
     metadata = _probe(source, ffprobe)
-    source_duration = _duration(metadata)
-    if source_duration <= 0:
-        raise RuntimeError(f"Video segment has no duration: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     video_filter = (
         "scale=1280:900:force_original_aspect_ratio=decrease,"
@@ -106,13 +103,10 @@ def _normalize_segment(
             ]
         )
     else:
-        normalized_duration = source_duration / playback_rate
         command.extend(
             [
                 "-f",
                 "lavfi",
-                "-t",
-                f"{normalized_duration:.6f}",
                 "-i",
                 "anullsrc=channel_layout=stereo:sample_rate=48000",
                 "-filter_complex",

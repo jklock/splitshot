@@ -204,7 +204,12 @@ def _run_packaged_browser_audits(
                 env=audit_env,
             )
         if result.returncode != 0:
-            failures.append(f"installed-package {name} audit exited {result.returncode}")
+            log_tail = " | ".join(
+                log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
+            )
+            failures.append(
+                f"installed-package {name} audit exited {result.returncode}: {log_tail}"
+            )
     return failures
 
 
@@ -1155,7 +1160,7 @@ def main():
             )
             if audit_failures:
                 joined = "; ".join(audit_failures)
-                playwright_failure = f"{playwright_failure}; {joined}".strip("; ")
+                raise RuntimeError(joined)
             else:
                 identity_results = _build_identity_results(artifact_root)
                 remaining_command = [

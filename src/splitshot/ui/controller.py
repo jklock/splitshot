@@ -6,6 +6,7 @@ import json
 import math
 import re
 import subprocess
+import threading
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields, replace
@@ -1010,6 +1011,8 @@ class ProjectController(QObject):
         self._saved_snapshot = project_to_dict(self.project)
         self._original_shot_state_by_id: dict[str, _OriginalShotState] = {}
         self._autosave_in_progress = False
+        self._autosave_pending = False
+        self._autosave_lock = threading.Lock()
         self._output_profiles: list[OutputProfile] = []
         self._output_profiles_cache_dirty = False
         self._remember_original_shots()
@@ -6796,21 +6799,29 @@ class ProjectController(QObject):
         self.settings_changed.emit()
 
     def _autosave_project_if_needed(self) -> None:
-        if self._autosave_in_progress or self.project_path is None:
+        if self.project_path is None:
             return
-        self._sync_project_to_active_stage()
-        current_snapshot = project_to_dict(self.project)
-        if current_snapshot == self._saved_snapshot:
-            return
-        try:
+        with self._autosave_lock:
+            if self._autosave_in_progress:
+                self._autosave_pending = True
+                return
             self._autosave_in_progress = True
-            save_project(self.project, self.project_path)
-            self._saved_snapshot = project_to_dict(self.project)
-            self._remember_project(self.project_path)
-        except Exception as exc:  # noqa: BLE001
-            self._set_status(f"Project autosave failed: {exc}")
-        finally:
-            self._autosave_in_progress = False
+        while True:
+            try:
+                self._sync_project_to_active_stage()
+                current_snapshot = project_to_dict(self.project)
+                if current_snapshot != self._saved_snapshot:
+                    save_project(self.project, self.project_path)
+                    self._saved_snapshot = project_to_dict(self.project)
+                    self._remember_project(self.project_path)
+            except Exception as exc:  # noqa: BLE001
+                self._set_status(f"Project autosave failed: {exc}")
+            with self._autosave_lock:
+                if self._autosave_pending:
+                    self._autosave_pending = False
+                    continue
+                self._autosave_in_progress = False
+                break
 
     def autosave_project_if_needed(self) -> None:
         self._autosave_project_if_needed()
