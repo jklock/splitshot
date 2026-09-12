@@ -878,34 +878,34 @@ async function configureVisibleV107FeatureShowcase(page) {
   }
 
   const timing = await page.evaluate(() => {
-    const shots = (state?.project?.analysis?.shots || []).map((shot) => Number(shot.time_ms || 0));
+    const shots = orderedShotsByTime();
     const beep = Number(state?.project?.analysis?.beep_time_ms_primary || 0);
-    const first = shots.length ? shots[0] : 1000;
-    const last = shots.length ? shots[shots.length - 1] : first;
+    const first = shots.length ? shotDisplayTimeMs(shots[0].time_ms) : 1000;
+    const last = shots.length ? shotDisplayTimeMs(shots[shots.length - 1].time_ms) : first;
     return {
       draw: Math.max(beep, Math.min(first - 1, beep + Math.max(1, Math.floor((first - beep) / 2)))),
-      final: Math.max(last, first),
+      final: Math.max(last, first) + 50,
     };
   });
   await captureAt(
     timing.draw,
     'v107-visible-draw-marker-review',
-    ['#secondary-video', '#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '.timer-badge', '.draw-badge'],
+    ['#secondary-video', '#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '#live-overlay .timer-badge, #score-layer .timer-badge', '#live-overlay .draw-badge, #score-layer .draw-badge'],
   );
   await captureAt(
     timing.final,
     'v107-visible-splits-score',
-    ['#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '.timer-badge', '.shot-badge', '.score-badge'],
+    ['#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '#live-overlay .timer-badge, #score-layer .timer-badge', '#live-overlay .shot-badge', '#live-overlay .score-badge, #score-layer .score-badge'],
   );
   const visibleProof = await page.evaluate(() => ({
     marker: [...document.querySelectorAll('#popup-overlay .popup-overlay-badge')]
       .some((element) => element.textContent.includes('V107 MARKER PROOF')),
     review_text: [...document.querySelectorAll('#custom-overlay [data-text-box-drag]')]
       .some((element) => element.textContent.includes('V107 REVIEW PROOF')),
-    timer: Boolean(document.querySelector('.timer-badge')),
+    timer: Boolean(document.querySelector('#live-overlay .timer-badge, #score-layer .timer-badge')),
     draw: state?.project?.overlay?.show_draw === true,
-    splits: Boolean(document.querySelector('.shot-badge')),
-    score: Boolean(document.querySelector('.score-badge')),
+    splits: Boolean(document.querySelector('#live-overlay .shot-badge')),
+    score: Boolean(document.querySelector('#live-overlay .score-badge, #score-layer .score-badge')),
     secondary_media: (() => {
       const element = document.getElementById('secondary-video');
       if (!(element instanceof HTMLElement)) return false;
