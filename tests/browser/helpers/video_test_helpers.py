@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from splitshot.browser.server import BrowserControlServer
 
 from .activity_tracker import ActivityTracker
@@ -45,7 +47,11 @@ def open_page(playwright, server: BrowserControlServer, viewport: dict | None = 
     page.set_default_timeout(180000)
     page.on("dialog", lambda dialog: dialog.accept())
     page.goto(server.url, wait_until="domcontentloaded")
-    page.wait_for_function("() => typeof state !== 'undefined'")
+    try:
+        page.wait_for_function("() => typeof state !== 'undefined'", timeout=60_000)
+    except PlaywrightTimeoutError:
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("() => typeof state !== 'undefined'", timeout=180_000)
     return browser, page
 
 

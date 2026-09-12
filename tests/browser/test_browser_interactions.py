@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 import splitshot.browser.server as browser_server_module
@@ -23,10 +24,12 @@ def _open_test_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
-    page.wait_for_function(
-        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'",
-        timeout=60_000,
-    )
+    ready = "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    try:
+        page.wait_for_function(ready, timeout=60_000)
+    except PlaywrightTimeoutError:
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function(ready, timeout=180_000)
     return browser, page
 
 

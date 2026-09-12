@@ -41,7 +41,9 @@ def _unlock_layout(page) -> None:
     if page.evaluate("localStorage.getItem('splitshot.layoutLocked')") == "false":
         return
     page.locator("#toggle-layout-lock-video").click()
-    page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
+    page.wait_for_function(
+        "() => localStorage.getItem('splitshot.layoutLocked') === 'false'"
+    )
 
 
 def _drag_resize_handle(
@@ -377,7 +379,9 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 assert toggle_button.text_content() == "🔒"
 
                 toggle_button.click()
-                page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
+                page.wait_for_function(
+                    "() => localStorage.getItem('splitshot.layoutLocked') === 'false'"
+                )
                 assert toggle_button.text_content() == "🔓"
                 assert toggle_button.get_attribute("aria-label") == "Lock video layout"
                 assert (
@@ -386,7 +390,9 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 )
 
                 toggle_button.click()
-                page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'true'")
+                page.wait_for_function(
+                    "() => localStorage.getItem('splitshot.layoutLocked') === 'true'"
+                )
                 assert toggle_button.text_content() == "🔒"
                 assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
                 assert (
