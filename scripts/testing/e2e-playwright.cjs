@@ -842,7 +842,17 @@ async function configureVisibleV107FeatureShowcase(page) {
     const control = page.locator(selector);
     if (!(await control.isChecked())) await control.check();
   }
-  await waitForMutatingApiIdle(page);
+  await waitForCondition(
+    page,
+    () => state?.project?.overlay?.show_timer === true
+      && state?.project?.overlay?.show_draw === true
+      && state?.project?.overlay?.show_shots === true
+      && state?.project?.overlay?.show_score === true
+      && state?.project?.ui_state?.review_show_markers === true
+      && state?.project?.ui_state?.review_show_pip === true,
+    null,
+    30000,
+  );
 
   async function captureAt(positionMs, name, requiredSelectors) {
     await page.evaluate((targetMs) => {
