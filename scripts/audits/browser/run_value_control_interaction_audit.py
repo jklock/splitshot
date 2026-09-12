@@ -969,7 +969,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         recordings = sorted(recording_dir.rglob("*.webm"))
                         if not recordings:
                             raise RuntimeError("value-control audit video was not created")
-                        shutil.move(str(recordings[-1]), str(args.video_output))
+                        shutil.copy2(str(recordings[-1]), str(args.video_output))
                         shutil.rmtree(recording_dir, ignore_errors=True)
         finally:
             if server is not None:

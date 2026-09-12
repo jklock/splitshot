@@ -109,11 +109,14 @@ def _prepare_dynamic_controls(
     source_selector = ".trim-source-card" if pane == "trim-sync" else ".merge-media-card"
     if pane in {"merge", "trim-sync"} and page.locator(source_selector).count() == 0:
         page.locator("#merge-media-input").set_input_files(str(args.secondary_video))
-        page.wait_for_timeout(1_000)
+        page.wait_for_function(
+            "() => (state?.project?.merge_sources || []).length > 0",
+            timeout=60_000,
+        )
         tool = page.locator(f'[data-tool="{pane}"]')
         if tool.count():
             tool.click(force=True)
-            page.wait_for_timeout(250)
+            page.locator(source_selector).first.wait_for(state="attached", timeout=30_000)
 
     if pane == "merge" and identity == "button:Hide stage media controls":
         page.evaluate(
@@ -129,6 +132,16 @@ def _prepare_dynamic_controls(
         if toggle.count():
             toggle.click(force=True)
             page.wait_for_timeout(150)
+
+    if pane == "settings" and identity.startswith("id:"):
+        section_id = page.locator(f"#{identity[3:]}").evaluate(
+            "node => node.closest('[data-settings-section]')?.dataset.settingsSection || ''"
+        )
+        if section_id:
+            page.evaluate(
+                "sectionId => { setSettingsSectionExpanded(sectionId, true); renderSettingsSections(); }",
+                section_id,
+            )
 
     if pane == "intro-outro":
         if page.locator('.intro-outro-box[data-box-index="0"]').count() == 0:
@@ -339,7 +352,7 @@ def main() -> int:
     recordings = sorted(recording_dir.rglob("*.webm"))
     if not recordings:
         raise RuntimeError("remaining-control audit video was not created")
-    shutil.move(str(recordings[-1]), str(args.video_output))
+    shutil.copy2(str(recordings[-1]), str(args.video_output))
     shutil.rmtree(recording_dir, ignore_errors=True)
     payload = {
         "result": "passed" if all(item["status"] == "passed" for item in results) else "failed",
@@ -352,7 +365,23 @@ def main() -> int:
         "video": str(args.video_output),
     }
     args.report_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(payload["counts"], indent=2))
+    print(
+        json.dumps(
+            {
+                **payload["counts"],
+                "failures": [
+                    {
+                        "pane": item.get("pane"),
+                        "identity": item.get("identity"),
+                        "error": item.get("error"),
+                    }
+                    for item in results
+                    if item["status"] != "passed"
+                ],
+            },
+            indent=2,
+        )
+    )
     return 0 if payload["result"] == "passed" else 1
 
 

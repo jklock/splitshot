@@ -24,7 +24,8 @@ def _open_test_page(playwright, server: BrowserControlServer):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
     page.wait_for_function(
-        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'",
+        timeout=60_000,
     )
     return browser, page
 

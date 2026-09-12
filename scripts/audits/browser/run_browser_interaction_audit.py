@@ -1829,7 +1829,7 @@ def run_browser_audit(
             recordings = sorted(recording_dir.rglob("*.webm"))
             if not recordings:
                 raise RuntimeError("interaction audit video was not created")
-            shutil.move(str(recordings[-1]), str(video_output))
+            shutil.copy2(str(recordings[-1]), str(video_output))
             shutil.rmtree(recording_dir, ignore_errors=True)
         if server is not None:
             server.shutdown()
