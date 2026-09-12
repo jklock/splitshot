@@ -815,6 +815,9 @@ async function configureVisibleV107FeatureShowcase(page) {
     { timeout: 30000 },
   );
   const markerCard = page.locator('#markers-workbench-editor .popup-bubble-card').first();
+  if (!(await markerCard.isVisible().catch(() => false))) {
+    await page.locator('#popup-edit-selected').click();
+  }
   await markerCard.waitFor({ state: 'visible', timeout: 30000 });
   await markerCard.locator('[data-popup-field="text"]').fill('V107 MARKER PROOF');
   await markerCard.locator('[data-popup-field="text"]').blur();
