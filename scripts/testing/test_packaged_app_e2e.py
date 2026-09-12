@@ -631,7 +631,7 @@ def _ocr_text_is_readable(text: str) -> bool:
 
 def _ocr_has_v107_visual_features(text: str) -> bool:
     normalized = " ".join(str(text or "").split()).lower()
-    return "review proof" in normalized and "marker proof" in normalized
+    return "review pro" in normalized and "marker pro" in normalized
 
 
 def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:

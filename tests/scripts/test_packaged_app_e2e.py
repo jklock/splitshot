@@ -31,6 +31,7 @@ def test_ocr_text_is_readable_rejects_tofu_like_output() -> None:
 
 def test_ocr_requires_both_v107_visual_features() -> None:
     assert MODULE._ocr_has_v107_visual_features("V107 REVIEW PROOF V107 MARKER PROOF")
+    assert MODULE._ocr_has_v107_visual_features("107 REVIEW PROC MARKER PRO")
     assert not MODULE._ocr_has_v107_visual_features("V107 REVIEW PROOF")
 
 

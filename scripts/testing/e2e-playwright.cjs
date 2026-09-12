@@ -825,6 +825,10 @@ async function configureVisibleV107FeatureShowcase(page) {
   await setInputValue(page, '#markers-workbench-editor [data-popup-field="duration_s"]', '120');
   await setInputValue(page, '#markers-workbench-editor [data-popup-field="width"]', '360');
   await setInputValue(page, '#markers-workbench-editor [data-popup-field="height"]', '84');
+  const markerSave = await page.evaluate(
+    async () => callApi('/api/popups', { popups: state?.project?.popups || [] }),
+  );
+  if (!markerSave?.project) throw new Error('final v107 marker save failed');
   await waitForCondition(
     page,
     () => (state?.project?.popups || []).some(
@@ -1275,7 +1279,8 @@ async function runReleaseProof(page) {
     () => {
       const boxes = state?.project?.overlay?.text_boxes || [];
       return boxes.some((box) => box.source === 'manual' && box.text === 'V107 REVIEW PROOF')
-        && boxes.some((box) => box.source === 'imported_summary');
+        && boxes.some((box) => box.source === 'imported_summary')
+        && (state?.project?.popups || []).some((marker) => marker.text === 'V107 MARKER PROOF');
     },
     null,
     15000,
