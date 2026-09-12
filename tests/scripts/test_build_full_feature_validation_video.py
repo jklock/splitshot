@@ -41,6 +41,23 @@ def test_build_video_contains_live_audits_and_finishes_with_rendered_outputs(
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fixture, destination)
+    (tmp_path / "visual-feature-proof.json").write_text(
+        json.dumps(
+            {
+                "result": "passed",
+                "visible": {
+                    "marker": True,
+                    "review_text": True,
+                    "timer": True,
+                    "draw": True,
+                    "splits": True,
+                    "score": True,
+                    "secondary_media": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
@@ -68,3 +85,15 @@ def test_build_video_contains_live_audits_and_finishes_with_rendered_outputs(
     ]
     assert (tmp_path / "full-feature-validation.mp4").stat().st_size > 0
     assert (tmp_path / "full-feature-validation.json").stat().st_size > 0
+
+
+def test_build_video_rejects_missing_visible_feature_proof(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"shards": []}), encoding="utf-8")
+
+    try:
+        MODULE.build_video(tmp_path, manifest)
+    except RuntimeError as exc:
+        assert "Missing visible feature proof" in str(exc)
+    else:
+        raise AssertionError("missing visible feature proof must fail closed")

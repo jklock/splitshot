@@ -733,12 +733,18 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   });
   actionLedger.push({ action: 'click', target: '#review-add-text-box', count: 1, status: 'passed' });
   const customCard = page.locator('.text-box-card[data-box-id]').last();
-  await customCard.locator('[data-text-box-field="text"]').fill('Packaged custom review box');
+  await customCard.locator('[data-text-box-field="text"]').fill('V107 REVIEW PROOF');
   await customCard.locator('[data-text-box-field="text"]').blur();
+  await customCard.locator('[data-text-box-field="font_size"]').fill('36');
+  await customCard.locator('[data-text-box-field="font_size"]').blur();
+  await customCard.locator('[data-text-box-field="width"]').fill('360');
+  await customCard.locator('[data-text-box-field="width"]').blur();
+  await customCard.locator('[data-text-box-field="height"]').fill('84');
+  await customCard.locator('[data-text-box-field="height"]').blur();
   await waitForCondition(
     page,
     () => (state?.project?.overlay?.text_boxes || [])
-      .some((box) => box.source === 'manual' && box.text === 'Packaged custom review box'),
+      .some((box) => box.source === 'manual' && box.text === 'V107 REVIEW PROOF'),
     null,
     30000,
   );
@@ -789,6 +795,133 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   });
   await screenshot(page, 'overlay-badges-exported');
   return { profileId, badgeSize };
+}
+
+async function configureVisibleV107FeatureShowcase(page) {
+  await openTool(page, 'scoring');
+  if (!(await page.locator('#scoring-enabled').isChecked())) {
+    await page.locator('#scoring-enabled').check();
+    await waitForCondition(page, () => state?.project?.scoring?.enabled === true, null, 30000);
+  }
+  await openTool(page, 'markers');
+  const markerCount = await page.evaluate(() => (state?.project?.popups || []).length);
+  if (!(await page.locator('#markers-enable').isChecked())) {
+    await page.locator('#markers-enable').check();
+  }
+  await page.locator('#popup-add-bubble').click();
+  await page.waitForFunction(
+    (count) => (state?.project?.popups || []).length === count + 1,
+    markerCount,
+    { timeout: 30000 },
+  );
+  const markerCard = page.locator('#markers-workbench-editor .popup-bubble-card').first();
+  await markerCard.waitFor({ state: 'visible', timeout: 30000 });
+  await markerCard.locator('[data-popup-field="text"]').fill('V107 MARKER PROOF');
+  await markerCard.locator('[data-popup-field="text"]').blur();
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="time_s"]', '0');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="duration_s"]', '120');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="width"]', '360');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="height"]', '84');
+  await waitForCondition(
+    page,
+    () => (state?.project?.popups || []).some(
+      (marker) => marker.text === 'V107 MARKER PROOF'
+        && marker.time_ms === 0
+        && marker.duration_ms === 120000,
+    ),
+    null,
+    30000,
+  );
+  await page.locator('#popup-edit-selected').click();
+
+  await openTool(page, 'review');
+  for (const selector of ['#show-markers', '#show-pip', '#show-timer', '#show-draw', '#show-shots', '#show-score']) {
+    const control = page.locator(selector);
+    if (!(await control.isChecked())) await control.check();
+  }
+  await waitForMutatingApiIdle(page);
+
+  async function captureAt(positionMs, name, requiredSelectors) {
+    await page.evaluate((targetMs) => {
+      const video = document.getElementById('primary-video');
+      video.currentTime = Math.max(0, targetMs / 1000);
+      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+      renderLiveOverlay(targetMs);
+    }, positionMs);
+    await page.waitForFunction(
+      (selectors) => selectors.every((selector) => {
+        const element = document.querySelector(selector);
+        if (!(element instanceof HTMLElement)) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return !element.hidden && style.display !== 'none' && style.visibility !== 'hidden'
+          && Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0;
+      }),
+      requiredSelectors,
+      { timeout: 30000 },
+    );
+    await screenshot(page, name);
+    await page.waitForTimeout(1500);
+  }
+
+  const timing = await page.evaluate(() => {
+    const shots = (state?.project?.analysis?.shots || []).map((shot) => Number(shot.time_ms || 0));
+    const beep = Number(state?.project?.analysis?.beep_time_ms_primary || 0);
+    const first = shots.length ? shots[0] : 1000;
+    const last = shots.length ? shots[shots.length - 1] : first;
+    return {
+      draw: Math.max(beep, Math.min(first - 1, beep + Math.max(1, Math.floor((first - beep) / 2)))),
+      final: Math.max(last, first),
+    };
+  });
+  await captureAt(
+    timing.draw,
+    'v107-visible-draw-marker-review',
+    ['#secondary-video', '#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '.timer-badge', '.draw-badge'],
+  );
+  await captureAt(
+    timing.final,
+    'v107-visible-splits-score',
+    ['#popup-overlay .popup-overlay-badge', '#custom-overlay [data-text-box-drag]', '.timer-badge', '.shot-badge', '.score-badge'],
+  );
+  const visibleProof = await page.evaluate(() => ({
+    marker: [...document.querySelectorAll('#popup-overlay .popup-overlay-badge')]
+      .some((element) => element.textContent.includes('V107 MARKER PROOF')),
+    review_text: [...document.querySelectorAll('#custom-overlay [data-text-box-drag]')]
+      .some((element) => element.textContent.includes('V107 REVIEW PROOF')),
+    timer: Boolean(document.querySelector('.timer-badge')),
+    draw: state?.project?.overlay?.show_draw === true,
+    splits: Boolean(document.querySelector('.shot-badge')),
+    score: Boolean(document.querySelector('.score-badge')),
+    secondary_media: (() => {
+      const element = document.getElementById('secondary-video');
+      if (!(element instanceof HTMLElement)) return false;
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return state?.project?.merge?.enabled === true
+        && (state?.project?.merge_sources || []).length > 0
+        && !element.hidden && style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    })(),
+  }));
+  const visualProof = {
+    result: Object.values(visibleProof).every(Boolean) ? 'passed' : 'failed',
+    visible: visibleProof,
+    screenshots: [
+      'e2e-logs/screenshot-v107-visible-draw-marker-review.png',
+      'e2e-logs/screenshot-v107-visible-splits-score.png',
+    ],
+  };
+  writeJson(path.join(artifactRoot, 'visual-feature-proof.json'), visualProof);
+  if (visualProof.result !== 'passed') fail(`v107 visible feature proof failed: ${JSON.stringify(visibleProof)}`);
+  passCases(
+    [
+      'markers.every-type', 'markers.text-assets-timing-style', 'markers.encoded-appearance',
+      'overlay.visibility-toggles', 'overlay.split-score-timer-draw-summary-options',
+      'overlay.live-preview', 'overlay.encoded-real-data-parity',
+    ],
+    ['visual-feature-proof.json', ...visualProof.screenshots],
+  );
 }
 
 async function finishOutputProfileLifecycle(page, profileId) {
@@ -1050,6 +1183,7 @@ async function runReleaseProof(page) {
   );
 
   const profile = await configureOutputProfileReviewAndBadges(page, sourceId);
+  await configureVisibleV107FeatureShowcase(page);
   await configureIntroOutro(page);
   await openTimingWorkbench(page);
   await screenshot(page, 'release-09-timing-workbench');
@@ -1057,6 +1191,7 @@ async function runReleaseProof(page) {
   for (const tool of ['project', 'merge', 'scoring', 'timing', 'markers', 'overlay', 'review', 'export', 'metrics', 'shotml', 'settings']) {
     await openTool(page, tool, `pane-${tool}`);
     await assertNoHorizontalOverflow(page, tool);
+    await page.waitForTimeout(1000);
   }
 
   await openTool(page, 'export', 'release-10-export-pane');
@@ -1126,7 +1261,7 @@ async function runReleaseProof(page) {
     page,
     () => {
       const boxes = state?.project?.overlay?.text_boxes || [];
-      return boxes.some((box) => box.source === 'manual' && box.text === 'Packaged custom review box')
+      return boxes.some((box) => box.source === 'manual' && box.text === 'V107 REVIEW PROOF')
         && boxes.some((box) => box.source === 'imported_summary');
     },
     null,

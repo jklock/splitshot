@@ -46,16 +46,24 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _exhaustive_cases(errors: list[str]) -> set[str]:
+def _exhaustive_cases(errors: list[str], platform: str) -> tuple[set[str], set[str]]:
     manifest = _load(EXHAUSTIVE_MANIFEST, errors)
     if manifest.get("manifest_id") != "splitshot-exhaustive-packaged-release-v1":
         errors.append("exhaustive packaged manifest id is invalid")
     cases: list[str] = []
     for shard in manifest.get("shards") or []:
         cases.extend(str(case_id) for case_id in shard.get("cases") or [])
+    ui_cases = set(cases)
+    platform_cases = [
+        str(case_id)
+        for case_id in (manifest.get("platform_cases") or {}).get(platform, [])
+    ]
+    cases.extend(platform_cases)
     if not cases or len(cases) != len(set(cases)):
         errors.append("exhaustive packaged manifest cases must be non-empty and unique")
-    return set(cases)
+    if not platform_cases:
+        errors.append(f"exhaustive packaged manifest has no platform cases for {platform}")
+    return set(cases), ui_cases
 
 
 def build_summary(
@@ -112,7 +120,7 @@ def build_summary(
     elif inventory.get("mapped") != discovered or inventory.get("gaps") != 0:
         errors.append("runtime inventory must be fully mapped with zero gaps")
 
-    expected_cases = _exhaustive_cases(errors)
+    expected_cases, expected_video_cases = _exhaustive_cases(errors, platform)
     raw_cases: list[dict[str, Any]] = []
     for case_id in sorted(expected_cases):
         case_path = artifact_root / "case-results" / (
@@ -173,7 +181,7 @@ def build_summary(
     if feature_video.get("rendered_outputs_are_final_segments") is not True:
         errors.append("rendered individual and combined outputs must be the final video segments")
     video_cases = feature_video.get("cases") if isinstance(feature_video.get("cases"), dict) else {}
-    if video_cases.get("required") != len(expected_cases) or video_cases.get("covered") != len(expected_cases) or video_cases.get("gaps") != 0:
+    if video_cases.get("required") != len(expected_video_cases) or video_cases.get("covered") != len(expected_video_cases) or video_cases.get("gaps") != 0:
         errors.append("full-feature validation video does not cover every exhaustive case")
     if not feature_video_path.is_file() or feature_video_path.stat().st_size == 0:
         errors.append("full-feature validation video is missing or empty")

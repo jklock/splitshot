@@ -395,6 +395,7 @@ def _write_installed_case_results(artifact_root: Path, executable: Path) -> None
         "request-ledger.json",
         "reopen-restart.json",
         "rendered-output-proof.json",
+        "visual-feature-proof.json",
         "full-feature-validation.json",
         "full-feature-validation.mp4",
     ]
@@ -617,7 +618,8 @@ def _ocr_text_is_readable(text: str) -> bool:
             "split",
             "factor",
             "hit",
-            "packaged custom review",
+            "v107 review proof",
+            "v107 marker proof",
             "points down",
             "penalties",
             "division",
@@ -625,6 +627,11 @@ def _ocr_text_is_readable(text: str) -> bool:
             "overall",
         )
     )
+
+
+def _ocr_has_v107_visual_features(text: str) -> bool:
+    normalized = " ".join(str(text or "").split()).lower()
+    return "review proof" in normalized and "marker proof" in normalized
 
 
 def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:
@@ -693,7 +700,6 @@ def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:
     if len({item["sha256"] for item in frame_proofs}) < 2:
         raise RuntimeError(f"Rendered output proof frames are not visually distinct: {export_file}")
 
-    ocr_text = ""
     tesseract = _resolve_tool(
         os.environ.get("SPLITSHOT_PACKAGED_TESSERACT", "tesseract"),
         windows_fallbacks=(
@@ -702,36 +708,52 @@ def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:
             r"%ChocolateyInstall%\\bin\\tesseract.exe",
         ),
     )
-    proof_image = artifact_dir / f"{export_file.stem}-ocr.png"
-    subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-v",
-            "error",
-            "-ss",
-            f"{min(5.2, duration * 0.5):.6f}",
-            "-i",
-            str(export_file),
-            "-frames:v",
-            "1",
-            str(proof_image),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    ocr = subprocess.run(
-        [tesseract, str(proof_image), "stdout", "--psm", "11"],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    ocr_text = ocr.stdout
+    ocr_samples: list[dict] = []
+    ocr_parts: list[str] = []
+    for index, fraction in enumerate((0.2, 0.35, 0.5, 0.65, 0.8), start=1):
+        timestamp = max(0.0, duration * fraction)
+        proof_image = artifact_dir / f"{export_file.stem}-ocr-{index}.png"
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-v",
+                "error",
+                "-ss",
+                f"{timestamp:.6f}",
+                "-i",
+                str(export_file),
+                "-frames:v",
+                "1",
+                str(proof_image),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        ocr = subprocess.run(
+            [tesseract, str(proof_image), "stdout", "--psm", "11"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        ocr_parts.append(ocr.stdout)
+        ocr_samples.append(
+            {
+                "timestamp_s": timestamp,
+                "image": proof_image.name,
+                "text": " ".join(ocr.stdout.split()),
+            }
+        )
+    ocr_text = "\n".join(ocr_parts)
     (artifact_dir / f"{export_file.stem}-ocr.txt").write_text(ocr_text, encoding="utf-8")
     if not _ocr_text_is_readable(ocr_text):
         raise RuntimeError(f"Rendered output OCR did not find expected overlay text: {export_file}")
+    if not _ocr_has_v107_visual_features(ocr_text):
+        raise RuntimeError(
+            f"Rendered output OCR did not prove the v107 review and marker overlays: {export_file}"
+        )
     return {
         "path": str(export_file),
         "sha256": _sha256(export_file),
@@ -740,6 +762,7 @@ def _analyze_rendered_output(export_file: Path, artifact_dir: Path) -> dict:
         "audio": audio,
         "frames": frame_proofs,
         "ocr_text": " ".join(ocr_text.split()),
+        "ocr_samples": ocr_samples,
         "result": "passed",
     }
 

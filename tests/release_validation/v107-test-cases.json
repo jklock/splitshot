@@ -4,7 +4,7 @@
   "corpus_revision": "splitshot-release-corpus-v1",
   "required_platforms": ["macos", "windows", "linux"],
   "platform_checks": {
-    "macos": ["codesign"],
+    "macos": ["codesign", "gatekeeper", "stapled"],
     "windows": ["executable"],
     "linux": ["executable"]
   },

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -31,6 +31,7 @@ def _complete_evidence(root: Path, platform: str = "macos") -> None:
         for shard in exhaustive["shards"]
         for case_id in shard["cases"]
     ]
+    platform_cases = exhaustive["platform_cases"][platform]
     _write_json(
         root,
         "package-identity.json",
@@ -60,7 +61,7 @@ def _complete_evidence(root: Path, platform: str = "macos") -> None:
     )
     evidence = root / "proof.json"
     evidence.write_text("{}", encoding="utf-8")
-    for case_id in exhaustive_cases:
+    for case_id in exhaustive_cases + platform_cases:
         filename = "".join(
             character if character.isalnum() or character in "._-" else "-"
             for character in case_id
@@ -82,11 +83,14 @@ def _complete_evidence(root: Path, platform: str = "macos") -> None:
         "identity-results.json",
         {"counts": {"total": 913, "passed": 913, "gaps": 0}},
     )
-    required_check = manifest["platform_checks"][platform][0]
+    required_checks = manifest["platform_checks"][platform]
     _write_json(
         root,
         "platform-proof.json",
-        {"platform": platform, "checks": {required_check: {"passed": True}}},
+        {
+            "platform": platform,
+            "checks": {check: {"passed": True} for check in required_checks},
+        },
     )
     feature_video = root / "full-feature-validation.mp4"
     feature_video.write_bytes(b"video")
@@ -120,6 +124,9 @@ def test_complete_v107_test_release_evidence_passes(tmp_path: Path) -> None:
     expected_cases = sum(
         len(shard["cases"])
         for shard in json.loads(EXHAUSTIVE_MANIFEST.read_text(encoding="utf-8"))["shards"]
+    )
+    expected_cases += len(
+        json.loads(EXHAUSTIVE_MANIFEST.read_text(encoding="utf-8"))["platform_cases"]["macos"]
     )
     assert summary["cases"] == {
         "required": expected_cases,

@@ -166,12 +166,28 @@ def build_video(artifact_root: Path, manifest_path: Path) -> dict[str, Any]:
         for case_id in cases
     ]
     output_cases = shard_cases.get("rendered-output", [])
+    visual_proof_path = artifact_root / "visual-feature-proof.json"
+    if not visual_proof_path.is_file() or visual_proof_path.stat().st_size == 0:
+        raise RuntimeError(f"Missing visible feature proof: {visual_proof_path}")
+    visual_proof = json.loads(visual_proof_path.read_text(encoding="utf-8"))
+    required_visuals = {
+        "marker",
+        "review_text",
+        "timer",
+        "draw",
+        "splits",
+        "score",
+        "secondary_media",
+    }
+    visible = visual_proof.get("visible") if isinstance(visual_proof.get("visible"), dict) else {}
+    if visual_proof.get("result") != "passed" or any(visible.get(item) is not True for item in required_visuals):
+        raise RuntimeError("Installed workflow did not visibly prove every required v107 feature")
     segments = [
         {
             "id": "installed-workflow",
             "kind": "live-feature-use",
             "path": artifact_root / "browser-workflow.webm",
-            "playback_rate": 8.0,
+            "playback_rate": 1.0,
             "cases": all_ui_cases,
         },
         {

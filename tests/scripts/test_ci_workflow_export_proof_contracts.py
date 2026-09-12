@@ -101,18 +101,19 @@ def test_packaged_build_and_release_workflows_use_real_corpus() -> None:
             assert "--expected-commit" in source, workflow.name
 
 
-def test_macos_test_package_is_signed_without_using_release_notarization() -> None:
+def test_macos_test_package_uses_release_signing_and_notarization_guards() -> None:
     test_workflow = (ROOT / ".github" / "workflows" / "test-macos.yml").read_text(encoding="utf-8")
     build_workflow = (ROOT / ".github" / "workflows" / "build-macos.yml").read_text(
         encoding="utf-8"
     )
     release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
-    assert 'SPLITSHOT_MAC_NOTARIZE: "0"' in test_workflow
+    assert 'SPLITSHOT_MAC_NOTARIZE: "0"' not in test_workflow
     assert "Prepare macOS signing certificate" in test_workflow
-    assert "Prepare macOS notarization credentials" not in test_workflow
+    assert "Prepare macOS notarization credentials" in test_workflow
     assert "codesign --verify --deep --strict" in test_workflow
-    assert "spctl --assess" not in test_workflow
+    assert "spctl --assess" in test_workflow
+    assert "xcrun stapler validate" in test_workflow
     assert "Prepare macOS notarization credentials" in release_workflow
     assert 'SPLITSHOT_MAC_NOTARIZE: "0"' not in release_workflow
     for workflow in (test_workflow, build_workflow, release_workflow):
