@@ -1198,7 +1198,11 @@ def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
         overlay=_overlay_from_dict(data.get("overlay"))
         if isinstance(data.get("overlay"), dict)
         else OverlaySettings(),
-        popups=[],
+        popups=[
+            _popup_bubble_from_dict(item)
+            for item in data.get("popups", [])
+            if isinstance(item, dict)
+        ],
         popup_template=_popup_template_from_dict(data.get("popup_template")),
         merge=_merge_from_dict(data.get("merge"))
         if isinstance(data.get("merge"), dict)

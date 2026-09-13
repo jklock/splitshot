@@ -8,6 +8,7 @@ from splitshot.domain.models import (
     CombinedExportMode,
     CombinedExportSettings,
     OutputProfile,
+    PopupBubble,
     Project,
     ProjectStage,
     QueueEntry,
@@ -176,6 +177,14 @@ def test_stage_to_dict_and_back():
         ),
         queue_status=QueueStatus.QUEUED,
         presentation_overridden=True,
+        popups=[
+            PopupBubble(
+                id="marker-proof",
+                text="V107 MARKER PROOF",
+                time_ms=0,
+                duration_ms=120_000,
+            )
+        ],
     )
     d = stage_to_dict(s)
     assert d["id"] == "abc"
@@ -184,6 +193,7 @@ def test_stage_to_dict_and_back():
     assert d["primary_media"]["path"] == "/tmp/test.mp4"
     assert d["queue_status"] == "queued"
     assert d["presentation_overridden"] is True
+    assert d["popups"][0]["text"] == "V107 MARKER PROOF"
 
     s2 = _stage_from_dict(d)
     assert s2.id == "abc"
@@ -192,6 +202,10 @@ def test_stage_to_dict_and_back():
     assert s2.primary_media.path == "/tmp/test.mp4"
     assert s2.queue_status == QueueStatus.QUEUED
     assert s2.presentation_overridden is True
+    assert len(s2.popups) == 1
+    assert s2.popups[0].id == "marker-proof"
+    assert s2.popups[0].text == "V107 MARKER PROOF"
+    assert s2.popups[0].duration_ms == 120_000
 
 
 def test_stage_order_normalization_uses_persisted_order_not_label_number() -> None:
