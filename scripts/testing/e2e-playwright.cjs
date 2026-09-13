@@ -798,6 +798,10 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 }
 
 async function configureVisibleV107FeatureShowcase(page) {
+  await openTool(page, 'overlay');
+  await setInputValue(page, '#overlay-font-size', '32');
+  await waitForCondition(page, () => state?.project?.overlay?.font_size === 32, null, 30000);
+
   await openTool(page, 'scoring');
   if (!(await page.locator('#scoring-enabled').isChecked())) {
     await page.locator('#scoring-enabled').check();
@@ -823,8 +827,11 @@ async function configureVisibleV107FeatureShowcase(page) {
   await markerCard.locator('[data-popup-field="text"]').blur();
   await setInputValue(page, '#markers-workbench-editor [data-popup-field="time_s"]', '0');
   await setInputValue(page, '#markers-workbench-editor [data-popup-field="duration_s"]', '120');
-  await setInputValue(page, '#markers-workbench-editor [data-popup-field="width"]', '360');
-  await setInputValue(page, '#markers-workbench-editor [data-popup-field="height"]', '84');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="x"]', '0.78');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="y"]', '0.12');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="width"]', '520');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="height"]', '110');
+  await setInputValue(page, '#markers-workbench-editor [data-popup-field="opacity_percent"]', '100');
   const markerSave = await page.evaluate(
     async () => callApi('/api/popups', { popups: state?.project?.popups || [] }),
   );
@@ -834,7 +841,13 @@ async function configureVisibleV107FeatureShowcase(page) {
     () => (state?.project?.popups || []).some(
       (marker) => marker.text === 'V107 MARKER PROOF'
         && marker.time_ms === 0
-        && marker.duration_ms === 120000,
+        && marker.duration_ms === 120000
+        && marker.quadrant === 'custom'
+        && marker.x === 0.78
+        && marker.y === 0.12
+        && marker.width === 520
+        && marker.height === 110
+        && marker.opacity === 1,
     ),
     null,
     30000,
