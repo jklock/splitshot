@@ -51,6 +51,7 @@ function getPythonBasePrefix(pythonExecutable = '') {
 }
 
 function getManagedPythonExecutable(pythonVersion) {
+  runFile('uv', ['python', 'install', '--managed-python', '--no-bin', pythonVersion]);
   return execFileSync(
     'uv',
     ['python', 'find', '--managed-python', '--resolve-links', pythonVersion],

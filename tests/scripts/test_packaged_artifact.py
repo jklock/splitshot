@@ -122,5 +122,6 @@ def test_validate_macos_python_runtime_rejects_host_framework(
 
 def test_bundle_uses_uv_managed_python_for_macos_runtime() -> None:
     bundle_script = (ROOT / "scripts" / "bundle-python.js").read_text(encoding="utf-8")
+    assert "['python', 'install', '--managed-python', '--no-bin', pythonVersion]" in bundle_script
     assert "['python', 'find', '--managed-python', '--resolve-links', pythonVersion]" in bundle_script
     assert "bundlePosixStdlib(pythonVersion, pythonExe)" in bundle_script
