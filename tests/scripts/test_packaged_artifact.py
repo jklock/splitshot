@@ -41,3 +41,37 @@ def test_install_windows_artifact_rejects_empty_locator_output(monkeypatch, tmp_
 def test_packaged_electron_main_disables_runtime_bytecode_writes() -> None:
     main_js = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
     assert "env.PYTHONDONTWRITEBYTECODE = '1';" in main_js
+
+
+def test_validate_bundle_symlinks_accepts_internal_target(tmp_path: Path) -> None:
+    app = tmp_path / "SplitShot.app"
+    target = app / "Contents" / "Resources" / "runtime"
+    target.parent.mkdir(parents=True)
+    target.write_text("runtime", encoding="utf-8")
+    (target.parent / "runtime-link").symlink_to(target.name)
+
+    MODULE._validate_bundle_symlinks(app)
+
+
+def test_validate_bundle_symlinks_rejects_external_target(tmp_path: Path) -> None:
+    app = tmp_path / "SplitShot.app"
+    links = app / "Contents" / "Resources"
+    links.mkdir(parents=True)
+    external = tmp_path / "host-python"
+    external.write_text("python", encoding="utf-8")
+    link = links / "python"
+    link.symlink_to(external)
+
+    with pytest.raises(ValueError, match="Symbolic link escapes app bundle"):
+        MODULE._validate_bundle_symlinks(app)
+
+
+def test_validate_bundle_symlinks_rejects_broken_target(tmp_path: Path) -> None:
+    app = tmp_path / "SplitShot.app"
+    links = app / "Contents" / "Resources"
+    links.mkdir(parents=True)
+    link = links / "python"
+    link.symlink_to("missing-python")
+
+    with pytest.raises(ValueError, match="Invalid symbolic link in app bundle"):
+        MODULE._validate_bundle_symlinks(app)

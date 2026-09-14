@@ -494,6 +494,15 @@ function pruneBundle() {
   } else {
     rmrf(path.join(VENV_DIR, '..', 'pip'));
     rmrf(path.join(VENV_DIR, 'share'));
+    const stdlibDir = path.join(VENV_DIR, 'lib', `python${pythonVersion}`);
+    if (fs.existsSync(stdlibDir)) {
+      for (const entry of fs.readdirSync(stdlibDir, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith(`config-${pythonVersion}`)) {
+          rmrf(path.join(stdlibDir, entry.name));
+          console.log(`[bundle] pruned build-only Python config: ${entry.name}`);
+        }
+      }
+    }
   }
   rmrf(path.join(SITE, 'pip'));
 

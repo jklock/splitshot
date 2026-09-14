@@ -97,6 +97,22 @@ def _default_artifact() -> Path:
     return candidates[0]
 
 
+def _validate_bundle_symlinks(bundle_root: Path) -> None:
+    """Reject bundle links that depend on files outside the packaged app."""
+    resolved_root = bundle_root.resolve()
+    for path in bundle_root.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            target = path.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError) as exc:
+            raise ValueError(f"Invalid symbolic link in app bundle: {path} -> {os.readlink(path)}") from exc
+        if not target.is_relative_to(resolved_root):
+            raise ValueError(
+                f"Symbolic link escapes app bundle: {path} -> {os.readlink(path)}"
+            )
+
+
 def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     _run(
         [
@@ -189,6 +205,7 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
             capture_output=True,
             text=True,
         )
+    _validate_bundle_symlinks(copied_app)
     executable = copied_app / "Contents" / "MacOS" / "SplitShot"
     if not executable.exists():
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")
