@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -75,3 +76,51 @@ def test_validate_bundle_symlinks_rejects_broken_target(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid symbolic link in app bundle"):
         MODULE._validate_bundle_symlinks(app)
+
+
+def _macos_app_with_python(tmp_path: Path) -> tuple[Path, Path]:
+    app = tmp_path / "SplitShot.app"
+    python_bin = app / "Contents" / "Resources" / "bundle" / ".venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("python", encoding="utf-8")
+    return app, python_bin
+
+
+def test_validate_macos_python_runtime_accepts_bundled_library(
+    monkeypatch, tmp_path: Path
+) -> None:
+    app, python_bin = _macos_app_with_python(tmp_path)
+    library = python_bin.parent.parent / "lib" / "libpython3.12.dylib"
+    library.parent.mkdir(parents=True)
+    library.write_text("library", encoding="utf-8")
+    output = (
+        f"{python_bin}:\n"
+        "\t@executable_path/../lib/libpython3.12.dylib "
+        "(compatibility version 3.12.0, current version 3.12.0)\n"
+        "\t/usr/lib/libSystem.B.dylib "
+        "(compatibility version 1.0.0, current version 1311.0.0)\n"
+    )
+    monkeypatch.setattr(MODULE, "_run", lambda command: SimpleNamespace(stdout=output))
+
+    MODULE._validate_macos_python_runtime(app)
+
+
+def test_validate_macos_python_runtime_rejects_host_framework(
+    monkeypatch, tmp_path: Path
+) -> None:
+    app, python_bin = _macos_app_with_python(tmp_path)
+    output = (
+        f"{python_bin}:\n"
+        "\t/Library/Frameworks/Python.framework/Versions/3.12/Python "
+        "(compatibility version 3.12.0, current version 3.12.0)\n"
+    )
+    monkeypatch.setattr(MODULE, "_run", lambda command: SimpleNamespace(stdout=output))
+
+    with pytest.raises(ValueError, match="depends on a host library"):
+        MODULE._validate_macos_python_runtime(app)
+
+
+def test_bundle_uses_uv_managed_python_for_macos_runtime() -> None:
+    bundle_script = (ROOT / "scripts" / "bundle-python.js").read_text(encoding="utf-8")
+    assert "['python', 'find', '--managed-python', '--resolve-links', pythonVersion]" in bundle_script
+    assert "bundlePosixStdlib(pythonVersion, pythonExe)" in bundle_script

@@ -113,6 +113,30 @@ def _validate_bundle_symlinks(bundle_root: Path) -> None:
             )
 
 
+def _validate_macos_python_runtime(bundle_root: Path) -> None:
+    python_dir = bundle_root / "Contents" / "Resources" / "bundle" / ".venv" / "bin"
+    python_bin = python_dir / "python"
+    if not python_bin.is_file():
+        raise FileNotFoundError(f"Bundled Python executable not found at {python_bin}")
+
+    allowed_system_roots = ("/System/Library/", "/usr/lib/")
+    linked = _run(["otool", "-L", str(python_bin)]).stdout.splitlines()[1:]
+    for raw_dependency in linked:
+        dependency = raw_dependency.strip().split(" (compatibility version", 1)[0]
+        if dependency.startswith("@executable_path/"):
+            relative = dependency.removeprefix("@executable_path/")
+            target = (python_bin.parent / relative).resolve()
+            if not target.exists() or not target.is_relative_to(bundle_root.resolve()):
+                raise ValueError(
+                    f"Bundled Python dependency is missing or external: "
+                    f"{python_bin} -> {dependency}"
+                )
+        elif dependency.startswith("/") and not dependency.startswith(allowed_system_roots):
+            raise ValueError(
+                f"Bundled Python depends on a host library: {python_bin} -> {dependency}"
+            )
+
+
 def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     _run(
         [
@@ -206,6 +230,7 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
             text=True,
         )
     _validate_bundle_symlinks(copied_app)
+    _validate_macos_python_runtime(copied_app)
     executable = copied_app / "Contents" / "MacOS" / "SplitShot"
     if not executable.exists():
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")

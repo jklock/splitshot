@@ -37,11 +37,25 @@ function getPythonVersion() {
   return match[1];
 }
 
-function getPythonBasePrefix() {
+function getPythonBasePrefix(pythonExecutable = '') {
+  if (pythonExecutable) {
+    return execFileSync(pythonExecutable, ['-c', 'import sys; print(sys.base_prefix)'], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    }).trim();
+  }
   return execSync('uv run python -c "import sys; print(sys.base_prefix)"', {
     encoding: 'utf8',
     cwd: ROOT,
   }).trim();
+}
+
+function getManagedPythonExecutable(pythonVersion) {
+  return execFileSync(
+    'uv',
+    ['python', 'find', '--managed-python', '--resolve-links', pythonVersion],
+    { encoding: 'utf8', cwd: ROOT },
+  ).trim();
 }
 
 function getPythonBinDir(venvDir, pythonVersion) {
@@ -374,9 +388,9 @@ function buildWindowsPythonRuntime() {
   return pythonExe;
 }
 
-function bundlePosixStdlib(pythonVersion) {
+function bundlePosixStdlib(pythonVersion, pythonExecutable) {
   if (process.platform === 'win32') return;
-  const sourcePrefix = getPythonBasePrefix();
+  const sourcePrefix = getPythonBasePrefix(pythonExecutable);
   const sourceStdlib = path.join(sourcePrefix, 'lib', `python${pythonVersion}`);
   const targetStdlib = path.join(VENV_DIR, 'lib', `python${pythonVersion}`);
   if (!fs.existsSync(sourceStdlib)) {
@@ -405,7 +419,11 @@ function main() {
   console.log(`[bundle] Python version: ${pythonVersion}`);
 
   if (!isCheck && process.platform !== 'win32') {
-    run(`uv venv "${VENV_DIR}" --python ${pythonVersion} --seed`);
+    const pythonRequest = process.platform === 'darwin'
+      ? getManagedPythonExecutable(pythonVersion)
+      : pythonVersion;
+    console.log(`[bundle] Python runtime source: ${pythonRequest}`);
+    run(`uv venv "${VENV_DIR}" --python "${pythonRequest}" --seed`);
   }
 
   const pythonBin = isCheck ? bundledPythonExecutable(pythonVersion) : null;
@@ -418,19 +436,22 @@ function main() {
     if (process.platform !== 'win32') {
       // Install deps BEFORE symlink resolution (venv python is a working symlink here)
       run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
-      bundlePosixStdlib(pythonVersion);
+      bundlePosixStdlib(pythonVersion, pythonExe);
     }
 
     // Copy libpython dylib so the resolved binary works on other machines
     if (process.platform === 'darwin') {
       const realPython = fs.realpathSync(pythonExe);
       const uvPythonRoot = path.dirname(path.dirname(realPython));
-      const libSrc = path.join(uvPythonRoot, 'lib', 'libpython3.12.dylib');
+      const libName = `libpython${pythonVersion}.dylib`;
+      const libSrc = path.join(uvPythonRoot, 'lib', libName);
       const libDir = path.join(VENV_DIR, 'lib');
       fs.mkdirSync(libDir, { recursive: true });
       if (fs.existsSync(libSrc)) {
-        fs.copyFileSync(libSrc, path.join(libDir, 'libpython3.12.dylib'));
+        fs.copyFileSync(libSrc, path.join(libDir, libName));
         console.log(`[bundle] copied libpython: ${libSrc}`);
+      } else {
+        throw new Error(`Managed Python library not found at ${libSrc}`);
       }
     }
 
