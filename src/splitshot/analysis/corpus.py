@@ -284,7 +284,19 @@ def _practiscore_media_entries(root: Path) -> list[tuple[Path, float]]:
 
 
 def _practiscore_raw_seconds_by_path(root: Path) -> dict[str, float]:
-    return {str(path): raw_seconds for path, raw_seconds in _practiscore_media_entries(root)}
+    entries = _practiscore_media_entries(root)
+    values = {str(path): raw_seconds for path, raw_seconds in entries}
+    signatures_by_size: dict[int, dict[str, float]] = {}
+    for path, raw_seconds in entries:
+        signatures_by_size.setdefault(path.stat().st_size, {})[_video_sha256(path)] = raw_seconds
+    for path in list_corpus_videos(root):
+        signatures = signatures_by_size.get(path.stat().st_size)
+        if not signatures:
+            continue
+        raw_seconds = signatures.get(_video_sha256(path))
+        if raw_seconds is not None:
+            values[str(path.resolve())] = raw_seconds
+    return values
 
 
 def _practiscore_raw_seconds_by_hash(root: Path) -> dict[str, float]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -237,3 +238,28 @@ def test_corpus_audio_loader_preserves_native_channels(monkeypatch, tmp_path) ->
     assert np.allclose(aligned[:2], channels)
     assert sample_rate == 22050
     assert duration_ms == 1
+
+
+def test_practiscore_raw_time_maps_input_copy_to_canonical_corpus_video(tmp_path) -> None:
+    canonical = tmp_path / "September2026" / "09102026" / "Stage1.MP4"
+    input_copy = canonical.parent / "Input" / "Stage1.MP4"
+    input_copy.parent.mkdir(parents=True)
+    canonical.write_bytes(b"same-stage-media")
+    input_copy.write_bytes(b"same-stage-media")
+    (canonical.parent / "project.json").write_text(
+        json.dumps(
+            {
+                "stages": [
+                    {
+                        "primary_media": {"path": str(input_copy)},
+                        "scoring": {"imported_stage": {"raw_seconds": 16.34}},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    values = corpus_module._practiscore_raw_seconds_by_path(tmp_path)
+
+    assert values[str(canonical.resolve())] == 16.34
