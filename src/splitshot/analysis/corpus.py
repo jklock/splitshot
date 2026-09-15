@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import asdict, dataclass, field, replace
+from hashlib import sha256
 from pathlib import Path
 from statistics import fmean, median
 from tempfile import TemporaryDirectory
@@ -139,10 +141,15 @@ class LabelReviewState:
     range_name: str = ""
     device_notes: str = ""
     environment_tags: list[str] = field(default_factory=list)
+    rejected_candidates: list[dict[str, object]] = field(default_factory=list)
+    verification_source: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class TrainingLabelEntry:
+    sha256: str
+    match_date: str
+    dataset_split: str
     path: str
     relative_path: str
     duration_seconds: float
@@ -157,6 +164,7 @@ class TrainingLabelEntry:
     duplicate_group_key: str | None
     duplicate_group_review_required: bool
     review_flags: list[str]
+    practiscore_raw_seconds: float | None = None
     labels: LabelReviewState = field(default_factory=LabelReviewState)
 
     def to_dict(self) -> dict[str, object]:
@@ -181,14 +189,98 @@ def list_corpus_videos(input_path: str | Path) -> list[Path]:
         raise FileNotFoundError(f"Corpus path not found: {root}")
     if not root.is_dir():
         raise NotADirectoryError(f"Corpus path is not a directory: {root}")
-    return sorted(
-        [
+    generated_parts = {"input", "trimmed", "introoutro", "intro-outro"}
+    candidates = sorted(
+        (
             candidate
             for candidate in root.rglob("*")
-            if candidate.is_file() and candidate.suffix.lower() in VIDEO_SUFFIXES
-        ],
-        key=lambda candidate: str(candidate).lower(),
+            if candidate.is_file()
+            and candidate.suffix.lower() in VIDEO_SUFFIXES
+            and not any(part.casefold() in generated_parts for part in candidate.parts)
+            and not candidate.name.casefold().startswith(("trim_", "intro_", "outro_"))
+        ),
+        key=lambda candidate: (len(candidate.parts), len(candidate.name), str(candidate).lower()),
     )
+    paths_by_size: dict[int, list[Path]] = {}
+    for candidate in candidates:
+        paths_by_size.setdefault(candidate.stat().st_size, []).append(candidate)
+    unique: list[Path] = []
+    for same_size in paths_by_size.values():
+        if len(same_size) == 1:
+            unique.extend(same_size)
+            continue
+        seen_hashes: set[str] = set()
+        for candidate in same_size:
+            digest = _video_sha256(candidate)
+            if digest in seen_hashes:
+                continue
+            seen_hashes.add(digest)
+            unique.append(candidate)
+    return sorted(unique, key=lambda candidate: str(candidate).lower())
+
+
+def _video_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _match_date(path: Path) -> str:
+    for part in reversed(path.parts):
+        compact = re.search(r"(?<!\d)(\d{2})(\d{2})(20\d{2})(?!\d)", part)
+        if compact:
+            month, day, year = compact.groups()
+            return f"{year}-{month}-{day}"
+        iso = re.search(r"(?<!\d)(20\d{2})[-_](\d{2})[-_](\d{2})(?!\d)", part)
+        if iso:
+            return "-".join(iso.groups())
+    return "unknown"
+
+
+def _dataset_splits(paths: list[Path]) -> dict[str, str]:
+    dates = sorted({_match_date(path) for path in paths if _match_date(path) != "unknown"})
+    locked_date = "2026-09-10"
+    if locked_date in dates:
+        dates.remove(locked_date)
+        dates.append(locked_date)
+    split_by_date: dict[str, str] = {}
+    test_start = max(0, len(dates) - 4)
+    validation_start = max(0, test_start - 3)
+    for index, match_date in enumerate(dates):
+        split_by_date[match_date] = (
+            "train" if index < validation_start else "validation" if index < test_start else "test"
+        )
+    split_by_date["unknown"] = "unassigned"
+    return split_by_date
+
+
+def _practiscore_raw_seconds_by_hash(root: Path) -> dict[str, float]:
+    if not root.is_dir():
+        return {}
+    values: dict[str, float] = {}
+    for project_path in root.rglob("project.json"):
+        try:
+            payload = json.loads(project_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        for stage in payload.get("stages", []):
+            if not isinstance(stage, dict):
+                continue
+            media = stage.get("primary_media", {})
+            scoring = stage.get("scoring", {})
+            imported = scoring.get("imported_stage", {}) if isinstance(scoring, dict) else {}
+            raw_seconds = imported.get("raw_seconds") if isinstance(imported, dict) else None
+            media_path = media.get("path") if isinstance(media, dict) else None
+            if raw_seconds in {None, ""} or not media_path:
+                continue
+            candidate = Path(str(media_path)).expanduser()
+            if not candidate.is_absolute():
+                candidate = project_path.parent / candidate
+            if candidate.is_file():
+                values[_video_sha256(candidate)] = float(raw_seconds)
+    return values
 
 
 def _ordered_thresholds(
@@ -780,8 +872,12 @@ def build_label_manifest(
 ) -> dict[str, object]:
     root = Path(input_path).expanduser().resolve()
     analyses = analyze_corpus(root, thresholds=thresholds, reference_threshold=reference_threshold)
+    source_paths = [Path(analysis.summary.path) for analysis in analyses]
+    split_by_date = _dataset_splits(source_paths)
+    practiscore_by_hash = _practiscore_raw_seconds_by_hash(root)
     duplicate_groups = build_duplicate_group_summaries(analyses)
     existing_labels_by_key: dict[tuple[str, str], dict[str, object]] = {}
+    existing_video_by_key: dict[tuple[str, str], dict[str, object]] = {}
     if existing_manifest is not None:
         for video in existing_manifest.get("videos", []):
             if not isinstance(video, dict):
@@ -793,8 +889,14 @@ def build_label_manifest(
                 continue
             if isinstance(path, str):
                 existing_labels_by_key[("path", path)] = labels
+                existing_video_by_key[("path", path)] = video
             if isinstance(relative_path, str):
                 existing_labels_by_key[("relative_path", relative_path)] = labels
+                existing_video_by_key[("relative_path", relative_path)] = video
+            digest = video.get("sha256")
+            if isinstance(digest, str) and digest:
+                existing_labels_by_key[("sha256", digest)] = labels
+                existing_video_by_key[("sha256", digest)] = video
     videos: list[dict[str, object]] = []
     for analysis in analyses:
         path = Path(analysis.summary.path)
@@ -802,9 +904,17 @@ def build_label_manifest(
             relative_path = str(path.relative_to(root))
         else:
             relative_path = path.name
-        existing_labels = existing_labels_by_key.get(
-            ("path", str(path))
-        ) or existing_labels_by_key.get(("relative_path", relative_path))
+        digest = _video_sha256(path)
+        existing_labels = (
+            existing_labels_by_key.get(("path", str(path)))
+            or existing_labels_by_key.get(("relative_path", relative_path))
+            or existing_labels_by_key.get(("sha256", digest))
+        )
+        existing_video = (
+            existing_video_by_key.get(("path", str(path)))
+            or existing_video_by_key.get(("relative_path", relative_path))
+            or existing_video_by_key.get(("sha256", digest))
+        )
         label_state = LabelReviewState()
         if existing_labels is not None:
             label_state = LabelReviewState(
@@ -821,9 +931,19 @@ def build_label_manifest(
                 range_name=str(existing_labels.get("range_name", "")),
                 device_notes=str(existing_labels.get("device_notes", "")),
                 environment_tags=list(existing_labels.get("environment_tags", [])),
+                rejected_candidates=[
+                    dict(item)
+                    for item in existing_labels.get("rejected_candidates", [])
+                    if isinstance(item, dict)
+                ],
+                verification_source=str(existing_labels.get("verification_source", "")),
             )
+        match_date = _match_date(path)
         videos.append(
             TrainingLabelEntry(
+                sha256=digest,
+                match_date=match_date,
+                dataset_split=split_by_date.get(match_date, "unassigned"),
                 path=str(path),
                 relative_path=relative_path,
                 duration_seconds=analysis.summary.duration_seconds,
@@ -843,6 +963,12 @@ def build_label_manifest(
                 duplicate_group_key=analysis.summary.duplicate_group_key,
                 duplicate_group_review_required=analysis.summary.duplicate_group_review_required,
                 review_flags=list(analysis.summary.review_flags),
+                practiscore_raw_seconds=(
+                    practiscore_by_hash.get(digest)
+                    if not existing_video
+                    or existing_video.get("practiscore_raw_seconds") in {None, ""}
+                    else float(existing_video["practiscore_raw_seconds"])
+                ),
                 labels=label_state,
             ).to_dict()
         )

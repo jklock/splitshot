@@ -304,14 +304,18 @@ export function createWaveformComponent({
     withPreservedScrollState([list], () => {
       list.innerHTML = "";
       (currentState().timing_segments || []).forEach((segment) => {
-        const item = document.createElement("button");
-        item.type = "button";
+        const item = document.createElement("div");
         item.className = "waveform-shot-card";
         if (segment.shot_id === getSelectedShotId()) item.classList.add("selected");
         if (isLowConfidence(segment.confidence, segment.source)) {
           item.classList.add("low-confidence");
           item.title = `Review this split manually: model confidence ${formatConfidenceValue(segment.confidence)}.`;
         }
+
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.className = "waveform-shot-select";
+        selectBtn.title = `Select ${segment.card_title}`;
 
         const summary = document.createElement("span");
         summary.className = "waveform-shot-card-header";
@@ -343,8 +347,12 @@ export function createWaveformComponent({
           deleteShotById(segment.shot_id, "waveform");
         });
 
-        item.append(summary, subtitle, meta, deleteBtn);
-        item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
+        selectBtn.append(summary, subtitle, meta);
+        selectBtn.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
+        item.addEventListener("click", (event) => {
+          if (event.target === item) selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true });
+        });
+        item.append(selectBtn, deleteBtn);
         list.appendChild(item);
       });
     });

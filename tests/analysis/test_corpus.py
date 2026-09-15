@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from splitshot.analysis.audio_features import FEATURE_NAMES, extract_window_features
@@ -9,10 +11,12 @@ from splitshot.analysis.corpus import (
     DuplicateGroupSummary,
     ShotMultipassSummary,
     ThresholdConsistencySummary,
+    _dataset_splits,
     build_duplicate_group_summaries,
     build_review_flags,
     classify_beep_family,
     duplicate_group_key,
+    list_corpus_videos,
     summarize_threshold_consistency,
 )
 from splitshot.analysis.detection import DetectionResult, ThresholdDetectionResult
@@ -161,3 +165,53 @@ def test_build_duplicate_group_summaries_flags_inconsistent_stage_counts() -> No
             review_required=True,
         )
     ]
+
+
+def test_corpus_inventory_excludes_generated_media_and_byte_duplicates(tmp_path) -> None:
+    canonical = tmp_path / "September2026" / "09102026" / "Stage1.MP4"
+    duplicate = tmp_path / "September2026" / "09102026" / "Stage1 copy.MOV"
+    generated = tmp_path / "September2026" / "09102026" / "Input" / "Stage1.MP4"
+    canonical.parent.mkdir(parents=True)
+    generated.parent.mkdir(parents=True)
+    canonical.write_bytes(b"same-video")
+    duplicate.write_bytes(b"same-video")
+    generated.write_bytes(b"generated-copy")
+
+    assert list_corpus_videos(tmp_path) == [canonical]
+
+
+def test_dataset_splits_group_match_dates_and_lock_september_failure() -> None:
+    paths = [
+        Path(f"/bank/{month:02d}{day:02d}2026/Stage1.MP4")
+        for month, day in (
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (4, 4),
+            (4, 5),
+            (4, 6),
+            (4, 7),
+            (5, 1),
+            (5, 2),
+            (5, 3),
+            (5, 4),
+            (5, 5),
+            (5, 6),
+            (5, 7),
+            (6, 1),
+            (6, 2),
+            (6, 3),
+            (7, 1),
+            (7, 2),
+            (8, 1),
+            (8, 2),
+            (9, 10),
+        )
+    ]
+
+    splits = _dataset_splits(paths)
+
+    assert list(splits.values()).count("train") == 15
+    assert list(splits.values()).count("validation") == 3
+    assert list(splits.values()).count("test") == 4
+    assert splits["2026-09-10"] == "test"

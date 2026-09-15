@@ -27,6 +27,7 @@ The ShotML pane controls automatic beep and shot detection. It is where you tune
 | `Average confidence` | Shows the latest run's average confidence and excludes manually added or edited shots. |
 | `Run ShotML` | Replaces the automatic beep and shot detections using the current settings. Manual timing edits remain available in Splits. |
 | `Reset Defaults` | Restores the current project to the factory detector profile. |
+| `Reset Corrections` | Clears saved shot additions, moves, and deletions, then restores uncorrected model output. |
 | Section chevrons | Expand or collapse each detector group. |
 | `Generate Proposals` | Converts ShotML review suggestions into pending timing changes. |
 | Proposal `Apply` / `Discard` | Applies or rejects one proposed timing change. |
@@ -112,7 +113,7 @@ ShotML controls automatic detection. Splits controls the final timeline. Rerun S
 | Problem | First thing to try |
 | --- | --- |
 | Quiet shots are missing. | Lower `Detection threshold`, then `Run ShotML`. |
-| Echoes became shots. | Raise `Detection threshold`, then rerun. |
+| Echoes became shots. | Delete the false marker once in Splits or the waveform list. The rejection persists through save/reopen, trim changes, and ShotML reruns. |
 | Fast pairs are removed. | Lower `Minimum shot interval ms` or disable close-pair suppression. |
 | All shots are shifted. | Tune Beep, then rerun. |
 | Count is right but markers are late. | Lower Refinement `Onset fraction`. |

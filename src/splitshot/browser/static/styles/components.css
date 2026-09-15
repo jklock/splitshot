@@ -681,7 +681,11 @@ button:disabled {
   padding: 1px;
 }
 
-.waveform-shot-list button {
+.waveform-shot-card {
+  position: relative;
+}
+
+.waveform-shot-list .waveform-shot-select {
   align-content: start;
   background: rgba(12, 23, 37, 0.92);
   border: 0;
@@ -689,11 +693,12 @@ button:disabled {
   gap: var(--space-1);
   min-height: 58px;
   min-width: 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) calc(var(--space-4) + 1.5rem) var(--space-3) var(--space-4);
   text-align: left;
+  width: 100%;
 }
 
-.waveform-shot-list button:hover {
+.waveform-shot-list .waveform-shot-select:hover {
   background: #14253a;
 }
 
@@ -705,7 +710,7 @@ button:disabled {
   min-width: 0;
 }
 
-.waveform-shot-list button strong {
+.waveform-shot-list .waveform-shot-select strong {
   font-size: var(--text-base);
   line-height: 1.12;
   min-width: 0;
@@ -731,7 +736,7 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.waveform-shot-list button small {
+.waveform-shot-list .waveform-shot-select small {
   font-size: var(--text-xs);
   line-height: 1.25;
   opacity: 0.78;
@@ -744,17 +749,17 @@ button:disabled {
   min-width: 0;
 }
 
-.waveform-shot-list button.selected {
+.waveform-shot-list .waveform-shot-card.selected .waveform-shot-select {
   background: var(--accent);
   color: #111;
 }
 
-.waveform-shot-list button.selected .waveform-shot-card-value {
+.waveform-shot-list .waveform-shot-card.selected .waveform-shot-card-value {
   color: inherit;
 }
 
-.waveform-shot-list button.selected .waveform-shot-card-subtitle,
-.waveform-shot-list button.selected small {
+.waveform-shot-list .waveform-shot-card.selected .waveform-shot-card-subtitle,
+.waveform-shot-list .waveform-shot-card.selected small {
   color: rgba(17, 17, 17, 0.82);
   opacity: 1;
 }
@@ -773,6 +778,7 @@ button:disabled {
   right: 0.25rem;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 1;
 }
 
 .waveform-shot-delete:hover {

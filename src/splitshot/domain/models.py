@@ -541,6 +541,15 @@ class ShotEvent:
 
 
 @dataclass(slots=True)
+class RejectedAutomaticShot:
+    """A user correction stored on the canonical primary-media timeline."""
+
+    media_path: str = ""
+    time_ms: int = 0
+    reason: str = "user_deleted"
+
+
+@dataclass(slots=True)
 class TimingEvent:
     id: str = field(default_factory=lambda: uuid4().hex)
     kind: str = "reload"
@@ -651,6 +660,7 @@ class AnalysisState:
     waveform_secondary: list[float] = field(default_factory=list)
     secondary_sources: list[SecondarySourceAnalysis] = field(default_factory=list)
     shots: list[ShotEvent] = field(default_factory=list)
+    rejected_automatic_shots: list[RejectedAutomaticShot] = field(default_factory=list)
     events: list[TimingEvent] = field(default_factory=list)
     detection_review_suggestions: list[dict[str, Any]] = field(default_factory=list)
 
@@ -2463,6 +2473,14 @@ def _secondary_source_analysis_from_dict(data: dict[str, Any]) -> SecondarySourc
     )
 
 
+def _rejected_automatic_shot_from_dict(data: dict[str, Any]) -> RejectedAutomaticShot:
+    return RejectedAutomaticShot(
+        media_path=str(data.get("media_path", "") or ""),
+        time_ms=max(0, int(data.get("time_ms", 0) or 0)),
+        reason=str(data.get("reason", "user_deleted") or "user_deleted"),
+    )
+
+
 def _analysis_state_from_dict(data: dict[str, Any] | None) -> AnalysisState:
     analysis_data = data if isinstance(data, dict) else {}
     return AnalysisState(
@@ -2502,6 +2520,11 @@ def _analysis_state_from_dict(data: dict[str, Any] | None) -> AnalysisState:
             if isinstance(item, dict)
         ],
         shots=[_shot_from_dict(item) for item in analysis_data.get("shots", [])],
+        rejected_automatic_shots=[
+            _rejected_automatic_shot_from_dict(item)
+            for item in analysis_data.get("rejected_automatic_shots", [])
+            if isinstance(item, dict)
+        ],
         events=[_timing_event_from_dict(item) for item in analysis_data.get("events", [])],
         detection_review_suggestions=[
             item

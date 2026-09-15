@@ -1186,7 +1186,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);' in js
     assert 'if (result) setActiveTool("scoring");' not in js
     assert (
-        'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));'
+        'selectBtn.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));'
         in js
     )
     assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' not in js
@@ -2043,6 +2043,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "trim-global-undo",
         "generate-shotml-proposals",
         "reset-shotml-defaults",
+        "reset-shotml-corrections",
         "restore-merge-defaults",
         "settings-use-current-layout",
         "settings-release-layout",

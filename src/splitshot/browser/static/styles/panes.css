@@ -2670,12 +2670,12 @@
   padding: var(--space-1);
 }
 
-.waveform-shot-list button.low-confidence {
+.waveform-shot-list .waveform-shot-card.low-confidence .waveform-shot-select {
   border-color: rgba(255, 122, 122, 0.55);
   box-shadow: inset 0 0 0 1px rgba(255, 122, 122, 0.2);
 }
 
-.waveform-shot-list button.low-confidence small,
+.waveform-shot-list .waveform-shot-card.low-confidence small,
 .scoring-shot-row.low-confidence .scoring-shot-button,
 .scoring-shot-row.low-confidence .scoring-shot-button small,
 .scoring-shot-row.low-confidence select,

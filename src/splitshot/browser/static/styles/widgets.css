@@ -243,7 +243,7 @@
   padding: 0.6rem;
 }
 
-.cockpit.waveform-expanded .waveform-shot-list button {
+.cockpit.waveform-expanded .waveform-shot-list .waveform-shot-select {
   border: 1px solid #25354c;
   min-height: 88px;
 }

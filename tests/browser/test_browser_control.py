@@ -66,6 +66,9 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/analysis/shotml/reset-defaults": (
         "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
     ),
+    "/api/analysis/shotml/reset-corrections": (
+        "test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",
+    ),
     "/api/settings/reset-defaults": (
         "test_browser_settings_reset_defaults_preserves_existing_project_state",
     ),
@@ -2300,6 +2303,14 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
         _post_json(f"{server.url}api/shots/delete", {"shot_id": added_shot_id})
         saved = _read_project_json(project_path)
         assert all(shot["id"] != added_shot_id for shot in saved["analysis"]["shots"])
+
+        _post_json(f"{server.url}api/shots/delete", {"shot_id": first_shot_id})
+        saved = _read_project_json(project_path)
+        assert saved["analysis"]["rejected_automatic_shots"]
+
+        _post_json(f"{server.url}api/analysis/shotml/reset-corrections", {})
+        saved = _read_project_json(project_path)
+        assert saved["analysis"]["rejected_automatic_shots"] == []
     finally:
         server.shutdown()
 

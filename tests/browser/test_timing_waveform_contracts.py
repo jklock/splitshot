@@ -9,7 +9,17 @@ import splitshot.ui.controller as controller_module
 from splitshot.analysis.detection import DetectionResult
 from splitshot.browser.server import BrowserControlServer
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import ImportedStageScore, ShotEvent, ShotSource, VideoAsset
+from splitshot.domain.models import (
+    ImportedStageScore,
+    MergeSourceAssetPathKind,
+    MergeSourceTrimDerivative,
+    ShotEvent,
+    ShotSource,
+    TimingEvent,
+    VideoAsset,
+    project_from_dict,
+    project_to_dict,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -81,7 +91,42 @@ def test_threshold_reanalysis_restores_selection_by_nearest_time(monkeypatch) ->
     assert selected_shot.id != previous_selected_shot.id
 
 
-def test_threshold_reanalysis_resets_adjusted_shotml_splits_but_keeps_user_added_shots(
+def test_primary_analysis_uses_practiscore_raw_time_only_as_anchor(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    controller.project.scoring.imported_stage = ImportedStageScore(raw_seconds=2.5)
+    captured: dict[str, object] = {}
+
+    def fake_analyze_video_audio(
+        path: str,
+        threshold: float,
+        settings,
+        *,
+        last_shot_anchor_ms=None,
+        last_shot_raw_seconds=None,
+    ) -> DetectionResult:
+        captured["raw_seconds"] = last_shot_raw_seconds
+        return DetectionResult(
+            beep_time_ms=100,
+            shots=_shots(500, 2600),
+            waveform=[],
+            sample_rate=22050,
+            official_last_shot_anchor_ms=2600,
+            anchor_agreement_ms=0,
+        )
+
+    monkeypatch.setattr(controller_module, "analyze_video_audio", fake_analyze_video_audio)
+
+    controller.analyze_primary()
+
+    assert captured["raw_seconds"] == 2.5
+    assert len(controller.project.analysis.shots) == 2
+    assert (
+        controller.project.analysis.last_shotml_run_summary["official_last_shot_anchor_ms"] == 2600
+    )
+
+
+def test_threshold_reanalysis_preserves_adjusted_and_user_added_shots(
     monkeypatch,
 ) -> None:
     controller = ProjectController()
@@ -113,8 +158,156 @@ def test_threshold_reanalysis_resets_adjusted_shotml_splits_but_keeps_user_added
     user_added_times = [
         shot.time_ms for shot in controller.project.analysis.shots if shot.user_added
     ]
-    assert detected_times == [260, 515, 880]
+    assert detected_times == [220, 515, 880]
     assert user_added_times == [1300]
+
+
+def test_deleted_automatic_shot_stays_rejected_on_rerun(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    detections = [
+        DetectionResult(beep_time_ms=100, shots=_shots(250, 500), waveform=[], sample_rate=22050),
+        DetectionResult(beep_time_ms=100, shots=_shots(252, 500), waveform=[], sample_rate=22050),
+    ]
+    monkeypatch.setattr(
+        controller_module,
+        "analyze_video_audio",
+        lambda path, threshold: detections.pop(0),
+    )
+
+    controller.analyze_primary()
+    controller.delete_shot(controller.project.analysis.shots[0].id)
+    controller.rerun_shotml()
+
+    assert [shot.time_ms for shot in controller.project.analysis.shots] == [500]
+    assert len(controller.project.analysis.rejected_automatic_shots) == 1
+
+
+def test_manual_shot_clears_nearby_rejection() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    automatic = _shots(500)[0]
+    controller.project.analysis.shots = [automatic]
+    controller.delete_shot(automatic.id)
+
+    controller.add_shot(520)
+
+    assert controller.project.analysis.rejected_automatic_shots == []
+
+
+def test_rejection_round_trips_and_remaps_across_trim_derivative(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    controller.project.primary_trim_derivative = MergeSourceTrimDerivative(
+        original_path="primary.mp4",
+        derivative_path="trimmed.mp4",
+        active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+        start_s=1.0,
+    )
+    automatic = _shots(500)[0]
+    automatic.shotml_time_ms = 500
+    controller.project.analysis.shots = [automatic]
+    controller.delete_shot(automatic.id)
+    controller.project = project_from_dict(project_to_dict(controller.project))
+    controller.project.primary_trim_derivative.start_s = 0.5
+    monkeypatch.setattr(
+        controller_module,
+        "analyze_video_audio",
+        lambda path, threshold: DetectionResult(
+            beep_time_ms=100,
+            shots=_shots(1000),
+            waveform=[],
+            sample_rate=22050,
+        ),
+    )
+
+    controller.rerun_shotml()
+
+    assert controller.project.analysis.shots == []
+    assert controller.project.analysis.rejected_automatic_shots[0].time_ms == 1500
+
+
+def test_reset_shotml_corrections_restores_uncorrected_output(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    automatic = _shots(500)[0]
+    automatic.shotml_time_ms = 500
+    controller.project.analysis.shots = [automatic]
+    controller.delete_shot(automatic.id)
+    controller.add_shot(900)
+    controller.project.analysis.events = [TimingEvent(note="keep me")]
+    monkeypatch.setattr(
+        controller_module,
+        "analyze_video_audio",
+        lambda path, threshold: DetectionResult(
+            beep_time_ms=100,
+            shots=_shots(500),
+            waveform=[],
+            sample_rate=22050,
+        ),
+    )
+
+    controller.reset_shotml_corrections()
+
+    assert [shot.time_ms for shot in controller.project.analysis.shots] == [500]
+    assert controller.project.analysis.rejected_automatic_shots == []
+    assert [event.note for event in controller.project.analysis.events] == ["keep me"]
+
+
+def test_rejected_shot_persists_across_stage_switching() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    automatic = _shots(500)[0]
+    controller.project.analysis.shots = [automatic]
+    original_stage_id = controller.create_stage("Stage 1").id
+    controller.delete_shot(automatic.id)
+    controller._sync_project_to_active_stage()
+
+    controller.create_stage()
+    controller.select_stage(str(original_stage_id))
+
+    assert len(controller.project.analysis.rejected_automatic_shots) == 1
+
+
+def test_manual_corrections_remap_when_trim_start_changes() -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="primary.mp4")
+    controller.project.primary_trim_derivative = MergeSourceTrimDerivative(
+        original_path="primary.mp4",
+        derivative_path="first-trim.mp4",
+        active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+        start_s=1.0,
+    )
+    corrected = ShotEvent(
+        time_ms=500,
+        shotml_time_ms=480,
+        source=ShotSource.MANUAL,
+        user_added=False,
+    )
+    controller.project.analysis.shots = [corrected]
+    controller.project.primary_trim_derivative.start_s = 0.5
+
+    controller_module._remap_manual_shots_for_primary_trim(controller.project, 1000)
+
+    assert corrected.time_ms == 1000
+    assert corrected.shotml_time_ms == 980
+
+
+def test_primary_media_replacement_clears_incompatible_rejections(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="old.mp4")
+    automatic = _shots(500)[0]
+    controller.project.analysis.shots = [automatic]
+    controller.delete_shot(automatic.id)
+    monkeypatch.setattr(
+        controller_module,
+        "probe_video",
+        lambda path: VideoAsset(path=path, duration_ms=1000),
+    )
+
+    controller.load_primary_video("new.mp4")
+
+    assert controller.project.analysis.rejected_automatic_shots == []
 
 
 def test_browser_state_filters_stale_timing_selection_references() -> None:
@@ -268,6 +461,43 @@ def _load_primary_video(page, primary_path: Path) -> None:
         page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
+
+
+def test_waveform_delete_button_and_keyboard_remove_markers_once(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="waveform-delete-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                cards = page.locator(".waveform-shot-card")
+                initial_count = cards.count()
+                assert initial_count >= 2
+                assert page.locator(".waveform-shot-card button button").count() == 0
+                page.locator("#expand-waveform").click()
+                page.locator("#waveform-shot-list").wait_for(state="visible")
+
+                cards.first.locator(".waveform-shot-delete").click()
+                page.wait_for_function(
+                    "expected => (state?.project?.analysis?.shots || []).length === expected",
+                    arg=initial_count - 1,
+                )
+                assert len(page.evaluate("state.project.analysis.rejected_automatic_shots")) == 1
+
+                page.locator(".waveform-shot-select").first.click()
+                page.keyboard.press("Delete")
+                page.wait_for_function(
+                    "expected => (state?.project?.analysis?.shots || []).length === expected",
+                    arg=initial_count - 2,
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_factory) -> None:

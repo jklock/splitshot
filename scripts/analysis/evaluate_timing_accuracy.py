@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--use-detector-drafts",
         action="store_true",
-        help="Use detector draft labels only when verified or auto-consensus labels are unavailable.",
+        help="Opt into automatic consensus or detector-draft labels for diagnostic runs.",
     )
     parser.add_argument(
         "--format",
@@ -143,7 +143,7 @@ def expected_timing_for_entry(
             )
         return "verified_without_events"
 
-    if status == LABEL_STATUS_AUTO_LABELED:
+    if status == LABEL_STATUS_AUTO_LABELED and use_detector_drafts:
         beep = labels.get("auto_beep_time_ms")
         shots = _int_list(labels.get("auto_shot_times_ms", []))
         if beep is not None or shots:
@@ -306,9 +306,44 @@ def evaluate_detection(
         stage_time_error = detected_stage_time - expected_stage_time
 
     matched_detected = {int(match["detected_index"]) for match in matches}
+    matched_expected = {int(match["expected_index"]): match for match in matches}
+    rapid_expected_pairs = [
+        (index - 1, index)
+        for index in range(1, len(expected_shots))
+        if expected_shots[index] - expected_shots[index - 1] < 300
+    ]
+    rapid_detected_count = sum(
+        1
+        for previous_index, current_index in rapid_expected_pairs
+        if previous_index in matched_expected and current_index in matched_expected
+    )
+    rejected_candidates = (
+        video.get("labels", {}).get("rejected_candidates", [])
+        if isinstance(video.get("labels"), dict)
+        else []
+    )
+    false_positive_subtypes: list[str] = []
+    rejected_candidate_subtypes = [
+        str(candidate.get("type", "other_noise") or "other_noise")
+        for candidate in rejected_candidates
+        if isinstance(candidate, dict) and candidate.get("time_ms") is not None
+    ]
+    for detected_index, detected_ms in enumerate(detected_shots):
+        if detected_index in matched_detected:
+            continue
+        subtype = "unclassified"
+        for candidate in rejected_candidates:
+            if not isinstance(candidate, dict) or candidate.get("time_ms") is None:
+                continue
+            if abs(int(candidate["time_ms"]) - detected_ms) <= max_match_ms:
+                subtype = str(candidate.get("type", "other_noise") or "other_noise")
+                break
+        false_positive_subtypes.append(subtype)
     return {
         "relative_path": str(video.get("relative_path") or Path(str(video.get("path", ""))).name),
         "label_source": expected.label_source,
+        "match_date": str(video.get("match_date", "unknown") or "unknown"),
+        "dataset_split": str(video.get("dataset_split", "unassigned") or "unassigned"),
         "threshold": result.threshold,
         "expected_beep_time_ms": expected.beep_time_ms,
         "detected_beep_time_ms": detected_beep,
@@ -319,6 +354,18 @@ def evaluate_detection(
         "matched_shot_errors_ms": [int(match["error_ms"]) for match in matches],
         "missed_shot_count": len(expected_shots) - len(matches),
         "extra_shot_count": len(detected_shots) - len(matched_detected),
+        "exact_count": len(expected_shots) == len(detected_shots),
+        "expected_count_bucket": (
+            "below_18"
+            if len(expected_shots) < 18
+            else "equal_18"
+            if len(expected_shots) == 18
+            else "above_18"
+        ),
+        "rapid_split_expected_count": len(rapid_expected_pairs),
+        "rapid_split_detected_count": rapid_detected_count,
+        "false_positive_subtypes": false_positive_subtypes,
+        "rejected_candidate_subtypes": rejected_candidate_subtypes,
         "expected_split_times_ms": expected_splits,
         "detected_split_times_ms": detected_splits,
         "split_errors_ms": split_errors,
@@ -327,6 +374,8 @@ def evaluate_detection(
         "expected_stage_time_ms": expected_stage_time,
         "detected_stage_time_ms": detected_stage_time,
         "stage_time_error_ms": stage_time_error,
+        "official_last_shot_anchor_ms": result.detection.official_last_shot_anchor_ms,
+        "anchor_agreement_ms": result.detection.anchor_agreement_ms,
     }
 
 
@@ -351,11 +400,41 @@ def summarize_video_rows(rows: list[dict[str, object]]) -> dict[str, object]:
         int(row["stage_time_error_ms"]) for row in rows if row["stage_time_error_ms"] is not None
     ]
     label_sources = Counter(str(row["label_source"]) for row in rows)
+    true_positives = sum(len(row.get("matched_shots", [])) for row in rows)
+    false_negatives = sum(int(row["missed_shot_count"]) for row in rows)
+    false_positives = sum(int(row["extra_shot_count"]) for row in rows)
+    precision = true_positives / max(1, true_positives + false_positives)
+    recall = true_positives / max(1, true_positives + false_negatives)
+    exact_count_videos = sum(bool(row.get("exact_count")) for row in rows)
+    rapid_expected = sum(int(row.get("rapid_split_expected_count", 0)) for row in rows)
+    rapid_detected = sum(int(row.get("rapid_split_detected_count", 0)) for row in rows)
     return {
         "evaluated_video_count": len(rows),
         "label_source_counts": dict(label_sources),
         "missed_shot_count": sum(int(row["missed_shot_count"]) for row in rows),
         "extra_shot_count": sum(int(row["extra_shot_count"]) for row in rows),
+        "true_positive_count": true_positives,
+        "precision": round(precision, 6),
+        "recall": round(recall, 6),
+        "f1": round((2 * precision * recall) / max(1e-12, precision + recall), 6),
+        "exact_count_video_count": exact_count_videos,
+        "exact_count_rate": round(exact_count_videos / max(1, len(rows)), 6),
+        "rapid_split_expected_count": rapid_expected,
+        "rapid_split_detected_count": rapid_detected,
+        "rapid_split_recall": round(rapid_detected / max(1, rapid_expected), 6),
+        "shot_count_coverage": dict(Counter(str(row.get("expected_count_bucket")) for row in rows)),
+        "false_positive_subtypes": dict(
+            Counter(
+                str(subtype) for row in rows for subtype in row.get("false_positive_subtypes", [])
+            )
+        ),
+        "negative_subtype_totals": dict(
+            Counter(
+                str(subtype)
+                for row in rows
+                for subtype in row.get("rejected_candidate_subtypes", [])
+            )
+        ),
         "beep_error": summarize_errors(beep_errors).to_dict(),
         "shot_error": summarize_errors(shot_errors).to_dict(),
         "split_error": summarize_errors(split_errors).to_dict(),
@@ -444,6 +523,8 @@ def render_table(payload: dict[str, object]) -> str:
     assert isinstance(selected_summary, dict)
     lines = [
         "Timing Accuracy",
+        f"Acceptance: {'PASS' if payload.get('acceptance', {}).get('passed') else 'FAIL'}",
+        f"Acceptance scope: {payload.get('acceptance_dataset_split', 'all')}",
         f"Selected threshold: {float(payload['selected_threshold']):.2f}",
         f"Recommended threshold: {float(payload['recommended_threshold']):.2f}",
         f"Reason: {payload['recommendation_reason']}",
@@ -457,6 +538,23 @@ def render_table(payload: dict[str, object]) -> str:
             for source, count in sorted(
                 dict(selected_summary.get("label_source_counts", {})).items()
             )
+        ),
+        (
+            f"Precision: {float(selected_summary['precision']) * 100.0:.2f}% | "
+            f"Recall: {float(selected_summary['recall']) * 100.0:.2f}% | "
+            f"F1: {float(selected_summary['f1']) * 100.0:.2f}% | "
+            f"Exact count: {float(selected_summary['exact_count_rate']) * 100.0:.2f}%"
+        ),
+        "Shot-count coverage: "
+        + ", ".join(
+            f"{bucket}={count}"
+            for bucket, count in sorted(
+                dict(selected_summary.get("shot_count_coverage", {})).items()
+            )
+        ),
+        (
+            f"Rapid splits below 300 ms: {selected_summary['rapid_split_detected_count']}/"
+            f"{selected_summary['rapid_split_expected_count']}"
         ),
         "",
         "Metric            | count |  mean ms | median ms |   p95 ms |   max ms | signed ms",
@@ -594,7 +692,12 @@ def evaluate_manifest(
             )
             continue
 
-        results = analyze_video_audio_thresholds(video_path, thresholds)
+        raw_seconds = video.get("practiscore_raw_seconds")
+        results = analyze_video_audio_thresholds(
+            video_path,
+            thresholds,
+            last_shot_raw_seconds=None if raw_seconds in {None, ""} else float(raw_seconds),
+        )
         for result in results:
             rows_by_threshold[float(result.threshold)].append(
                 evaluate_detection(video, expected, result, max_match_ms)
@@ -608,15 +711,37 @@ def evaluate_manifest(
         for threshold in thresholds
     ]
     recommended_threshold, reason = recommend_threshold(threshold_summaries)
+    selected_rows = rows_by_threshold[recommended_threshold]
+    group_summaries = {
+        group_name: {
+            value: summarize_video_rows(
+                [row for row in selected_rows if str(row.get(field)) == value]
+            )
+            for value in sorted({str(row.get(field)) for row in selected_rows})
+        }
+        for group_name, field in (
+            ("by_match_date", "match_date"),
+            ("by_dataset_split", "dataset_split"),
+        )
+    }
     return {
         "manifest_path": str(manifest_path),
         "video_count": len(videos),
+        "declared_dataset_splits": sorted(
+            {str(video.get("dataset_split")) for video in videos if video.get("dataset_split")}
+        ),
         "skipped_video_count": sum(skipped.values()),
         "skipped_video_reasons": dict(skipped),
         "skipped_videos": skipped_videos,
         "threshold_summaries": threshold_summaries,
         "recommended_threshold": recommended_threshold,
         "recommendation_reason": reason,
+        "baseline_metrics": (
+            manifest.get("baseline_metrics", {})
+            if isinstance(manifest.get("baseline_metrics", {}), dict)
+            else {}
+        ),
+        **group_summaries,
         "rows_by_threshold": rows_by_threshold,
     }
 
@@ -648,14 +773,77 @@ def main() -> int:
     rows_by_threshold = evaluation.pop("rows_by_threshold")
     assert isinstance(rows_by_threshold, dict)
     selected_rows = rows_by_threshold[selected_threshold]
+    selected_summary = summarize_video_rows(selected_rows)
+    locked_test_rows = [row for row in selected_rows if str(row.get("dataset_split")) == "test"]
+    has_locked_test_split = "test" in evaluation.get("declared_dataset_splits", [])
+    acceptance_rows = locked_test_rows if has_locked_test_split else selected_rows
+    acceptance_summary = summarize_video_rows(acceptance_rows)
+    acceptance_dataset_split = "test" if has_locked_test_split else "all"
+    required_count_buckets = {"below_18", "equal_18", "above_18"}
+    present_count_buckets = set(acceptance_summary.get("shot_count_coverage", {}))
+    baseline_metrics = evaluation.get("baseline_metrics", {})
+    baseline_errors = None
+    if isinstance(baseline_metrics, dict):
+        baseline_errors = baseline_metrics.get("false_positive_plus_false_negative")
+    current_errors = int(acceptance_summary["missed_shot_count"]) + int(
+        acceptance_summary["extra_shot_count"]
+    )
+    error_reduction = (
+        None if baseline_errors in {None, 0} else 1.0 - (current_errors / float(baseline_errors))
+    )
+    acceptance = {
+        "precision_at_least_97_percent": float(acceptance_summary["precision"]) >= 0.97,
+        "recall_at_least_97_percent": float(acceptance_summary["recall"]) >= 0.97,
+        "exact_count_rate_at_least_90_percent": (
+            float(acceptance_summary["exact_count_rate"]) >= 0.90
+        ),
+        "median_timing_error_at_most_40_ms": (
+            acceptance_summary["shot_error"]["median_abs_ms"] is not None
+            and float(acceptance_summary["shot_error"]["median_abs_ms"]) <= 40
+        ),
+        "p95_timing_error_at_most_100_ms": (
+            acceptance_summary["shot_error"]["p95_abs_ms"] is not None
+            and float(acceptance_summary["shot_error"]["p95_abs_ms"]) <= 100
+        ),
+        "all_sub_300_ms_splits_detected": (
+            int(acceptance_summary["rapid_split_detected_count"])
+            == int(acceptance_summary["rapid_split_expected_count"])
+        ),
+        "shot_count_buckets_present": required_count_buckets <= present_count_buckets,
+        "error_reduction_at_least_70_percent": (
+            error_reduction is not None and error_reduction >= 0.70
+        ),
+        "false_positive_plus_false_negative": current_errors,
+        "baseline_error_reduction": error_reduction,
+    }
+    acceptance["passed"] = all(
+        value
+        for key, value in acceptance.items()
+        if key not in {"false_positive_plus_false_negative", "baseline_error_reduction"}
+    )
     payload = {
         **evaluation,
         "selected_threshold": selected_threshold,
-        "selected_summary": summarize_video_rows(selected_rows),
+        "selected_summary": selected_summary,
+        "acceptance_dataset_split": acceptance_dataset_split,
+        "acceptance_summary": acceptance_summary,
         "videos": selected_rows,
+        "acceptance": acceptance,
+        "by_match_date": {
+            value: summarize_video_rows(
+                [row for row in selected_rows if str(row.get("match_date")) == value]
+            )
+            for value in sorted({str(row.get("match_date")) for row in selected_rows})
+        },
+        "by_dataset_split": {
+            value: summarize_video_rows(
+                [row for row in selected_rows if str(row.get("dataset_split")) == value]
+            )
+            for value in sorted({str(row.get("dataset_split")) for row in selected_rows})
+        },
         "notes": [
             "Verified labels are manual labels when present.",
-            "Auto-consensus labels are accepted training labels, not independent manual actuals.",
+            "Auto-consensus and detector-draft labels are excluded unless --use-detector-drafts is set.",
             "Stage time is measured from beep to the last detected shot.",
         ],
     }

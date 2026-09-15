@@ -146,7 +146,13 @@ export function createShotMLPane({
     const runSummary = currentState()?.project?.analysis?.last_shotml_run_summary || {};
     if (summary) {
       const shotCount = Number(runSummary.shot_count || 0);
-      summary.textContent = shotCount ? `${shotCount} automatic shot${shotCount === 1 ? "" : "s"}` : "";
+      const anchorAgreement = Number(runSummary.anchor_agreement_ms);
+      const anchorCopy = runSummary.official_last_shot_anchor_ms !== null
+        && runSummary.official_last_shot_anchor_ms !== undefined
+        && Number.isFinite(anchorAgreement)
+        ? ` · final anchor ${anchorAgreement} ms`
+        : "";
+      summary.textContent = shotCount ? `${shotCount} automatic shot${shotCount === 1 ? "" : "s"}${anchorCopy}` : "";
     }
     if (confidenceSummary) {
       const average = Number(runSummary.average_auto_confidence);

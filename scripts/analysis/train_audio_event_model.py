@@ -207,7 +207,7 @@ def _write_bundle(
     lines = [
         "from __future__ import annotations",
         "",
-        f'MODEL_METADATA = {{"version": "audio-event-ml-v1", "sample_rate": {SAMPLE_RATE}, "train_accuracy": {train_accuracy:.6f}, "validation_accuracy": {validation_accuracy:.6f}}}',
+        f'MODEL_METADATA = {{"version": "audio-event-ml-v1", "sample_rate": {SAMPLE_RATE}, "verifier_version": "wearer-shot-verifier-v1", "feature_schema_version": "shot-context-v1", "temporal_context_ms": 640, "temporal_context_dimensions": 121, "train_accuracy": {train_accuracy:.6f}, "validation_accuracy": {validation_accuracy:.6f}}}',
         f"CLASS_LABELS = {list(CLASS_LABELS)!r}",
         f"FEATURE_NAMES = {list(FEATURE_NAMES)!r}",
         f"WINDOW_SIZE = {WINDOW_SIZE}",

@@ -3,6 +3,10 @@ from __future__ import annotations
 MODEL_METADATA = {
     "version": "audio-event-ml-v1",
     "sample_rate": 22050,
+    "verifier_version": "wearer-shot-verifier-v1",
+    "feature_schema_version": "shot-context-v1",
+    "temporal_context_ms": 640,
+    "temporal_context_dimensions": 121,
     "train_accuracy": 1.000000,
     "validation_accuracy": 1.000000,
 }

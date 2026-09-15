@@ -60,6 +60,7 @@ from splitshot.domain.models import (
     ProjectStage,
     QueueEntry,
     QueueStatus,
+    RejectedAutomaticShot,
     ScoreLetter,
     ScoreMark,
     SecondarySourceAnalysis,
@@ -602,6 +603,30 @@ def _effective_primary_media_path(project: Project | None) -> str:
     return str(project.primary_video.path or "")
 
 
+def _canonical_primary_media_path(project: Project | None) -> str:
+    if project is None or not project.primary_video.path:
+        return ""
+    return str(Path(project.primary_video.path).expanduser().resolve(strict=False))
+
+
+def _primary_timeline_offset_ms(project: Project | None) -> int:
+    if project is None or not _primary_trim_derivative_is_active(project):
+        return 0
+    return round(float(project.primary_trim_derivative.start_s or 0.0) * 1000.0)
+
+
+def _remap_manual_shots_for_primary_trim(project: Project, previous_offset_ms: int) -> None:
+    delta_ms = int(previous_offset_ms) - _primary_timeline_offset_ms(project)
+    if delta_ms == 0:
+        return
+    for shot in project.analysis.shots:
+        if shot.source != ShotSource.MANUAL:
+            continue
+        shot.time_ms = max(0, int(shot.time_ms) + delta_ms)
+        if shot.shotml_time_ms is not None:
+            shot.shotml_time_ms = max(0, int(shot.shotml_time_ms) + delta_ms)
+
+
 def _effective_primary_asset(project: Project | None) -> VideoAsset:
     if project is None:
         return VideoAsset()
@@ -743,6 +768,7 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     _clear_secondary_analysis_state(project)
     project.analysis.waveform_primary = []
     project.analysis.shots = []
+    project.analysis.rejected_automatic_shots = []
     project.analysis.events = []
     project.analysis.timing_change_proposals = []
     project.analysis.last_shotml_run_summary = {}
@@ -782,8 +808,23 @@ def _reset_project_merge_defaults(project: Project) -> None:
     project.ui_state.shotml_section_expansion = {}
 
 
-def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
+def _run_analyze_video_audio(
+    path: str,
+    threshold: float,
+    settings: ShotMLSettings,
+    *,
+    last_shot_anchor_ms: int | None = None,
+    last_shot_raw_seconds: float | None = None,
+):
     parameters = list(signature(analyze_video_audio).parameters.values())
+    parameter_names = {parameter.name for parameter in parameters}
+    optional_arguments: dict[str, object] = {}
+    if "last_shot_anchor_ms" in parameter_names:
+        optional_arguments["last_shot_anchor_ms"] = last_shot_anchor_ms
+    if "last_shot_raw_seconds" in parameter_names:
+        optional_arguments["last_shot_raw_seconds"] = last_shot_raw_seconds
+    if optional_arguments:
+        return analyze_video_audio(path, threshold, settings, **optional_arguments)
     if (
         any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters)
         or len(parameters) >= 3
@@ -897,27 +938,43 @@ def _merge_reanalyzed_shots(
     previous_shots: list[ShotEvent],
     detected_shots: list[ShotEvent],
     settings: ShotMLSettings,
+    *,
+    rejected_canonical_times_ms: list[int] | None = None,
+    canonical_offset_ms: int = 0,
 ) -> list[ShotEvent]:
     merged_shots = [deepcopy(shot) for shot in detected_shots]
     for shot in merged_shots:
         shot.shotml_time_ms = shot.time_ms
         shot.shotml_confidence = shot.confidence
-    manual_shots = [
-        deepcopy(shot)
-        for shot in previous_shots
-        if shot.source == ShotSource.MANUAL and shot.user_added
+    overlap_window_ms = max(1, int(settings.min_shot_interval_ms or 0))
+    rejected_times = rejected_canonical_times_ms or []
+    merged_shots = [
+        shot
+        for shot in merged_shots
+        if not any(
+            abs((int(shot.time_ms) + canonical_offset_ms) - rejected_time_ms) <= overlap_window_ms
+            for rejected_time_ms in rejected_times
+        )
     ]
-    if not manual_shots:
+    corrected_shots = [
+        deepcopy(shot) for shot in previous_shots if shot.source == ShotSource.MANUAL
+    ]
+    if not corrected_shots:
         return sort_shots(merged_shots)
 
-    overlap_window_ms = max(1, int(settings.min_shot_interval_ms or 0))
-    for manual_shot in sort_shots(manual_shots):
+    for corrected_shot in sort_shots(corrected_shots):
+        correction_times = [int(corrected_shot.time_ms)]
+        if corrected_shot.shotml_time_ms is not None:
+            correction_times.append(int(corrected_shot.shotml_time_ms))
         merged_shots = [
             shot
             for shot in merged_shots
-            if abs(int(shot.time_ms) - int(manual_shot.time_ms)) > overlap_window_ms
+            if all(
+                abs(int(shot.time_ms) - correction_time) > overlap_window_ms
+                for correction_time in correction_times
+            )
         ]
-        merged_shots.append(manual_shot)
+        merged_shots.append(corrected_shot)
     return sort_shots(merged_shots)
 
 
@@ -1057,17 +1114,32 @@ class ProjectController(QObject):
         previous_shots = [deepcopy(shot) for shot in self.project.analysis.shots]
         previous_events = [deepcopy(event) for event in self.project.analysis.events]
         self._set_status("Analyzing primary video for beep and shot detections...")
+        raw_seconds = (
+            None
+            if self.project.scoring.imported_stage is None
+            else self.project.scoring.imported_stage.raw_seconds
+        )
         result = _run_analyze_video_audio(
             active_primary_path,
             self.project.analysis.shotml_settings.detection_threshold,
             self.project.analysis.shotml_settings,
+            last_shot_raw_seconds=raw_seconds,
         )
+        official_last_shot_anchor_ms = result.official_last_shot_anchor_ms
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
+        canonical_path = _canonical_primary_media_path(self.project)
+        rejected_canonical_times_ms = [
+            record.time_ms
+            for record in self.project.analysis.rejected_automatic_shots
+            if record.media_path == canonical_path
+        ]
         self.project.analysis.shots = _merge_reanalyzed_shots(
             previous_shots,
             result.shots,
             self.project.analysis.shotml_settings,
+            rejected_canonical_times_ms=rejected_canonical_times_ms,
+            canonical_offset_ms=_primary_timeline_offset_ms(self.project),
         )
         self.project.analysis.events = _reanchor_timing_events_for_shots(
             previous_events,
@@ -1096,6 +1168,24 @@ class ProjectController(QObject):
             "sample_rate": result.sample_rate,
             "beep_time_ms": result.beep_time_ms,
             "shot_count": len(result.shots),
+            "final_shot_count": len(self.project.analysis.shots),
+            "rejected_automatic_shot_count": len(rejected_canonical_times_ms),
+            "practiscore_raw_seconds": raw_seconds,
+            "official_last_shot_anchor_ms": official_last_shot_anchor_ms,
+            "anchor_agreement_ms": (
+                None
+                if official_last_shot_anchor_ms is None or not self.project.analysis.shots
+                else abs(
+                    max(int(shot.time_ms) for shot in self.project.analysis.shots)
+                    - official_last_shot_anchor_ms
+                )
+            ),
+            "verifier_version": result.verifier_version,
+            "feature_schema_version": result.feature_schema_version,
+            "temporal_context_ms": result.temporal_context_ms,
+            "verifier_scores": {
+                str(time_ms): score for time_ms, score in result.verifier_scores.items()
+            },
             "review_suggestion_count": len(result.review_suggestions),
             "average_auto_confidence": (
                 None
@@ -4676,7 +4766,9 @@ class ProjectController(QObject):
     ) -> None:
         if not self.project.primary_video.path:
             raise ValueError("Primary video not found")
+        previous_offset_ms = _primary_timeline_offset_ms(self.project)
         self._apply_primary_trim(start_s=start_s, end_s=end_s, clear=clear)
+        _remap_manual_shots_for_primary_trim(self.project, previous_offset_ms)
         active_stage_id = self.project.active_stage_id
         self._mark_stage_queue_stale(active_stage_id)
         self.analyze_primary()
@@ -4775,6 +4867,7 @@ class ProjectController(QObject):
                 keep_after_last_shot_s=keep_after_last_shot_s,
             )
         if primary_is_trimmable:
+            previous_primary_offset_ms = _primary_timeline_offset_ms(self.project)
             restore_primary_original = (
                 uses_buffer_windows and primary_start_s is None and primary_end_s is None
             )
@@ -4795,6 +4888,7 @@ class ProjectController(QObject):
                 clear=clear or restore_primary_original,
                 log_callback=log_callback,
             )
+            _remap_manual_shots_for_primary_trim(self.project, previous_primary_offset_ms)
             report_file(self.project.primary_video.path)
         for source in trimmable_sources:
             next_start_s = start_s
@@ -5076,6 +5170,28 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
+    def reset_shotml_corrections(self) -> None:
+        self.project.analysis.rejected_automatic_shots = []
+        restored_shots: list[ShotEvent] = []
+        for shot in self.project.analysis.shots:
+            if shot.user_added:
+                continue
+            restored = deepcopy(shot)
+            if restored.shotml_time_ms is not None:
+                restored.time_ms = restored.shotml_time_ms
+            restored.source = ShotSource.AUTO
+            restored.confidence = restored.shotml_confidence
+            restored_shots.append(restored)
+        self.project.analysis.shots = sort_shots(restored_shots)
+        self.project.analysis.timing_change_proposals = []
+        self.project.ui_state.selected_shot_id = None
+        if self.project.primary_video.path:
+            self.analyze_primary()
+            return
+        self._set_status("Reset ShotML corrections.")
+        self.project.touch()
+        self.project_changed.emit()
+
     def rerun_shotml(self) -> None:
         if self.project.primary_video.path:
             self.analyze_primary()
@@ -5217,6 +5333,15 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def add_shot(self, time_ms: int) -> None:
+        canonical_time_ms = max(0, int(time_ms)) + _primary_timeline_offset_ms(self.project)
+        canonical_path = _canonical_primary_media_path(self.project)
+        tolerance_ms = max(1, int(self.project.analysis.shotml_settings.min_shot_interval_ms or 0))
+        self.project.analysis.rejected_automatic_shots = [
+            record
+            for record in self.project.analysis.rejected_automatic_shots
+            if record.media_path != canonical_path
+            or abs(record.time_ms - canonical_time_ms) > tolerance_ms
+        ]
         shot = ShotEvent(
             time_ms=time_ms,
             shotml_time_ms=time_ms,
@@ -5261,11 +5386,40 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def delete_shot(self, shot_id: str) -> None:
+        deleted_shot = next(
+            (shot for shot in self.project.analysis.shots if shot.id == shot_id),
+            None,
+        )
+        if deleted_shot is None:
+            raise ValueError("Shot not found")
         selection_context = (
             _shot_selection_context(self.project, shot_id, fallback_mode="index")
             if self.project.ui_state.selected_shot_id == shot_id
             else None
         )
+        if not deleted_shot.user_added and (
+            deleted_shot.source == ShotSource.AUTO or deleted_shot.shotml_time_ms is not None
+        ):
+            canonical_time_ms = int(
+                deleted_shot.shotml_time_ms
+                if deleted_shot.shotml_time_ms is not None
+                else deleted_shot.time_ms
+            ) + _primary_timeline_offset_ms(self.project)
+            canonical_path = _canonical_primary_media_path(self.project)
+            tolerance_ms = max(
+                1, int(self.project.analysis.shotml_settings.min_shot_interval_ms or 0)
+            )
+            if not any(
+                record.media_path == canonical_path
+                and abs(record.time_ms - canonical_time_ms) <= tolerance_ms
+                for record in self.project.analysis.rejected_automatic_shots
+            ):
+                self.project.analysis.rejected_automatic_shots.append(
+                    RejectedAutomaticShot(
+                        media_path=canonical_path,
+                        time_ms=max(0, canonical_time_ms),
+                    )
+                )
         self.project.analysis.shots = [
             shot for shot in self.project.analysis.shots if shot.id != shot_id
         ]

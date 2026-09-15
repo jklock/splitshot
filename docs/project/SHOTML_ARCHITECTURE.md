@@ -10,6 +10,8 @@ ShotML is a project-scoped detector configuration and timing proposal workflow. 
 
 The detector owns automatic beep and shot discovery. The Splits pane remains the manual timing editor. ShotML appears between Metrics and Settings in the v1.0.7 rail and owns the threshold, advanced detector settings, explicit reruns, and proposal generation.
 
+The detector retains native channel measurements and applies a 640 ms wearer-shot verifier after the existing short-window candidate detector. Model metadata records the verifier version, feature schema, and context dimensions. PractiScore raw time contributes only a last-shot timing anchor.
+
 ## Data Model
 
 | Concern | Code proof |
@@ -91,8 +93,11 @@ The browser server exposes ShotML routes through the same controller lock and re
 | `/api/analysis/shotml/apply-proposal` | Apply a pending proposal. | `src/splitshot/browser/server.py:694` and `src/splitshot/browser/server.py:1255` through `src/splitshot/browser/server.py:1256`. |
 | `/api/analysis/shotml/discard-proposal` | Discard a pending proposal. | `src/splitshot/browser/server.py:695` and `src/splitshot/browser/server.py:1258` through `src/splitshot/browser/server.py:1259`. |
 | `/api/analysis/shotml/reset-defaults` | Restore project ShotML settings to the factory profile. | `src/splitshot/browser/server.py:696` and `src/splitshot/browser/server.py:1261` through `src/splitshot/browser/server.py:1262`. |
+| `/api/analysis/shotml/reset-corrections` | Clear rejected, moved, and manually added shot corrections, then restore current model output. | `src/splitshot/browser/server.py`. |
 
 Every successful POST returns the normal browser state payload, so the UI refreshes from the project model rather than trusting local optimistic state.
+
+Deleting an automatic shot writes a rejection against the original primary-media timeline. Reruns and trim derivatives honor that correction; replacing primary media clears it. Moved automatic shots and manually added shots remain verified positive corrections. Adding a manual shot near a rejection clears the rejection.
 
 ## Static Browser UI
 

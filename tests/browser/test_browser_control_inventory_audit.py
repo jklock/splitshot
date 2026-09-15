@@ -28,7 +28,7 @@ EXPECTED_PROGRAMMATIC_CONTROL_FAMILIES = {
     "app.js:renderTimingTable:button:handle:1",
     "app.js:renderTimingTable:input:input:1",
     "components/waveform.js:renderWaveformShotList:button:deleteBtn:1",
-    "components/waveform.js:renderWaveformShotList:button:item:1",
+    "components/waveform.js:renderWaveformShotList:button:selectBtn:1",
     "lib/shell-runtime.js:renderStyleControls:button:input:1",
     "lib/shell-runtime.js:renderStyleControls:input:hex:1",
     "panes/markers-pane.js:renderPopupKeyframeOverlay:button:handle:1",
@@ -246,6 +246,7 @@ id:project-path
 id:project-output-root
 id:quality
 id:reset-shotml-defaults
+id:reset-shotml-corrections
 id:restore-merge-defaults
 id:reset-waveform-view
 id:trim-global-apply

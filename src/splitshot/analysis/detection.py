@@ -14,8 +14,18 @@ from splitshot.analysis.ml_runtime import (
     pick_event_peaks,
     sensitivity_to_cutoff,
 )
+from splitshot.analysis.shot_context import (
+    CONTEXT_WINDOW_MS,
+    FEATURE_SCHEMA_VERSION,
+    VERIFIER_VERSION,
+    ShotContextFeatures,
+    estimate_stage_noise_floor_dbfs,
+    extract_shot_context_features,
+)
+from splitshot.analysis.shot_verifier_bundle import BIAS as VERIFIER_BIAS
+from splitshot.analysis.shot_verifier_bundle import WEIGHTS as VERIFIER_WEIGHTS
 from splitshot.domain.models import ShotEvent, ShotMLSettings, ShotSource, TimingChangeProposal
-from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
+from splitshot.media.audio import extract_audio_wav, read_wav_channels, waveform_envelope
 from splitshot.media.ffmpeg import run_ffprobe_json
 from splitshot.utils.time import seconds_to_ms
 
@@ -51,6 +61,12 @@ class DetectionResult:
     waveform: list[float]
     sample_rate: int
     review_suggestions: list[TimingReviewSuggestion] = field(default_factory=list)
+    verifier_scores: dict[int, float] = field(default_factory=dict)
+    verifier_version: str = VERIFIER_VERSION
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION
+    temporal_context_ms: int = CONTEXT_WINDOW_MS
+    official_last_shot_anchor_ms: int | None = None
+    anchor_agreement_ms: int | None = None
 
 
 @dataclass(slots=True)
@@ -783,6 +799,78 @@ def _apply_refinement_confidence(
     return refined
 
 
+def _wearer_shot_verifier_probability(features: ShotContextFeatures) -> float:
+    """Score sustained, high-entropy muzzle-blast context above short reflections.
+
+    Candidate generation remains intentionally permissive. This verifier only
+    rejects a low-scoring impulse when its sequence context also identifies it
+    as a likely reflection or a weak event beyond an official last-shot anchor.
+    """
+
+    vector = features.vector()
+    logit = VERIFIER_BIAS + sum(
+        float(vector[index]) * coefficient for index, coefficient in VERIFIER_WEIGHTS.items()
+    )
+    return float(1.0 / (1.0 + np.exp(-np.clip(logit, -20.0, 20.0))))
+
+
+def _verify_shot_sequence(
+    shots: list[ShotEvent],
+    channels: np.ndarray,
+    sample_rate: int,
+    *,
+    last_shot_anchor_ms: int | None = None,
+) -> tuple[list[ShotEvent], dict[int, float]]:
+    if not shots or channels.size == 0:
+        return shots, {}
+
+    ordered = sorted(shots, key=lambda shot: shot.time_ms)
+    stage_noise_floor_dbfs = estimate_stage_noise_floor_dbfs(channels, sample_rate)
+    features = [
+        extract_shot_context_features(
+            channels,
+            sample_rate,
+            shot.time_ms,
+            stage_noise_floor_dbfs=stage_noise_floor_dbfs,
+        )
+        for shot in ordered
+    ]
+    probabilities = [_wearer_shot_verifier_probability(item) for item in features]
+    retained: list[ShotEvent] = []
+    for index, shot in enumerate(ordered):
+        probability = probabilities[index]
+        previous_gap = None if index == 0 else shot.time_ms - ordered[index - 1].time_ms
+        echo_like = (
+            probability < 0.35
+            and previous_gap is not None
+            and 180 <= previous_gap <= 280
+            and probabilities[index - 1] >= 0.65
+        )
+        anchor_sequence_support = (
+            last_shot_anchor_ms is not None
+            and 0 <= last_shot_anchor_ms - shot.time_ms <= 1000
+            and any(
+                shot.time_ms < later.time_ms <= last_shot_anchor_ms + 100
+                for later in ordered[index + 1 :]
+            )
+        )
+        beyond_anchor = (
+            last_shot_anchor_ms is not None
+            and shot.time_ms > last_shot_anchor_ms + 100
+            and probability < 0.50
+            and any(
+                abs(candidate.time_ms - last_shot_anchor_ms) <= 100 for candidate in ordered[:index]
+            )
+        )
+        if (echo_like and not anchor_sequence_support) or beyond_anchor:
+            continue
+        retained.append(shot)
+    return retained, {
+        int(shot.time_ms): round(float(probability), 6)
+        for shot, probability in zip(ordered, probabilities, strict=True)
+    }
+
+
 def _shot_support_confidences(
     samples: np.ndarray,
     sample_rate: int,
@@ -1070,7 +1158,9 @@ def detect_shots(
         predictions=predictions,
         settings=active_settings,
     )
-    return _apply_refinement_confidence(samples, sample_rate, shots, active_settings)
+    shots = _apply_refinement_confidence(samples, sample_rate, shots, active_settings)
+    shots, _ = _verify_shot_sequence(shots, samples[:, None], sample_rate)
+    return shots
 
 
 def _analyze_predictions(
@@ -1080,6 +1170,10 @@ def _analyze_predictions(
     predictions: ModelPredictions,
     waveform: list[float],
     settings: ShotMLSettings | None = None,
+    *,
+    channels: np.ndarray | None = None,
+    last_shot_anchor_ms: int | None = None,
+    last_shot_raw_seconds: float | None = None,
 ) -> DetectionResult:
     active_settings = _settings(settings)
     provisional_shots = _detect_shots_from_predictions(
@@ -1094,6 +1188,12 @@ def _analyze_predictions(
         first_shot_ms,
         active_settings,
     )
+    if (
+        last_shot_anchor_ms is None
+        and beep_time_ms is not None
+        and last_shot_raw_seconds is not None
+    ):
+        last_shot_anchor_ms = beep_time_ms + round(float(last_shot_raw_seconds) * 1000.0)
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms, active_settings)
     shots = _refine_shot_times(samples, sample_rate, shots, active_settings)
     sound_review_suggestions = _sound_profile_review_suggestions(
@@ -1110,6 +1210,12 @@ def _analyze_predictions(
         settings=active_settings,
     )
     shots = _apply_refinement_confidence(samples, sample_rate, shots, active_settings)
+    shots, verifier_scores = _verify_shot_sequence(
+        shots,
+        samples[:, None] if channels is None else channels,
+        sample_rate,
+        last_shot_anchor_ms=last_shot_anchor_ms,
+    )
     review_suggestions = sound_review_suggestions + _suggest_timing_review_actions(
         samples, sample_rate, shots, active_settings
     )
@@ -1119,6 +1225,13 @@ def _analyze_predictions(
         waveform=waveform,
         sample_rate=sample_rate,
         review_suggestions=review_suggestions,
+        verifier_scores=verifier_scores,
+        official_last_shot_anchor_ms=last_shot_anchor_ms,
+        anchor_agreement_ms=(
+            None
+            if last_shot_anchor_ms is None or not shots
+            else abs(max(shot.time_ms for shot in shots) - last_shot_anchor_ms)
+        ),
     )
 
 
@@ -1126,6 +1239,9 @@ def analyze_video_audio_thresholds(
     video_path: str | Path,
     thresholds: list[float] | tuple[float, ...],
     settings: ShotMLSettings | None = None,
+    *,
+    last_shot_anchor_ms: int | None = None,
+    last_shot_raw_seconds: float | None = None,
 ) -> list[ThresholdDetectionResult]:
     active_settings = _settings(settings)
     ordered_thresholds: list[float] = []
@@ -1141,20 +1257,33 @@ def analyze_video_audio_thresholds(
 
     with TemporaryDirectory(prefix="splitshot-audio-") as temp_dir:
         wav_path = Path(temp_dir) / "analysis.wav"
-        extract_audio_wav(video_path, wav_path)
-        samples, sample_rate = read_wav_mono(wav_path)
+        extract_audio_wav(video_path, wav_path, preserve_channels=True)
+        channels, sample_rate = read_wav_channels(wav_path)
 
     audio_start_ms, media_duration_ms = _media_timeline_metadata(video_path)
-    samples = _align_samples_to_media_timeline(
-        samples, sample_rate, audio_start_ms, media_duration_ms
-    )
+    aligned_channels = [
+        _align_samples_to_media_timeline(
+            channels[:, index], sample_rate, audio_start_ms, media_duration_ms
+        )
+        for index in range(channels.shape[1])
+    ]
+    channels = np.stack(aligned_channels, axis=1)
+    samples = channels.mean(axis=1)
     predictions = _predict_audio_events(samples, sample_rate, active_settings)
     waveform = waveform_envelope(samples)
     return [
         ThresholdDetectionResult(
             threshold=threshold,
             detection=_analyze_predictions(
-                samples, sample_rate, threshold, predictions, waveform, active_settings
+                samples,
+                sample_rate,
+                threshold,
+                predictions,
+                waveform,
+                active_settings,
+                channels=channels,
+                last_shot_anchor_ms=last_shot_anchor_ms,
+                last_shot_raw_seconds=last_shot_raw_seconds,
             ),
         )
         for threshold in ordered_thresholds
@@ -1165,9 +1294,18 @@ def analyze_video_audio(
     video_path: str | Path,
     threshold: float = 0.5,
     settings: ShotMLSettings | None = None,
+    *,
+    last_shot_anchor_ms: int | None = None,
+    last_shot_raw_seconds: float | None = None,
 ) -> DetectionResult:
     active_settings = _settings(settings)
-    results = analyze_video_audio_thresholds(video_path, [threshold], active_settings)
+    results = analyze_video_audio_thresholds(
+        video_path,
+        [threshold],
+        active_settings,
+        last_shot_anchor_ms=last_shot_anchor_ms,
+        last_shot_raw_seconds=last_shot_raw_seconds,
+    )
     return results[0].detection
 
 

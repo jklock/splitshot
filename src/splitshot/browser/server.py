@@ -1158,6 +1158,7 @@ class BrowserControlServer:
                     "/api/analysis/shotml/apply-proposal": self._apply_shotml_proposal,
                     "/api/analysis/shotml/discard-proposal": self._discard_shotml_proposal,
                     "/api/analysis/shotml/reset-defaults": self._reset_shotml_defaults,
+                    "/api/analysis/shotml/reset-corrections": self._reset_shotml_corrections,
                     "/api/settings": self._set_settings_defaults,
                     "/api/settings/reset-defaults": self._reset_settings_defaults,
                     "/api/beep": self._set_beep,
@@ -2073,6 +2074,9 @@ class BrowserControlServer:
 
             def _reset_shotml_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_shotml_settings()
+
+            def _reset_shotml_corrections(self, payload: dict[str, Any]) -> None:
+                controller.reset_shotml_corrections()
 
             def _reset_settings_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_settings_defaults(

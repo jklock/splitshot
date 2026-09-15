@@ -9,7 +9,11 @@ from splitshot.media.ffmpeg import MediaError, run_ffmpeg
 
 
 def extract_audio_wav(
-    video_path: str | Path, wav_path: str | Path, sample_rate: int = 22050
+    video_path: str | Path,
+    wav_path: str | Path,
+    sample_rate: int = 22050,
+    *,
+    preserve_channels: bool = False,
 ) -> Path:
     output_path = Path(wav_path)
     run_ffmpeg(
@@ -17,8 +21,7 @@ def extract_audio_wav(
             "-i",
             str(video_path),
             "-vn",
-            "-ac",
-            "1",
+            *([] if preserve_channels else ["-ac", "1"]),
             "-ar",
             str(sample_rate),
             "-c:a",
@@ -30,6 +33,11 @@ def extract_audio_wav(
 
 
 def read_wav_mono(path: str | Path) -> tuple[np.ndarray, int]:
+    channels, sample_rate = read_wav_channels(path)
+    return channels.mean(axis=1), sample_rate
+
+
+def read_wav_channels(path: str | Path) -> tuple[np.ndarray, int]:
     with wave.open(str(path), "rb") as wav_file:
         channels = wav_file.getnchannels()
         sample_rate = wav_file.getframerate()
@@ -41,9 +49,7 @@ def read_wav_mono(path: str | Path) -> tuple[np.ndarray, int]:
         raise MediaError("Only 16-bit PCM WAV is supported")
 
     samples = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32) / 32768.0
-    if channels > 1:
-        samples = samples.reshape(-1, channels).mean(axis=1)
-    return samples, sample_rate
+    return samples.reshape(-1, channels), sample_rate
 
 
 def waveform_envelope(samples: np.ndarray, bins: int = 4096) -> list[float]:

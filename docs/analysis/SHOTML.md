@@ -4,7 +4,9 @@
 
 This document explains how SplitShot's embedded ShotML pipeline works in the current codebase, what each stage is responsible for, and what its confidence values do and do not mean.
 
-ShotML is not a full stage-understanding system. It is a local audio event detector that helps SplitShot estimate the timer beep and shot times from a video's audio track. Everything downstream, including split rows, timer badges, metrics, and scoring summaries, depends on how well this detector lines up with the real audio.
+ShotML is a local audio event detector that estimates the timer beep and camera-wearer's shot times from a video's audio track. Everything downstream, including split rows, timer badges, metrics, and scoring summaries, depends on how well this detector lines up with the real audio.
+
+Candidate generation remains permissive. A second local verifier examines 640 ms around each candidate using stage-relative amplitude, attack/decay, entropy, clipping, channel relationship, and temporal log-mel evidence. Sequence scoring suppresses reflection-like candidates while preserving supported rapid fire. When PractiScore raw time is available, `beep + raw_seconds` is timing evidence for the final shot; it is never a shot-count limit or a hard timeline cutoff.
 
 ## High-Level Goal
 
@@ -32,7 +34,7 @@ The browser ShotML tab, settings persistence, and timing-change proposal workflo
 
 ## 1. Audio Extraction And Timeline Alignment
 
-SplitShot first extracts a mono WAV file from the source media and reads it into NumPy.
+SplitShot preserves source audio channels through context measurement, then downmixes for the original short-window classifier. This retains channel energy and correlation evidence without changing the packaged runtime.
 
 Relevant functions:
 
@@ -197,6 +199,18 @@ Manual timings are different. Once a shot is added or manually moved, it is no l
 
 `analyze_video_audio_thresholds` runs the full detection flow across multiple thresholds while reusing the same extracted audio, aligned samples, predictions, waveform, and ShotML settings.
 
+The local corpus manifest records SHA-256 identity, match-date split, verified wearer-shot timestamps, classified rejected candidates, optional PractiScore raw time, and verification source. Generated media and byte-identical duplicates are excluded. Only manually verified entries are valid truth for verifier training; detector drafts remain review aids.
+
+After review, train the verifier artifact with:
+
+```bash
+uv run python scripts/analysis/train_shot_verifier.py /path/to/shotml-label-manifest.json --output artifacts/shot-verifier-model.npz
+```
+
+The command refuses to train when no manually verified training-split examples exist. Validation and locked-test metrics are reported separately by the manifest's match-date split.
+
+The timing evaluator calculates release acceptance from the locked `test` split when it is present. Automatic-consensus and detector-draft labels are excluded unless explicitly enabled for a diagnostic run.
+
 This powers threshold-sweep and preflight tooling so a user can compare outcomes before loading a video into the full browser workflow.
 
 The important detail is that the threshold sweep does not rerun FFmpeg extraction for every threshold. It extracts once, predicts once, and reuses the intermediate state.
@@ -272,4 +286,3 @@ If you are diagnosing a mismatch between imported results and exported timing, i
 6. imported-versus-video raw delta
 
 That order matches the real dependency chain in the code.
-

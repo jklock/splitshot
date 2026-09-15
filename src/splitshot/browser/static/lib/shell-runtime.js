@@ -694,6 +694,7 @@ export function createShellRuntime({
     });
     $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
     $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
+    $("reset-shotml-corrections").addEventListener("click", () => callApi("/api/analysis/shotml/reset-corrections", {}));
     $("restore-merge-defaults")?.addEventListener("click", async () => {
       resetMergeDraft();
       cancelMergeAutoApply();
