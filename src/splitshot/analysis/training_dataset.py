@@ -290,7 +290,8 @@ def extract_training_dataset(
             continue
 
         video_path = Path(str(video["path"])).expanduser().resolve()
-        samples, sample_rate, duration_ms = _load_aligned_audio(video_path)
+        channels, sample_rate, duration_ms = _load_aligned_audio(video_path)
+        samples = channels.mean(axis=1) if channels.ndim == 2 else channels
         included_video_count += 1
         included_video_counts_by_label_source[label_source] += 1
 

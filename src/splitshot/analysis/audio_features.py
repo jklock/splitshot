@@ -72,6 +72,8 @@ def extract_feature_matrix(
 def extract_window_features(window: np.ndarray, sample_rate: int) -> np.ndarray:
     eps = 1e-6
     signal = window.astype(np.float32, copy=False)
+    if signal.size == 0:
+        signal = np.zeros(3, dtype=np.float32)
     absolute = np.abs(signal)
     peak_abs = float(np.max(absolute)) + eps
     rms = float(np.sqrt(np.mean(signal**2))) + eps

@@ -45,6 +45,13 @@ def test_feature_names_match_extracted_feature_count() -> None:
     assert FEATURE_NAMES[-1] == "band_8"
 
 
+def test_window_features_handle_empty_audio() -> None:
+    features = extract_window_features(np.zeros(0, dtype=np.float32), 22050)
+
+    assert features.size == len(FEATURE_NAMES)
+    assert np.isfinite(features).all()
+
+
 def test_classify_beep_family_matches_empirical_clusters() -> None:
     assert classify_beep_family(None) == "unknown"
     assert classify_beep_family(1500.0) == "timer_low"
