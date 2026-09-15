@@ -27,7 +27,7 @@ from splitshot.analysis.detection import (
 )
 from splitshot.analysis.ml_runtime import ModelPredictions, pick_event_peaks
 from splitshot.domain.models import ShotEvent, ShotSource
-from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
+from splitshot.media.audio import extract_audio_wav, read_wav_channels, waveform_envelope
 
 DEFAULT_THRESHOLD_GRID = (0.25, 0.35, 0.45, 0.55, 0.65)
 VIDEO_SUFFIXES = {".avi", ".m4v", ".mkv", ".mov", ".mp4"}
@@ -256,10 +256,10 @@ def _dataset_splits(paths: list[Path]) -> dict[str, str]:
     return split_by_date
 
 
-def _practiscore_raw_seconds_by_hash(root: Path) -> dict[str, float]:
+def _practiscore_media_entries(root: Path) -> list[tuple[Path, float]]:
     if not root.is_dir():
-        return {}
-    values: dict[str, float] = {}
+        return []
+    entries: list[tuple[Path, float]] = []
     for project_path in root.rglob("project.json"):
         try:
             payload = json.loads(project_path.read_text(encoding="utf-8"))
@@ -279,8 +279,18 @@ def _practiscore_raw_seconds_by_hash(root: Path) -> dict[str, float]:
             if not candidate.is_absolute():
                 candidate = project_path.parent / candidate
             if candidate.is_file():
-                values[_video_sha256(candidate)] = float(raw_seconds)
-    return values
+                entries.append((candidate.resolve(), float(raw_seconds)))
+    return entries
+
+
+def _practiscore_raw_seconds_by_path(root: Path) -> dict[str, float]:
+    return {str(path): raw_seconds for path, raw_seconds in _practiscore_media_entries(root)}
+
+
+def _practiscore_raw_seconds_by_hash(root: Path) -> dict[str, float]:
+    return {
+        _video_sha256(path): raw_seconds for path, raw_seconds in _practiscore_media_entries(root)
+    }
 
 
 def _ordered_thresholds(
@@ -302,15 +312,21 @@ def _load_aligned_audio(video_path: str | Path) -> tuple[np.ndarray, int, int]:
     path = Path(video_path)
     with TemporaryDirectory(prefix="splitshot-corpus-audit-") as temp_dir:
         wav_path = Path(temp_dir) / "analysis.wav"
-        extract_audio_wav(path, wav_path)
-        samples, sample_rate = read_wav_mono(wav_path)
+        extract_audio_wav(path, wav_path, preserve_channels=True)
+        channels, sample_rate = read_wav_channels(wav_path)
     audio_start_ms, media_duration_ms = _media_timeline_metadata(path)
-    aligned = _align_samples_to_media_timeline(
-        samples, sample_rate, audio_start_ms, media_duration_ms
+    aligned = np.stack(
+        [
+            _align_samples_to_media_timeline(
+                channels[:, index], sample_rate, audio_start_ms, media_duration_ms
+            )
+            for index in range(channels.shape[1])
+        ],
+        axis=1,
     )
     duration_ms = media_duration_ms
     if duration_ms <= 0:
-        duration_ms = round((aligned.size / float(sample_rate)) * 1000.0)
+        duration_ms = round((aligned.shape[0] / float(sample_rate)) * 1000.0)
     return aligned, sample_rate, duration_ms
 
 
@@ -750,15 +766,26 @@ def analyze_corpus_video(
     video_path: str | Path,
     thresholds: list[float] | tuple[float, ...] = DEFAULT_THRESHOLD_GRID,
     reference_threshold: float = 0.35,
+    *,
+    last_shot_raw_seconds: float | None = None,
 ) -> CorpusVideoAnalysis:
     ordered_thresholds = _ordered_thresholds(thresholds, reference_threshold)
-    samples, sample_rate, duration_ms = _load_aligned_audio(video_path)
+    channels, sample_rate, duration_ms = _load_aligned_audio(video_path)
+    samples = channels.mean(axis=1)
     predictions = _predict_audio_events(samples, sample_rate)
     waveform = waveform_envelope(samples)
     results = [
         ThresholdDetectionResult(
             threshold=threshold,
-            detection=_analyze_predictions(samples, sample_rate, threshold, predictions, waveform),
+            detection=_analyze_predictions(
+                samples,
+                sample_rate,
+                threshold,
+                predictions,
+                waveform,
+                channels=channels,
+                last_shot_raw_seconds=last_shot_raw_seconds,
+            ),
         )
         for threshold in ordered_thresholds
     ]
@@ -815,9 +842,17 @@ def analyze_corpus(
     input_path: str | Path,
     thresholds: list[float] | tuple[float, ...] = DEFAULT_THRESHOLD_GRID,
     reference_threshold: float = 0.35,
+    *,
+    practiscore_raw_seconds_by_path: dict[str, float] | None = None,
 ) -> list[CorpusVideoAnalysis]:
+    raw_seconds_by_path = practiscore_raw_seconds_by_path or {}
     analyses = [
-        analyze_corpus_video(path, thresholds=thresholds, reference_threshold=reference_threshold)
+        analyze_corpus_video(
+            path,
+            thresholds=thresholds,
+            reference_threshold=reference_threshold,
+            last_shot_raw_seconds=raw_seconds_by_path.get(str(path.resolve())),
+        )
         for path in list_corpus_videos(input_path)
     ]
     duplicate_groups = build_duplicate_group_summaries(analyses)
@@ -871,7 +906,13 @@ def build_label_manifest(
     existing_manifest: dict[str, object] | None = None,
 ) -> dict[str, object]:
     root = Path(input_path).expanduser().resolve()
-    analyses = analyze_corpus(root, thresholds=thresholds, reference_threshold=reference_threshold)
+    practiscore_by_path = _practiscore_raw_seconds_by_path(root)
+    analyses = analyze_corpus(
+        root,
+        thresholds=thresholds,
+        reference_threshold=reference_threshold,
+        practiscore_raw_seconds_by_path=practiscore_by_path,
+    )
     source_paths = [Path(analysis.summary.path) for analysis in analyses]
     split_by_date = _dataset_splits(source_paths)
     practiscore_by_hash = _practiscore_raw_seconds_by_hash(root)

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
+import splitshot.analysis.corpus as corpus_module
 from splitshot.analysis.audio_features import FEATURE_NAMES, extract_window_features
 from splitshot.analysis.corpus import (
     AcousticFingerprintSummary,
@@ -215,3 +216,24 @@ def test_dataset_splits_group_match_dates_and_lock_september_failure() -> None:
     assert list(splits.values()).count("validation") == 3
     assert list(splits.values()).count("test") == 4
     assert splits["2026-09-10"] == "test"
+
+
+def test_corpus_audio_loader_preserves_native_channels(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    channels = np.asarray([[0.5, 0.25], [0.25, 0.125]], dtype=np.float32)
+
+    def fake_extract(video_path, wav_path, sample_rate=22050, *, preserve_channels=False):
+        captured["preserve_channels"] = preserve_channels
+        return Path(wav_path)
+
+    monkeypatch.setattr(corpus_module, "extract_audio_wav", fake_extract)
+    monkeypatch.setattr(corpus_module, "read_wav_channels", lambda path: (channels, 22050))
+    monkeypatch.setattr(corpus_module, "_media_timeline_metadata", lambda path: (0, 1))
+
+    aligned, sample_rate, duration_ms = corpus_module._load_aligned_audio(tmp_path / "stage.mp4")
+
+    assert captured["preserve_channels"] is True
+    assert aligned.shape == (22, 2)
+    assert np.allclose(aligned[:2], channels)
+    assert sample_rate == 22050
+    assert duration_ms == 1
