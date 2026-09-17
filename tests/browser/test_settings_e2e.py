@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -25,6 +26,24 @@ SETTINGS_SECTION_IDS = [
     "export",
     "shotml",
 ]
+
+
+class _SettingsControlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.control_ids: set[str] = set()
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        attributes = dict(attrs)
+        control_id = attributes.get("id")
+        if (
+            tag in {"input", "select", "textarea"}
+            and control_id
+            and attributes.get("type") != "hidden"
+        ):
+            self.control_ids.add(control_id)
 
 
 def test_settings_path_override_isolated_from_user_profile(tmp_path: Path) -> None:
@@ -541,8 +560,8 @@ def _value_at_path(payload: object, path: list[str]) -> object:
     return current
 
 
-def test_every_settings_value_survives_immediate_rerender_disk_save_and_restart() -> None:
-    cases = [
+def _settings_persistence_cases() -> list[tuple[str, object, list[str], object, bool]]:
+    return [
         ("settings-default-tool", "metrics", ["default_tool"], "metrics", False),
         ("settings-reopen-last-tool", False, ["reopen_last_tool"], False, True),
         ("settings-layout-locked", False, ["layout_locked"], False, True),
@@ -731,6 +750,26 @@ def test_every_settings_value_survives_immediate_rerender_disk_save_and_restart(
             False,
         ),
     ]
+
+
+def test_every_editable_settings_control_has_persistence_proof() -> None:
+    html = (
+        Path(__file__).parents[2] / "src/splitshot/browser/static/index.html"
+    ).read_text()
+    start = html.index('<section class="tool-pane" data-tool-pane="settings">')
+    end = html.index('<section class="tool-pane" data-tool-pane="project">', start)
+    parser = _SettingsControlParser()
+    parser.feed(html[start:end])
+
+    persistence_ids = {case[0] for case in _settings_persistence_cases()}
+    assert parser.control_ids == persistence_ids, (
+        f"missing persistence proof: {sorted(parser.control_ids - persistence_ids)}; "
+        f"stale persistence cases: {sorted(persistence_ids - parser.control_ids)}"
+    )
+
+
+def test_every_settings_value_survives_immediate_rerender_disk_save_and_restart() -> None:
+    cases = _settings_persistence_cases()
 
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
