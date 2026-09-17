@@ -110,6 +110,12 @@ export function createIntroOutroPane({
   }
 
   function boxDisplayText(box) {
+    if (box.source === "project_summary") {
+      return [project().name, project().description]
+        .map((value) => String(value || "").trim())
+        .filter((value, index) => value && !(index === 0 && value === "Untitled Project"))
+        .join("\n");
+    }
     if (box.source !== "match_summary") return String(box.text || "");
     const requested = Array.isArray(box.summary_metric_ids) && box.summary_metric_ids.length
       ? normalizedMatchMetricIds(box.summary_metric_ids)
@@ -143,7 +149,7 @@ export function createIntroOutroPane({
       id: box.id || `boundary-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`,
       enabled: box.enabled !== false,
       lock_to_stack: false,
-      source: box.source === "match_summary" ? "match_summary" : "manual",
+      source: ["match_summary", "project_summary"].includes(box.source) ? box.source : "manual",
       text: String(box.text || ""),
       quadrant: box.quadrant || "top_right",
       x: box.x ?? null,
@@ -257,6 +263,15 @@ export function createIntroOutroPane({
     const result = await callApi("/api/project/in-out/media", { kind, path });
     if (result) {
       draftClips.delete(kind);
+      if (kind === "intro" && boxes(kind).length === 0) {
+        await saveBoxes([
+          normalizedBox({
+            source: "project_summary",
+            quadrant: "middle_middle",
+            font_size: 36,
+          }),
+        ], kind);
+      }
       render({ force: true });
       updatePreview();
     }
@@ -377,11 +392,12 @@ export function createIntroOutroPane({
   }
 
   function boxEditor(box, index) {
+    const dynamicSource = ["match_summary", "project_summary"].includes(box.source);
     return `<article class="text-box-card intro-outro-box" data-box-index="${index}">
-      <div class="section-header"><strong>${box.source === "match_summary" ? "Match Results" : `Text Box ${index + 1}`}</strong><button type="button" data-remove-box="${index}">Remove</button></div>
+      <div class="section-header"><strong>${box.source === "match_summary" ? "Match Results" : box.source === "project_summary" ? "Project Details" : `Text Box ${index + 1}`}</strong><button type="button" data-remove-box="${index}">Remove</button></div>
       <label class="check-row"><input type="checkbox" data-box-field="enabled" ${box.enabled ? "checked" : ""} /> Show box</label>
-      <label>Source<select data-box-field="source"><option value="manual" ${box.source !== "match_summary" ? "selected" : ""}>Custom text</option><option value="match_summary" ${box.source === "match_summary" ? "selected" : ""}>Match results</option></select></label>
-      <label>Text<textarea data-box-field="text" rows="3" ${box.source === "match_summary" ? "placeholder=\"Leave blank to use selected match data\"" : ""}>${escapeHtml(box.text || "")}</textarea></label>
+      <label>Source<select data-box-field="source"><option value="project_summary" ${box.source === "project_summary" ? "selected" : ""}>Project name and description</option><option value="manual" ${box.source === "manual" ? "selected" : ""}>Custom text</option><option value="match_summary" ${box.source === "match_summary" ? "selected" : ""}>Match results</option></select></label>
+      <label>Text<textarea data-box-field="text" rows="3" ${dynamicSource ? "readonly placeholder=\"Filled from project or match data\"" : ""}>${escapeHtml(dynamicSource ? boxDisplayText(box) : box.text || "")}</textarea></label>
       ${metricChecklist(box, index)}
       <div class="control-grid"><label>Position<select data-box-field="quadrant">${["top_left", "top_middle", "top_right", "middle_left", "middle_middle", "middle_right", "bottom_left", "bottom_middle", "bottom_right", "custom"].map((value) => `<option value="${value}" ${box.quadrant === value ? "selected" : ""}>${value.replaceAll("_", " ")}</option>`).join("")}</select></label><label>Shape<select data-box-field="style_type"><option value="square" ${box.style_type === "square" ? "selected" : ""}>Square</option><option value="rounded" ${box.style_type === "rounded" ? "selected" : ""}>Rounded</option><option value="bubble" ${box.style_type === "bubble" ? "selected" : ""}>Bubble</option></select></label></div>
       <div class="control-grid"><label>X (0–1)<input data-box-field="x" type="number" min="0" max="1" step="0.01" value="${box.x ?? 0.5}" /></label><label>Y (0–1)<input data-box-field="y" type="number" min="0" max="1" step="0.01" value="${box.y ?? 0.5}" /></label></div>
@@ -431,7 +447,7 @@ export function createIntroOutroPane({
         return;
       }
       if (target.closest("#intro-outro-select-video")) { await selectVideo(selectedKind); return; }
-      if (target.closest("#intro-outro-add-text")) { await saveBoxes([...boxes(), normalizedBox({ source: "manual", text: "Title" })]); return; }
+      if (target.closest("#intro-outro-add-text")) { await saveBoxes([...boxes(), normalizedBox({ source: "project_summary", quadrant: "middle_middle" })]); return; }
       if (target.closest("#intro-outro-add-match")) { await saveBoxes([...boxes(), normalizedBox({ source: "match_summary", summary_metric_ids: [...DEFAULT_MATCH_METRICS], quadrant: "top_right" })]); return; }
       const remove = target.closest("[data-remove-box]");
       if (remove) await saveBoxes(boxes().filter((_box, index) => index !== Number(remove.dataset.removeBox)));
@@ -462,6 +478,7 @@ export function createIntroOutroPane({
       if (field === "opacity") value = Number(value) / 100;
       next[index][field] = value;
       if (field === "source" && value === "match_summary" && !next[index].summary_metric_ids.length) next[index].summary_metric_ids = [...DEFAULT_MATCH_METRICS];
+      if (["match_summary", "project_summary"].includes(value) && field === "source") next[index].text = "";
       await saveBoxes(next);
     };
     pane.oninput = (event) => {

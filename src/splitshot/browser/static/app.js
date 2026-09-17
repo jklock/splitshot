@@ -208,7 +208,7 @@ let metricsPane = null;
 let trimSyncPane = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
-const PROCESSING_BAR_SHOW_DELAY_MS = 180;
+const PROCESSING_BAR_SHOW_DELAY_MS = 0;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
@@ -1823,8 +1823,6 @@ function setStatus(message) {
   if (statusCopy) statusCopy.textContent = message;
   const inspectorStatusCopy = $("inspector-status-copy");
   if (inspectorStatusCopy) inspectorStatusCopy.textContent = message;
-  const processingMessage = $("processing-message");
-  if (processingMessage) processingMessage.textContent = message;
   activity("ui.status", { message });
 }
 
@@ -8049,6 +8047,7 @@ function badgeElement(
   badge.style.wordBreak = "normal";
   badge.style.overflowWrap = "normal";
   badge.style.lineHeight = "1";
+  badge.style.boxSizing = "border-box";
   badge.textContent = "";
   if (textRuns && textRuns.length > 0) {
     textRuns.forEach((part) => {

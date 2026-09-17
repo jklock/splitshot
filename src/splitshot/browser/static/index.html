@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260714a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260916a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -866,6 +866,39 @@
                 <p id="settings-layout-summary" class="hint"></p>
               </section>
 
+              <section class="settings-section collapsed" data-settings-section="trim">
+                <div class="section-header sub-section-header"><div><h3>Trim</h3></div></div>
+                <dl class="settings-value-list">
+                  <div><dt>Keep before beep</dt><dd id="settings-current-trim-before">2.0s</dd></div>
+                  <div><dt>Keep after last shot</dt><dd id="settings-current-trim-after">2.0s</dd></div>
+                </dl>
+                <button id="settings-save-current-trim" data-settings-save-section="trim" type="button">Use Current Trim</button>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="queue">
+                <div class="section-header sub-section-header"><div><h3>Queue / Combined Export</h3></div></div>
+                <dl class="settings-value-list">
+                  <div><dt>Stage fades</dt><dd id="settings-current-queue-fades">0.5s / 0.5s</dd></div>
+                  <div><dt>Intro / Outro enabled</dt><dd id="settings-current-queue-boundaries">No / No</dd></div>
+                  <div><dt>Combined mode</dt><dd id="settings-current-combined-mode">Plain stitch</dd></div>
+                  <div><dt>Separator</dt><dd id="settings-current-combined-separator">Off</dd></div>
+                  <div><dt>Combined filename source</dt><dd>Current match title</dd></div>
+                </dl>
+                <button id="settings-save-current-queue" data-settings-save-section="queue" type="button">Use Current Queue / Combined</button>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="intro-outro">
+                <div class="section-header sub-section-header"><div><h3>Intro / Outro</h3></div></div>
+                <dl class="settings-value-list">
+                  <div><dt>Intro video</dt><dd id="settings-current-intro-video">None</dd></div>
+                  <div><dt>Intro fade / overlay</dt><dd id="settings-current-intro-settings">0.5s / 0.5s / 0 boxes</dd></div>
+                  <div><dt>Outro video</dt><dd id="settings-current-outro-video">None</dd></div>
+                  <div><dt>Outro fade / overlay</dt><dd id="settings-current-outro-settings">0.5s / 0.5s / 0 boxes</dd></div>
+                </dl>
+                <p class="hint">Saved boundary videos are copied into each new project when it is created.</p>
+                <button id="settings-save-current-intro-outro" data-settings-save-section="intro-outro" type="button">Use Current Intro / Outro</button>
+              </section>
+
               <section class="settings-section collapsed" data-settings-section="scoring">
                 <div class="section-header sub-section-header">
                   <div>
@@ -1319,11 +1352,12 @@
         <div id="export-log-error" class="modal-alert" hidden></div>
         <pre id="export-log-output" class="export-log-output"></pre>
         <div class="modal-actions">
+          <strong id="export-log-completion-status" class="export-log-completion-status" hidden></strong>
           <button id="export-export-log" type="button">Save Log</button>
         </div>
       </section>
     </div>
 
-    <script type="module" src="/static/app.js?v=20260501f"></script>
+    <script type="module" src="/static/app.js?v=20260916a"></script>
   </body>
 </html>

@@ -71,6 +71,7 @@ export function createExportPane({
     const summary = $("export-log-summary");
     const errorBox = $("export-log-error");
     const exportButton = $("export-export-log");
+    const completionStatus = $("export-log-completion-status");
     const activeProcessing = Boolean(getActiveProcessingPath());
     if (activeProcessing) {
       processingWasActive = true;
@@ -91,6 +92,11 @@ export function createExportPane({
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
       errorBox.textContent = projectExport.last_error || "";
+    }
+    if (completionStatus) {
+      const completed = !activeProcessing && visibleLines.length > 0 && !projectExport.last_error;
+      completionStatus.hidden = !completed;
+      completionStatus.textContent = completed ? "COMPLETED" : "";
     }
     if (exportButton) exportButton.disabled = visibleLines.length === 0;
   }

@@ -44,6 +44,29 @@ def test_stage_name_text_uses_shared_dynamic_formatting_contract() -> None:
     assert project_stage_name_overlay_text(controller.project) == "Stage 3"
 
 
+def test_intro_project_summary_uses_current_project_name_and_description() -> None:
+    controller = ProjectController()
+    controller.set_project_details(name="September Match", description="Oak Hill Range")
+    controller.set_intro_outro_overlay(
+        "intro",
+        {
+            "text_boxes": [
+                {"source": "project_summary", "enabled": True, "text": "stale text"}
+            ]
+        },
+    )
+    box = controller.project.intro_clip.overlay.text_boxes[0]
+
+    assert box.source == "project_summary"
+    assert box.text == ""
+    assert (
+        OverlayRenderer._text_box_text(
+            controller.project, 0, box.source, box.text, box.enabled
+        )
+        == "September Match\nOak Hill Range"
+    )
+
+
 def test_stage_name_review_box_renderer_is_dynamic_and_style_complete() -> None:
     controller = ProjectController()
     stage = controller.create_stage("Classifier Bay")
@@ -135,6 +158,63 @@ def test_stage_name_browser_preview_updates_immediately_after_rename() -> None:
                     "() => document.querySelector('[data-text-box-preview]')?.value === 'Stage 2 - Moving Targets'"
                 )
                 assert preview.input_value() == "Stage 2 - Moving Targets"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_stage_name_preview_respects_explicit_box_dimensions() -> None:
+    controller = ProjectController()
+    controller.set_overlay_display_options(
+        {
+            "text_boxes": [
+                {
+                    "id": "stage-name",
+                    "source": "stage_name",
+                    "enabled": True,
+                    "width": 420,
+                    "height": 96,
+                }
+            ]
+        }
+    )
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            try:
+                page.goto(server.url, wait_until="domcontentloaded")
+                page.locator("button[data-tool='review']").click(force=True)
+                dimensions = page.evaluate(
+                    """() => {
+                      const box = state.project.overlay.text_boxes.find((item) => item.id === 'stage-name');
+                      const badge = badgeElement(
+                        state.project.stage_name_overlay_text || 'Stage 1',
+                        { background_color: '#000000', text_color: '#ffffff', opacity: 0.9 },
+                        'M',
+                        null,
+                        box.width,
+                        box.height,
+                        'center',
+                        0.5,
+                      );
+                      document.body.appendChild(badge);
+                      const rect = badge.getBoundingClientRect();
+                      return {
+                        boxSizing: getComputedStyle(badge).boxSizing,
+                        renderedWidth: rect.width,
+                        renderedHeight: rect.height,
+                        cssWidth: Number.parseFloat(badge.style.width),
+                        cssHeight: Number.parseFloat(badge.style.height),
+                      };
+                    }"""
+                )
+                assert dimensions["boxSizing"] == "border-box"
+                assert dimensions["renderedWidth"] == pytest.approx(dimensions["cssWidth"], abs=1)
+                assert dimensions["renderedHeight"] == pytest.approx(dimensions["cssHeight"], abs=1)
             finally:
                 browser.close()
     finally:

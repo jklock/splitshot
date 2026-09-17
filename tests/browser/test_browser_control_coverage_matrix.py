@@ -32,7 +32,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Settings | application-only defaults, landing pane, reopen-last-tool, section use-current/reset actions, layout defaults, Compose slot templates, complete Overlay/Review defaults, marker templates, complete persistent Export and Queue/combined-output defaults, Intro/Outro fade/overlay defaults, complete ShotML defaults, section collapse, versioned whitelist |"
+        "| Settings | application-only defaults, landing pane, reopen-last-tool, section use-current/reset actions, layout and Trim defaults, Compose slot templates, complete Overlay/Review defaults, marker templates, complete persistent Export and Queue/combined-output defaults, Intro/Outro video/fade/overlay defaults, complete ShotML defaults, section collapse, versioned whitelist |"
         in matrix
     )
     for surface in [

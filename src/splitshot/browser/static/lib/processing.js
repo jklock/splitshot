@@ -16,7 +16,7 @@ export function createProcessingRuntime({
   clampNumber,
   clearCurrentExportLogState = () => {},
   activity = () => {},
-  PROCESSING_BAR_SHOW_DELAY_MS = 180,
+  PROCESSING_BAR_SHOW_DELAY_MS = 0,
   PROCESSING_BAR_MIN_VISIBLE_MS = 320,
 } = {}) {
   function syncProcessingBackbone() {
@@ -108,20 +108,30 @@ export function createProcessingRuntime({
     clearProcessingBarHideTimer();
     clearProcessingProgressTimer();
     runtime.processingBarVisibleAtMs = 0;
-    $("processing-message").textContent = finalMessage;
-    $("processing-detail").textContent = "Ready";
+    const message = $("processing-message");
+    const detail = $("processing-detail");
+    if (message) message.textContent = finalMessage;
+    if (detail) detail.textContent = "Ready";
     setProcessingProgress(0, { allowDecrease: true });
-    bar.hidden = true;
+    if (bar) bar.hidden = true;
     syncProcessingBackbone();
   }
 
   function scheduleProcessingBarShow(message, detail) {
     const bar = $("processing-bar");
+    if (!bar) return;
     clearProcessingBarHideTimer();
-    $("processing-message").textContent = message;
-    $("processing-detail").textContent = detail;
+    const messageElement = $("processing-message");
+    const detailElement = $("processing-detail");
+    if (messageElement) messageElement.textContent = message;
+    if (detailElement) detailElement.textContent = detail;
     if (!bar.hidden) return;
     clearProcessingBarShowTimer();
+    if (PROCESSING_BAR_SHOW_DELAY_MS <= 0) {
+      bar.hidden = false;
+      runtime.processingBarVisibleAtMs = nowMs();
+      return;
+    }
     runtime.processingBarShowTimer = window.setTimeout(() => {
       runtime.processingBarShowTimer = null;
       if (runtime.busyCount <= 0) return;
@@ -134,8 +144,11 @@ export function createProcessingRuntime({
     clearProcessingBarShowTimer();
     clearProcessingBarHideTimer();
     const bar = $("processing-bar");
-    $("processing-message").textContent = finalMessage;
-    $("processing-detail").textContent = "Ready";
+    if (!bar) return;
+    const message = $("processing-message");
+    const detail = $("processing-detail");
+    if (message) message.textContent = finalMessage;
+    if (detail) detail.textContent = "Ready";
     if (bar.hidden) return;
     const remainingMs = Math.max(0, PROCESSING_BAR_MIN_VISIBLE_MS - (nowMs() - runtime.processingBarVisibleAtMs));
     runtime.processingBarHideTimer = window.setTimeout(() => {

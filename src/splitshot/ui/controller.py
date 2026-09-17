@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
 import subprocess
 import threading
 from collections.abc import Callable, Iterable
@@ -18,6 +19,7 @@ from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal
 
+import splitshot.config as splitshot_config
 from splitshot.analysis.detection import (
     TimingReviewSuggestion,
     analyze_video_audio,
@@ -3962,8 +3964,13 @@ class ProjectController(QObject):
         *,
         log_callback: Callable[[str], None] | None = None,
     ) -> Path:
-        output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
-        combined_path = output_dir / f"Combined-{output_date}.mp4"
+        import re
+
+        project_name = re.sub(r'[<>:"/\\|?*]+', "-", self.project.name).strip(" .-")
+        if not project_name:
+            output_date = datetime.now(UTC).astimezone().strftime("%Y-%m-%d")
+            project_name = f"Combined-{output_date}"
+        combined_path = output_dir / f"{project_name}.mp4"
         temp_combined_path = self._temporary_output_path(combined_path)
         ces = self.project.combined_export_settings
 
@@ -5930,6 +5937,7 @@ class ProjectController(QObject):
             "manual",
             "imported_summary",
             "match_summary",
+            "project_summary",
             "stage_name",
         }
         if "max_visible_shots" in payload:
@@ -6058,7 +6066,12 @@ class ProjectController(QObject):
                         box.x = 0.5
                     if box.y is None:
                         box.y = 0.5
-                if box.source in {"imported_summary", "match_summary", "stage_name"}:
+                if box.source in {
+                    "imported_summary",
+                    "match_summary",
+                    "project_summary",
+                    "stage_name",
+                }:
                     box.text = ""
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
@@ -6446,6 +6459,7 @@ class ProjectController(QObject):
         self.project_path = ensure_project_suffix(target_path)
         self.folder_settings = None
         self.folder_settings_error = None
+        self._stage_default_intro_outro_media_for_project()
         self._stage_existing_practiscore_source_for_project()
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
@@ -6456,6 +6470,23 @@ class ProjectController(QObject):
         self._set_status(f"Project folder ready at {self.project_path}.")
         self.project_path_changed.emit(str(self.project_path))
         self.project_changed.emit()
+
+    def _stage_default_intro_outro_media_for_project(self) -> None:
+        """Copy application-default boundary videos into a newly saved project."""
+        if self.project_path is None:
+            return
+        for kind in ("intro", "outro"):
+            clip = getattr(self.project, f"{kind}_clip")
+            source_path = str(clip.asset.path or "").strip()
+            if not source_path or not Path(source_path).is_file():
+                continue
+            staged_path = copy_path_to_project_subdir(
+                self.project_path,
+                source_path,
+                INTRO_OUTRO_DIRNAME,
+            )
+            clip.asset = probe_video(staged_path)
+            setattr(self.project.queue_settings, f"{kind}_path", staged_path)
 
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
@@ -6545,11 +6576,22 @@ class ProjectController(QObject):
         *,
         section: str | None,
     ) -> dict[str, object]:
-        """Capture the versioned, path-free application defaults whitelist."""
+        """Capture reusable application defaults and cache selected boundary media."""
         captured = normalize_application_project_defaults(existing)
         captured["schema_version"] = APPLICATION_DEFAULTS_SCHEMA_VERSION
         project_payload = project_to_dict(self.project)
         section_name = str(section or "all").strip().lower()
+        cached_boundary_paths: dict[str, str] = {}
+        if section_name in {"all", "queue", "intro-outro"}:
+            for kind in ("intro", "outro"):
+                clip = project_payload.get(f"{kind}_clip", {})
+                if not isinstance(clip, dict):
+                    continue
+                asset = clip.get("asset", {})
+                source_path = str(asset.get("path", "")) if isinstance(asset, dict) else ""
+                cached_boundary_paths[kind] = self._cache_default_boundary_media(
+                    source_path, kind
+                )
 
         if section_name in {"all", "global-template", "layout"}:
             ui_state = project_payload.get("ui_state", {})
@@ -6625,16 +6667,12 @@ class ProjectController(QObject):
             analysis = project_payload.get("analysis", {})
             if isinstance(analysis, dict):
                 captured["shotml_settings"] = deepcopy(analysis.get("shotml_settings", {}))
-        if section_name == "all":
+        if section_name in {"all", "queue"}:
             queue_settings = deepcopy(project_payload.get("queue_settings", {}))
             if isinstance(queue_settings, dict):
-                for media_key in (
-                    "intro_path",
-                    "outro_path",
-                    "include_intro",
-                    "include_outro",
-                ):
-                    queue_settings.pop(media_key, None)
+                for kind, cached_path in cached_boundary_paths.items():
+                    if cached_path:
+                        queue_settings[f"{kind}_path"] = cached_path
                 captured["queue_settings"] = queue_settings
             captured["combined_export_settings"] = deepcopy(
                 project_payload.get("combined_export_settings", {})
@@ -6642,15 +6680,38 @@ class ProjectController(QObject):
             combined = captured.get("combined_export_settings")
             if isinstance(combined, dict):
                 combined["separator_image_path"] = ""
+        if section_name in {"all", "intro-outro"}:
             for kind in ("intro", "outro"):
                 clip = project_payload.get(f"{kind}_clip", {})
                 if isinstance(clip, dict):
+                    asset = deepcopy(clip.get("asset", {}))
+                    if isinstance(asset, dict) and cached_boundary_paths.get(kind):
+                        asset["path"] = cached_boundary_paths[kind]
                     captured[f"{kind}_clip_settings"] = {
+                        "asset": asset,
                         "fade_in_s": clip.get("fade_in_s", 0.5),
                         "fade_out_s": clip.get("fade_out_s", 0.5),
                         "overlay": deepcopy(clip.get("overlay", {})),
                     }
         return captured
+
+    @staticmethod
+    def _cache_default_boundary_media(source_path: str, kind: str) -> str:
+        source = Path(str(source_path or "")).expanduser()
+        if not source.is_file():
+            return str(source_path or "")
+        target_dir = splitshot_config.SETTINGS_PATH.parent / "default-media"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{kind}{source.suffix.lower()}"
+        if source.resolve() == target.resolve():
+            return str(target.resolve())
+        partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
+        try:
+            shutil.copy2(source, partial)
+            partial.replace(target)
+        finally:
+            partial.unlink(missing_ok=True)
+        return str(target.resolve())
 
     def set_settings_defaults(
         self,
@@ -7275,10 +7336,6 @@ class ProjectController(QObject):
         saved_queue_settings = saved_project_defaults.get("queue_settings")
         if isinstance(saved_queue_settings, dict):
             project.queue_settings = _queue_settings_from_dict(saved_queue_settings)
-            project.queue_settings.intro_path = ""
-            project.queue_settings.outro_path = ""
-            project.queue_settings.include_intro = False
-            project.queue_settings.include_outro = False
         saved_combined_export = saved_project_defaults.get("combined_export_settings")
         if isinstance(saved_combined_export, dict):
             project.combined_export_settings = _combined_export_settings_from_dict(
@@ -7288,9 +7345,13 @@ class ProjectController(QObject):
             saved_clip = saved_project_defaults.get(f"{kind}_clip_settings")
             if not isinstance(saved_clip, dict):
                 continue
-            clip = _intro_outro_clip_from_dict(saved_clip, "")
-            clip.asset = VideoAsset()
+            fallback_path = str(saved_clip.get("asset", {}).get("path", "")) if isinstance(
+                saved_clip.get("asset"), dict
+            ) else ""
+            clip = _intro_outro_clip_from_dict(saved_clip, fallback_path)
             setattr(project, f"{kind}_clip", clip)
+            if clip.asset.path:
+                setattr(project.queue_settings, f"{kind}_path", clip.asset.path)
         saved_ui = saved_project_defaults.get("ui_state")
         if isinstance(saved_ui, dict):
             for key in (

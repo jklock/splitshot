@@ -14,7 +14,7 @@ STATIC_ROOT = Path("src/splitshot/browser/static")
 EXPECTED_DYNAMIC_LITERAL_CONTROL_COUNTS = {
     "app.js": 39,
     "lib/shell-runtime.js": 5,
-    "panes/intro-outro-pane.js": 25,
+    "panes/intro-outro-pane.js": 24,
     "panes/media-pane.js": 15,
     "panes/queue-pane.js": 10,
     "panes/review-pane.js": 22,
@@ -59,12 +59,15 @@ EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     for line in """
 data-settings-section:export
 data-settings-section:global-template
+data-settings-section:intro-outro
 data-settings-section:layout
 data-settings-section:markers
 data-settings-section:overlay
 data-settings-section:pip
+data-settings-section:queue
 data-settings-section:scoring
 data-settings-section:shotml
+data-settings-section:trim
 data-shotml-section:advanced_runtime
 data-shotml-section:beep_detection
 data-shotml-section:confidence_review
@@ -319,11 +322,14 @@ id:settings-reset-section-pip
 id:settings-reset-section-scoring
 id:settings-reset-section-shotml
 id:settings-save-current-export
+id:settings-save-current-intro-outro
 id:settings-save-current-markers
 id:settings-save-current-overlay
 id:settings-save-current-pip
+id:settings-save-current-queue
 id:settings-save-current-scoring
 id:settings-save-current-shotml
+id:settings-save-current-trim
 id:settings-shot-badge-background-color
 id:settings-shot-badge-opacity
 id:settings-shot-badge-text-color

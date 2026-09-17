@@ -443,6 +443,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                         window.__finishTopbarProcessing = beginProcessing('Importing video', 'Working locally', '/api/import/primary');
                     }"""
                 )
+                assert page.locator("#processing-bar").evaluate("element => element.hidden") is False
+                page.evaluate("setStatus('Background status update')")
+                assert page.locator("#processing-message").text_content() == "Importing video"
                 page.wait_for_function(
                     "() => document.getElementById('processing-bar')?.hidden === false"
                 )

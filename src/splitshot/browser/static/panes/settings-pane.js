@@ -222,6 +222,16 @@ export function createSettingsPane({
     const projectExport = state?.project?.export || {};
     const projectScoring = state?.project?.scoring || {};
     const projectAnalysis = state?.project?.analysis || {};
+    const project = state?.project || {};
+    const queue = project.queue_settings || {};
+    const combined = project.combined_export_settings || {};
+    const intro = project.intro_clip || {};
+    const outro = project.outro_clip || {};
+    const setText = (id, value) => {
+      const element = $(id);
+      if (element) element.textContent = String(value);
+    };
+    const shortPath = (value) => String(value || "").split(/[\\/]/).filter(Boolean).pop() || "None";
 
     const scopeStatus = $("settings-scope-status");
     const persistedSettings = layers.app || {};
@@ -237,6 +247,19 @@ export function createSettingsPane({
 
     const shotmlDefaults = displayedSettings.shotml_defaults || {};
     const markerTemplate = normalizePopupTemplate(displayedSettings.marker_template || state?.project?.popup_template || {});
+
+    setText("settings-current-trim-before", `${Number(project.trim_keep_before_beep_s ?? 2).toFixed(1)}s`);
+    setText("settings-current-trim-after", `${Number(project.trim_keep_after_last_shot_s ?? 2).toFixed(1)}s`);
+    setText("settings-current-queue-fades", `${Number(queue.fade_in_s ?? 0.5).toFixed(1)}s / ${Number(queue.fade_out_s ?? 0.5).toFixed(1)}s`);
+    setText("settings-current-queue-boundaries", `${queue.include_intro ? "Yes" : "No"} / ${queue.include_outro ? "Yes" : "No"}`);
+    setText("settings-current-combined-mode", String(combined.mode || "plain_stitch").replaceAll("_", " "));
+    setText("settings-current-combined-separator", combined.separator_enabled
+      ? `${Number(combined.separator_duration_s ?? 0.5).toFixed(1)}s${combined.separator_text ? ` / ${combined.separator_text}` : ""}`
+      : "Off");
+    setText("settings-current-intro-video", shortPath(intro?.asset?.path || queue.intro_path));
+    setText("settings-current-outro-video", shortPath(outro?.asset?.path || queue.outro_path));
+    setText("settings-current-intro-settings", `${Number(intro.fade_in_s ?? 0.5).toFixed(1)}s / ${Number(intro.fade_out_s ?? 0.5).toFixed(1)}s / ${(intro?.overlay?.text_boxes || []).length} boxes`);
+    setText("settings-current-outro-settings", `${Number(outro.fade_in_s ?? 0.5).toFixed(1)}s / ${Number(outro.fade_out_s ?? 0.5).toFixed(1)}s / ${(outro?.overlay?.text_boxes || []).length} boxes`);
 
     renderExportPresetOptions("settings-export-preset", null, displayedSettings.export_preset ?? projectExport.preset ?? "source");
     syncControlValue($("settings-default-match-type"), displayedSettings.default_match_type ?? projectScoring.match_type ?? "uspsa");

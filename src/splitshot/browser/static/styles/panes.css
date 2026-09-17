@@ -3284,7 +3284,7 @@
   border: 1px solid var(--line-strong);
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.52);
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   left: 50%;
   max-height: min(82vh, 760px);
@@ -3337,8 +3337,40 @@
 }
 
 .modal-actions {
+  align-items: center;
   display: flex;
+  gap: var(--space-4);
   justify-content: flex-end;
+}
+
+.settings-value-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.settings-value-list > div {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.settings-value-list dt {
+  color: var(--muted);
+}
+
+.settings-value-list dd {
+  margin: 0;
+  max-width: 60%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.export-log-completion-status {
+  color: var(--success, #4ade80);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
 }
 
 .color-picker-dialog {

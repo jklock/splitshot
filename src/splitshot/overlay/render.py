@@ -470,6 +470,13 @@ class OverlayRenderer:
             return legacy_text
         if source == "stage_name":
             return project_stage_name_overlay_text(project)
+        if source == "project_summary":
+            values = [project.name.strip(), project.description.strip()]
+            return "\n".join(
+                value
+                for index, value in enumerate(values)
+                if value and not (index == 0 and value == "Untitled Project")
+            )
         return text.strip()
 
     def paint(

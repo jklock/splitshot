@@ -14,6 +14,10 @@ from splitshot.ui.controller import ProjectController
 
 SETTINGS_SECTION_IDS = [
     "global-template",
+    "layout",
+    "trim",
+    "queue",
+    "intro-outro",
     "scoring",
     "pip",
     "overlay",

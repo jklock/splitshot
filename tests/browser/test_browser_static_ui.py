@@ -72,10 +72,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     css = _read_split_css()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260714a"' in html
-    assert 'src="/static/app.js?v=20260501f"' in html
-    assert '<script type="module" src="/static/app.js?v=20260501f"></script>' in html
-    assert '<script src="/static/app.js?v=20260501f"></script>' not in html
+    assert 'href="/static/styles.css?v=20260916a"' in html
+    assert 'src="/static/app.js?v=20260916a"' in html
+    assert '<script type="module" src="/static/app.js?v=20260916a"></script>' in html
+    assert '<script src="/static/app.js?v=20260916a"></script>' not in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert (
         'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"'
@@ -1895,11 +1895,11 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
     assert "function scoreTokenColor(token) {" in js
 
 
-def test_browser_processing_bar_uses_delayed_show_and_minimum_visibility() -> None:
+def test_browser_processing_bar_shows_immediately_and_uses_minimum_visibility() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
     processing_js = (STATIC_ROOT / "lib" / "processing.js").read_text()
 
-    assert "const PROCESSING_BAR_SHOW_DELAY_MS = 180;" in js
+    assert "const PROCESSING_BAR_SHOW_DELAY_MS = 0;" in js
     assert "const PROCESSING_BAR_MIN_VISIBLE_MS = 320;" in js
     assert "function scheduleProcessingBarShow(message, detail) {" in js
     assert 'function scheduleProcessingBarHide(finalMessage = "Ready.") {' in js
@@ -2000,7 +2000,10 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "collapse-scoring",
         "settings-import-current",
         "settings-reset-defaults",
-        "settings-save-current-scoring",
+            "settings-save-current-scoring",
+            "settings-save-current-trim",
+            "settings-save-current-queue",
+            "settings-save-current-intro-outro",
         "settings-reset-section-scoring",
         "settings-save-current-pip",
         "settings-reset-section-pip",

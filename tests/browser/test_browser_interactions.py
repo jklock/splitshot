@@ -3922,6 +3922,17 @@ def test_processing_log_modal_opens_from_queue_closes_and_downloads_last_log(
                 )
                 assert page.locator("#export-log-summary").text_content() == ""
                 assert page.locator("#export-log-output").text_content().endswith("Queue complete")
+                assert page.locator("#export-log-completion-status").text_content() == "COMPLETED"
+                assert page.locator("#export-log-completion-status").is_visible()
+
+                spacing = page.evaluate(
+                    """() => {
+                      const dialog = document.querySelector('#export-log-modal .modal-dialog').getBoundingClientRect();
+                      const output = document.getElementById('export-log-output').getBoundingClientRect();
+                      return { left: output.left - dialog.left, right: dialog.right - output.right };
+                    }"""
+                )
+                assert spacing["left"] == pytest.approx(spacing["right"], abs=1)
 
                 with page.expect_download() as download_info:
                     page.locator("#export-export-log").click()
