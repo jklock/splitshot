@@ -6,6 +6,8 @@ This is the documentation index for SplitShot. It routes readers through user do
 
 The v1.0.7 release-preparation checklist and all-file documentation audit are in [project/V107_RELEASE_READINESS.md](project/V107_RELEASE_READINESS.md). It is intentionally fail-closed: passing source tests, screenshots, or a package build alone do not authorize a release.
 
+For the formal v1.0.7 release-preparation sequence, use [project/FORMAL_RELEASE_PREPARATION_PLAN.md](project/FORMAL_RELEASE_PREPARATION_PLAN.md). It is explicitly pre-release only and does not authorize publication.
+
 ## Start Here
 
 If you just forked SplitShot, read these in order after the top-level install path in the root README:
