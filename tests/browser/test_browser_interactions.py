@@ -4224,7 +4224,23 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 assert penalty_options
 
                 score_select.select_option(next_letter)
+                page.wait_for_function(
+                    """({ shotId, letter }) => {
+                      const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
+                      return Boolean(segment) && segment.score_letter === letter;
+                    }""",
+                    arg={"shotId": first_shot_id, "letter": next_letter},
+                )
+                penalty_select = page.locator("#scoring-workbench-table .shot-penalty-select").first
                 penalty_select.select_option(penalty_options[0])
+                page.wait_for_function(
+                    """({ shotId, penaltyField }) => {
+                      const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
+                      return Boolean(segment)
+                        && Number(segment.penalty_counts?.[penaltyField] || 0) === 1;
+                    }""",
+                    arg={"shotId": first_shot_id, "penaltyField": penalty_options[0]},
+                )
                 page.wait_for_function("(shotId) => selectedShotId === shotId", arg=first_shot_id)
 
                 lock_button.click()

@@ -4,7 +4,7 @@
 
 # SplitShot
 
-SplitShot v1.0.7 is a local-first browser app for competition shooting video analysis, split timing, scoring, multi-media composition, metrics, and final video export.
+SplitShot v1.0.7 is a local-first browser app for competition shooting video analysis, split timing, scoring, multi-media composition, metrics, and final video export. This feature-frozen release line accepts only validation, documentation, packaging, and defect fixes.
 
 <img src="docs/screenshots/ExportPane.png" alt="SplitShot browser app showing the Export pane with render settings and final output controls" width="894">
 
@@ -54,7 +54,7 @@ Add `--apply` only after reviewing the listed stages. Apply mode creates a times
 6. Use `Splits` to correct timing, add or remove shots, review timing events, and make the final timeline match the footage before deeper presentation work.
 7. Import PractiScore context if you need official stage and competitor data, then finish scoring in `Score`.
 8. Arrange added media in `Compose`, set source timing in `Trim`, create callouts in `Markers`, tune badges in `Overlay`, and configure text boxes in `Review`.
-9. Check `Metrics`, choose codec and render settings in `Export`, configure optional boundary media in `In / Out`, then use `Queue` to add, run, monitor, or cancel output jobs.
+9. Check `Metrics`, choose codec and render settings in `Export`, configure optional boundary media in `In / Out`, then use `Queue` to add, run, monitor, or cancel output jobs. Do not treat a completed export as release proof: packaged releases must also pass the installed-app evidence gates described below.
 
 The left rail contains 15 panes in workflow order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`.
 
@@ -188,6 +188,7 @@ Use these after the user-facing install and workflow docs:
 - [scripts/README.md](scripts/README.md): scripts, audits, and release helpers
 - [docs/project/LIMITATIONS.md](docs/project/LIMITATIONS.md): current repo/runtime constraints
 - [CONTRIBUTING.md](CONTRIBUTING.md): contribution workflow and review expectations
+- [docs/project/V107_RELEASE_READINESS.md](docs/project/V107_RELEASE_READINESS.md): v1.0.7 documentation audit, screenshot, local E2E, and cross-platform release gates
 
 ## License
 

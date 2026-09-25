@@ -1,8 +1,10 @@
 # SplitShot Documentation
 
-<!-- Documentation reviewed: 2026-08-11 -->
+<!-- Documentation reviewed: 2026-09-18 -->
 
 This is the documentation index for SplitShot. It routes readers through user docs first, then maintainer, developer, and code-reader references.
+
+The v1.0.7 release-preparation checklist and all-file documentation audit are in [project/V107_RELEASE_READINESS.md](project/V107_RELEASE_READINESS.md). It is intentionally fail-closed: passing source tests, screenshots, or a package build alone do not authorize a release.
 
 ## Start Here
 
