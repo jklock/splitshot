@@ -82,6 +82,16 @@ def _stop_process(process: subprocess.Popen | None) -> None:
         process.wait(timeout=5)
 
 
+def _resolve_app_executable(app: Path) -> Path:
+    """Resolve a macOS app bundle to its launchable executable."""
+    candidate = app.resolve()
+    if sys.platform == "darwin" and candidate.suffix == ".app":
+        executable = candidate / "Contents" / "MacOS" / candidate.stem
+        if executable.exists():
+            return executable
+    return candidate
+
+
 def _wait_for_state(process: subprocess.Popen, port: int, timeout: int = 60) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -910,7 +920,7 @@ def main():
     parser.add_argument("--practiscore", type=Path, default=None)
     args = parser.parse_args()
 
-    executable = args.app.resolve()
+    executable = _resolve_app_executable(args.app)
     if not executable.exists():
         print(f"FAIL: executable not found at {executable}", file=sys.stderr)
         return 1

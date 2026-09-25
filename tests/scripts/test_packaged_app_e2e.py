@@ -51,6 +51,16 @@ def test_default_packaged_artifact_root_uses_phase_12_tree(monkeypatch) -> None:
     )
 
 
+def test_resolve_app_executable_uses_macos_bundle_binary(monkeypatch, tmp_path: Path) -> None:
+    app = tmp_path / "SplitShot.app"
+    executable = app / "Contents" / "MacOS" / "SplitShot"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr(MODULE.sys, "platform", "darwin")
+
+    assert MODULE._resolve_app_executable(app) == executable
+
+
 def test_resolve_tool_uses_windows_fallback_when_path_lookup_misses(
     monkeypatch, tmp_path: Path
 ) -> None:
