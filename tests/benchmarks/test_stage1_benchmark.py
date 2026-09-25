@@ -2,39 +2,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from splitshot.analysis.detection import analyze_video_audio
 
-STAGE1_PATH = Path(".training") / "Stage1.MP4"
-EXPECTED_SHOT_COUNT = 18
-EXPECTED_DRAW_MS = 1950
-EXPECTED_STAGE_MS = 13650
+RELEASE_PRIMARY_PATH = Path("tests/release_data/primary.MP4")
+EXPECTED_SHOT_COUNT = 7
+EXPECTED_DRAW_MS = 1894
+EXPECTED_STAGE_MS = 10587
 EXPECTED_SPLITS_MS = [
-    600,
-    750,
-    400,
-    550,
-    400,
-    600,
-    400,
-    850,
-    350,
-    2600,
-    400,
-    800,
-    350,
-    950,
-    550,
-    700,
-    450,
+    381,
+    1806,
+    1196,
+    3148,
+    261,
+    1901,
 ]
 
 
-def test_stage1_benchmark_tracks_shotstreamer_reference() -> None:
-    if not STAGE1_PATH.exists():
-        pytest.skip(f"Benchmark media not available: {STAGE1_PATH}")
-    result = analyze_video_audio(str(STAGE1_PATH), threshold=0.5)
+def test_primary_release_benchmark_tracks_reference() -> None:
+    result = analyze_video_audio(str(RELEASE_PRIMARY_PATH), threshold=0.5)
 
     assert result.beep_time_ms is not None
     assert len(result.shots) == EXPECTED_SHOT_COUNT

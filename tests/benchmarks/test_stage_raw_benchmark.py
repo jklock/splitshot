@@ -6,19 +6,16 @@ import pytest
 
 from splitshot.benchmarks.stage_suite import analyze_stage
 
+RELEASE_CORPUS = Path("tests/release_data")
 EXPECTED_RAW_MS = {
-    "Stage1.MP4": 13550,
-    "Stage2.MP4": 19830,
-    "Stage3.MP4": 13620,
-    "Stage4.MP4": 17010,
+    "primary.MP4": 10587,
+    "secondary.MP4": 4937,
 }
 
 
 @pytest.mark.parametrize("filename, expected_raw_ms", EXPECTED_RAW_MS.items())
 def test_stage_suite_tracks_raw_time_reference(filename: str, expected_raw_ms: int) -> None:
-    path = Path(".training") / filename
-    if not path.exists():
-        pytest.skip(f"Benchmark media not available: {path}")
+    path = RELEASE_CORPUS / filename
 
     result = analyze_stage(path, threshold=0.5)
 
