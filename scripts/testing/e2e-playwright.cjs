@@ -992,8 +992,9 @@ async function configureIntroOutro(page) {
     if (!response?.project) throw new Error(`${kind} media selection failed`);
     await waitForCondition(
       page,
-      (expectedKind) => Boolean(state?.project?.[`${expectedKind}_clip`]?.asset?.path),
-      kind,
+      (expectedPath) => document.querySelector('.intro-outro-file')?.textContent
+        ?.includes(expectedPath.split('/').pop()),
+      mediaPath,
       30000,
     );
     await setInputValue(page, '#intro-outro-fade-in', fadeIn);
