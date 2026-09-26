@@ -1037,6 +1037,7 @@ def main():
             "E2E_EXPORT_DIR": str(export_file.parent),
             "E2E_ARTIFACT_ROOT": str(artifact_root),
             "SPLITSHOT_E2E_SCOPE": scope,
+            "E2E_IN_OUT_PATHS": env.get("SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS", ""),
             "NODE_PATH": str(electron_dir / "node_modules"),
         }
         if secondary_video_path is not None:

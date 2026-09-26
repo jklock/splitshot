@@ -22,6 +22,7 @@ const caseObservations = new Map();
 const e2eScope = process.env.SPLITSHOT_E2E_SCOPE || '';
 const stopAfterExport = e2eScope === 'export-proof';
 const isReleaseProof = e2eScope === 'release-proof';
+const inOutPickerPaths = process.env.E2E_IN_OUT_PATHS ? JSON.parse(process.env.E2E_IN_OUT_PATHS) : [];
 
 const THRESHOLDS = {
   tool_switch_settled_ms: 5000,
@@ -1365,6 +1366,15 @@ async function main() {
     viewport: { width: 1280, height: 900 },
     recordVideo: { dir: recordingDir, size: { width: 1280, height: 900 } },
   });
+  if (isReleaseProof) {
+    await context.addInitScript((paths) => {
+      let index = 0;
+      window.splitshot = {
+        ...(window.splitshot || {}),
+        openInOutVideoDialog: () => Promise.resolve(paths[index++] || null),
+      };
+    }, inOutPickerPaths);
+  }
   const page = await context.newPage();
   const pageVideo = page.video();
   let recordingFinalized = false;
