@@ -83,8 +83,8 @@ Regenerate it with:
 
 ```bash
 uv run python scripts/docs/capture_browser_screenshots.py \
-  --primary-video /path/to/approved-primary.mp4 \
-  --secondary-video /path/to/approved-secondary.mp4
+  --primary-video tests/video/Stage3.MP4 \
+  --secondary-video tests/video/Stage3-double.MP4
 ```
 
 Covered surfaces:
@@ -95,7 +95,7 @@ Covered surfaces:
 
 The canonical filenames are `ProjectPane.png`, `MediaPane.png`, `ComposePane.png`, `TrimPane.png`, `ScorePane.png`, `ScorePane2.png`, `SplitsPane.png`, `SplitsExpanded.png`, `WaveformExpanded.png`, `MarkersPane.png`, `MarkersPane2.png`, `OverlayPane.png`, `OverlayPane2.png`, `ColorPickerModal.png`, `ReviewPane.png`, `ReviewPane2.png`, `ExportPane.png`, `ExportPane2.png`, `IntroOutroPane.png`, `QueuePane.png`, `ProcessingLogModal.png`, `MetricsPane.png`, `MetricsExpanded.png`, `ShotMLPane.png`, `ShotMLPane2.png`, `SettingsPane.png`, and `SettingsPane2.png`.
 
-The capture command requires two different maintainer-approved real videos outside `tests/`; synthetic fixtures are rejected. The 1400×900 capture validates decoded, non-black frames and enabled showcase overlays before writing each screenshot.
+The capture command requires two different maintainer-approved real videos. `tests/video/Stage3.MP4` and `tests/video/Stage3-double.MP4` are the approved v107 documentation references; synthetic fixtures and other test media are rejected. The 1400×900 capture validates decoded, non-black frames and enabled showcase overlays before writing each screenshot.
 
 ## Technical Docs
 

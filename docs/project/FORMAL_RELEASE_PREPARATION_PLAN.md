@@ -12,7 +12,7 @@ Prepare one clean, immutable v1.0.7 candidate for a formal release later this we
 2. Compare every version source (`pyproject.toml`, `src/splitshot/__init__.py`, `uv.lock`, `electron/package.json`, and `electron/package-lock.json`) with `CHANGELOG.md`; v1.0.7 values must agree.
 3. Review all tracked Markdown, shell, Python, JavaScript, Electron, workflow, manifest, and release-data changes since the prior validated baseline. Resolve stale release claims, broken links, untracked generated output, ignored-file gaps, and unsupported local dependencies.
 4. Run `git diff --check`, `git status --ignored --short`, `git check-ignore` for generated test/package paths, and the tracked-tree hygiene checks. Preserve user media and projects; remove only reproducible caches, artifacts, build output, test profiles, logs, and downloaded CI bundles.
-5. Rebuild the user documentation screenshot set from two approved real videos outside `tests/`; visually review every image for current controls, decoded footage, privacy, and useful feature coverage before committing replacements.
+5. Rebuild the user documentation screenshot set from two approved real videos; `tests/video/Stage3.MP4` and `tests/video/Stage3-double.MP4` are the approved v107 reference recordings. Visually review every image for current controls, decoded footage, privacy, and useful feature coverage before committing replacements.
 
 ## Local source and package gates
 

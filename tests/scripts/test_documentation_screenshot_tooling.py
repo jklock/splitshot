@@ -60,7 +60,7 @@ def test_screenshot_manifest_is_complete_and_requires_real_video_inputs() -> Non
     assert hasattr(module, "restore_primary_stage")
 
 
-def test_screenshot_capture_rejects_test_fixtures_and_duplicate_sources(tmp_path: Path) -> None:
+def test_screenshot_capture_allows_approved_reference_recordings_and_rejects_other_test_fixtures(tmp_path: Path) -> None:
     module = load_module(
         "scripts/docs/capture_browser_screenshots.py", "capture_browser_screenshots_inputs"
     )
@@ -89,9 +89,16 @@ def test_screenshot_capture_rejects_test_fixtures_and_duplicate_sources(tmp_path
     try:
         module.validated_real_video(fixture, label="Primary")
     except ValueError as exc:
-        assert "must not come from tests/" in str(exc)
+        assert "must be maintainer-approved" in str(exc)
     else:
         raise AssertionError("Test fixture was accepted as documentation footage")
+
+    assert module.validated_real_video(ROOT / "tests/video/Stage3.MP4", label="Primary") == (
+        ROOT / "tests/video/Stage3.MP4"
+    ).resolve()
+    assert module.validated_real_video(ROOT / "tests/video/Stage3-double.MP4", label="Secondary") == (
+        ROOT / "tests/video/Stage3-double.MP4"
+    ).resolve()
 
 
 def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> None:

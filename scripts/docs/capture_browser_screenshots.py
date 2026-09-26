@@ -59,6 +59,10 @@ SCREENSHOT_MANIFEST = (
     ScreenshotSpec("SettingsPane2.png", "settings", "scrolled"),
 )
 SCREENSHOT_FILENAMES = tuple(spec.filename for spec in SCREENSHOT_MANIFEST)
+APPROVED_TEST_VIDEO_PATHS = {
+    (ROOT / "tests/video/Stage3.MP4").resolve(),
+    (ROOT / "tests/video/Stage3-double.MP4").resolve(),
+}
 
 
 def create_project(page: Page, project_dir: Path) -> None:
@@ -903,8 +907,11 @@ def validated_real_video(path: Path, *, label: str) -> Path:
     resolved = path.expanduser().resolve()
     if not resolved.is_file():
         raise ValueError(f"{label} video does not exist: {resolved}")
-    if resolved.is_relative_to(ROOT / "tests"):
-        raise ValueError(f"{label} video must not come from tests/: {resolved}")
+    if resolved.is_relative_to(ROOT / "tests") and resolved not in APPROVED_TEST_VIDEO_PATHS:
+        raise ValueError(
+            f"{label} video must be maintainer-approved outside tests/ or an approved "
+            f"documentation reference recording: {resolved}"
+        )
     if resolved.suffix.lower() not in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}:
         raise ValueError(f"{label} input is not a supported video: {resolved}")
     return resolved

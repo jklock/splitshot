@@ -39,12 +39,12 @@ The following files were reviewed against the current v1.0.7 source/UI/workflow 
 
 ## Screenshot and local real-media gate
 
-- Before replacing `docs/screenshots/`, supply two different maintainer-approved real video paths outside `tests/`:
+- Before replacing `docs/screenshots/`, supply two different maintainer-approved real video paths. The release-preparation reference recordings `tests/video/Stage3.MP4` and `tests/video/Stage3-double.MP4` are explicitly approved; other test fixtures remain rejected:
 
   ```bash
   uv run python scripts/docs/capture_browser_screenshots.py \
-    --primary-video /absolute/path/to/approved-primary.mp4 \
-    --secondary-video /absolute/path/to/approved-secondary.mp4
+    --primary-video tests/video/Stage3.MP4 \
+    --secondary-video tests/video/Stage3-double.MP4
   ```
 
 - Review every generated 1400×900 image for current controls, decoded non-black footage, privacy, sharpness, and useful expanded-state coverage. Do not claim fresh screenshots until this has completed.
