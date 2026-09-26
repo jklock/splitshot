@@ -996,6 +996,7 @@ def main():
         "SPLITSHOT_ELECTRON_USER_DATA_DIR": str(artifact_root / "electron-user-data"),
     }
     if scope == "release-proof" and secondary_video_path is not None:
+        env["SPLITSHOT_ELECTRON_TEST_IN_OUT_PATH"] = str(video_path)
         env["SPLITSHOT_ELECTRON_TEST_IN_OUT_PATHS"] = json.dumps(
             [str(video_path), str(secondary_video_path)]
         )
