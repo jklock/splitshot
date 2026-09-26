@@ -52,6 +52,7 @@ export function createOverlayPane({
   scheduleInteractionPreviewRender = () => {},
   scheduleOverlayApply = () => {},
   previewFrameClientRect = () => null,
+  videoContentRect = () => null,
   resolveNormalizedPointFromRect = () => null,
   roundedRect = (rect) => rect,
   positionOverlayContainer = () => {},
@@ -1011,7 +1012,21 @@ export function createOverlayPane({
     const stage = $("video-stage");
     const video = $("primary-video");
     const frameGeometry = previewFrameGeometry(video, stage);
-    const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
+    const stageClientRect = stage.getBoundingClientRect();
+    const videoClientRect = video.getBoundingClientRect();
+    // The rendered video can be letterboxed inside the stage. Positioning must
+    // use its actual DOM rectangle, not export-preview geometry.
+    const renderedVideoRect = videoClientRect.width > 0 && videoClientRect.height > 0
+      ? {
+        left: videoClientRect.left - stageClientRect.left,
+        top: videoClientRect.top - stageClientRect.top,
+        width: videoClientRect.width,
+        height: videoClientRect.height,
+      }
+      : null;
+    const frameRect = roundedRect(
+      renderedVideoRect || videoContentRect(video, stage) || frameGeometry?.frameRect || stageClientRect,
+    );
     const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());
     const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
     const positionMs = Number.isFinite(positionMsOverride)
@@ -1028,6 +1043,31 @@ export function createOverlayPane({
       x: currentState().project.overlay.custom_x,
       y: currentState().project.overlay.custom_y,
     }, overlayScale);
+    const overlayQuadrant = currentState().project.overlay.shot_quadrant || "bottom_left";
+    if (overlayQuadrant !== customQuadrantValue) {
+      const [vertical, horizontal] = overlayQuadrant.split("_");
+      const anchorX = horizontal === "right" ? frameRect.left + frameRect.width
+        : horizontal === "middle" ? frameRect.left + (frameRect.width / 2) : frameRect.left;
+      const anchorY = vertical === "bottom" ? frameRect.top + frameRect.height
+        : vertical === "middle" ? frameRect.top + (frameRect.height / 2) : frameRect.top;
+      overlay.style.left = `${anchorX}px`;
+      overlay.style.top = `${anchorY}px`;
+      overlay.style.right = "auto";
+      overlay.style.bottom = "auto";
+      overlay.style.transform = `translate(${horizontal === "right" ? "-100%" : horizontal === "middle" ? "-50%" : "0"}, ${vertical === "bottom" ? "-100%" : vertical === "middle" ? "-50%" : "0"})`;
+    } else {
+      const x = Number(currentState().project.overlay.custom_x ?? 0.5);
+      const y = Number(currentState().project.overlay.custom_y ?? 0.5);
+      const clampCustomOverlay = () => {
+        const width = overlay.offsetWidth;
+        const height = overlay.offsetHeight;
+        overlay.style.transform = "";
+        overlay.style.left = `${clamp((x * frameRect.width) - (width / 2), frameRect.left, frameRect.left + Math.max(0, frameRect.width - width))}px`;
+        overlay.style.top = `${clamp((y * frameRect.height) - (height / 2), frameRect.top, frameRect.top + Math.max(0, frameRect.height - height))}px`;
+      };
+      clampCustomOverlay();
+      requestAnimationFrame(clampCustomOverlay);
+    }
     customOverlay.style.left = `${frameRect.left}px`;
     customOverlay.style.top = `${frameRect.top}px`;
     customOverlay.style.width = `${frameRect.width}px`;

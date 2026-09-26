@@ -1006,12 +1006,14 @@ def test_overlay_drag_math_uses_client_preview_frame_rect() -> None:
     overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
 
     assert "function previewFrameClientRect(video, container) {" in app_js
+    assert "const layerWidth = Math.max(1, Number(layer.clientWidth || frameRect.width || 1));" in app_js
+    assert "const layerHeight = Math.max(1, Number(layer.clientHeight || frameRect.height || 1));" in app_js
     assert (
-        "badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;"
+        "badge.style.left = `${clamp((x * layerWidth) - (badgeWidth / 2), 0, Math.max(0, layerWidth - badgeWidth))}px`;"
         in app_js
     )
     assert (
-        "badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;"
+        "badge.style.top = `${clamp((y * layerHeight) - (badgeHeight / 2), 0, Math.max(0, layerHeight - badgeHeight))}px`;"
         in app_js
     )
     assert (

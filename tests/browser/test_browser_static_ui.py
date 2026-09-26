@@ -1709,8 +1709,10 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'badge.style.fontWeight = state.project.overlay.font_bold ? "700" : "400";' in js
     assert 'badge.style.wordBreak = "normal";' in js
     assert "const frameGeometry = previewFrameGeometry(video, stage);" in overlay_pane
+    assert "const stageClientRect = stage.getBoundingClientRect();" in overlay_pane
+    assert "const renderedVideoRect = videoClientRect" in overlay_pane
     assert (
-        "const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());"
+        "renderedVideoRect || videoContentRect(video, stage) || frameGeometry?.frameRect || stageClientRect,"
         in overlay_pane
     )
     assert (
@@ -2243,6 +2245,22 @@ def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> No
     assert "def audit_waveform_drag(page: Page) -> CheckResult:" in script
     assert "def audit_layout_resize_persists(page: Page) -> CheckResult:" in script
     assert "def audit_merge_file_input_change(" in script
+
+
+def test_overlay_preview_positions_against_rendered_video_content() -> None:
+    pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    app = (STATIC_ROOT / "app.js").read_text()
+
+    assert "videoContentRect = () => null," in pane
+    assert "const videoClientRect = video.getBoundingClientRect();" in pane
+    assert "const renderedVideoRect = videoClientRect.width > 0" in pane
+    assert "videoContentRect(video, stage) || frameGeometry?.frameRect" in pane
+    assert "const overlayQuadrant = currentState().project.overlay.shot_quadrant" in pane
+    assert "const clampCustomOverlay = () =>" in pane
+    assert "const layerWidth = Math.max(1, Number(layer.clientWidth" in app
+    assert "const layerHeight = Math.max(1, Number(layer.clientHeight" in app
+    assert "requestAnimationFrame(positionBadge);" in app
+    assert "frameRect.width - width" in app
 
 
 def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> None:

@@ -36,6 +36,7 @@ def test_audit_accepts_approved_assets_and_portable_text(tmp_path: Path) -> None
             "docs/screenshots/ProjectPane.png": b"png",
             "electron/assets/icon.icns": b"icon",
             "tests/fixtures/media/e2e-stage.mp4": b"video",
+            "tests/release_data/primary.MP4": b"x" * (HYGIENE.MAX_BLOB_BYTES + 1),
         },
     )
 

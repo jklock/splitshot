@@ -8346,7 +8346,19 @@ function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
   const badgeRect = anchorBadge.getBoundingClientRect();
   const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);
   const anchorOffsetY = (badgeRect.top - overlayRect.top) + (badgeRect.height / 2);
-  overlay.style.transform = `translate(${-anchorOffsetX}px, ${-anchorOffsetY}px)`;
+  const width = Math.max(0, overlay.offsetWidth || overlayRect.width || 0);
+  const height = Math.max(0, overlay.offsetHeight || overlayRect.height || 0);
+  overlay.style.left = `${clamp(
+    frameRect.left + (x * frameRect.width) - anchorOffsetX,
+    frameRect.left,
+    frameRect.left + Math.max(0, frameRect.width - width),
+  )}px`;
+  overlay.style.top = `${clamp(
+    frameRect.top + (y * frameRect.height) - anchorOffsetY,
+    frameRect.top,
+    frameRect.top + Math.max(0, frameRect.height - height),
+  )}px`;
+  overlay.style.transform = "";
 }
 
 function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, anchorRect = null, scale = 1 } = {}) {
@@ -8397,11 +8409,19 @@ function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
   badge.style.top = "0px";
   badge.style.transform = "";
   layer.appendChild(badge);
-  const badgeRect = badge.getBoundingClientRect();
-  const badgeWidth = Math.max(0, badgeRect.width || badge.offsetWidth || 0);
-  const badgeHeight = Math.max(0, badgeRect.height || badge.offsetHeight || 0);
-  badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;
-  badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;
+  const positionBadge = () => {
+    const badgeRect = badge.getBoundingClientRect();
+    const badgeWidth = Math.max(0, badgeRect.width || badge.offsetWidth || 0);
+    const badgeHeight = Math.max(0, badgeRect.height || badge.offsetHeight || 0);
+    // The positioned layer is the rendered frame authority. Its dimensions can
+    // differ from export geometry while the video is letterboxed.
+    const layerWidth = Math.max(1, Number(layer.clientWidth || frameRect.width || 1));
+    const layerHeight = Math.max(1, Number(layer.clientHeight || frameRect.height || 1));
+    badge.style.left = `${clamp((x * layerWidth) - (badgeWidth / 2), 0, Math.max(0, layerWidth - badgeWidth))}px`;
+    badge.style.top = `${clamp((y * layerHeight) - (badgeHeight / 2), 0, Math.max(0, layerHeight - badgeHeight))}px`;
+  };
+  positionBadge();
+  requestAnimationFrame(positionBadge);
   return true;
 }
 
@@ -9803,6 +9823,7 @@ overlayPane = createOverlayPane({
   scheduleInteractionPreviewRender,
   scheduleOverlayApply,
   previewFrameClientRect,
+  videoContentRect,
   resolveNormalizedPointFromRect,
   roundedRect,
   positionOverlayContainer,

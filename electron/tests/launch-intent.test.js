@@ -12,7 +12,7 @@ const {
 } = require('../launch-intent');
 
 function makeProjectBundle(name) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'splitshot-launch-intent-'));
+  const root = fs.mkdtempSync(path.join(path.resolve(os.tmpdir()), 'splitshot-launch-intent-'));
   const projectPath = path.join(root, `${name}.ssproj`);
   fs.mkdirSync(projectPath, { recursive: true });
   fs.writeFileSync(path.join(projectPath, 'project.json'), '{}', 'utf8');

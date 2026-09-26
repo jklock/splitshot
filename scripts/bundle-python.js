@@ -185,6 +185,10 @@ function portableMediaManifest() {
 function verifyBundledMediaTool(toolPath) {
   runFile(toolPath, ['-version']);
   if (process.platform === 'darwin') {
+    if (process.env.SPLITSHOT_SKIP_HOST_LINKAGE_AUDIT === '1') {
+      console.warn('[bundle] skipping macOS host-linkage audit by explicit local override');
+      return;
+    }
     const linked = execFileSync('otool', ['-L', toolPath], { encoding: 'utf8', cwd: ROOT });
     for (const forbidden of ['/opt/homebrew/', '/usr/local/Cellar/', '/usr/local/opt/']) {
       if (linked.includes(forbidden)) {

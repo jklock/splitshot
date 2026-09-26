@@ -605,6 +605,9 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
           };
           const collect = () => {
             const rect = frameRect();
+            const scoreLayerRect = document.getElementById("score-layer")?.getBoundingClientRect();
+            const liveOverlay = document.getElementById("live-overlay");
+            const videoRect = video.getBoundingClientRect();
             const badges = Array.from(document.querySelectorAll("#live-overlay .overlay-badge, #custom-overlay .overlay-badge")).map((badge) => {
               const badgeRect = badge.getBoundingClientRect();
               const frameRight = rect.left + rect.width;
@@ -616,6 +619,15 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
               return {
                 text: badge.textContent?.trim() || "",
                 inside,
+                rect: {
+                  left: badgeRect.left,
+                  top: badgeRect.top,
+                  right: badgeRect.right,
+                  bottom: badgeRect.bottom,
+                },
+                visible: badgeRect.width > 0 && badgeRect.height > 0
+                  && getComputedStyle(badge).visibility !== "hidden"
+                  && getComputedStyle(badge).display !== "none",
               };
             });
             return {
@@ -625,7 +637,21 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
                 right: rect.left + rect.width,
                 bottom: rect.top + rect.height,
               },
+              score_layer: scoreLayerRect && {
+                left: scoreLayerRect.left,
+                top: scoreLayerRect.top,
+                right: scoreLayerRect.right,
+                bottom: scoreLayerRect.bottom,
+              },
+              video: {
+                left: videoRect.left,
+                top: videoRect.top,
+                right: videoRect.right,
+                bottom: videoRect.bottom,
+              },
+              live_overlay_style: liveOverlay?.getAttribute("style") || "",
               texts: badges.map((badge) => badge.text),
+              badges,
               all_inside: badges.every((badge) => badge.inside),
             };
           };

@@ -107,9 +107,18 @@ def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> N
     assert "validate_showcase_state(page)" in source
 
 
+def test_screenshot_capture_keeps_linked_marker_and_review_controls_enabled() -> None:
+    source = (ROOT / "scripts/docs/capture_browser_screenshots.py").read_text()
+    assert "document.getElementById('markers-enable').checked = true" in source
+    assert "document.getElementById('show-markers').checked = true" in source
+    assert "document.getElementById('show-pip').checked = true" in source
+
+
 def test_screenshot_capture_keeps_summary_selectors_generic_and_output_dynamic() -> None:
     source = (ROOT / "scripts/docs/capture_browser_screenshots.py").read_text()
-    assert 'selector_labels != ["Division", "Class", "Overall"]' in source
+    assert 'expected_selector_labels = ["Division", "Class", "Overall"]' in source
+    assert "const groups = new Map();" in source
+    assert "closest('.text-box-card')" in source
     assert r"/^Overall - \d+\/\d+$/" in source
     assert '"Division Placement"' in source
     assert '"Class Placement"' in source

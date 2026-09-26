@@ -125,3 +125,4 @@ def test_bundle_uses_uv_managed_python_for_macos_runtime() -> None:
     assert "['python', 'install', '--managed-python', '--no-bin', pythonVersion]" in bundle_script
     assert "['python', 'find', '--managed-python', '--resolve-links', pythonVersion]" in bundle_script
     assert "bundlePosixStdlib(pythonVersion, pythonExe)" in bundle_script
+    assert "process.env.SPLITSHOT_SKIP_HOST_LINKAGE_AUDIT === '1'" in bundle_script

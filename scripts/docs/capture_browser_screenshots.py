@@ -524,6 +524,10 @@ def prepare_demo_state(page: Page) -> None:
             state.project.ui_state.review_show_markers = true;
             state.project.ui_state.review_show_pip = true;
           }
+          // Keep the linked Markers and Review controls in agreement before
+          // syncing the local UI state.  The synchronizer reads markers-enable
+          // first, so setting only the Review checkbox would reset markers.
+          if (document.getElementById('markers-enable')) document.getElementById('markers-enable').checked = true;
           if (document.getElementById('show-markers')) document.getElementById('show-markers').checked = true;
           if (document.getElementById('show-pip')) document.getElementById('show-pip').checked = true;
 
@@ -698,15 +702,30 @@ def validate_dynamic_standings(page: Page) -> None:
     """Keep generic selectors distinct from source-derived rendered standings."""
     click_tool(page, "review")
     prepare_demo_state(page)
-    selector_labels = page.locator(
+    selector_label_groups = page.locator(
         "[data-summary-metric='division_placement'], "
         "[data-summary-metric='class_placement'], "
         "[data-summary-metric='overall_placement']"
     ).evaluate_all(
-        "controls => controls.map((control) => control.closest('label')?.textContent?.trim() || '')"
+        """controls => {
+          const groups = new Map();
+          controls.forEach((control) => {
+            const card = control.closest('.text-box-card');
+            if (!card) return;
+            const labels = groups.get(card) || [];
+            labels.push(control.closest('label')?.textContent?.trim() || '');
+            groups.set(card, labels);
+          });
+          return [...groups.values()];
+        }"""
     )
-    if selector_labels != ["Division", "Class", "Overall"]:
-        raise RuntimeError(f"Summary metric selectors must remain generic: {selector_labels}")
+    expected_selector_labels = ["Division", "Class", "Overall"]
+    if not selector_label_groups or any(
+        labels != expected_selector_labels for labels in selector_label_groups
+    ):
+        raise RuntimeError(
+            f"Summary metric selectors must remain generic: {selector_label_groups}"
+        )
     page.wait_for_function(
         r"""
         () => {

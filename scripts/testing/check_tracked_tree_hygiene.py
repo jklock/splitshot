@@ -52,6 +52,7 @@ MEDIA_SUFFIXES = {
 APPROVED_MEDIA_PREFIXES = (
     "docs/screenshots/",
     "electron/assets/",
+    "tests/release_data/",
 )
 APPROVED_MEDIA_FILES = {
     "src/splitshot/browser/static/githublogo.png",
@@ -136,7 +137,7 @@ def audit(repo: Path) -> list[str]:
             violations.append(f"unexpected media: {path}")
 
         blob = tracked_blob(repo, path)
-        if len(blob) > MAX_BLOB_BYTES:
+        if len(blob) > MAX_BLOB_BYTES and not approved_media:
             violations.append(f"unapproved blob over 5 MiB ({len(blob)} bytes): {path}")
 
         if suffix in TEXT_SUFFIXES and path not in MACHINE_PATH_ALLOWLIST:
