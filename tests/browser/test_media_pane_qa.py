@@ -337,6 +337,9 @@ def test_practiscore_autosave_keeps_empty_selected_stage_and_player_isolated(
                     )""",
                     arg={"stageId": warmup_stage.id, "name": warmup_path.name},
                 )
+                page.wait_for_function(
+                    """() => !document.querySelector('#media-active-stage-select')?.disabled"""
+                )
 
                 page.locator("#media-active-stage-select").select_option(empty_stage.id)
                 page.wait_for_function(

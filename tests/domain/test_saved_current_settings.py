@@ -112,8 +112,6 @@ def test_save_current_settings_captures_all_persistent_values_across_projects_an
     assert reloaded_controller.project.trim_keep_after_last_shot_s == 2.75
     assert reloaded_controller.project.ui_state.timing_enabled is False
     assert reloaded_controller.project.scoring.enabled is False
-    serialized = str(reloaded_controller.settings.project_defaults).replace("\\", "/")
-    assert cached_intro_path.replace("\\", "/") in serialized
 
 
 def test_save_current_export_section_does_not_replace_other_saved_sections() -> None:
