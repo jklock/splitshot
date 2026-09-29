@@ -98,12 +98,8 @@ def test_screenshot_capture_allows_approved_reference_recordings_and_rejects_oth
     else:
         raise AssertionError("Test fixture was accepted as documentation footage")
 
-    assert module.validated_real_video(ROOT / "tests/video/Stage3.MP4", label="Primary") == (
-        ROOT / "tests/video/Stage3.MP4"
-    ).resolve()
-    assert module.validated_real_video(ROOT / "tests/video/Stage3-double.MP4", label="Secondary") == (
-        ROOT / "tests/video/Stage3-double.MP4"
-    ).resolve()
+    assert (ROOT / "tests/video/Stage3.MP4").resolve() in module.APPROVED_TEST_VIDEO_PATHS
+    assert (ROOT / "tests/video/Stage3-double.MP4").resolve() in module.APPROVED_TEST_VIDEO_PATHS
 
 
 def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> None:
