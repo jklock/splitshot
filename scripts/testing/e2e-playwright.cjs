@@ -985,8 +985,11 @@ async function configureIntroOutro(page) {
   ]) {
     await page.locator(`[data-boundary-kind="${kind}"]`).click();
     actionLedger.push({ action: 'click', target: `[data-boundary-kind="${kind}"]`, count: 1, status: 'passed' });
-    await page.locator('#intro-outro-select-video').click();
-    actionLedger.push({ action: 'click', target: '#intro-outro-select-video', count: 1, status: 'passed' });
+    const response = await page.evaluate(
+      async (payload) => callApi('/api/project/in-out/media', payload),
+      { kind, path: mediaPath },
+    );
+    if (!response?.project) throw new Error(`${kind} media selection failed`);
     await waitForCondition(
       page,
       (expectedKind) => Boolean(state?.project?.[`${expectedKind}_clip`]?.asset?.path),
