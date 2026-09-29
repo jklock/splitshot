@@ -6,7 +6,13 @@ The Settings pane controls application defaults for layout, Trim, scoring, Compo
 
 <img src="../../screenshots/SettingsPane.png" alt="Settings pane with scope, layout, scoring, Compose, Overlay, Markers, Export, and ShotML defaults" width="960">
 
-<img src="../../screenshots/SettingsPane2.png" alt="Lower Settings pane with expanded marker, export, and ShotML default controls" width="840">
+<img src="../../screenshots/SettingsGeneral.png" alt="Expanded Settings sections for application, layout, Trim, Queue, and In / Out defaults" width="840">
+
+<img src="../../screenshots/SettingsComposeOverlay.png" alt="Expanded Settings sections for scoring, Compose, and Overlay defaults" width="840">
+
+<img src="../../screenshots/SettingsMarkers.png" alt="Expanded Settings section for marker template defaults" width="840">
+
+<img src="../../screenshots/SettingsExportShotML.png" alt="Expanded Settings sections for export and ShotML defaults" width="840">
 
 ## When To Use This Pane
 
@@ -38,6 +44,16 @@ The Settings pane controls application defaults for layout, Trim, scoring, Compo
 | `Waveform height` | Default waveform height for new projects. |
 | `Save Current Settings` | Captures the current project's layout as the default. |
 | `Release Layout` | Clears saved layout defaults, reverting to built-in defaults. |
+
+### Trim, Queue, and In / Out
+
+These sections set the starting values for new projects. They do not change an existing stage's saved trim, queue, or boundary-media choices.
+
+| Section | What it controls |
+| --- | --- |
+| `Trim` | Default before-beep and after-last-shot retention windows. |
+| `Queue / Combined Export` | Default combined-output choice and project-level queue presentation values. |
+| `Intro / Outro` | Default boundary-video fade timing and display settings. |
 
 ### Scoring
 
@@ -95,6 +111,8 @@ The Compose section owns application Compose defaults. Source styling is stored 
 | Control | What it does |
 | --- | --- |
 | `ShotML threshold` | Default detection threshold for new projects. |
+
+The Settings screenshots above cover the full set of sections: application defaults, layout, Trim, Queue, In / Out, scoring, Compose, Overlay, Markers, Export, and ShotML.
 
 ## How To Use It
 

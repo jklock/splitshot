@@ -1,197 +1,47 @@
-# Electron Release Runbook
+# Electron Packaging and Release Validation
 
-<!-- Documentation reviewed: 2026-08-12 -->
+This runbook describes the durable packaging and validation path for SplitShot on macOS, Windows, and Linux. It does not replace the repository release policy in [GOVERNANCE.md](GOVERNANCE.md).
 
-This is the durable packaging and publishing runbook for SplitShot v1.0.7. The release is feature-frozen; complete validation and defect fixes only, then publish the same release-ready commit on all three platforms.
+## Prerequisites
 
-The approved implementation contract for complete installed-package validation is [Exhaustive Packaged Release Validation Plan](EXHAUSTIVE_PACKAGED_RELEASE_VALIDATION_PLAN.md). The workflows now fail closed on the versioned real corpus, exhaustive scenario manifest, runtime identity inventory, and per-OS zero-gap summary. Until every explicit case and discovered identity passes on all three installed packages, the release is blocked and must not be represented as exhaustively validated.
+- Python 3.12 with `uv`
+- Node.js 22 with `npm`
+- `ffmpeg` and `ffprobe` on `PATH` for source checks
+- Platform signing credentials when producing a signed distribution
 
-## Toolchain
-
-Install these tools before source or packaging work:
-
-- Python 3.12
-- [`uv`](https://docs.astral.sh/uv/)
-- FFmpeg and FFprobe on `PATH` for source development and export checks
-- Node.js 22 with npm
-
-From a fresh clone, install locked dependencies:
+Install the locked dependencies:
 
 ```bash
 uv sync --frozen --extra dev --python 3.12
-cd electron
-npm ci
-cd ..
+npm --prefix electron ci
 ```
 
-Confirm the source runtime before packaging:
+## Local Validation
+
+Run the runtime check and the smallest relevant suite first. Before a release review, run the canonical suite and validate the committed release corpus:
 
 ```bash
 uv run splitshot --check
+uv run python scripts/testing/validate_release_data.py
+uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 ```
 
-Electron bundles its Python runtime and media tools. Packaged validation must not rely on host-installed FFmpeg/FFprobe, local-only files, or an existing build directory.
-
-## Local Preflight And Proof
-
-Use the current platform's local preflight before requesting CI packaging:
+Build on the matching platform:
 
 ```bash
-uv run python scripts/testing/run_electron_preflight.py
+npm --prefix electron run build:mac
+npm --prefix electron run build:win
+npm --prefix electron run build:linux
 ```
 
-The preflight checks the runtime, creates and verifies the Python bundle, runs Electron launch and backend checks, audits source/package parity, launches the source app, builds the current platform's unpacked application, and verifies that application launches.
+The tracked `tests/release_data/` corpus is intentional. It makes package validation self-contained and must remain byte-stable unless its manifest is updated in the same change.
 
-Validate the immutable real release corpus and scenario manifest before package proof:
+## Cross-Platform Test Review
 
-```bash
-uv run python scripts/testing/validate_release_data.py \
-  --report-json artifacts/v107-release-proof/source/corpus-preflight.json
-uv run python scripts/testing/validate_packaged_release_evidence.py manifest \
-  --output artifacts/v107-release-proof/source/manifest-validation.json
-uv run python scripts/testing/run_source_release_proof.py \
-  --artifact-root artifacts/v107-release-proof/source
-```
+Dispatch **Test macOS**, **Test Windows**, and **Test Linux** only after the reviewed commit is pushed. Each workflow runs the source suite, builds the native package, validates an installed package with the committed corpus, and uploads its package plus E2E evidence.
 
-Proof output belongs under the ignored `artifacts/v107-release-proof/` tree. Packaged release acceptance uses only `tests/release_data/primary.MP4`, `tests/release_data/secondary.MP4`, and `tests/release_data/practiscore.csv`. `tests/release_data/corpus-v1.json` owns their checksums and semantic expectations; `tests/release_validation/manifest-v1.json` owns the 17 shards, common scenarios, platform cases, proof contract, and required artifact families.
+Review each workflow's package and `e2e-artifacts-*` upload. Require one commit identity across all runs, no failed, skipped, or unmapped validation cases, and inspect the full-feature recording plus individual and combined rendered outputs. Build-only workflows are packaging helpers and do not replace these test workflows.
 
-## Platform Packages
+## Publishing
 
-Package on the matching operating system or use its GitHub Actions workflow. Electron Builder produces:
-
-| Platform | Command | Release artifact |
-| --- | --- | --- |
-| macOS | `npm --prefix electron run build:mac` | DMG |
-| Windows | `npm --prefix electron run build:win` | NSIS `.exe` installer |
-| Linux | `npm --prefix electron run build:linux` | AppImage |
-
-Outputs are written below `electron/build/`. The Windows and Linux configurations also create unpacked directory targets for smoke validation; those directories are not release downloads.
-
-For ordinary macOS iteration, avoid rebuilding the DMG:
-
-```bash
-npm --prefix electron run build:app:mac
-uv run python scripts/testing/run_electron_iterate.py \
-  --tier unpacked --scenario launch --build-if-needed
-```
-
-For a local macOS release package, the supported helper exports the active Developer ID identity to a temporary credential, verifies it, builds the DMG, and installs the application for validation:
-
-```bash
-npm --prefix electron run build:mac:local
-```
-
-If local notarization credentials are unavailable, that helper explicitly disables notarization. Such a build is suitable for local validation, not publication.
-
-## macOS Signing And Notarization
-
-The publishing workflow requires a Developer ID Application certificate including its private key:
-
-- `MAC_CERT_BASE64`: base64-encoded `.p12`
-- `MAC_CERT_PASSWORD`: `.p12` password
-
-Verify the export before changing secrets:
-
-```bash
-scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'password'
-```
-
-Prefer App Store Connect API-key notarization credentials:
-
-- `APPLE_API_KEY`: contents of the `.p8` key
-- `APPLE_API_KEY_ID`
-- `APPLE_API_ISSUER`
-
-The supported fallback is the complete Apple ID set:
-
-- `APPLE_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-- `APPLE_TEAM_ID`
-
-Do not mix incomplete credential sets. The publishing workflows import the certificate into a temporary keychain, materialize the API key only for the job, sign and notarize the application, verify the signed app, and delete temporary credentials during cleanup.
-
-## CI Validation
-
-Use these GitHub Actions workflows on the intended release commit:
-
-- **Test macOS**: source tests plus packaged DMG validation on `macos-14`
-- **Test Windows**: source tests plus packaged NSIS validation on `windows-latest`
-- **Test Linux**: source tests plus packaged AppImage validation on `ubuntu-latest`
-
-The Test macOS workflow uses the same signing and notarization credentials as the release path. Its package lane must pass `codesign`, Gatekeeper assessment, and stapler validation before the DMG can enter installed-app testing. Missing Apple credentials or agreements block the test release.
-
-Run each from the `v107` ref with `workflow_dispatch`, then inspect both its package and `e2e-artifacts-*` uploads. Each platform test runs the complete canonical source suite before package proof. The E2E upload must include `full-feature-validation.mp4`: a real-time installed workflow that visibly demonstrates markers, review text, timer, draw, splits, score, and secondary media; the UI-surface, interaction, value-control, and remaining-control audits; then the actual individual and combined rendered outputs as the final two sections. The rendered-output gate OCRs multiple frames and requires the dedicated v107 review and marker proof text. A raw Playwright recording, screenshot collection, package build, or compact E2E pass is not a platform pass. `build_v107_test_release_summary.py` requires the exact source commit, locked release corpus, every common and platform-specific case in the exhaustive packaged manifest, zero installed-runtime identity gaps, reopen/restart proof, rendered-output analysis, the platform package checks, and a hash-matched `full-feature-validation.json` timeline proving the rendered outputs are last. Copy the validation bundles into:
-
-```text
-artifacts/v107-release-proof/github-review/macos/
-artifacts/v107-release-proof/github-review/windows/
-artifacts/v107-release-proof/github-review/linux/
-```
-
-The **Build macOS**, **Build Windows**, and **Build Linux** workflows are one-platform packaging helpers. A successful build is not test-release proof: the corresponding clean-runner Test workflow must install or mount the package, use the committed real corpus, exercise every v107 test case, prove reopen/restart and rendered outputs, and produce a passing v107 test-release summary. The publishing Release workflow remains stricter: `build_packaged_release_summary.py` requires an explicit passing interaction for every installed runtime identity and every case in the exhaustive production manifest, including notarization, Gatekeeper, and stapling on macOS.
-
-For local package-native proof, pass the built artifact and canonical fixture to the packaged harness. On macOS, for example:
-
-```bash
-uv run python scripts/testing/test_packaged_artifact.py \
-  --artifact electron/build/SplitShot-1.0.7-arm64.dmg \
-  --script scripts/testing/test_packaged_app_e2e.py \
-  --script-arg=--scope \
-  --script-arg=release-proof \
-  --script-arg=--artifact-root \
-  --script-arg=artifacts/v107-release-proof/packaged-local-mac \
-  --script-arg=--primary-video \
-  --script-arg=tests/release_data/primary.MP4 \
-  --script-arg=--secondary-video \
-  --script-arg=tests/release_data/secondary.MP4 \
-  --script-arg=--practiscore \
-  --script-arg=tests/release_data/practiscore.csv
-uv run python scripts/testing/build_packaged_release_summary.py \
-  --platform macos \
-  --artifact-root artifacts/v107-release-proof/packaged-local-mac
-```
-
-Use the artifact filename produced for the host architecture. Package-native proof must be rerun from a clean output location; stale artifacts do not count. The summary builder is intentionally fail-closed: missing case records, missing proof-contract layers, unexercised runtime identities, empty artifacts, skips, and gaps all return nonzero.
-
-## Publish v1.0.7
-
-The release-ready commit must already contain version `1.0.7` in `pyproject.toml`, `src/splitshot/__init__.py`, `uv.lock`, `electron/package.json`, and `electron/package-lock.json`, plus this changelog entry.
-
-Extract the exact GitHub release body:
-
-```bash
-uv run python scripts/release/extract_release_notes.py v1.0.7 \
-  --output artifacts/release-notes.md
-```
-
-After all three Test workflows pass, merge the release-ready commit to `main`, create the semver tag, and push it:
-
-```bash
-git tag -a v1.0.7 -m "SplitShot v1.0.7"
-git push origin v1.0.7
-```
-
-`.github/workflows/release.yml` is the only publisher. A `v1.0.7` tag builds and validates the macOS DMG, Windows NSIS installer, and Linux AppImage. Before release creation, it aggregates the three platform summaries and rejects missing platforms, commit/corpus/manifest mismatches, failures, skips, gaps, or unreadable evidence. The manual **Release** dispatch may build an exact `release_ref` with `release_tag=v1.0.7`; do not use a moving tag or a different commit per platform.
-
-If an existing release body is stale after the validated release commit is published:
-
-```bash
-gh release edit v1.0.7 \
-  --title "SplitShot 1.0.7" \
-  --notes-file artifacts/release-notes.md \
-  --latest
-```
-
-## Failure Handling
-
-- Inspect the exact failing GitHub Actions job and its uploaded proof before changing code or workflows.
-- Fix and rerun that lane before retagging.
-- Treat missing packaged FFmpeg/FFprobe, non-corpus inputs, stale outputs, absent case/identity evidence, or child calls to bare `uv`/`python` as release blockers.
-- Do not publish when only package creation passed; package-native validation must also pass on macOS, Windows, and Linux.
-- Do not create temporary or moving release tags for smoke testing.
-
-## Related Documentation
-
-- [Development setup](DEVELOPING.md)
-- [Governance](GOVERNANCE.md)
-- [Changelog](../../CHANGELOG.md)
+Follow [GOVERNANCE.md](GOVERNANCE.md) for the version update, changelog, merge, tag, and release steps. `.github/workflows/release.yml` is the only publishing workflow. Do not create a release from a package build or from mixed-platform evidence.

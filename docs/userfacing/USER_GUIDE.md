@@ -2,7 +2,7 @@
 
 <!-- Documentation reviewed: 2026-08-11 -->
 
-SplitShot v1.0.7 is a local-first app for turning stage footage into a reviewed, scored, annotated, and exported video. This guide is the hub for the user-facing docs. Each pane guide below matches the current left-rail tool set and references fresh screenshots from the active UI.
+SplitShot is a local-first app for turning stage footage into a reviewed, scored, annotated, and exported video. This guide is the hub for the user-facing docs. Each pane guide below matches the current left-rail tool set and references current screenshots from the app.
 
 ## Start Here
 

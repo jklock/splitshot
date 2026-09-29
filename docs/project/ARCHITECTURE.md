@@ -48,7 +48,7 @@ Read these files first if you need to understand how the app hangs together:
 
 ## Browser Surface
 
-The v1.0.7 rail is, in order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`. `Export` owns FFmpeg/output settings, `In / Out` owns optional boundary media and its overlays, and `Queue` owns render execution, queue membership, batch output, and combined output.
+The rail is, in order: `Project`, `Media`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `In / Out`, `Queue`, `Metrics`, `ShotML`, and `Settings`. `Export` owns FFmpeg/output settings, `In / Out` owns optional boundary media and its overlays, and `Queue` owns render execution, queue membership, batch output, and combined output.
 
 The cockpit is bounded to the visible window. The active inspector or expanded workbench owns scrolling, while the page shell remains fixed. Video and overlay authoring use the rendered, aspect-correct video frame as their coordinate space so resizing or browser zoom does not change saved overlay geometry.
 

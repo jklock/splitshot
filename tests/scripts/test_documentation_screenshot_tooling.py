@@ -50,6 +50,11 @@ def test_screenshot_manifest_is_complete_and_requires_real_video_inputs() -> Non
         "ShotMLPane2.png",
         "SettingsPane.png",
         "SettingsPane2.png",
+        "SettingsGeneral.png",
+        "SettingsTrimQueue.png",
+        "SettingsComposeOverlay.png",
+        "SettingsMarkers.png",
+        "SettingsExportShotML.png",
     )
     assert module.VIEWPORT == {"width": 1400, "height": 900}
     assert not hasattr(module, "SOURCE_VIDEO")
@@ -112,6 +117,8 @@ def test_screenshot_capture_requires_decoded_primary_and_secondary_frames() -> N
     assert "stats.mean > 8" in source
     assert "stats.variance > 12" in source
     assert "validate_showcase_state(page)" in source
+    assert "mask_customer_paths(page)" in source
+    assert "Your project / Output" in source
 
 
 def test_screenshot_capture_keeps_linked_marker_and_review_controls_enabled() -> None:

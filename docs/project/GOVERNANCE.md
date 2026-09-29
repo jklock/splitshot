@@ -45,7 +45,7 @@ bash scripts/release/apply_github_rulesets.sh
 
 Current release baseline:
 
-- feature-frozen release line: `v1.0.7`
+- current release version: read from `pyproject.toml` and keep all version sources aligned
 
 1. Update versioned source of truth files in the repo.
 2. Finalize the release notes in [../../CHANGELOG.md](../../CHANGELOG.md).
@@ -53,21 +53,21 @@ Current release baseline:
 4. Extract the exact GitHub release body from the changelog:
 
 ```bash
-uv run python scripts/release/extract_release_notes.py v1.0.7 --output artifacts/release-notes.md
+uv run python scripts/release/extract_release_notes.py vX.Y.Z --output artifacts/release-notes.md
 ```
 
 5. Create and push the semver tag, for example:
 
 ```bash
-git tag -a v1.0.7 -m "SplitShot v1.0.7"
-git push origin v1.0.7
+git tag -a vX.Y.Z -m "SplitShot X.Y.Z"
+git push origin vX.Y.Z
 ```
 
 6. Let `.github/workflows/release.yml` build all three platform artifacts and publish the GitHub release from that tag.
 7. If the GitHub release body needs a manual refresh after publish:
 
 ```bash
-gh release edit v1.0.7 --title "SplitShot 1.0.7" --notes-file artifacts/release-notes.md --latest
+gh release edit vX.Y.Z --title "SplitShot X.Y.Z" --notes-file artifacts/release-notes.md --latest
 ```
 
 ## Branch Cleanup

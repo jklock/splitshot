@@ -57,6 +57,11 @@ SCREENSHOT_MANIFEST = (
     ScreenshotSpec("ShotMLPane2.png", "shotml", "scrolled"),
     ScreenshotSpec("SettingsPane.png", "settings"),
     ScreenshotSpec("SettingsPane2.png", "settings", "scrolled"),
+    ScreenshotSpec("SettingsGeneral.png", "settings", "general-defaults"),
+    ScreenshotSpec("SettingsTrimQueue.png", "settings", "trim-queue-defaults"),
+    ScreenshotSpec("SettingsComposeOverlay.png", "settings", "compose-overlay-defaults"),
+    ScreenshotSpec("SettingsMarkers.png", "settings", "marker-defaults"),
+    ScreenshotSpec("SettingsExportShotML.png", "settings", "export-shotml-defaults"),
 )
 SCREENSHOT_FILENAMES = tuple(spec.filename for spec in SCREENSHOT_MANIFEST)
 APPROVED_TEST_VIDEO_PATHS = {
@@ -127,6 +132,7 @@ def screenshot(
     seek_showcase_frame(page)
     stabilize_visible_video_frames(page)
     validate_showcase_state(page)
+    mask_customer_paths(page)
     page.screenshot(path=str(screenshot_dir / filename), full_page=False)
 
 
@@ -218,6 +224,18 @@ def stabilize_visible_video_frames(page: Page) -> None:
         and not result["secondaryVisible"]
     ):
         raise RuntimeError(f"Visible player is missing secondary video: {result}")
+
+
+def mask_customer_paths(page: Page) -> None:
+    """Keep machine-specific capture paths out of customer-facing documentation."""
+    page.evaluate(
+        """
+        () => {
+          const output = document.getElementById('project-output-root');
+          if (output instanceof HTMLInputElement) output.value = 'Your project / Output';
+        }
+        """
+    )
 
 
 def validate_showcase_state(page: Page) -> None:
@@ -857,14 +875,22 @@ def capture_all(page: Page, screenshot_dir: Path = SCREENSHOT_DIR) -> None:
         page.evaluate(
             """
             () => {
-              ['markers', 'export', 'shotml'].forEach((sectionId) => {
+              [
+                'global-template', 'layout', 'trim', 'queue', 'intro-outro', 'scoring',
+                'pip', 'overlay', 'markers', 'export', 'shotml',
+              ].forEach((sectionId) => {
                 setSettingsSectionExpanded(sectionId, true);
               });
               renderSettingsSections();
             }
             """
         )
-        take("SettingsPane2.png", 900)
+        take("SettingsGeneral.png", 0)
+        take("SettingsTrimQueue.png", 520)
+        take("SettingsComposeOverlay.png", 1040)
+        take("SettingsMarkers.png", 1560)
+        take("SettingsExportShotML.png", 2080)
+        take("SettingsPane2.png", 2600)
 
         if tuple(captured) != SCREENSHOT_FILENAMES:
             raise RuntimeError(f"Capture sequence does not match manifest: {captured}")

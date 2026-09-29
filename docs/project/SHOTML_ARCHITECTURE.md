@@ -2,13 +2,13 @@
 
 <!-- Documentation reviewed: 2026-08-11 -->
 
-This document describes the v1.0.7 ShotML pane from the project model through detection, controller orchestration, browser API, static UI, persistence, and tests.
+This document describes the ShotML pane from the project model through detection, controller orchestration, browser API, static UI, persistence, and tests.
 
 ## Executive Summary
 
 ShotML is a project-scoped detector configuration and timing proposal workflow. The authoritative settings live on `Project.analysis.shotml_settings`, pending timing changes live on `Project.analysis.timing_change_proposals`, and the browser ShotML pane edits those values through controller-backed JSON APIs.
 
-The detector owns automatic beep and shot discovery. The Splits pane remains the manual timing editor. ShotML appears between Metrics and Settings in the v1.0.7 rail and owns the threshold, advanced detector settings, explicit reruns, and proposal generation.
+The detector owns automatic beep and shot discovery. The Splits pane remains the manual timing editor. ShotML appears between Metrics and Settings and owns the threshold, advanced detector settings, explicit reruns, and proposal generation.
 
 The detector retains native channel measurements and applies a 640 ms wearer-shot verifier after the existing short-window candidate detector. Model metadata records the verifier version, feature schema, and context dimensions. PractiScore raw time contributes only a last-shot timing anchor.
 
@@ -33,7 +33,7 @@ The important design rule is: project settings are authoritative for an open pro
 
 ## Default Settings
 
-The v1.0.7 factory threshold is `0.35`. All other detector defaults are defined by `ShotMLSettings`; the model and hybrid tonal/model beep path consume that single settings object. Treat committed source defaults and their tests as release truth rather than relying on generated training or benchmark artifacts.
+The factory threshold is `0.35`. All other detector defaults are defined by `ShotMLSettings`; the model and hybrid tonal/model beep path consume that single settings object. Treat committed source defaults and their tests as product truth rather than relying on generated training or benchmark artifacts.
 
 ## Detection Pipeline
 

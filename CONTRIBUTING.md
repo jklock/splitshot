@@ -4,8 +4,6 @@
 
 Contributions should preserve SplitShot's local-first workflow, shared controller model, and evidence-backed test discipline.
 
-The v1.0.7 release line is feature-frozen. Changes targeting it should correct defects, tests, packaging, or documentation without expanding the product surface.
-
 ## Start Here
 
 Read these before changing code:
