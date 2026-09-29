@@ -1016,7 +1016,7 @@ async function configureIntroOutro(page) {
       page,
       (expectedKind) => {
         const boxes = state?.project?.[`${expectedKind}_clip`]?.overlay?.text_boxes || [];
-        return boxes.some((box) => box.source === 'manual')
+        return boxes.some((box) => box.source === 'project_summary')
           && boxes.some((box) => box.source === 'match_summary');
       },
       kind,
