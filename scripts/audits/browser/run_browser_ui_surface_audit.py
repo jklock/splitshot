@@ -264,6 +264,10 @@ def open_page(
             record_video_size={"width": 1400, "height": 900},
         )
     page = browser.new_page(**page_options)
+    # Installed packages can take longer than the source server to settle after
+    # media processing. Keep the audit deterministic while allowing that
+    # platform-specific startup work to finish.
+    page.set_default_timeout(120_000)
     page.on("dialog", lambda dialog: dialog.accept())
     page.goto(base_url, wait_until="domcontentloaded")
     page.wait_for_function(
