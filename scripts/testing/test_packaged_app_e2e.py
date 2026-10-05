@@ -193,10 +193,6 @@ def _run_packaged_browser_audits(
             ],
         ),
     ]
-    # On Windows, closing the browser used by the comprehensive UI-surface
-    # audit can end the test-mode packaged backend. Run it last so the
-    # interaction and value-control audits complete against the same restart.
-    commands.sort(key=lambda item: item[0] == "ui-surface")
     failures: list[str] = []
     audit_env = dict(os.environ)
     audit_env["PYTHONFAULTHANDLER"] = "1"
