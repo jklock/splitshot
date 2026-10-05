@@ -2475,12 +2475,14 @@ class BrowserControlServer:
                 stage_id = str(payload.get("stage_id") or payload.get("active_stage_id") or "")
                 if not stage_id:
                     raise ValueError("stage_id is required")
-                controller.select_stage(stage_id)
-                # Stage selection changes the project-visible media projection.
-                # Persist it before returning so a subsequent navigation or
-                # restart cannot reopen the previous stage.
-                if controller.project_path is not None:
-                    controller.save_project()
+                # Browser routes persist synchronously below. Suppress the
+                # controller's Qt signal autosave here so a queued, earlier
+                # stage selection cannot overwrite this route's on-disk save.
+                signals_were_blocked = controller.blockSignals(True)
+                try:
+                    controller.select_stage(stage_id)
+                finally:
+                    controller.blockSignals(signals_were_blocked)
 
             def _create_stage(self, payload: dict[str, Any]) -> None:
                 controller.create_stage(
