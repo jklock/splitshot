@@ -2476,6 +2476,11 @@ class BrowserControlServer:
                 if not stage_id:
                     raise ValueError("stage_id is required")
                 controller.select_stage(stage_id)
+                # Stage selection changes the project-visible media projection.
+                # Persist it before returning so a subsequent navigation or
+                # restart cannot reopen the previous stage.
+                if controller.project_path is not None:
+                    controller.save_project()
 
             def _create_stage(self, payload: dict[str, Any]) -> None:
                 controller.create_stage(

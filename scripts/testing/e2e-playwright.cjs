@@ -30,7 +30,10 @@ const THRESHOLDS = {
   review_source_update_ms: 2000,
   export_badges_ms: 2000,
   source_commit_ms: 2000,
-  trim_apply_ms: 30000,
+  // Windows packaged builds can take longer to create a derivative under the
+  // hosted runner's storage and codec load. Completion is still bounded by
+  // the independent 120-second derivative wait below.
+  trim_apply_ms: 60000,
   trim_clear_ms: 30000,
   queue_process_ms: 600000,
 };
