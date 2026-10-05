@@ -1310,7 +1310,8 @@ def test_browser_full_app_settings_defaults_seed_fresh_project_truth_gate(
                 )
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
-                    "() => state?.project?.analysis?.shotml_settings?.detection_threshold !== undefined"
+                    """() => typeof state !== 'undefined' && state
+                        && state.project?.analysis?.shotml_settings?.detection_threshold !== undefined"""
                 )
             finally:
                 browser.close()

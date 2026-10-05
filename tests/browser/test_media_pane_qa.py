@@ -212,9 +212,12 @@ def test_media_stage_switch_keeps_primary_and_added_media_owned_by_each_stage(
                 def assert_stage_inventory(
                     stage_id: str,
                     label: str,
-                    primary: Path,
-                    added: Path,
-                ) -> None:
+                primary: Path,
+                added: Path,
+            ) -> None:
+                    page.wait_for_function(
+                        "() => !document.querySelector('#media-active-stage-select')?.disabled"
+                    )
                     page.locator("#media-active-stage-select").select_option(stage_id)
                     page.wait_for_function(
                         """({ stageId, primaryName, addedName }) => {
@@ -234,6 +237,9 @@ def test_media_stage_switch_keeps_primary_and_added_media_owned_by_each_stage(
                             "primaryName": primary.name,
                             "addedName": added.name,
                         },
+                    )
+                    page.wait_for_function(
+                        "() => !document.querySelector('#media-active-stage-select')?.disabled"
                     )
                     pane_text = page.locator("#media-pane").inner_text()
                     assert label in pane_text

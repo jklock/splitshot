@@ -23,6 +23,14 @@ const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY ==
 let appReadyRecorded = false;
 let testInOutPathIndex = 0;
 
+// GitHub's headless Linux runners do not provide a usable GPU process. Package
+// validation exercises the renderer through Chromium, so test-mode Electron
+// must not terminate when GPU initialization fails during an app restart.
+if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+}
+
 if (process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR) {
   app.setPath('userData', path.resolve(process.env.SPLITSHOT_ELECTRON_USER_DATA_DIR));
 }
