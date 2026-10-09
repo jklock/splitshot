@@ -459,12 +459,16 @@ jobs:
       - uses: actions/download-artifact@v5
       - name: Enforce matching zero-gap platform summaries
         run: |
+          set +e
           python3 scripts/testing/validate_packaged_release_evidence.py aggregate \
             e2e-artifacts-macos/v107-release-proof/github-review/macos/platform-summary.json \
             e2e-artifacts-windows/v107-release-proof/github-review/windows/platform-summary.json \
             e2e-artifacts-linux/v107-release-proof/github-review/linux/platform-summary.json \
             --expected-commit "$(git rev-parse HEAD)" \
             --output artifacts/exhaustive-release-summary.json
+          status=$?
+          cat artifacts/exhaustive-release-summary.json
+          exit "$status"
       - name: Extract release notes
         run: |
           python3 scripts/release/extract_release_notes.py "${RELEASE_TAG}" --output artifacts/release-notes.md
