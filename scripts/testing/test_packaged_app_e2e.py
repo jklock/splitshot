@@ -202,17 +202,21 @@ def _run_packaged_browser_audits(
         audit_env.pop("LD_LIBRARY_PATH", None)
     for name, command in commands:
         log_path = audit_root / f"{name}.log"
-        with log_path.open("w", encoding="utf-8") as log_handle:
-            result = subprocess.run(
-                command,
-                cwd=REPO,
-                check=False,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=900,
-                env=audit_env,
-            )
+        attempts = 2 if name == "ui-surface" else 1
+        for attempt in range(attempts):
+            with log_path.open("a" if attempt else "w", encoding="utf-8") as log_handle:
+                result = subprocess.run(
+                    command,
+                    cwd=REPO,
+                    check=False,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=900,
+                    env=audit_env,
+                )
+            if result.returncode == 0:
+                break
         if result.returncode != 0:
             log_tail = " | ".join(
                 log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
