@@ -41,7 +41,10 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # Git may check text manifests out as CRLF on Windows. The release contract
+    # identifies the parsed manifest, not an OS-specific working-tree encoding.
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def _manifest_cases(manifest: dict[str, Any], platform: str | None = None) -> set[str]:
