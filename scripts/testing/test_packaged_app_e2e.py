@@ -202,7 +202,12 @@ def _run_packaged_browser_audits(
         audit_env.pop("LD_LIBRARY_PATH", None)
     for name, command in commands:
         log_path = audit_root / f"{name}.log"
-        attempts = 2 if name == "ui-surface" else 1
+        # The backend can briefly stop accepting new connections after the
+        # preceding full E2E browser process exits on Windows.  Each audit is
+        # read-only and writes deterministic evidence, so retry once for every
+        # installed-package audit rather than treating that transient socket
+        # race as a product failure.
+        attempts = 2
         for attempt in range(attempts):
             with log_path.open("a" if attempt else "w", encoding="utf-8") as log_handle:
                 result = subprocess.run(
