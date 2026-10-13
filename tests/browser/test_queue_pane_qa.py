@@ -306,7 +306,9 @@ def test_in_out_control_inventory_uses_one_interaction_and_preserves_node(
                 page.locator("button[data-tool='queue']").click(force=True)
                 page.locator("button[data-tool='intro-outro']").click(force=True)
                 assert page.locator(selector).count() == 1
-                page.get_by_role("button", name="Outro", exact=True).click()
+                outro_button = page.get_by_role("button", name="Outro", exact=True)
+                outro_button.scroll_into_view_if_needed()
+                outro_button.click(force=True)
                 page.get_by_role("button", name="Intro", exact=True).click()
                 page.evaluate("path => useProjectFolder(path)", str(project_path))
                 page.wait_for_function("() => Boolean(state?.project?.intro_clip?.asset?.path)")
