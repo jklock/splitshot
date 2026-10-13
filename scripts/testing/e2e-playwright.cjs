@@ -1069,7 +1069,9 @@ async function processCombinedOutput(page, artifactRoot) {
       && response.request().method() === 'POST',
     { timeout: 1800000 },
   );
-  await page.locator('#queue-combined-btn').click();
+  const combinedButton = page.locator('.queue-combined-btn');
+  await combinedButton.waitFor({ state: 'visible', timeout: 30000 });
+  await combinedButton.click({ force: true });
   const response = await responsePromise;
   const payload = await response.json();
   const outputPath = String(payload?.project?.last_combined_output_path || '');
