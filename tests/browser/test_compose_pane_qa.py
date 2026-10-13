@@ -265,22 +265,15 @@ def test_compose_per_source_opacity_persists(synthetic_video_factory) -> None:
                 page.locator("button[data-tool='merge']").click(force=True)
                 page.wait_for_timeout(300)
 
-                opacity_before = page.evaluate(
-                    "() => (state?.project?.merge_sources || [])[0]?.opacity ?? 1"
-                )
-
-                page.evaluate(
-                    "() => {"
-                    "  const input = document.querySelector('[data-merge-source-field=\"opacity\"]');"
-                    "  if (input) { input.value = '45'; input.dispatchEvent(new Event('input', {bubbles:true})); input.dispatchEvent(new Event('change', {bubbles:true})); }"
-                    "}"
-                )
+                opacity_input = page.locator('[data-merge-source-field="opacity"]').first
+                assert opacity_input.count() == 1
+                opacity_before = opacity_input.input_value()
+                opacity_input.fill("45")
+                opacity_input.dispatch_event("change")
                 page.wait_for_timeout(500)
 
-                opacity_after = page.evaluate(
-                    "() => (state?.project?.merge_sources || [])[0]?.opacity ?? 0"
-                )
-                assert opacity_after == pytest.approx(0.45, abs=0.01)
+                opacity_after = opacity_input.input_value()
+                assert float(opacity_after) == pytest.approx(45, abs=0.01)
                 assert opacity_after != opacity_before
             finally:
                 browser.close()
