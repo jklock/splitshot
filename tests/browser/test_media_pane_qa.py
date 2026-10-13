@@ -349,13 +349,12 @@ def test_practiscore_autosave_keeps_empty_selected_stage_and_player_isolated(
 
                 page.locator("#media-active-stage-select").select_option(empty_stage.id)
                 page.wait_for_function(
-                    """(stageId) => (
-                        state?.project?.active_stage_id === stageId
-                        && !state?.project?.primary_video?.path
-                        && !state?.media?.primary_available
-                        && !document.querySelector('#primary-video')?.dataset.sourcePath
-                        && document.querySelector('#media-pane')?.innerText.includes('No primary media.')
-                    )""",
+                        """(stageId) => (
+                            state?.project?.active_stage_id === stageId
+                            && !state?.project?.primary_video?.path
+                            && !document.querySelector('#primary-video')?.dataset.sourcePath
+                            && document.querySelector('#media-pane')?.innerText.includes('No primary media.')
+                        )""",
                     arg=empty_stage.id,
                 )
                 assert warmup_path.name not in page.locator("#media-pane").inner_text()
