@@ -830,7 +830,6 @@ def _expand_windows_vars(path: str) -> str:
 
 def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
     ffmpeg = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFMPEG", "ffmpeg"))
-    ffprobe = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFPROBE", "ffprobe"))
     tesseract = _resolve_tool(
         os.environ.get("SPLITSHOT_PACKAGED_TESSERACT", "tesseract"),
         windows_fallbacks=(
@@ -842,31 +841,6 @@ def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
     proof_image = artifact_dir / "export-proof-overlay.png"
     proof_text = artifact_dir / "export-proof-ocr.txt"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    probe = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_streams",
-            "-of",
-            "json",
-            str(export_file),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    metadata = json.loads(probe.stdout)
-    video_stream = next(item for item in metadata["streams"] if item.get("codec_type") == "video")
-    width = int(video_stream["width"])
-    height = int(video_stream["height"])
-    crop_width = width
-    crop_height = max(1, height // 2)
-    crop_x = 0
-    crop_y = max(0, height - crop_height)
-    crop_filter = f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}"
     subprocess.run(
         [
             ffmpeg,
@@ -877,8 +851,6 @@ def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
             "5.2",
             "-i",
             str(export_file),
-            "-vf",
-            crop_filter,
             "-frames:v",
             "1",
             str(proof_image),
@@ -895,12 +867,7 @@ def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
             str(proof_image),
             "stdout",
             "--psm",
-            "6",
-            "-c",
-            (
-                "tessedit_char_whitelist="
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:+-. "
-            ),
+            "11",
         ],
         check=True,
         capture_output=True,
