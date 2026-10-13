@@ -741,9 +741,9 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await customCard.locator('[data-text-box-field="font_size"]').fill('36');
   await customCard.locator('[data-text-box-field="font_size"]').blur();
   // Keep the proof text wider than its largest native-font measurement.  The
-  // packaged renderer uses platform-native fonts, so 360px can crop the first
-  // and last glyphs on macOS, Windows, and Linux at 36px.
-  await customCard.locator('[data-text-box-field="width"]').fill('420');
+  // packaged renderer uses platform-native fonts; 420px still crops glyphs
+  // with Linux's bundled font at 36px.
+  await customCard.locator('[data-text-box-field="width"]').fill('480');
   await customCard.locator('[data-text-box-field="width"]').blur();
   await customCard.locator('[data-text-box-field="height"]').fill('96');
   await customCard.locator('[data-text-box-field="height"]').blur();
