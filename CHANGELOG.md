@@ -6,21 +6,65 @@ This file captures launch-grade release notes for SplitShot. Each release sectio
 
 ## v1.0.7
 
-SplitShot 1.0.7 completes the current editing and release workflow. This release is feature-frozen: further work on the 1.0.7 line is limited to validation, documentation, packaging, and defect fixes.
+SplitShot 1.0.7 is a major update to the complete match-video workflow. It brings project organization, multi-stage editing, scoring, camera composition, review, output controls, intros and outros, queue processing, metrics, ShotML, and settings into one connected desktop experience.
 
-### What Changed
+### Multi-Stage Match Production
 
-- **Completed the multi-stage workflow.** Project and Media now separate project/competitor setup from stage creation and media intake. Compose, Trim, scoring, review, Export settings, and Queue processing all follow the active stage.
-- **Made project files predictable.** Selecting or creating a project initializes its managed folders. Project content pickers start at the active project, and selected media, PractiScore data, and marker assets are copied into their matching project folders with portable project-relative paths.
-- **Aligned the 15-pane rail with the shipped workflow.** The current rail is Project, Media, Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, In / Out, Queue, Metrics, ShotML, and Settings. Pane layout, labels, controls, preview behavior, and exported output were cleaned up for closer WYSIWYG parity.
-- **Corrected competition standings.** Imported PractiScore results now display independent sport-specific division and class cohorts plus Overall: `<division acronym> - <place>/<division total>`, `<class acronym> - <place>/<class total>`, and `Overall - <place>/<total competitors>`. There is no combined division-and-class standing.
-- **Made packaged release proof fail closed.** Release validation uses the checksum-locked real `primary.MP4`, `secondary.MP4`, and authentic 27-competitor/four-stage PractiScore corpus. A versioned 17-shard manifest owns every required feature scenario, installed packages emit runtime inventory/action/request/restart evidence, and per-OS summaries reject failures, skips, gaps, missing artifacts, or commit/corpus/manifest drift.
-- **Repaired clean-runner package validation.** The packaged release proof targets the current Trim source-card and Queue output/log contracts on every platform, copies the Queue result to the canonical cross-platform proof filename, allows realistic shared-runner latency for profile persistence, and keeps mandatory notarization in Build macOS and the publishing Release workflow while Test macOS validates a signed non-notarized DMG.
-- **Cleaned developer and release tooling.** Obsolete release-specific scripts, generated audit projects, logs, duplicate test data, and stale documentation were removed or redirected to ignored artifact locations.
+- **Build a complete match, stage by stage.** A project can now contain multiple stages, with each stage retaining its own primary footage, added camera angles, trim choices, composition, scoring, timing, markers, overlays, review state, queue status, and output. You can complete one stage, move to another, and return later without losing the work already done.
+- **Keep media where it belongs.** The Media workflow follows the active stage. Primary footage and supporting camera angles stay isolated to that stage, so changing stages does not mix footage or output settings from another part of the match.
+- **Use a workflow designed for finished production.** The 15-pane rail now follows the complete path from Project and Media through Compose, Trim, Score, Splits, Markers, Overlay, Review, Export, In / Out, Queue, Metrics, ShotML, and Settings.
 
-### Release Proof
+### Organized, Portable Projects
 
-Release readiness requires source gates plus zero-gap installed-package summaries from Test macOS, Test Windows, and Test Linux for the exact release commit and corpus revision. The Release workflow is the sole publisher and aggregates all three summaries before release creation. Until every explicit case and discovered runtime identity passes, publication remains blocked.
+- **Projects manage their own workspace.** Creating or selecting a project prepares its managed folders and keeps related media, score data, markers, and other project material in the project context.
+- **Move and reopen projects with confidence.** Project content is organized around project-relative paths where possible. Reopening a project restores its stages, media, settings, and editing context so work can continue where it stopped.
+- **Import with useful defaults.** Project content pickers begin from the active project context, reducing the time spent navigating to the right media or match files.
+
+### Multi-Camera Composition and Trim
+
+- **Add supporting camera angles to every stage.** Use added media for a second shooter angle, side view, range angle, scoreboard view, or any other supporting footage without replacing the primary video.
+- **Control each source independently.** Adjust per-source size, position, opacity, placement mode, and synchronization relationship to build picture-in-picture, stacked, or other multi-camera presentations.
+- **Trim supporting footage without losing the original.** Set source start and end points, apply the trim for the active stage, review it in the composition, and clear it later when you need to return to the original footage.
+- **Keep trimmed sources through output.** The composition, trim, and source settings used during editing follow the stage into review, queue processing, and export.
+
+### Timing, Scoring, and Match Data
+
+- **Work with waveform and synchronization tools.** Review source timing, expand waveform context, analyze supporting footage, and use sync information to align cameras with the primary video.
+- **Import authentic PractiScore match context.** SplitShot carries competitors, stage results, penalties, divisions, classes, and standings into the project so score presentation is connected to the footage.
+- **Read standings clearly.** Division, class, and overall placements are presented as separate standings with the correct place and cohort total. This makes the result understandable in both the workspace and the rendered video.
+- **Use Splits and Metrics for performance context.** Timing, score, and performance information stay attached to the active stage and can be reviewed alongside the actual run.
+- **Use ShotML to assist event review.** ShotML helps identify shooter-shot events from footage, providing another layer of timing and performance context for review and presentation.
+
+### Overlays, Markers, and Review
+
+- **Tell the story of the stage on screen.** Add score, timer, split, marker, shot, drawing, text, and review information as part of the visual presentation.
+- **Use markers for the moments that matter.** Markers stay associated with the stage and can be used to identify events, call out meaningful moments, and guide review.
+- **Create reusable visual treatment.** Text, labels, score display, badges, and metric captions are configured as part of the project workflow rather than rebuilt for every export.
+- **Review before rendering.** The Review workflow brings footage, supporting angles, score information, timing, markers, and overlays together so you can check the viewer experience before processing output.
+- **See a presentation that matches the output.** Pane layout, preview behavior, review content, and rendered output have been aligned for closer WYSIWYG behavior.
+
+### Output Profiles and Export
+
+- **Create reusable output profiles.** Keep presentation choices for different deliverables, including frame and crop approach, output layout, review source, and visual badge treatment.
+- **Prepare exports where the edit already lives.** The Export workflow uses the stage’s actual media, composition, trims, scoring, overlays, and review choices instead of requiring a separate reconstruction step.
+- **Produce individual stage outputs or a finished match.** Queue stages for their own output, requeue a stage after changes, or process the match into one combined video.
+- **See what happened during processing.** Queue and export views expose status, output location, and processing logs so you can confirm the result and locate the finished file.
+
+### In / Out: Intros and Outros
+
+- **Add match boundaries to a finished production.** Include separate intro and outro media in the project and use them when generating a combined match output.
+- **Control fades independently.** Intro and outro media support their own video and audio fade settings for a clean start and finish.
+- **Use boundary media as part of the presentation.** Add text and overlay content to intro and outro material, preview it in SplitShot, and include it in the combined Queue result.
+
+### Saved Settings and a More Reliable Editing Experience
+
+- **Save defaults and project-specific choices.** Keep preferred application defaults while preserving the settings that belong to a particular match.
+- **Retain work through normal editing.** Settings and controls persist through pane navigation, stage changes, project reopening, and continued work after restart.
+- **Edit with stable interaction behavior.** Media selection, queue settings, composition controls, per-source adjustments, Intro / Out controls, output profiles, review state, and overlays have been refined to remain responsive and retain their intended state during normal use.
+
+### Available on macOS, Windows, and Linux
+
+SplitShot 1.0.7 delivers the same complete project, stage, editing, review, and output workflow in desktop packages for macOS, Windows, and Linux.
 
 ## v1.0.6
 
