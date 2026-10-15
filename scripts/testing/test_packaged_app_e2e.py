@@ -1173,6 +1173,28 @@ def main():
                 joined = "; ".join(audit_failures)
                 raise RuntimeError(joined)
             else:
+                # The independent Chromium audit processes can cause the
+                # macOS packaged helper to exit after their final browser
+                # disconnects.  Verify the installed backend is still serving
+                # before the dedicated remaining-control audit; relaunch the
+                # same persisted project when it is not.
+                try:
+                    _wait_for_state(restart_proc, restart_port, timeout=5)
+                except (RuntimeError, TimeoutError):
+                    _stop_process(restart_proc)
+                    restart_port = _free_port()
+                    restart_env["SPLITSHOT_TEST_PORT"] = str(restart_port)
+                    with restart_out.open("w") as o, restart_err.open("w") as e:
+                        restart_proc = subprocess.Popen(
+                            restart_cmd,
+                            cwd=executable.parent,
+                            env=restart_env,
+                            stdout=o,
+                            stderr=e,
+                            text=True,
+                            start_new_session=os.name != "nt",
+                        )
+                    _wait_for_state(restart_proc, restart_port)
                 identity_results = _build_identity_results(artifact_root)
                 remaining_command = [
                     sys.executable,
