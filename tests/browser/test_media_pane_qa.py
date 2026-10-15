@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
@@ -15,10 +16,16 @@ from tests.browser.helpers.video_test_helpers import create_project
 def _open_test_page(playwright, server: BrowserControlServer):
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1280, "height": 900})
-    page.goto(server.url, wait_until="domcontentloaded")
-    page.wait_for_function(
-        "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
-    )
+    ready = "() => typeof state !== 'undefined' && typeof createNewProject === 'function'"
+    for attempt in range(2):
+        page.goto(server.url, wait_until="domcontentloaded", timeout=60_000)
+        try:
+            page.wait_for_function(ready, timeout=60_000)
+            break
+        except PlaywrightTimeoutError:
+            if attempt:
+                browser.close()
+                raise
     return browser, page
 
 
